@@ -8,7 +8,6 @@ import {
   ClipboardList,
   Users,
   Car,
-  Calendar,
   FileText,
   MessageSquare,
   Bell,
@@ -18,6 +17,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Building2,
+  CalendarDays,
+  ClipboardCheck,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -31,10 +32,11 @@ const staffNav = [
     ],
   },
   {
-    group: '管理',
+    group: '支援・管理',
     items: [
+      { href: '/support-plans', label: '個別支援計画', icon: ClipboardCheck },
       { href: '/transport', label: '送迎管理', icon: Car },
-      { href: '/usage', label: '利用状況', icon: Calendar },
+      { href: '/shifts', label: 'シフト管理', icon: CalendarDays },
       { href: '/billing', label: '国保連請求', icon: CreditCard },
     ],
   },
@@ -50,7 +52,6 @@ const staffNav = [
     group: '設定',
     items: [
       { href: '/children', label: '児童管理', icon: Users },
-      { href: '/documents', label: '帳票出力', icon: FileText },
       { href: '/settings', label: '設定', icon: Settings },
     ],
   },
