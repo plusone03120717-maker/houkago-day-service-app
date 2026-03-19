@@ -53,6 +53,7 @@ const staffNav = [
     group: '設定',
     items: [
       { href: '/children', label: '児童管理', icon: Users },
+      { href: '/documents', label: '帳票出力', icon: FileText },
       { href: '/settings', label: '設定', icon: Settings },
     ],
   },
