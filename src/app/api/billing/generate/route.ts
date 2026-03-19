@@ -1,6 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+// 放課後等デイサービスの加算率（基本報酬に対する割合）
+const ADDITION_RATES: Record<string, number> = {
+  // 処遇改善加算
+  welfare_improvement_1: 0.208,  // 処遇改善加算Ⅰ
+  welfare_improvement_2: 0.172,  // 処遇改善加算Ⅱ
+  welfare_improvement_3: 0.114,  // 処遇改善加算Ⅲ
+  // 特定処遇改善加算
+  specific_welfare_1: 0.050,     // 特定処遇改善加算Ⅰ
+  specific_welfare_2: 0.036,     // 特定処遇改善加算Ⅱ
+  // ベースアップ等支援加算
+  base_up_support: 0.017,        // ベースアップ等支援加算
+  // 専門的支援加算
+  specialist_support: 0.250,     // 専門的支援加算（1日につき）
+  // 強度行動障害支援加算
+  intensive_support: 0.150,      // 強度行動障害支援加算
+}
+
+// 基本報酬単価（放課後等デイサービス・区分なし・標準）
+const BASE_UNIT_PRICE = 10  // 1単位 = 10円（地域区分で異なるが簡易的に10円）
+const BASE_UNITS_PER_DAY = 587  // 放課後等デイサービス基本報酬（単位）
+
+type AdditionSetting = {
+  addition_type: string
+  enabled: boolean
+  custom_rate: number | null
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -20,9 +47,8 @@ export async function POST(request: NextRequest) {
   const year = parseInt(yearMonth.slice(0, 4))
   const month = parseInt(yearMonth.slice(4, 6))
 
-  // 月の範囲
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`
-  const endDate = new Date(year, month, 0) // 月末
+  const endDate = new Date(year, month, 0)
   const endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
 
   // 既存の請求データを確認
@@ -50,7 +76,15 @@ export async function POST(request: NextRequest) {
     billingMonthlyId = created.id
   }
 
-  // その月の出席記録を取得
+  // 加算設定を取得
+  const { data: additionSettingsRaw } = await supabase
+    .from('addition_settings')
+    .select('addition_type, enabled, custom_rate')
+    .eq('unit_id', unitId)
+  const additionSettings = (additionSettingsRaw ?? []) as AdditionSetting[]
+  const enabledAdditions = additionSettings.filter((a) => a.enabled)
+
+  // 出席記録を取得
   const { data: attendances } = await supabase
     .from('daily_attendance')
     .select(`
@@ -99,7 +133,6 @@ export async function POST(request: NextRequest) {
     if (!child) continue
 
     const certs = child.benefit_certificates ?? []
-    // その日付に有効な受給者証を選択
     const validCert = certs.find((cert) => {
       const start = new Date(cert.start_date)
       const end = new Date(cert.end_date)
@@ -127,7 +160,6 @@ export async function POST(request: NextRequest) {
     const entry = childMap.get(child.id)!
     entry.totalDays++
 
-    // 給付量超過チェック
     if (entry.maxDaysPerMonth > 0 && entry.totalDays > entry.maxDaysPerMonth) {
       if (!entry.errors.includes('月の給付量を超過しています')) {
         entry.errors.push('月の給付量を超過しています')
@@ -135,35 +167,50 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 請求詳細を保存
-  const detailsToUpsert = Array.from(childMap.values()).map((entry) => ({
-    billing_monthly_id: billingMonthlyId,
-    child_id: entry.childId,
-    certificate_id: entry.certificateId,
-    total_days: entry.totalDays,
-    total_units: entry.totalDays, // 簡易的に日数＝単位数
-    service_code: null, // TODO: サービスコード自動判定
-    unit_price: 0, // TODO: 単価設定
-    additions: [],
-    copay_amount: Math.min(entry.copayLimit, 0), // 暫定
-    billed_amount: 0, // TODO: 計算ロジック
-    errors: entry.errors,
-  }))
+  // 加算率の合計を計算
+  let totalAdditionRate = 0
+  const appliedAdditions: string[] = []
 
-  // 既存の詳細を削除して再作成
+  for (const addition of enabledAdditions) {
+    const rate = addition.custom_rate ?? ADDITION_RATES[addition.addition_type] ?? 0
+    totalAdditionRate += rate
+    appliedAdditions.push(addition.addition_type)
+  }
+
+  // 請求詳細を保存
+  const detailsToUpsert = Array.from(childMap.values()).map((entry) => {
+    const baseUnits = entry.totalDays * BASE_UNITS_PER_DAY
+    const additionUnits = Math.round(baseUnits * totalAdditionRate)
+    const totalUnits = baseUnits + additionUnits
+    const billedAmount = Math.round(totalUnits * BASE_UNIT_PRICE)
+    const copayAmount = Math.min(entry.copayLimit, billedAmount)
+
+    return {
+      billing_monthly_id: billingMonthlyId,
+      child_id: entry.childId,
+      certificate_id: entry.certificateId,
+      total_days: entry.totalDays,
+      total_units: totalUnits,
+      service_code: 'H43',  // 放課後等デイサービス
+      unit_price: BASE_UNIT_PRICE,
+      additions: appliedAdditions,
+      copay_amount: copayAmount,
+      billed_amount: billedAmount - copayAmount,
+      errors: entry.errors,
+    }
+  })
+
   await supabase.from('billing_details').delete().eq('billing_monthly_id', billingMonthlyId)
 
   if (detailsToUpsert.length > 0) {
     await supabase.from('billing_details').insert(detailsToUpsert)
   }
 
-  // ステータスをdraftに更新
   await supabase
     .from('billing_monthly')
     .update({ status: 'draft' })
     .eq('id', billingMonthlyId)
 
-  // フォーム送信の場合はリダイレクト
   const accept = request.headers.get('accept') ?? ''
   if (accept.includes('text/html')) {
     return NextResponse.redirect(new URL('/billing', request.url))
@@ -173,5 +220,7 @@ export async function POST(request: NextRequest) {
     success: true,
     billingMonthlyId,
     childCount: childMap.size,
+    appliedAdditions,
+    totalAdditionRate,
   })
 }

@@ -8,7 +8,14 @@
   "theme_color": "#4F46E5",
   "background_color": "#FFFFFF",
   "lang": "ja",
+  "categories": ["productivity", "medical"],
   "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    },
     {
       "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
@@ -20,6 +27,20 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "今日の出欠",
+      "short_name": "出欠",
+      "url": "/attendance",
+      "description": "本日の出欠管理"
+    },
+    {
+      "name": "業務日報",
+      "short_name": "日報",
+      "url": "/documents/daily-report",
+      "description": "業務日報の記録"
     }
   ]
 }

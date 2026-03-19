@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { FileText, Calendar, ClipboardList, Receipt } from 'lucide-react'
+import { FileText, Calendar, ClipboardList, Receipt, BookOpen } from 'lucide-react'
 
 type Unit = { id: string; name: string }
 
@@ -63,6 +63,14 @@ export default async function DocumentsPage({
       color: 'text-orange-600',
       bg: 'bg-orange-100',
       href: `/billing/${ym}`,
+    },
+    {
+      icon: BookOpen,
+      label: '業務日報',
+      description: '日別の業務記録・安全確認・服薬記録',
+      color: 'text-emerald-600',
+      bg: 'bg-emerald-100',
+      href: `/documents/daily-report?year=${year}&month=${month}`,
     },
   ]
 

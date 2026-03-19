@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import Link from 'next/link'
+import { ClipboardCheck } from 'lucide-react'
 import { ShiftCalendar } from '@/components/shifts/shift-calendar'
 
 type StaffUser = {
@@ -60,13 +62,26 @@ export default async function ShiftsPage({
     .order('name')
   const units = (unitsRaw ?? []) as unknown as Unit[]
 
+  const today = new Date().toISOString().slice(0, 10)
+
   return (
-    <ShiftCalendar
-      year={year}
-      month={month}
-      staffList={staffList}
-      shifts={shifts}
-      units={units}
-    />
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Link
+          href={`/shifts/actual?date=${today}`}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm text-gray-600"
+        >
+          <ClipboardCheck className="h-4 w-4 text-indigo-500" />
+          出勤実績を入力
+        </Link>
+      </div>
+      <ShiftCalendar
+        year={year}
+        month={month}
+        staffList={staffList}
+        shifts={shifts}
+        units={units}
+      />
+    </div>
   )
 }

@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, AlertCircle } from 'lucide-react'
 import { BillingExportButton } from '@/components/billing/billing-export-button'
+import { AiCheckButton } from '@/components/billing/ai-check-button'
 
 type BillingDetail = {
   id: string
@@ -191,6 +192,9 @@ export default async function BillingDetailPage({
                   </tfoot>
                 </table>
               </div>
+
+              {/* AIチェック */}
+              <AiCheckButton billingMonthlyId={billing.id} />
 
               {/* CSV出力 */}
               <div className="flex gap-2 flex-wrap pt-2 border-t border-gray-100">

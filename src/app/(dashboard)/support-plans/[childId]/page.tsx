@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft, Plus, ClipboardList } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { SupportPlanForm } from '@/components/support-plans/support-plan-form'
 
@@ -90,6 +90,21 @@ export default async function SupportPlanDetailPage({
           <p className="text-sm text-gray-500 mt-0.5">個別支援計画</p>
         </div>
       </div>
+
+      {/* モニタリング記録へのリンク */}
+      <Link href={`/support-plans/${childId}/monitoring`}>
+        <Card className="hover:bg-gray-50 transition-colors cursor-pointer border-indigo-100">
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+              <ClipboardList className="h-4 w-4 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">モニタリング記録</p>
+              <p className="text-xs text-gray-500">支援目標の達成状況・進捗を記録</p>
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
 
       {/* 新規作成フォーム */}
       <SupportPlanForm

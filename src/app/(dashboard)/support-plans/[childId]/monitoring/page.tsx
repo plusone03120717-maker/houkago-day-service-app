@@ -1,0 +1,192 @@
+import { createClient } from '@/lib/supabase/server'
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { ArrowLeft } from 'lucide-react'
+import { formatDate } from '@/lib/utils'
+import { MonitoringRecordForm } from '@/components/support-plans/monitoring-record-form'
+
+type SupportPlan = {
+  id: string
+  plan_date: string
+  review_date: string | null
+  status: string
+  long_term_goals: string | null
+  short_term_goals: string | null
+}
+
+type MonitoringRecord = {
+  id: string
+  support_plan_id: string
+  record_date: string
+  long_term_progress: string | null
+  short_term_progress: string | null
+  issues: string | null
+  next_actions: string | null
+  overall_status: string
+  created_at: string
+}
+
+const statusConfig: Record<string, { label: string; variant: 'success' | 'warning' | 'secondary' | 'destructive' }> = {
+  ongoing: { label: '継続中', variant: 'secondary' },
+  achieved: { label: '目標達成', variant: 'success' },
+  revised: { label: '計画見直し', variant: 'warning' },
+  needs_review: { label: '要検討', variant: 'destructive' },
+}
+
+export default async function MonitoringPage({
+  params,
+}: {
+  params: Promise<{ childId: string }>
+}) {
+  const { childId } = await params
+  const supabase = await createClient()
+
+  const { data: childRaw } = await supabase
+    .from('children')
+    .select('id, name')
+    .eq('id', childId)
+    .single()
+  const child = childRaw as unknown as { id: string; name: string } | null
+  if (!child) notFound()
+
+  // 有効な支援計画を取得
+  const { data: plansRaw } = await supabase
+    .from('support_plans')
+    .select('id, plan_date, review_date, status, long_term_goals, short_term_goals')
+    .eq('child_id', childId)
+    .in('status', ['active', 'reviewed'])
+    .order('plan_date', { ascending: false })
+  const plans = (plansRaw ?? []) as unknown as SupportPlan[]
+
+  // 全プランのモニタリング記録を取得
+  const planIds = plans.map((p) => p.id)
+  const { data: recordsRaw } =
+    planIds.length > 0
+      ? await supabase
+          .from('monitoring_records')
+          .select('id, support_plan_id, record_date, long_term_progress, short_term_progress, issues, next_actions, overall_status, created_at')
+          .in('support_plan_id', planIds)
+          .order('record_date', { ascending: false })
+      : { data: [] }
+  const records = (recordsRaw ?? []) as unknown as MonitoringRecord[]
+
+  // プランIDでグルーピング
+  const recordsByPlan: Record<string, MonitoringRecord[]> = {}
+  records.forEach((r) => {
+    if (!recordsByPlan[r.support_plan_id]) recordsByPlan[r.support_plan_id] = []
+    recordsByPlan[r.support_plan_id].push(r)
+  })
+
+  return (
+    <div className="space-y-5 max-w-3xl">
+      <div className="flex items-center gap-3">
+        <Link
+          href={`/support-plans/${childId}`}
+          className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">モニタリング記録</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{child.name}</p>
+        </div>
+      </div>
+
+      {plans.length === 0 && (
+        <div className="text-center py-12 text-gray-400 text-sm">
+          有効な支援計画がありません。先に支援計画を作成・確定してください。
+        </div>
+      )}
+
+      {plans.map((plan) => {
+        const planRecords = recordsByPlan[plan.id] ?? []
+        return (
+          <Card key={plan.id}>
+            <CardHeader className="pb-3">
+              <div className="space-y-1">
+                <CardTitle className="text-base">
+                  {formatDate(plan.plan_date)} 作成の支援計画
+                </CardTitle>
+                {plan.review_date && (
+                  <p className="text-xs text-gray-500">
+                    見直し予定: {formatDate(plan.review_date)}
+                  </p>
+                )}
+                {plan.long_term_goals && (
+                  <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                    長期目標: {plan.long_term_goals}
+                  </p>
+                )}
+                {plan.short_term_goals && (
+                  <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                    短期目標: {plan.short_term_goals}
+                  </p>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* 記録一覧 */}
+              {planRecords.length > 0 && (
+                <div className="space-y-3">
+                  {planRecords.map((record) => {
+                    const conf = statusConfig[record.overall_status] ?? statusConfig.ongoing
+                    return (
+                      <div
+                        key={record.id}
+                        className="p-3 rounded-lg border border-gray-100 bg-white space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-800">
+                            {formatDate(record.record_date)}
+                          </span>
+                          <Badge variant={conf.variant}>{conf.label}</Badge>
+                        </div>
+                        {record.long_term_progress && (
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">長期目標の達成状況</p>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {record.long_term_progress}
+                            </p>
+                          </div>
+                        )}
+                        {record.short_term_progress && (
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">短期目標の達成状況</p>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {record.short_term_progress}
+                            </p>
+                          </div>
+                        )}
+                        {record.issues && (
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">課題</p>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {record.issues}
+                            </p>
+                          </div>
+                        )}
+                        {record.next_actions && (
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">今後の対応</p>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {record.next_actions}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* 新規追加フォーム */}
+              <MonitoringRecordForm supportPlanId={plan.id} childId={childId} />
+            </CardContent>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
