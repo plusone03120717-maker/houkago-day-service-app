@@ -49,26 +49,28 @@ export default async function SettingsStaffPage() {
         <CardContent>
           <div className="space-y-2">
             {staffList.map((s) => (
-              <div
-                key={s.id}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                    <User className="h-4 w-4 text-indigo-600" />
+              <Link key={s.id} href={`/settings/staff/${s.id}`}>
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                      <User className="h-4 w-4 text-indigo-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{s.name}</p>
+                      <p className="text-xs text-gray-400 flex items-center gap-1">
+                        <Mail className="h-3 w-3" />
+                        {s.email}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{s.name}</p>
-                    <p className="text-xs text-gray-400 flex items-center gap-1">
-                      <Mail className="h-3 w-3" />
-                      {s.email}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {roleLabel[s.role] ?? s.role}
+                    </Badge>
+                    <span className="text-xs text-indigo-500">詳細 →</span>
                   </div>
                 </div>
-                <Badge variant="secondary" className="text-xs">
-                  {roleLabel[s.role] ?? s.role}
-                </Badge>
-              </div>
+              </Link>
             ))}
             {staffList.length === 0 && (
               <p className="text-sm text-gray-400 text-center py-6">

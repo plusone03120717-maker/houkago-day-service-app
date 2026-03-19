@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Building2, Users, Bell, PlusCircle } from 'lucide-react'
+import { Building2, Users, Bell, PlusCircle, ClipboardCheck } from 'lucide-react'
 
 const sections = [
   {
@@ -20,6 +20,12 @@ const sections = [
     icon: PlusCircle,
     label: '処遇改善加算設定',
     description: 'ユニット別の加算区分・算定率を設定',
+  },
+  {
+    href: '/settings/addition-requirements',
+    icon: ClipboardCheck,
+    label: '加算要件チェック',
+    description: '人員配置基準・加算算定要件の充足状況確認',
   },
   {
     href: '/settings/notifications',

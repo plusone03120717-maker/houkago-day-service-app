@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, MessageCircle } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { ContactNoteEditor } from '@/components/contact-notes/contact-note-editor'
+import { PhotoManager } from '@/components/contact-notes/photo-manager'
 
 type ContactNote = {
   id: string
@@ -18,6 +18,14 @@ type ContactNote = {
   ai_draft: string | null
   children: { name: string; name_kana: string | null } | null
   units: { name: string } | null
+}
+
+type Photo = {
+  id: string
+  file_name: string
+  file_size: number
+  created_at: string
+  storage_path: string
 }
 
 export default async function ContactNoteDetailPage({
@@ -36,6 +44,28 @@ export default async function ContactNoteDetailPage({
   const note = noteRaw as unknown as ContactNote | null
 
   if (!note) return <div className="p-4 text-gray-500">連絡帳が見つかりません</div>
+
+  // 写真一覧取得 + 署名付きURL生成
+  const { data: photosRaw } = await supabase
+    .from('contact_note_photos')
+    .select('id, file_name, file_size, storage_path, created_at')
+    .eq('note_id', id)
+    .order('created_at', { ascending: true })
+  const photosMeta = (photosRaw ?? []) as unknown as Photo[]
+
+  const signedUrlResults = photosMeta.length > 0
+    ? await supabase.storage.from('contact-photos').createSignedUrls(
+        photosMeta.map((p) => p.storage_path), 3600
+      )
+    : { data: [] }
+
+  const photos = photosMeta.map((p, i) => ({
+    id: p.id,
+    file_name: p.file_name,
+    file_size: p.file_size,
+    created_at: p.created_at,
+    signedUrl: signedUrlResults.data?.[i]?.signedUrl ?? null,
+  }))
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -61,6 +91,9 @@ export default async function ContactNoteDetailPage({
         childId={note.child_id}
         date={note.date}
       />
+
+      {/* 写真管理 */}
+      <PhotoManager noteId={note.id} initialPhotos={photos} />
 
       {/* 保護者コメント */}
       {note.parent_comment && (
