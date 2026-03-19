@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Building2, Users, Bell } from 'lucide-react'
+import { Building2, Users, Bell, PlusCircle } from 'lucide-react'
 
 const sections = [
   {
@@ -14,6 +14,12 @@ const sections = [
     icon: Users,
     label: 'スタッフ管理',
     description: 'スタッフ招待、役割設定、勤務情報',
+  },
+  {
+    href: '/settings/additions',
+    icon: PlusCircle,
+    label: '処遇改善加算設定',
+    description: 'ユニット別の加算区分・算定率を設定',
   },
   {
     href: '/settings/notifications',
