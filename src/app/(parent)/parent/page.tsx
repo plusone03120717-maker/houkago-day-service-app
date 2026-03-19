@@ -237,20 +237,25 @@ export default async function ParentHomePage() {
       {/* お知らせ */}
       {announcements.length > 0 && (
         <section>
-          <h2 className="font-semibold text-gray-900 mb-3">お知らせ</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-gray-900">お知らせ</h2>
+            <Link href="/parent/announcements" className="text-xs text-indigo-600">すべて見る</Link>
+          </div>
           <div className="space-y-2">
             {announcements.map((ann) => (
-              <Card key={ann.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium text-gray-900">{ann.title}</p>
-                    <span className="text-xs text-gray-400 flex-shrink-0">
-                      {formatDate(ann.published_at)}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1 line-clamp-2">{ann.content}</p>
-                </CardContent>
-              </Card>
+              <Link key={ann.id} href={`/parent/announcements/${ann.id}`}>
+                <Card className="hover:shadow-sm transition-shadow">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium text-gray-900">{ann.title}</p>
+                      <span className="text-xs text-gray-400 flex-shrink-0">
+                        {formatDate(ann.published_at)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">{ann.content}</p>
+                  </CardContent>
+                </Card>
+              </Link>
             ))}
           </div>
         </section>

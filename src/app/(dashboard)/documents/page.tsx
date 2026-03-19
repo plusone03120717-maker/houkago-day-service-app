@@ -54,7 +54,7 @@ export default async function DocumentsPage({
       description: '支援計画のPDF出力（児童選択）',
       color: 'text-purple-600',
       bg: 'bg-purple-100',
-      href: `/support-plans`,
+      href: `/documents/support-plan`,
     },
     {
       icon: Receipt,

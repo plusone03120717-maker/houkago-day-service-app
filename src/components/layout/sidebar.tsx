@@ -19,6 +19,7 @@ import {
   Building2,
   CalendarDays,
   ClipboardCheck,
+  ShieldAlert,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -28,6 +29,7 @@ const staffNav = [
     items: [
       { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
       { href: '/attendance', label: '出席管理', icon: ClipboardList },
+      { href: '/attendance/monthly', label: '給付量チェック', icon: ShieldAlert },
       { href: '/records', label: '日々の記録', icon: BookOpen },
     ],
   },

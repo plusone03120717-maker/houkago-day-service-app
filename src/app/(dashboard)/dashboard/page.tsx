@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   Users, AlertTriangle, ClipboardList, MessageSquare,
-  Calendar, BookOpen, ArrowRight,
+  Calendar, BookOpen, ArrowRight, TrendingUp,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
@@ -35,6 +35,11 @@ export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const today = formatDate(new Date(), 'yyyy-MM-dd')
+  const now = new Date()
+  const thisMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const lastMonthStart = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}-01`
+  const lastMonthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
   // 並列フェッチ
   const [
@@ -44,6 +49,9 @@ export default async function DashboardPage() {
     unreadMessagesResult,
     pendingReservationsResult,
     unwrittenRecordsResult,
+    thisMonthAttendanceResult,
+    lastMonthAttendanceResult,
+    thisMonthChildrenResult,
   ] = await Promise.all([
     supabase
       .from('usage_reservations')
@@ -85,6 +93,30 @@ export default async function DashboardPage() {
       .select('id')
       .eq('date', today)
       .eq('status', 'attended'),
+
+    // 今月の延べ出席数
+    supabase
+      .from('daily_attendance')
+      .select('id', { count: 'exact', head: true })
+      .gte('date', thisMonthStart)
+      .lte('date', today)
+      .eq('status', 'attended'),
+
+    // 先月の延べ出席数
+    supabase
+      .from('daily_attendance')
+      .select('id', { count: 'exact', head: true })
+      .gte('date', lastMonthStart)
+      .lt('date', lastMonthEnd)
+      .eq('status', 'attended'),
+
+    // 今月の実利用児童数（ユニーク）
+    supabase
+      .from('daily_attendance')
+      .select('child_id')
+      .gte('date', thisMonthStart)
+      .lte('date', today)
+      .eq('status', 'attended'),
   ])
 
   const todayReservations = (todayReservationsResult.data ?? []) as unknown as Reservation[]
@@ -93,6 +125,15 @@ export default async function DashboardPage() {
   const unreadCount = unreadMessagesResult.count ?? 0
   const pendingCount = pendingReservationsResult.count ?? 0
   const todayAttendedIds = (unwrittenRecordsResult.data ?? []).map((a: { id: string }) => a.id)
+
+  // 月次統計
+  const thisMonthTotal = thisMonthAttendanceResult.count ?? 0
+  const lastMonthTotal = lastMonthAttendanceResult.count ?? 0
+  const diffFromLastMonth = thisMonthTotal - lastMonthTotal
+  const uniqueChildIds = new Set(
+    (thisMonthChildrenResult.data ?? []).map((r: { child_id: string }) => r.child_id)
+  )
+  const thisMonthUniqueChildren = uniqueChildIds.size
 
   // 記録済みの出席ID
   let writtenCount = 0
@@ -175,6 +216,41 @@ export default async function DashboardPage() {
           )
         })}
       </div>
+
+      {/* 今月の利用統計 */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-indigo-500" />
+            今月の利用状況（{now.getMonth() + 1}月）
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-2xl font-bold text-indigo-600">{thisMonthTotal}</p>
+              <p className="text-xs text-gray-500 mt-0.5">延べ出席数</p>
+              {lastMonthTotal > 0 && (
+                <p className={`text-xs mt-0.5 font-medium ${diffFromLastMonth >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {diffFromLastMonth >= 0 ? '+' : ''}{diffFromLastMonth} vs 先月
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-teal-600">{thisMonthUniqueChildren}</p>
+              <p className="text-xs text-gray-500 mt-0.5">実利用児童数</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-700">
+                {thisMonthUniqueChildren > 0
+                  ? (thisMonthTotal / thisMonthUniqueChildren).toFixed(1)
+                  : '—'}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">平均利用日数</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 記録未作成アラート */}
       {unwrittenCount > 0 && (

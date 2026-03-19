@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Home, BookOpen, MessageSquare, Calendar, Receipt, LogOut, Building2 } from 'lucide-react'
+import { Home, BookOpen, MessageSquare, Calendar, Bell, LogOut, Building2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -11,7 +11,7 @@ const navItems = [
   { href: '/parent/contact-notes', label: '連絡帳', icon: BookOpen },
   { href: '/parent/messages', label: 'メッセージ', icon: MessageSquare },
   { href: '/parent/calendar', label: '予約', icon: Calendar },
-  { href: '/parent/invoices', label: '請求書', icon: Receipt },
+  { href: '/parent/announcements', label: 'お知らせ', icon: Bell },
 ]
 
 interface Props {
