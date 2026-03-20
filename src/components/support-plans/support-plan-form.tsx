@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Sparkles, Plus, ChevronDown, ChevronUp } from 'lucide-react'
+import { Sparkles, Wand2, Plus, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface Props {
   childId: string
@@ -35,7 +35,24 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords }
   const [supportContent, setSupportContent] = useState('')
   const [monitoringNotes, setMonitoringNotes] = useState('')
   const [generating, setGenerating] = useState(false)
+  const [refining, setRefining] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  const refineField = async (fieldType: string, value: string, setter: (v: string) => void) => {
+    if (!value.trim()) return
+    setRefining(fieldType)
+    try {
+      const res = await fetch('/api/support-plans/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fieldType, content: value }),
+      })
+      const json = await res.json()
+      if (json.refined) setter(json.refined)
+    } finally {
+      setRefining(null)
+    }
+  }
 
   const handleGenerateAI = async () => {
     setGenerating(true)
@@ -129,49 +146,36 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords }
             {generating ? 'AI生成中...' : 'AIで下書きを生成'}
           </Button>
 
-          <div>
-            <label className="text-xs font-medium text-gray-700 mb-1 block">長期目標（6ヶ月〜1年）</label>
-            <textarea
-              value={longTermGoals}
-              onChange={(e) => setLongTermGoals(e.target.value)}
-              rows={3}
-              placeholder="例：自分の気持ちを言葉で伝えられるようになる"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-gray-700 mb-1 block">短期目標（3〜6ヶ月）</label>
-            <textarea
-              value={shortTermGoals}
-              onChange={(e) => setShortTermGoals(e.target.value)}
-              rows={3}
-              placeholder="例：スタッフに要求を伝えるサインを使える"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-gray-700 mb-1 block">支援内容・方法</label>
-            <textarea
-              value={supportContent}
-              onChange={(e) => setSupportContent(e.target.value)}
-              rows={4}
-              placeholder="具体的な支援方法、活動内容、配慮事項など"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-gray-700 mb-1 block">モニタリング記録</label>
-            <textarea
-              value={monitoringNotes}
-              onChange={(e) => setMonitoringNotes(e.target.value)}
-              rows={3}
-              placeholder="目標の達成状況・今後の課題など"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
-            />
-          </div>
+          {(
+            [
+              { key: 'long_term_goals', label: '長期目標（6ヶ月〜1年）', value: longTermGoals, setter: setLongTermGoals, rows: 3, placeholder: '例：自分の気持ちを言葉で伝えられるようになる' },
+              { key: 'short_term_goals', label: '短期目標（3〜6ヶ月）', value: shortTermGoals, setter: setShortTermGoals, rows: 3, placeholder: '例：スタッフに要求を伝えるサインを使える' },
+              { key: 'support_content', label: '支援内容・方法', value: supportContent, setter: setSupportContent, rows: 4, placeholder: '具体的な支援方法、活動内容、配慮事項など' },
+              { key: 'monitoring_notes', label: 'モニタリング記録', value: monitoringNotes, setter: setMonitoringNotes, rows: 3, placeholder: '目標の達成状況・今後の課題など' },
+            ] as const
+          ).map(({ key, label, value, setter, rows, placeholder }) => (
+            <div key={key}>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700">{label}</label>
+                <button
+                  type="button"
+                  onClick={() => refineField(key, value, setter as (v: string) => void)}
+                  disabled={refining === key || !value.trim()}
+                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Wand2 className="h-3 w-3" />
+                  {refining === key ? '整えています...' : '文章を整える'}
+                </button>
+              </div>
+              <textarea
+                value={value}
+                onChange={(e) => (setter as (v: string) => void)(e.target.value)}
+                rows={rows}
+                placeholder={placeholder}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              />
+            </div>
+          ))}
 
           <div className="flex gap-2 pt-2">
             <Button
