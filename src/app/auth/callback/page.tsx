@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect } from 'react'
+import { Suspense, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-export default function AuthCallbackPage() {
+function CallbackInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -25,7 +25,7 @@ export default function AuthCallbackPage() {
       return
     }
 
-    // --- ハッシュフロー: #access_token= がある場合（パスワードリセット等）---
+    // --- ハッシュフロー: #access_token= がある場合（implicit flow）---
     const hash = window.location.hash.substring(1)
     const hashParams = new URLSearchParams(hash)
     const accessToken = hashParams.get('access_token')
@@ -47,11 +47,18 @@ export default function AuthCallbackPage() {
     })
   }, [])
 
+  return null
+}
+
+export default function AuthCallbackPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center space-y-3">
         <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
         <p className="text-sm text-gray-500">認証処理中...</p>
+        <Suspense>
+          <CallbackInner />
+        </Suspense>
       </div>
     </div>
   )

@@ -28,7 +28,8 @@ export async function POST(request: NextRequest) {
 
   const adminClient = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { flowType: 'implicit', autoRefreshToken: false, persistSession: false } }
   )
 
   // 既存ユーザーかどうかを先に確認
