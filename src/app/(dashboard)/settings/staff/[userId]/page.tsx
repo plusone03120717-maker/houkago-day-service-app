@@ -4,6 +4,7 @@ import { ArrowLeft, User } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { StaffProfileForm } from '@/components/settings/staff-profile-form'
+import { TrainingRecordForm } from '@/components/settings/training-record-form'
 
 type StaffProfile = {
   id: string
@@ -11,6 +12,17 @@ type StaffProfile = {
   qualification: string | null
   hire_date: string | null
   facility_id: string
+}
+
+type TrainingRecord = {
+  id: string
+  training_name: string
+  training_type: string
+  organizer: string | null
+  completed_date: string
+  certificate_number: string | null
+  hours: number | null
+  notes: string | null
 }
 
 type UnitAssignment = {
@@ -78,6 +90,16 @@ export default async function StaffProfilePage({
     facilityId = (facilityRaw as { id: string } | null)?.id ?? ''
   }
 
+  // 研修記録
+  const { data: trainingRaw } = profile
+    ? await supabase
+        .from('staff_training_records')
+        .select('id, training_name, training_type, organizer, completed_date, certificate_number, hours, notes')
+        .eq('staff_profile_id', profile.id)
+        .order('completed_date', { ascending: false })
+    : { data: [] }
+  const trainingRecords = (trainingRaw ?? []) as unknown as TrainingRecord[]
+
   return (
     <div className="space-y-5 max-w-2xl">
       <div className="flex items-center gap-3">
@@ -119,6 +141,25 @@ export default async function StaffProfilePage({
             units={units}
             facilityId={facilityId}
           />
+        </CardContent>
+      </Card>
+
+      {/* 研修記録 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">研修記録</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {profile ? (
+            <TrainingRecordForm
+              staffProfileId={profile.id}
+              records={trainingRecords}
+            />
+          ) : (
+            <p className="text-sm text-gray-400 text-center py-4">
+              勤務情報を登録してから研修記録を追加できます
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

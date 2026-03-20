@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Building2, Users, Bell, PlusCircle, ClipboardCheck } from 'lucide-react'
+import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays } from 'lucide-react'
 
 const sections = [
   {
@@ -26,6 +26,12 @@ const sections = [
     icon: ClipboardCheck,
     label: '加算要件チェック',
     description: '人員配置基準・加算算定要件の充足状況確認',
+  },
+  {
+    href: '/settings/calendar',
+    icon: CalendarDays,
+    label: '施設カレンダー管理',
+    description: '休業日・行事・研修日の登録・保護者予約の停止',
   },
   {
     href: '/settings/notifications',

@@ -4,8 +4,9 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, AlertTriangle, FileText, Edit } from 'lucide-react'
+import { ChevronLeft, AlertTriangle, FileText, Edit, Pill, ClipboardList, Phone } from 'lucide-react'
 import { formatDate, getAge } from '@/lib/utils'
+import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 
 type Cert = {
   id: string
@@ -49,6 +50,18 @@ type AttendanceRecord = {
   units: { name: string } | null
 }
 
+type EmergencyContact = {
+  id: string
+  name: string
+  relationship: string
+  phone_primary: string
+  phone_secondary: string | null
+  is_primary_guardian: boolean
+  can_pickup: boolean
+  notes: string | null
+  sort_order: number
+}
+
 export default async function ChildDetailPage({
   params,
 }: {
@@ -84,6 +97,13 @@ export default async function ChildDetailPage({
     .limit(10)
   const recentAttendances = (recentAttendancesRaw ?? []) as unknown as AttendanceRecord[]
 
+  const { data: emergencyContactsRaw } = await supabase
+    .from('emergency_contacts')
+    .select('id, name, relationship, phone_primary, phone_secondary, is_primary_guardian, can_pickup, notes, sort_order')
+    .eq('child_id', id)
+    .order('sort_order')
+  const emergencyContacts = (emergencyContactsRaw ?? []) as unknown as EmergencyContact[]
+
   return (
     <div className="space-y-5 max-w-4xl">
       <div className="flex items-center gap-3">
@@ -94,6 +114,18 @@ export default async function ChildDetailPage({
           <h1 className="text-2xl font-bold text-gray-900">{child.name}</h1>
           <p className="text-sm text-gray-500">{child.name_kana}</p>
         </div>
+        <Link href={`/children/${id}/assessments`}>
+          <Button variant="outline" size="sm">
+            <ClipboardList className="h-4 w-4" />
+            アセスメント
+          </Button>
+        </Link>
+        <Link href={`/children/${id}/medications`}>
+          <Button variant="outline" size="sm">
+            <Pill className="h-4 w-4" />
+            服薬管理
+          </Button>
+        </Link>
         <Link href={`/children/${id}/edit`}>
           <Button variant="outline" size="sm">
             <Edit className="h-4 w-4" />
@@ -214,6 +246,18 @@ export default async function ChildDetailPage({
                 })}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="md:col-span-2">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Phone className="h-4 w-4 text-red-500" />
+              緊急連絡先
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EmergencyContactList childId={id} contacts={emergencyContacts} />
           </CardContent>
         </Card>
 

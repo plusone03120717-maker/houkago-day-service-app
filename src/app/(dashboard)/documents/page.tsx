@@ -1,14 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { FileText, Calendar, ClipboardList, Receipt, BookOpen } from 'lucide-react'
+import { FileText, Calendar, ClipboardList, Receipt, BookOpen, BarChart3, Wallet, ScrollText } from 'lucide-react'
 
 type Unit = { id: string; name: string }
 
 const now = new Date()
 const currentYear = now.getFullYear()
 const currentMonth = now.getMonth() + 1
-const yearMonth = `${currentYear}${String(currentMonth).padStart(2, '0')}`
 
 export default async function DocumentsPage({
   searchParams,
@@ -71,6 +70,30 @@ export default async function DocumentsPage({
       color: 'text-emerald-600',
       bg: 'bg-emerald-100',
       href: `/documents/daily-report?year=${year}&month=${month}`,
+    },
+    {
+      icon: BarChart3,
+      label: '月次運営実績報告書',
+      description: '月間利用実績・スタッフ勤務状況の集計報告',
+      color: 'text-rose-600',
+      bg: 'bg-rose-100',
+      href: `/documents/monthly-report?year=${year}&month=${month}`,
+    },
+    {
+      icon: Wallet,
+      label: '利用者負担額一覧表',
+      description: '月次の利用者負担額・実費一覧（法定帳票）',
+      color: 'text-sky-600',
+      bg: 'bg-sky-100',
+      href: `/documents/copayment-list?year=${year}&month=${month}`,
+    },
+    {
+      icon: ScrollText,
+      label: '代理受領通知書',
+      description: '保護者宛て給付費代理受領のお知らせ（児童別）',
+      color: 'text-violet-600',
+      bg: 'bg-violet-100',
+      href: `/documents/proxy-notice?year=${year}&month=${month}`,
     },
   ]
 

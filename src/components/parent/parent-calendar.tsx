@@ -17,6 +17,12 @@ type Reservation = {
   date: string
   status: string
 }
+type FacilityEvent = {
+  event_date: string
+  event_type: string
+  title: string
+  affects_reservation: boolean
+}
 
 interface Props {
   year: number
@@ -25,6 +31,7 @@ interface Props {
   units: Unit[]
   reservations: Reservation[]
   usageCountMap: Record<string, Record<string, number>>
+  facilityEvents?: FacilityEvent[]
   userId: string
 }
 
@@ -50,6 +57,7 @@ export function ParentCalendar({
   units,
   reservations,
   usageCountMap,
+  facilityEvents = [],
   userId,
 }: Props) {
   const router = useRouter()
@@ -83,10 +91,20 @@ export function ParentCalendar({
     reservationMap[r.date].push(r)
   })
 
+  // 施設イベントマップ
+  const eventMap = new Map<string, FacilityEvent[]>()
+  facilityEvents.forEach((e) => {
+    const arr = eventMap.get(e.event_date) ?? []
+    arr.push(e)
+    eventMap.set(e.event_date, arr)
+  })
+
   const today = formatDate(new Date(), 'yyyy-MM-dd')
 
   const handleDayClick = (date: string) => {
-    if (date < today) return // 過去は選択不可
+    if (date < today) return
+    const dayEvents = eventMap.get(date) ?? []
+    if (dayEvents.some((e) => e.affects_reservation)) return // 予約停止日は選択不可
     setSelectedDate(date === selectedDate ? null : date)
   }
 
@@ -121,6 +139,7 @@ export function ParentCalendar({
   }
 
   const selectedDateReservations = selectedDate ? (reservationMap[selectedDate] ?? []) : []
+  const selectedDateEvents = selectedDate ? (eventMap.get(selectedDate) ?? []) : []
   const selectedUnit_ = units.find((u) => u.id === selectedUnit)
   const usageOnDate = selectedDate ? (usageCountMap[selectedDate]?.[selectedUnit] ?? 0) : 0
   const isFull = selectedUnit_ ? usageOnDate >= selectedUnit_.capacity : false
@@ -203,14 +222,18 @@ export function ParentCalendar({
             const isSelected = date === selectedDate
             const dayReservations = reservationMap[date] ?? []
             const dayOfWeek = new Date(date).getDay()
+            const dayEvents = eventMap.get(date) ?? []
+            const isClosed = dayEvents.some((e) => e.affects_reservation)
+            const isDisabled = isPast || isClosed
 
             return (
               <button
                 key={date}
                 onClick={() => handleDayClick(date)}
-                disabled={isPast}
+                disabled={isDisabled}
                 className={cn(
                   'h-14 border-b border-r border-gray-50 p-1 text-left transition-colors',
+                  isClosed ? 'bg-red-50 cursor-not-allowed' :
                   isPast ? 'bg-gray-50 cursor-not-allowed' : 'hover:bg-indigo-50',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400',
                 )}
@@ -219,21 +242,28 @@ export function ParentCalendar({
                   className={cn(
                     'text-xs font-medium mb-0.5 w-6 h-6 flex items-center justify-center rounded-full',
                     isToday && 'bg-indigo-600 text-white',
-                    !isToday && dayOfWeek === 0 && 'text-red-500',
-                    !isToday && dayOfWeek === 6 && 'text-blue-500',
-                    !isToday && dayOfWeek > 0 && dayOfWeek < 6 && (isPast ? 'text-gray-300' : 'text-gray-700'),
+                    !isToday && isClosed && 'text-red-400',
+                    !isToday && !isClosed && dayOfWeek === 0 && 'text-red-500',
+                    !isToday && !isClosed && dayOfWeek === 6 && 'text-blue-500',
+                    !isToday && !isClosed && dayOfWeek > 0 && dayOfWeek < 6 && (isPast ? 'text-gray-300' : 'text-gray-700'),
                   )}
                 >
                   {new Date(date).getDate()}
                 </div>
-                <div className="flex flex-wrap gap-0.5">
-                  {dayReservations.slice(0, 2).map((r) => (
-                    <div
-                      key={r.id}
-                      className={cn('w-1.5 h-1.5 rounded-full', STATUS_COLORS[r.status] ?? 'bg-gray-300')}
-                    />
-                  ))}
-                </div>
+                {isClosed ? (
+                  <p className="text-xs text-red-400 leading-none truncate">
+                    {dayEvents[0]?.title ?? '休業'}
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-0.5">
+                    {dayReservations.slice(0, 2).map((r) => (
+                      <div
+                        key={r.id}
+                        className={cn('w-1.5 h-1.5 rounded-full', STATUS_COLORS[r.status] ?? 'bg-gray-300')}
+                      />
+                    ))}
+                  </div>
+                )}
               </button>
             )
           })}
@@ -254,6 +284,20 @@ export function ParentCalendar({
       {selectedDate && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
           <h2 className="font-semibold text-gray-900">{formatDate(selectedDate, 'MM月dd日')}</h2>
+
+          {/* 施設イベント */}
+          {selectedDateEvents.length > 0 && (
+            <div className="space-y-1">
+              {selectedDateEvents.map((e, i) => (
+                <div key={i} className="flex items-center gap-2 px-3 py-2 bg-red-50 rounded-lg">
+                  <span className="text-xs font-medium text-red-600">{e.title}</span>
+                  {e.affects_reservation && (
+                    <span className="text-xs text-red-400">（予約停止中）</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* 既存の予約 */}
           {selectedDateReservations.length > 0 ? (

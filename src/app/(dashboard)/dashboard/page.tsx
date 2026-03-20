@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   Users, AlertTriangle, ClipboardList, MessageSquare,
-  Calendar, BookOpen, ArrowRight, TrendingUp,
+  Calendar, BookOpen, ArrowRight, TrendingUp, Pill, TriangleAlert,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
@@ -52,6 +52,9 @@ export default async function DashboardPage() {
     thisMonthAttendanceResult,
     lastMonthAttendanceResult,
     thisMonthChildrenResult,
+    openIncidentsResult,
+    todayMedLogsResult,
+    activeMedsCountResult,
   ] = await Promise.all([
     supabase
       .from('usage_reservations')
@@ -117,6 +120,25 @@ export default async function DashboardPage() {
       .gte('date', thisMonthStart)
       .lte('date', today)
       .eq('status', 'attended'),
+
+    // 未対応インシデント数
+    supabase
+      .from('incident_reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'open'),
+
+    // 本日の与薬ログ数
+    supabase
+      .from('medication_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('log_date', today)
+      .eq('status', 'given'),
+
+    // 本日出席予定の有効薬数（给药对象数）
+    supabase
+      .from('child_medications')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_active', true),
   ])
 
   const todayReservations = (todayReservationsResult.data ?? []) as unknown as Reservation[]
@@ -145,6 +167,11 @@ export default async function DashboardPage() {
     writtenCount = count ?? 0
   }
   const unwrittenCount = todayAttendedIds.length - writtenCount
+
+  const openIncidentCount = openIncidentsResult.count ?? 0
+  const todayGivenCount = todayMedLogsResult.count ?? 0
+  const activeMedsTotal = activeMedsCountResult.count ?? 0
+  const medPendingCount = Math.max(0, activeMedsTotal - todayGivenCount)
 
   const summaryCards = [
     {
@@ -252,23 +279,62 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* 記録未作成アラート */}
-      {unwrittenCount > 0 && (
-        <Link href={`/records?date=${today}`}>
-          <Card className="border-orange-200 bg-orange-50 hover:bg-orange-100 transition-colors cursor-pointer">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <BookOpen className="h-5 w-5 text-orange-600" />
-                <div>
-                  <p className="font-medium text-orange-800">本日の記録が未作成です</p>
-                  <p className="text-sm text-orange-600">出席{todayAttendedIds.length}名中、{unwrittenCount}名の記録が未作成</p>
+      {/* アラートバナー群 */}
+      <div className="space-y-2">
+        {/* 記録未作成アラート */}
+        {unwrittenCount > 0 && (
+          <Link href={`/records?date=${today}`}>
+            <Card className="border-orange-200 bg-orange-50 hover:bg-orange-100 transition-colors cursor-pointer">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <BookOpen className="h-5 w-5 text-orange-600" />
+                  <div>
+                    <p className="font-medium text-orange-800">本日の記録が未作成です</p>
+                    <p className="text-sm text-orange-600">出席{todayAttendedIds.length}名中、{unwrittenCount}名の記録が未作成</p>
+                  </div>
                 </div>
-              </div>
-              <ArrowRight className="h-4 w-4 text-orange-500" />
-            </CardContent>
-          </Card>
-        </Link>
-      )}
+                <ArrowRight className="h-4 w-4 text-orange-500" />
+              </CardContent>
+            </Card>
+          </Link>
+        )}
+
+        {/* 服薬未実施アラート */}
+        {medPendingCount > 0 && (
+          <Link href="/children">
+            <Card className="border-violet-200 bg-violet-50 hover:bg-violet-100 transition-colors cursor-pointer">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Pill className="h-5 w-5 text-violet-600" />
+                  <div>
+                    <p className="font-medium text-violet-800">与薬が未実施の薬があります</p>
+                    <p className="text-sm text-violet-600">本日の与薬依頼 {activeMedsTotal}件中、{medPendingCount}件が未実施</p>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-violet-500" />
+              </CardContent>
+            </Card>
+          </Link>
+        )}
+
+        {/* 未対応インシデントアラート */}
+        {openIncidentCount > 0 && (
+          <Link href="/incidents">
+            <Card className="border-red-200 bg-red-50 hover:bg-red-100 transition-colors cursor-pointer">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <TriangleAlert className="h-5 w-5 text-red-600" />
+                  <div>
+                    <p className="font-medium text-red-800">未対応のヒヤリハットがあります</p>
+                    <p className="text-sm text-red-600">{openIncidentCount}件のインシデントが未対応です</p>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-red-500" />
+              </CardContent>
+            </Card>
+          </Link>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 本日の利用予定 */}

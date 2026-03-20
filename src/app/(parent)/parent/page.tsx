@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Bell, BookOpen, Car, Calendar, ChevronRight } from 'lucide-react'
+import { BookOpen, Calendar, ChevronRight, ClipboardList, MessageSquare, Receipt } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 type Child = {
@@ -137,10 +137,32 @@ export default async function ParentHomePage() {
             </div>
           </div>
         </Link>
+        <Link href="/parent/attendance">
+          <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
+            <div className="p-2 bg-indigo-100 rounded-lg">
+              <ClipboardList className="h-5 w-5 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">出席確認</p>
+              <p className="text-xs text-gray-400">出席記録・給付日数</p>
+            </div>
+          </div>
+        </Link>
+        <Link href="/parent/calendar">
+          <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
+            <div className="p-2 bg-teal-100 rounded-lg">
+              <Calendar className="h-5 w-5 text-teal-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">利用予約</p>
+              <p className="text-xs text-gray-400">申し込み・確認</p>
+            </div>
+          </div>
+        </Link>
         <Link href="/parent/messages">
           <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow relative">
             <div className="p-2 bg-purple-100 rounded-lg">
-              <Bell className="h-5 w-5 text-purple-600" />
+              <MessageSquare className="h-5 w-5 text-purple-600" />
             </div>
             <div>
               <p className="text-sm font-medium text-gray-900">メッセージ</p>
@@ -153,21 +175,10 @@ export default async function ParentHomePage() {
             )}
           </div>
         </Link>
-        <Link href="/parent/calendar">
-          <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
-            <div className="p-2 bg-indigo-100 rounded-lg">
-              <Calendar className="h-5 w-5 text-indigo-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">利用予約</p>
-              <p className="text-xs text-gray-400">申し込み・確認</p>
-            </div>
-          </div>
-        </Link>
         <Link href="/parent/invoices">
           <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
             <div className="p-2 bg-orange-100 rounded-lg">
-              <Car className="h-5 w-5 text-orange-600" />
+              <Receipt className="h-5 w-5 text-orange-600" />
             </div>
             <div>
               <p className="text-sm font-medium text-gray-900">請求書</p>

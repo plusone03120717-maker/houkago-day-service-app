@@ -20,6 +20,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   ShieldAlert,
+  TriangleAlert,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -30,6 +31,7 @@ const staffNav = [
       { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
       { href: '/attendance', label: '出席管理', icon: ClipboardList },
       { href: '/attendance/monthly', label: '給付量チェック', icon: ShieldAlert },
+      { href: '/incidents', label: 'ヒヤリハット', icon: TriangleAlert },
       { href: '/records', label: '日々の記録', icon: BookOpen },
     ],
   },

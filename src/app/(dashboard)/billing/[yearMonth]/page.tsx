@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft, AlertCircle } from 'lucide-react'
 import { BillingExportButton } from '@/components/billing/billing-export-button'
 import { AiCheckButton } from '@/components/billing/ai-check-button'
+import { ActualCostForm } from '@/components/billing/actual-cost-form'
 
 type BillingDetail = {
   id: string
@@ -27,6 +28,16 @@ type BillingMonthly = {
   status: string
   billing_details: BillingDetail[]
   units: { name: string; service_type: string; facilities: { name: string; facility_number: string } | null } | null
+}
+
+type ActualCost = {
+  id: string
+  child_id: string
+  date: string
+  item_name: string
+  amount: number
+  billing_monthly_id: string | null
+  children: { name: string } | null
 }
 
 const statusLabel: Record<string, string> = {
@@ -74,6 +85,16 @@ export default async function BillingDetailPage({
   const { data: billingRaw } = await query
   const billings = (billingRaw ?? []) as unknown as BillingMonthly[]
 
+  const billingIds = billings.map((b) => b.id)
+  const { data: actualCostsRaw } = billingIds.length > 0
+    ? await supabase
+        .from('billing_actual_costs')
+        .select('id, child_id, date, item_name, amount, billing_monthly_id, children(name)')
+        .in('billing_monthly_id', billingIds)
+        .order('date')
+    : { data: [] }
+  const actualCosts = (actualCostsRaw ?? []) as unknown as ActualCost[]
+
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
@@ -92,6 +113,12 @@ export default async function BillingDetailPage({
         const totalBilled = details.reduce((s, d) => s + d.billed_amount, 0)
         const totalCopay = details.reduce((s, d) => s + d.copay_amount, 0)
         const errorDetails = details.filter((d) => Array.isArray(d.errors) && d.errors.length > 0)
+
+        const billCosts = actualCosts.filter((c) => c.billing_monthly_id === billing.id)
+        const childOptions = details.map((d) => ({
+          child_id: d.child_id,
+          name: d.children?.name ?? '—',
+        }))
 
         return (
           <Card key={billing.id}>
@@ -195,6 +222,15 @@ export default async function BillingDetailPage({
 
               {/* AIチェック */}
               <AiCheckButton billingMonthlyId={billing.id} />
+
+              {/* 実費管理 */}
+              <ActualCostForm
+                billingMonthlyId={billing.id}
+                unitId={billing.unit_id}
+                yearMonth={yearMonth}
+                children={childOptions}
+                costs={billCosts}
+              />
 
               {/* CSV出力 */}
               <div className="flex gap-2 flex-wrap pt-2 border-t border-gray-100">

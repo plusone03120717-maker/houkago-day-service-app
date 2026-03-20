@@ -10,6 +10,12 @@ type Reservation = {
   date: string
   status: string
 }
+export type FacilityEvent = {
+  event_date: string
+  event_type: string
+  title: string
+  affects_reservation: boolean
+}
 
 export default async function ParentCalendarPage({
   searchParams,
@@ -84,6 +90,15 @@ export default async function ParentCalendarPage({
     usageCountMap[row.date][row.unit_id] = (usageCountMap[row.date][row.unit_id] ?? 0) + 1
   })
 
+  // 施設カレンダー（休業日・行事）
+  const { data: facilityEventsRaw } = await supabase
+    .from('facility_events')
+    .select('event_date, event_type, title, affects_reservation')
+    .gte('event_date', startDate)
+    .lte('event_date', endDate)
+    .order('event_date')
+  const facilityEvents = (facilityEventsRaw ?? []) as FacilityEvent[]
+
   return (
     <ParentCalendar
       year={year}
@@ -92,6 +107,7 @@ export default async function ParentCalendarPage({
       units={units}
       reservations={reservations}
       usageCountMap={usageCountMap}
+      facilityEvents={facilityEvents}
       userId={user.id}
     />
   )
