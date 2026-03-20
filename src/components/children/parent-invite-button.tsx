@@ -13,27 +13,30 @@ export function ParentInviteButton({ childId, childName }: Props) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   const handleSubmit = async () => {
-    if (!name.trim() || !email.trim()) return
+    if (!name.trim() || !email.trim() || !password.trim()) return
+    if (password.length < 8) {
+      setResult({ ok: false, message: 'パスワードは8文字以上で入力してください' })
+      return
+    }
     setLoading(true)
     setResult(null)
     try {
       const res = await fetch('/api/parents/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), name: name.trim(), childId }),
+        body: JSON.stringify({ email: email.trim(), name: name.trim(), childId, password }),
       })
       const json = await res.json() as { success?: boolean; resent?: boolean; error?: string }
       if (res.ok && json.success) {
-        const msg = json.resent
-          ? `${email} に再招待メールを送信しました`
-          : `${email} に招待メールを送信しました`
-        setResult({ ok: true, message: msg })
+        setResult({ ok: true, message: `${email} のアカウントを作成しました。ログイン情報を保護者に伝えてください。` })
         setName('')
         setEmail('')
+        setPassword('')
       } else {
         setResult({ ok: false, message: json.error ?? '招待に失敗しました' })
       }
@@ -91,6 +94,19 @@ export function ParentInviteButton({ childId, childName }: Props) {
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">
+                  初期パスワード <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="8文字以上"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">保護者に口頭・書面で伝えてください</p>
+              </div>
             </div>
 
             {result && (
@@ -110,7 +126,7 @@ export function ParentInviteButton({ childId, childName }: Props) {
               <Button
                 size="sm"
                 className="flex-1"
-                disabled={loading || !name.trim() || !email.trim()}
+                disabled={loading || !name.trim() || !email.trim() || !password.trim()}
                 onClick={handleSubmit}
               >
                 {loading ? '送信中...' : '招待メールを送信'}

@@ -23,56 +23,46 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'email, name, childId は必須です' }, { status: 400 })
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-  const redirectTo = `${appUrl}/auth/callback?next=/set-password`
+  const { password } = body as { email: string; name: string; childId: string; password?: string }
+  if (!password || password.length < 8) {
+    return NextResponse.json({ error: 'パスワードは8文字以上で入力してください' }, { status: 400 })
+  }
 
   const adminClient = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { flowType: 'implicit', autoRefreshToken: false, persistSession: false } }
+    { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // 既存ユーザーかどうかを先に確認
+  // 既存ユーザー確認
   const { data: existingInTable } = await adminClient
     .from('users')
     .select('id')
     .eq('email', email)
     .maybeSingle()
 
+  let userId: string
+
   if (existingInTable) {
-    // 既存ユーザー → parent_children を更新してパスワードリセットメールで再招待
-    await adminClient.from('users').upsert({ id: existingInTable.id, name, email, role: 'parent' })
-    await adminClient.from('parent_children').upsert({ user_id: existingInTable.id, child_id: childId })
-
-    const { error: resetError } = await adminClient.auth.resetPasswordForEmail(email, { redirectTo })
-    if (resetError) {
-      return NextResponse.json({ error: 'メールの再送に失敗しました: ' + resetError.message }, { status: 500 })
-    }
-    return NextResponse.json({ success: true, resent: true })
-  }
-
-  // 新規ユーザー → 招待メール送信
-  const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(
-    email,
-    { data: { name, role: 'parent' }, redirectTo }
-  )
-
-  if (inviteError) {
-    return NextResponse.json({ error: inviteError.message }, { status: 500 })
-  }
-
-  if (inviteData?.user) {
-    await adminClient.from('users').upsert({
-      id: inviteData.user.id,
-      name,
+    // 既存ユーザー → パスワードを更新
+    userId = existingInTable.id
+    const { error } = await adminClient.auth.admin.updateUserById(userId, { password })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    await adminClient.from('users').upsert({ id: userId, name, email, role: 'parent' })
+  } else {
+    // 新規ユーザー → 直接作成
+    const { data, error } = await adminClient.auth.admin.createUser({
       email,
-      role: 'parent',
+      password,
+      email_confirm: true,
+      user_metadata: { name, role: 'parent' },
     })
-    await adminClient.from('parent_children').upsert({
-      user_id: inviteData.user.id,
-      child_id: childId,
-    })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    userId = data.user.id
+    await adminClient.from('users').upsert({ id: userId, name, email, role: 'parent' })
   }
+
+  await adminClient.from('parent_children').upsert({ user_id: userId, child_id: childId })
 
   return NextResponse.json({ success: true })
 }
