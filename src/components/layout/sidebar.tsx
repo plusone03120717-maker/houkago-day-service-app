@@ -21,6 +21,7 @@ import {
   ClipboardCheck,
   ShieldAlert,
   TriangleAlert,
+  BarChart2,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -41,6 +42,7 @@ const staffNav = [
       { href: '/support-plans', label: '個別支援計画', icon: ClipboardCheck },
       { href: '/transport', label: '送迎管理', icon: Car },
       { href: '/shifts', label: 'シフト管理', icon: CalendarDays },
+      { href: '/shifts/summary', label: '勤務時間集計', icon: BarChart2 },
       { href: '/billing', label: '国保連請求', icon: CreditCard },
     ],
   },

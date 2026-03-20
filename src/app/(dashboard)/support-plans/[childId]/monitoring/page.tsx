@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, TrendingUp } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { MonitoringRecordForm } from '@/components/support-plans/monitoring-record-form'
 
@@ -93,6 +93,55 @@ export default async function MonitoringPage({
           <p className="text-sm text-gray-500 mt-0.5">{child.name}</p>
         </div>
       </div>
+
+      {/* 進捗タイムライン */}
+      {records.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-indigo-500" />
+              進捗タイムライン
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-1.5 overflow-x-auto pb-2">
+              {[...records].reverse().map((rec, idx) => {
+                const cfg = statusConfig[rec.overall_status] ?? statusConfig.ongoing
+                const dotColors: Record<string, string> = {
+                  ongoing:      'bg-blue-400',
+                  achieved:     'bg-green-400',
+                  revised:      'bg-yellow-400',
+                  needs_review: 'bg-red-400',
+                }
+                return (
+                  <div key={rec.id} className="flex flex-col items-center gap-1 flex-shrink-0 min-w-[48px]">
+                    <span className="text-xs text-gray-400 writing-mode-vertical" style={{ fontSize: '10px' }}>
+                      {rec.record_date.slice(5).replace('-', '/')}
+                    </span>
+                    <div className={`w-4 h-4 rounded-full ${dotColors[rec.overall_status] ?? 'bg-gray-300'} flex-shrink-0`} title={cfg.label} />
+                    {idx < records.length - 1 && (
+                      <div className="w-full h-px bg-gray-200 absolute" />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            {/* 凡例 */}
+            <div className="flex gap-4 mt-2 flex-wrap">
+              {Object.entries(statusConfig).map(([key, cfg]) => (
+                <div key={key} className="flex items-center gap-1.5">
+                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                    key === 'ongoing' ? 'bg-blue-400' :
+                    key === 'achieved' ? 'bg-green-400' :
+                    key === 'revised' ? 'bg-yellow-400' : 'bg-red-400'
+                  }`} />
+                  <span className="text-xs text-gray-500">{cfg.label}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {plans.length === 0 && (
         <div className="text-center py-12 text-gray-400 text-sm">
