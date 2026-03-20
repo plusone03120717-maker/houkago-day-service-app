@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays } from 'lucide-react'
+import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car } from 'lucide-react'
 
 const sections = [
   {
@@ -38,6 +38,12 @@ const sections = [
     icon: Bell,
     label: '通知設定',
     description: '保護者への通知タイミング設定',
+  },
+  {
+    href: '/settings/vehicles',
+    icon: Car,
+    label: '車両管理',
+    description: '送迎車両の登録・定員・ドライバー設定',
   },
 ]
 
