@@ -15,7 +15,7 @@ export default function LoginPage() {
   const supabase = createClient()
   const [mode, setMode] = useState<Mode>('staff')
   const [email, setEmail] = useState('')
-  const [loginCode, setLoginCode] = useState('')
+  const [childName, setChildName] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -27,16 +27,27 @@ export default function LoginPage() {
 
     let loginEmail = email
 
-    // 保護者モード：ログインコードからメールアドレスを組み立て
+    // 保護者モード：児童名から保護者のメールを検索
     if (mode === 'parent') {
-      loginEmail = `${loginCode.trim().toUpperCase()}@parent.local`
+      const res = await fetch('/api/auth/parent-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ childName: childName.trim() }),
+      })
+      const json = await res.json() as { email?: string; error?: string }
+      if (!res.ok || !json.email) {
+        setError(json.error ?? 'お子さんの名前が見つかりません')
+        setLoading(false)
+        return
+      }
+      loginEmail = json.email
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password })
 
     if (error) {
       setError(mode === 'parent'
-        ? 'ログインコードまたはパスワードが正しくありません'
+        ? 'パスワードが正しくありません'
         : 'メールアドレスまたはパスワードが正しくありません'
       )
       setLoading(false)
@@ -91,7 +102,7 @@ export default function LoginPage() {
             <CardDescription>
               {mode === 'staff'
                 ? 'メールアドレスとパスワードを入力してください'
-                : '施設から受け取ったログインコードとパスワードを入力してください'}
+                : 'お子さんの名前とパスワードを入力してください'}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -113,18 +124,17 @@ export default function LoginPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <label htmlFor="loginCode" className="text-sm font-medium text-gray-700">
-                    ログインコード
+                  <label htmlFor="childName" className="text-sm font-medium text-gray-700">
+                    お子さんの名前
                   </label>
                   <Input
-                    id="loginCode"
+                    id="childName"
                     type="text"
-                    value={loginCode}
-                    onChange={(e) => setLoginCode(e.target.value)}
-                    placeholder="例：ABC123"
+                    value={childName}
+                    onChange={(e) => setChildName(e.target.value)}
+                    placeholder="例：田中 あきと"
                     required
                     autoComplete="off"
-                    className="tracking-widest text-center text-lg font-bold uppercase"
                   />
                 </div>
               )}
