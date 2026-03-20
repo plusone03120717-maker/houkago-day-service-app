@@ -153,7 +153,7 @@ export function DailyRecordForm({
         }),
       })
       const data = await res.json()
-      if (data.content) setContactNoteContent(data.content)
+      if (data.draft) setContactNoteContent(data.draft)
     } finally {
       setAiLoading(false)
     }
