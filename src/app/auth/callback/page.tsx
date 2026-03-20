@@ -7,55 +7,44 @@ import { createClient } from '@/lib/supabase/client'
 export default function AuthCallbackPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const supabase = createClient()
 
   useEffect(() => {
+    const supabase = createClient()
     const next = searchParams.get('next') ?? '/dashboard'
 
-    const redirect = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.replace('/login?error=auth_error')
-        return
-      }
-      router.replace(next)
-    }
+    const doRedirect = () => router.replace(next)
+    const doError = () => router.replace('/login?error=auth_error')
 
-    // PKCE フロー: URL に ?code= がある場合
+    // --- PKCE フロー: URLに ?code= がある場合 ---
     const code = searchParams.get('code')
     if (code) {
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (error) {
-          router.replace('/login?error=auth_error')
-        } else {
-          redirect()
-        }
+        if (error) doError()
+        else doRedirect()
       })
       return
     }
 
-    // ハッシュフロー: #access_token= がある場合（パスワードリセットなど）
-    // Supabase クライアントが自動的にセッションを検出するのを待つ
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') {
-        if (session) {
-          subscription.unsubscribe()
-          redirect()
-        }
-      }
-    })
+    // --- ハッシュフロー: #access_token= がある場合（パスワードリセット等）---
+    const hash = window.location.hash.substring(1)
+    const hashParams = new URLSearchParams(hash)
+    const accessToken = hashParams.get('access_token')
+    const refreshToken = hashParams.get('refresh_token')
 
-    // 既にセッションがある場合はそのままリダイレクト
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        subscription.unsubscribe()
-        redirect()
-      }
-    })
-
-    return () => {
-      subscription.unsubscribe()
+    if (accessToken && refreshToken) {
+      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+        .then(({ error }) => {
+          if (error) doError()
+          else doRedirect()
+        })
+      return
     }
+
+    // --- フォールバック: 既存セッションを確認 ---
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) doRedirect()
+      else doError()
+    })
   }, [])
 
   return (
