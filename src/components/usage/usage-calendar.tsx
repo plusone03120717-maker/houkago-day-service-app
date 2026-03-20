@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, Check, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, X, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Unit = { id: string; name: string; capacity: number }
@@ -17,6 +17,7 @@ type Reservation = {
   status: string
   children: { name: string } | null
 }
+type ChildOption = { id: string; name: string }
 
 interface Props {
   year: number
@@ -24,6 +25,7 @@ interface Props {
   units: Unit[]
   selectedUnitId: string
   reservations: Reservation[]
+  childOptions: ChildOption[]
   summary: { confirmed: number; reserved: number; cancelled: number }
 }
 
@@ -51,13 +53,18 @@ const STATUS_VARIANTS: Record<string, 'success' | 'default' | 'secondary' | 'war
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
 export function UsageCalendar({
-  year, month, units, selectedUnitId, reservations, summary,
+  year, month, units, selectedUnitId, reservations, childOptions, summary,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [addChildId, setAddChildId] = useState('')
+  const [addStatus, setAddStatus] = useState<'confirmed' | 'reserved'>('confirmed')
+  const [adding, setAdding] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
 
   const changeMonth = (delta: number) => {
     const d = new Date(year, month - 1 + delta, 1)
@@ -106,6 +113,26 @@ export function UsageCalendar({
       .eq('id', reservationId)
     setUpdating(false)
     startTransition(() => router.refresh())
+  }
+
+  const handleAddReservation = async () => {
+    if (!addChildId || !selectedDate) return
+    setAdding(true)
+    setAddError(null)
+    const { error } = await supabase.from('usage_reservations').insert({
+      child_id: addChildId,
+      unit_id: selectedUnitId,
+      date: selectedDate,
+      status: addStatus,
+    })
+    setAdding(false)
+    if (error) {
+      setAddError(error.code === '23505' ? 'この児童はすでにこの日に予約があります' : error.message)
+    } else {
+      setShowAddForm(false)
+      setAddChildId('')
+      startTransition(() => router.refresh())
+    }
   }
 
   return (
@@ -279,6 +306,68 @@ export function UsageCalendar({
               <Check className="h-4 w-4" />
               承認待ちをすべて確定
             </Button>
+          )}
+
+          {/* 施設側から予約追加 */}
+          {!showAddForm ? (
+            <Button
+              onClick={() => { setShowAddForm(true); setAddError(null) }}
+              size="sm"
+              variant="outline"
+              className="border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+            >
+              <Plus className="h-4 w-4" />
+              予約を追加
+            </Button>
+          ) : (
+            <div className="border border-indigo-200 rounded-lg p-3 space-y-3 bg-indigo-50">
+              <p className="text-xs font-semibold text-indigo-700">施設側で予約を追加</p>
+              <div>
+                <label className="text-xs text-gray-600 block mb-1">児童</label>
+                <select
+                  value={addChildId}
+                  onChange={(e) => setAddChildId(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                >
+                  <option value="">選択してください</option>
+                  {childOptions.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-600 block mb-1">ステータス</label>
+                <select
+                  value={addStatus}
+                  onChange={(e) => setAddStatus(e.target.value as 'confirmed' | 'reserved')}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                >
+                  <option value="confirmed">確定</option>
+                  <option value="reserved">予約（承認待ち）</option>
+                </select>
+              </div>
+              {addError && (
+                <p className="text-xs text-red-600">{addError}</p>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => { setShowAddForm(false); setAddError(null) }}
+                >
+                  キャンセル
+                </Button>
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  disabled={adding || !addChildId}
+                  onClick={handleAddReservation}
+                >
+                  {adding ? '追加中...' : '追加'}
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       )}

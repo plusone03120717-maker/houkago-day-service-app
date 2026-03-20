@@ -1,16 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { UsageCalendar } from '@/components/usage/usage-calendar'
 
-type Unit = {
-  id: string
-  name: string
-  capacity: number
-}
-
+type Unit = { id: string; name: string; capacity: number }
 type Reservation = {
   id: string
   child_id: string
@@ -19,6 +10,7 @@ type Reservation = {
   status: string
   children: { name: string } | null
 }
+type ChildOption = { id: string; name: string }
 
 export default async function UsagePage({
   searchParams,
@@ -43,18 +35,30 @@ export default async function UsagePage({
 
   const selectedUnitId = params.unit ?? units[0]?.id ?? ''
 
-  const { data: reservationsRaw } = selectedUnitId
-    ? await supabase
-        .from('usage_reservations')
-        .select('id, child_id, unit_id, date, status, children(name)')
-        .eq('unit_id', selectedUnitId)
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .order('date')
-    : { data: [] }
-  const reservations = (reservationsRaw ?? []) as unknown as Reservation[]
+  const [reservationsResult, childrenResult] = await Promise.all([
+    selectedUnitId
+      ? supabase
+          .from('usage_reservations')
+          .select('id, child_id, unit_id, date, status, children(name)')
+          .eq('unit_id', selectedUnitId)
+          .gte('date', startDate)
+          .lte('date', endDate)
+          .order('date')
+      : Promise.resolve({ data: [] }),
 
-  // 統計
+    selectedUnitId
+      ? supabase
+          .from('children_units')
+          .select('children(id, name)')
+          .eq('unit_id', selectedUnitId)
+      : Promise.resolve({ data: [] }),
+  ])
+
+  const reservations = (reservationsResult.data ?? []) as unknown as Reservation[]
+  const childOptions = ((childrenResult.data ?? []) as unknown as { children: ChildOption | null }[])
+    .map((cu) => cu.children)
+    .filter((c): c is ChildOption => c !== null)
+
   const confirmedCount = reservations.filter((r) => r.status === 'confirmed').length
   const reservedCount = reservations.filter((r) => r.status === 'reserved').length
   const cancelledCount = reservations.filter((r) => r.status === 'cancelled').length
@@ -72,6 +76,7 @@ export default async function UsagePage({
         units={units}
         selectedUnitId={selectedUnitId}
         reservations={reservations}
+        childOptions={childOptions}
         summary={{ confirmed: confirmedCount, reserved: reservedCount, cancelled: cancelledCount }}
       />
     </div>
