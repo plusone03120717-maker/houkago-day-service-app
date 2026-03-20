@@ -21,7 +21,7 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
       setError('メールアドレスまたはパスワードが正しくありません')
@@ -29,7 +29,15 @@ export default function LoginPage() {
       return
     }
 
-    router.push('/dashboard')
+    // ロールに応じてリダイレクト先を分岐
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', data.user.id)
+      .single()
+
+    const dest = userData?.role === 'parent' ? '/parent' : '/dashboard'
+    router.push(dest)
     router.refresh()
   }
 

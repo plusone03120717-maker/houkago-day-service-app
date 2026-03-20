@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { ChevronLeft, AlertTriangle, FileText, Edit, Pill, ClipboardList, Phone } from 'lucide-react'
 import { formatDate, getAge } from '@/lib/utils'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
+import { ParentInviteButton } from '@/components/children/parent-invite-button'
 
 type Cert = {
   id: string
@@ -132,6 +133,7 @@ export default async function ChildDetailPage({
             編集
           </Button>
         </Link>
+        <ParentInviteButton childId={id} childName={child.name} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
