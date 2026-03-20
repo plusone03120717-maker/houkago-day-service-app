@@ -12,6 +12,7 @@ const withPWA = require('next-pwa')({
 })
 
 const nextConfig: NextConfig = {
+  turbopack: {},
   // Supabase の画像を最適化できるように許可
   images: {
     remotePatterns: [

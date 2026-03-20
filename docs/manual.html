@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>放デイ管理アプリ 操作マニュアル</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif;
+      font-size: 11pt;
+      line-height: 1.7;
+      color: #1a1a1a;
+      background: #fff;
+    }
+    .cover {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+      page-break-after: always;
+    }
+    .cover-icon {
+      width: 100px;
+      height: 100px;
+      background: #4f46e5;
+      border-radius: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+      font-size: 48px;
+    }
+    .cover h1 { font-size: 32pt; color: #1e1b4b; margin-bottom: 8px; }
+    .cover h2 { font-size: 14pt; color: #6366f1; font-weight: normal; margin-bottom: 40px; }
+    .cover .meta { color: #6b7280; font-size: 10pt; margin-top: 60px; }
+    .toc {
+      padding: 40px 60px;
+      page-break-after: always;
+    }
+    .toc h2 { font-size: 18pt; color: #1e1b4b; border-bottom: 3px solid #4f46e5; padding-bottom: 8px; margin-bottom: 24px; }
+    .toc ol { padding-left: 20px; }
+    .toc li { margin: 6px 0; font-size: 11pt; }
+    .toc li a { color: #4f46e5; text-decoration: none; }
+    .toc .sub { padding-left: 20px; margin-top: 4px; }
+    .toc .sub li { font-size: 10pt; color: #374151; }
+    .chapter {
+      padding: 40px 60px;
+      page-break-before: always;
+    }
+    .chapter-header {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: white;
+      padding: 20px 30px;
+      border-radius: 12px;
+      margin-bottom: 30px;
+    }
+    .chapter-header .num { font-size: 10pt; opacity: 0.8; margin-bottom: 4px; }
+    .chapter-header h2 { font-size: 20pt; }
+    .chapter-header p { font-size: 10pt; opacity: 0.9; margin-top: 4px; }
+    h3 {
+      font-size: 13pt;
+      color: #1e1b4b;
+      border-left: 4px solid #4f46e5;
+      padding-left: 12px;
+      margin: 24px 0 12px;
+    }
+    h4 {
+      font-size: 11pt;
+      color: #374151;
+      margin: 16px 0 8px;
+      font-weight: bold;
+    }
+    p { margin-bottom: 10px; }
+    .step {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin: 12px 0;
+    }
+    .step-num {
+      display: inline-block;
+      background: #4f46e5;
+      color: white;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 24px;
+      font-size: 10pt;
+      font-weight: bold;
+      margin-right: 8px;
+    }
+    .tip {
+      background: #eff6ff;
+      border-left: 4px solid #3b82f6;
+      padding: 12px 16px;
+      border-radius: 0 8px 8px 0;
+      margin: 12px 0;
+      font-size: 10pt;
+    }
+    .tip strong { color: #1d4ed8; }
+    .warn {
+      background: #fefce8;
+      border-left: 4px solid #eab308;
+      padding: 12px 16px;
+      border-radius: 0 8px 8px 0;
+      margin: 12px 0;
+      font-size: 10pt;
+    }
+    .warn strong { color: #854d0e; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 10pt;
+    }
+    th {
+      background: #4f46e5;
+      color: white;
+      padding: 10px 12px;
+      text-align: left;
+    }
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    tr:nth-child(even) td { background: #f9fafb; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 9pt;
+      font-weight: bold;
+    }
+    .badge-admin { background: #fce7f3; color: #9d174d; }
+    .badge-staff { background: #e0f2fe; color: #0369a1; }
+    .badge-parent { background: #f0fdf4; color: #166534; }
+    .nav-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 16px 0;
+    }
+    .nav-item {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+    .nav-item .nav-label { font-weight: bold; color: #1e1b4b; font-size: 10pt; }
+    .nav-item .nav-desc { color: #6b7280; font-size: 9pt; margin-top: 2px; }
+    @media print {
+      .chapter { page-break-inside: avoid; }
+      h3 { page-break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- 表紙 -->
+<div class="cover">
+  <div class="cover-icon">🏢</div>
+  <h1>放デイ管理アプリ</h1>
+  <h2>操作マニュアル</h2>
+  <p style="color:#374151; font-size:12pt;">放課後等デイサービス・児童発達支援 業務管理システム</p>
+  <div class="meta">
+    <p>バージョン 1.0　／　2026年3月</p>
+    <p>プラスワン</p>
+  </div>
+</div>
+
+<!-- 目次 -->
+<div class="toc">
+  <h2>目次</h2>
+  <ol>
+    <li><a href="#ch1">はじめに・ログイン</a></li>
+    <li><a href="#ch2">ダッシュボード</a></li>
+    <li><a href="#ch3">出席管理</a>
+      <ul class="sub">
+        <li>出席登録・欠席登録</li>
+        <li>月次給付量チェック</li>
+      </ul>
+    </li>
+    <li><a href="#ch4">日々の記録</a></li>
+    <li><a href="#ch5">児童管理</a>
+      <ul class="sub">
+        <li>児童情報・受給者証</li>
+        <li>服薬管理・アセスメント</li>
+        <li>緊急連絡先</li>
+      </ul>
+    </li>
+    <li><a href="#ch6">個別支援計画</a>
+      <ul class="sub">
+        <li>支援計画の作成・確定</li>
+        <li>モニタリング記録</li>
+      </ul>
+    </li>
+    <li><a href="#ch7">ヒヤリハット報告</a></li>
+    <li><a href="#ch8">連絡帳</a></li>
+    <li><a href="#ch9">お知らせ</a></li>
+    <li><a href="#ch10">送迎管理</a></li>
+    <li><a href="#ch11">シフト管理・勤務時間集計</a></li>
+    <li><a href="#ch12">国保連請求</a></li>
+    <li><a href="#ch13">帳票出力</a></li>
+    <li><a href="#ch14">設定</a>
+      <ul class="sub">
+        <li>施設・ユニット設定</li>
+        <li>スタッフ管理</li>
+        <li>施設カレンダー</li>
+      </ul>
+    </li>
+    <li><a href="#ch15">保護者ポータル</a></li>
+  </ol>
+</div>
+
+<!-- Chapter 1 -->
+<div class="chapter" id="ch1">
+  <div class="chapter-header">
+    <div class="num">Chapter 1</div>
+    <h2>はじめに・ログイン</h2>
+    <p>アプリの概要とログイン方法</p>
+  </div>
+
+  <h3>アプリの概要</h3>
+  <p>放デイ管理アプリは、放課後等デイサービス・児童発達支援事業所向けの業務管理システムです。出席管理から国保連請求まで、日常業務をワンストップで管理できます。</p>
+
+  <h3>ユーザー種別</h3>
+  <table>
+    <tr><th>種別</th><th>説明</th><th>主な機能</th></tr>
+    <tr>
+      <td><span class="badge badge-admin">管理者</span></td>
+      <td>施設管理者・管理職</td>
+      <td>全機能へのアクセス、設定変更、スタッフ管理</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-staff">スタッフ</span></td>
+      <td>支援員・指導員</td>
+      <td>出席・記録・支援計画・帳票出力</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-parent">保護者</span></td>
+      <td>児童の保護者</td>
+      <td>連絡帳閲覧・出席確認・お知らせ確認</td>
+    </tr>
+  </table>
+
+  <h3>ログイン手順</h3>
+  <div class="step"><span class="step-num">1</span> ブラウザで <strong>http://localhost:3000</strong> にアクセス</div>
+  <div class="step"><span class="step-num">2</span> メールアドレスとパスワードを入力</div>
+  <div class="step"><span class="step-num">3</span> 「ログイン」ボタンをクリック</div>
+  <div class="step"><span class="step-num">4</span> ダッシュボードが表示されればログイン成功</div>
+
+  <div class="tip"><strong>💡 ヒント：</strong> スタッフ・管理者はダッシュボード画面へ、保護者は保護者ポータル画面へ自動的に遷移します。</div>
+</div>
+
+<!-- Chapter 2 -->
+<div class="chapter" id="ch2">
+  <div class="chapter-header">
+    <div class="num">Chapter 2</div>
+    <h2>ダッシュボード</h2>
+    <p>今日の状況を一覧で確認</p>
+  </div>
+
+  <h3>ダッシュボードの見方</h3>
+  <p>ログイン後に表示されるトップ画面です。今日の業務に必要な情報がまとめて確認できます。</p>
+
+  <table>
+    <tr><th>カード</th><th>内容</th></tr>
+    <tr><td>今日の出席</td><td>本日の出席・欠席・キャンセル待ち人数</td></tr>
+    <tr><td>受給者証アラート</td><td>有効期限が近い・切れた受給者証</td></tr>
+    <tr><td>支援計画アラート</td><td>見直し期限が近い支援計画</td></tr>
+    <tr><td>未読連絡帳</td><td>保護者からの返信がある連絡帳</td></tr>
+    <tr><td>今月の請求状況</td><td>請求の進捗（下書き・確認済・提出済）</td></tr>
+  </table>
+
+  <div class="tip"><strong>💡 ヒント：</strong> アラートカードの件数をクリックすると、該当の管理画面に直接移動できます。</div>
+</div>
+
+<!-- Chapter 3 -->
+<div class="chapter" id="ch3">
+  <div class="chapter-header">
+    <div class="num">Chapter 3</div>
+    <h2>出席管理</h2>
+    <p>日次出席の登録と月次給付量の確認</p>
+  </div>
+
+  <h3>出席登録</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「出席管理」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 対象日付を選択（デフォルトは今日）</div>
+  <div class="step"><span class="step-num">3</span> 児童の行をクリックして出席状況を変更</div>
+
+  <h4>出席ステータス</h4>
+  <table>
+    <tr><th>ステータス</th><th>説明</th></tr>
+    <tr><td>出席</td><td>当日利用あり（給付費請求対象）</td></tr>
+    <tr><td>欠席</td><td>事前連絡あり欠席</td></tr>
+    <tr><td>キャンセル待ち</td><td>利用希望だが定員超過</td></tr>
+  </table>
+
+  <h4>記録できる情報</h4>
+  <ul style="padding-left:20px; margin:8px 0;">
+    <li>入室・退室時刻</li>
+    <li>体温</li>
+    <li>健康状態</li>
+    <li>送迎区分（両方・送りのみ・迎えのみ・なし）</li>
+  </ul>
+
+  <h3>月次給付量チェック</h3>
+  <p>サイドバーの「給付量チェック」から、今月の利用日数が受給者証の支給量を超えていないか確認できます。</p>
+
+  <div class="warn"><strong>⚠️ 注意：</strong> 上限日数を超えると給付費が請求できません。月初から残日数を確認しながら運営してください。</div>
+</div>
+
+<!-- Chapter 4 -->
+<div class="chapter" id="ch4">
+  <div class="chapter-header">
+    <div class="num">Chapter 4</div>
+    <h2>日々の記録</h2>
+    <p>児童ごとの活動記録・特記事項</p>
+  </div>
+
+  <h3>記録の作成</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「日々の記録」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 対象日付・児童を選択</div>
+  <div class="step"><span class="step-num">3</span> 記録内容を入力して保存</div>
+
+  <h4>記録の種別</h4>
+  <table>
+    <tr><th>種別</th><th>説明</th></tr>
+    <tr><td>日常記録</td><td>その日の活動・様子の記録</td></tr>
+    <tr><td>特記事項</td><td>重要事項・保護者への報告事項</td></tr>
+  </table>
+
+  <div class="tip"><strong>💡 ヒント：</strong> 特記事項フラグを立てると、ダッシュボードで目立つ形で表示されます。</div>
+</div>
+
+<!-- Chapter 5 -->
+<div class="chapter" id="ch5">
+  <div class="chapter-header">
+    <div class="num">Chapter 5</div>
+    <h2>児童管理</h2>
+    <p>児童情報・受給者証・服薬・アセスメント・緊急連絡先</p>
+  </div>
+
+  <h3>児童一覧・新規登録</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「児童管理」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 「新規登録」ボタンから児童情報を入力</div>
+  <div class="step"><span class="step-num">3</span> 保存後、詳細画面から各種情報を追加</div>
+
+  <h4>登録できる情報</h4>
+  <table>
+    <tr><th>項目</th><th>内容</th></tr>
+    <tr><td>基本情報</td><td>氏名・生年月日・性別・住所・学校・学年</td></tr>
+    <tr><td>医療情報</td><td>障害種別・診断名・アレルギー・医療的ケア</td></tr>
+    <tr><td>受給者証</td><td>証番号・有効期限・支給量・負担上限額</td></tr>
+    <tr><td>緊急連絡先</td><td>保護者・緊急連絡先の電話番号・続柄</td></tr>
+    <tr><td>服薬情報</td><td>薬名・用量・服薬タイミング・注意事項</td></tr>
+    <tr><td>アセスメント</td><td>支援ニーズ・本人の強み・家族の希望</td></tr>
+  </table>
+
+  <h3>服薬管理</h3>
+  <p>児童詳細画面の「服薬管理」タブから、定常薬の登録と日次の服薬ログを記録できます。</p>
+  <table>
+    <tr><th>服薬ステータス</th><th>説明</th></tr>
+    <tr><td>服薬済</td><td>正常に服薬完了</td></tr>
+    <tr><td>拒否</td><td>児童が服薬を拒否</td></tr>
+    <tr><td>スキップ</td><td>当日は服薬不要と判断</td></tr>
+    <tr><td>不要</td><td>該当日は持参なし</td></tr>
+  </table>
+
+  <h3>アセスメント</h3>
+  <p>支援計画作成前に実施するニーズアセスメントを記録します。本人の様子・強み・課題・家族の希望などを入力します。</p>
+
+  <h3>緊急連絡先</h3>
+  <p>複数の緊急連絡先を登録でき、送迎可否・主保護者フラグを設定できます。電話番号はタップで直接発信できます。</p>
+</div>
+
+<!-- Chapter 6 -->
+<div class="chapter" id="ch6">
+  <div class="chapter-header">
+    <div class="num">Chapter 6</div>
+    <h2>個別支援計画</h2>
+    <p>支援計画の作成・確定・モニタリング</p>
+  </div>
+
+  <h3>支援計画の作成</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「個別支援計画」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 対象児童を選択</div>
+  <div class="step"><span class="step-num">3</span> 「新規作成」から計画を入力</div>
+  <div class="step"><span class="step-num">4</span> 「AI下書き生成」でアセスメント情報を元に下書きを自動生成</div>
+  <div class="step"><span class="step-num">5</span> 内容を確認・修正して「確定」</div>
+
+  <h4>支援計画のステータス</h4>
+  <table>
+    <tr><th>ステータス</th><th>説明</th></tr>
+    <tr><td>下書き</td><td>作成中・未確定</td></tr>
+    <tr><td>有効</td><td>確定済み・現在適用中</td></tr>
+    <tr><td>見直し済み</td><td>モニタリング後に見直し完了</td></tr>
+    <tr><td>アーカイブ</td><td>過去の計画</td></tr>
+  </table>
+
+  <h3>モニタリング記録</h3>
+  <p>確定した支援計画に対してモニタリング記録を追加できます。長期・短期目標の達成状況、課題、今後の対応を記録します。</p>
+
+  <h4>モニタリングステータス</h4>
+  <table>
+    <tr><th>ステータス</th><th>説明</th></tr>
+    <tr><td>継続中</td><td>目標に向けて支援継続</td></tr>
+    <tr><td>目標達成</td><td>設定した目標を達成</td></tr>
+    <tr><td>計画見直し</td><td>計画の修正が必要</td></tr>
+    <tr><td>要検討</td><td>支援方針の再検討が必要</td></tr>
+  </table>
+
+  <div class="tip"><strong>💡 ヒント：</strong> 一覧画面でモニタリング進捗サマリー（継続中・達成・見直し・要検討の人数グラフ）が確認できます。</div>
+</div>
+
+<!-- Chapter 7 -->
+<div class="chapter" id="ch7">
+  <div class="chapter-header">
+    <div class="num">Chapter 7</div>
+    <h2>ヒヤリハット報告</h2>
+    <p>事故・ヒヤリハットの記録と管理</p>
+  </div>
+
+  <h3>報告書の作成</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「ヒヤリハット」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 「新規報告」をクリック</div>
+  <div class="step"><span class="step-num">3</span> 発生日時・場所・種別・重篤度・状況を入力</div>
+  <div class="step"><span class="step-num">4</span> 対応内容・原因・再発防止策を記入して保存</div>
+
+  <h4>インシデント種別</h4>
+  <table>
+    <tr><th>種別</th><th>説明</th></tr>
+    <tr><td>負傷</td><td>児童・スタッフの怪我</td></tr>
+    <tr><td>ヒヤリハット</td><td>事故には至らなかったが危険だった事例</td></tr>
+    <tr><td>無断外出</td><td>児童の無断外出・行方不明</td></tr>
+    <tr><td>服薬事故</td><td>服薬に関するミス</td></tr>
+    <tr><td>器物破損</td><td>施設・物品の破損</td></tr>
+    <tr><td>その他</td><td>上記以外</td></tr>
+  </table>
+
+  <div class="warn"><strong>⚠️ 注意：</strong> 重大事故（入院・死亡等）は市区町村への報告義務があります。「市区町村報告済み」チェックボックスで管理してください。</div>
+</div>
+
+<!-- Chapter 8 -->
+<div class="chapter" id="ch8">
+  <div class="chapter-header">
+    <div class="num">Chapter 8</div>
+    <h2>連絡帳</h2>
+    <p>保護者との日次コミュニケーション</p>
+  </div>
+
+  <h3>連絡帳の作成・送信</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「連絡帳」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 対象児童・日付を選択</div>
+  <div class="step"><span class="step-num">3</span> 本文を入力（AI下書き生成も可能）</div>
+  <div class="step"><span class="step-num">4</span> 写真を添付して「公開」をクリック</div>
+
+  <div class="tip"><strong>💡 AI下書き：</strong> その日の出席記録・活動記録を元に、AIが連絡帳の文章を自動生成します。生成後に内容を確認・修正してから公開してください。</div>
+
+  <h4>写真添付</h4>
+  <p>活動の様子の写真をJPEG/PNG/GIF/WEBP形式（最大5MB）で添付できます。保護者はアプリから閲覧できます。</p>
+</div>
+
+<!-- Chapter 9 -->
+<div class="chapter" id="ch9">
+  <div class="chapter-header">
+    <div class="num">Chapter 9</div>
+    <h2>お知らせ</h2>
+    <p>保護者・スタッフへの一斉通知</p>
+  </div>
+
+  <h3>お知らせの作成</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「お知らせ」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 「新規作成」をクリック</div>
+  <div class="step"><span class="step-num">3</span> タイトル・本文・配信対象（全員・ユニット別）を設定</div>
+  <div class="step"><span class="step-num">4</span> 「公開」をクリックして送信</div>
+
+  <div class="tip"><strong>💡 ヒント：</strong> 公開日時を設定することで、予約投稿が可能です。</div>
+</div>
+
+<!-- Chapter 10 -->
+<div class="chapter" id="ch10">
+  <div class="chapter-header">
+    <div class="num">Chapter 10</div>
+    <h2>送迎管理</h2>
+    <p>送迎ルートと車両管理</p>
+  </div>
+
+  <h3>送迎スケジュールの確認</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「送迎管理」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 対象日・方向（送り/迎え）を選択</div>
+  <div class="step"><span class="step-num">3</span> 児童の乗降ステータスを更新</div>
+
+  <h4>送迎ステータス</h4>
+  <table>
+    <tr><th>ステータス</th><th>説明</th></tr>
+    <tr><td>予定</td><td>送迎予定（未実施）</td></tr>
+    <tr><td>乗車済み</td><td>車両に乗車確認</td></tr>
+    <tr><td>到着済み</td><td>目的地に到着・引き渡し完了</td></tr>
+  </table>
+</div>
+
+<!-- Chapter 11 -->
+<div class="chapter" id="ch11">
+  <div class="chapter-header">
+    <div class="num">Chapter 11</div>
+    <h2>シフト管理・勤務時間集計</h2>
+    <p>スタッフのシフト計画と実績管理</p>
+  </div>
+
+  <h3>シフト管理</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「シフト管理」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 月カレンダーでスタッフごとのシフトを入力</div>
+  <div class="step"><span class="step-num">3</span> シフト種別（全日/午前/午後/休み）を設定</div>
+
+  <h4>シフト種別</h4>
+  <table>
+    <tr><th>種別</th><th>説明</th></tr>
+    <tr><td>全日</td><td>終日勤務</td></tr>
+    <tr><td>午前</td><td>午前のみ勤務</td></tr>
+    <tr><td>午後</td><td>午後のみ勤務</td></tr>
+    <tr><td>休み</td><td>公休・有給</td></tr>
+    <tr><td>祝休</td><td>祝日休み</td></tr>
+  </table>
+
+  <h3>勤務時間集計</h3>
+  <p>サイドバーの「勤務時間集計」から、月次のスタッフ別勤務時間・残業時間を確認できます。</p>
+  <ul style="padding-left:20px; margin:8px 0;">
+    <li>計画勤務時間 vs 実績勤務時間の比較</li>
+    <li>残業時間のアラート表示</li>
+    <li>出勤確認済み日数の管理</li>
+    <li>スタッフ別日次詳細の確認</li>
+  </ul>
+
+  <h3>出勤実績の入力</h3>
+  <p>シフト管理画面から実際の出退勤時刻（actual_start_time / actual_end_time）を入力し、「出勤確認済み」にチェックを入れると実績が確定します。</p>
+</div>
+
+<!-- Chapter 12 -->
+<div class="chapter" id="ch12">
+  <div class="chapter-header">
+    <div class="num">Chapter 12</div>
+    <h2>国保連請求</h2>
+    <p>月次請求データの作成・確認・提出</p>
+  </div>
+
+  <h3>請求フロー</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「国保連請求」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 対象月を選択（YYYYMM形式）</div>
+  <div class="step"><span class="step-num">3</span> 「請求データ生成」で出席実績から自動集計</div>
+  <div class="step"><span class="step-num">4</span> 「AIチェック」でエラーや加算漏れを確認</div>
+  <div class="step"><span class="step-num">5</span> 内容を確認して「CSVエクスポート」</div>
+  <div class="step"><span class="step-num">6</span> 国保連伝送ソフトにCSVをインポートして提出</div>
+
+  <h4>請求ステータス</h4>
+  <table>
+    <tr><th>ステータス</th><th>説明</th></tr>
+    <tr><td>下書き</td><td>データ生成済み・未確認</td></tr>
+    <tr><td>確認済み</td><td>AIチェック・内容確認完了</td></tr>
+    <tr><td>エクスポート済み</td><td>CSV出力完了</td></tr>
+    <tr><td>提出済み</td><td>国保連へ提出完了</td></tr>
+    <tr><td>確定</td><td>入金確認・完了</td></tr>
+  </table>
+
+  <h3>実費管理</h3>
+  <p>昼食代・材料費・行事参加費・交通費などの実費をユニット・児童ごとに登録できます。請求書・代理受領通知書に反映されます。</p>
+
+  <div class="warn"><strong>⚠️ 注意：</strong> 請求データは月末に締める前に必ずAIチェックを実施してください。加算要件の充足状況・書類不備を事前に確認できます。</div>
+</div>
+
+<!-- Chapter 13 -->
+<div class="chapter" id="ch13">
+  <div class="chapter-header">
+    <div class="num">Chapter 13</div>
+    <h2>帳票出力</h2>
+    <p>各種法定帳票のPDF印刷</p>
+  </div>
+
+  <h3>出力できる帳票一覧</h3>
+  <table>
+    <tr><th>帳票名</th><th>内容</th></tr>
+    <tr><td>サービス提供実績記録票</td><td>月次の利用実績・送迎記録（法定帳票）</td></tr>
+    <tr><td>シフト表</td><td>スタッフの月次シフト一覧</td></tr>
+    <tr><td>個別支援計画書</td><td>支援計画のPDF（児童別・署名欄付き）</td></tr>
+    <tr><td>請求書・領収書</td><td>保護者向け請求書・領収書</td></tr>
+    <tr><td>業務日報</td><td>日別の業務記録・安全確認・服薬記録</td></tr>
+    <tr><td>月次運営実績報告書</td><td>月間利用実績・スタッフ勤務状況の集計</td></tr>
+    <tr><td>利用者負担額一覧表</td><td>月次の利用者負担額・実費一覧（法定帳票）</td></tr>
+    <tr><td>代理受領通知書</td><td>保護者宛て給付費代理受領のお知らせ</td></tr>
+  </table>
+
+  <h3>印刷手順</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「帳票出力」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 年月を選択</div>
+  <div class="step"><span class="step-num">3</span> 出力したい帳票をクリック</div>
+  <div class="step"><span class="step-num">4</span> 「印刷」ボタンをクリック → ブラウザの印刷ダイアログ</div>
+  <div class="step"><span class="step-num">5</span> 「PDFに保存」を選択してPDF出力</div>
+
+  <div class="tip"><strong>💡 ヒント：</strong> ブラウザの印刷設定で「ヘッダーとフッター」をオフにすると、きれいに印刷できます。</div>
+</div>
+
+<!-- Chapter 14 -->
+<div class="chapter" id="ch14">
+  <div class="chapter-header">
+    <div class="num">Chapter 14</div>
+    <h2>設定</h2>
+    <p>施設情報・スタッフ・加算設定・カレンダー</p>
+  </div>
+
+  <h3>施設・組織情報の設定</h3>
+  <div class="step"><span class="step-num">1</span> サイドバーの「設定」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 「施設設定」から施設名・住所・電話番号・事業所番号を入力</div>
+  <div class="step"><span class="step-num">3</span> ユニット（グループ）の追加・編集</div>
+
+  <h3>スタッフ管理</h3>
+  <div class="step"><span class="step-num">1</span> 「設定」→「スタッフ管理」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 「スタッフ追加」からメール・名前・権限を設定</div>
+  <div class="step"><span class="step-num">3</span> スタッフ詳細から資格・雇用形態・研修記録を管理</div>
+
+  <h3>処遇改善加算設定</h3>
+  <p>「設定」→「加算設定」から、各種加算（処遇改善加算・特定処遇改善加算・ベースアップ等支援加算など）の有効/無効を設定します。請求データ生成時に自動的に反映されます。</p>
+
+  <h3>施設カレンダー</h3>
+  <p>「設定」→「施設カレンダー」から、休業日・行事日・研修日を登録します。保護者ポータルの予約画面にも反映されます。</p>
+
+  <table>
+    <tr><th>イベント種別</th><th>説明</th></tr>
+    <tr><td>休業日</td><td>臨時休業・年末年始等</td></tr>
+    <tr><td>短縮営業</td><td>開所時間が通常より短い日</td></tr>
+    <tr><td>行事</td><td>遠足・運動会・クリスマス会等</td></tr>
+    <tr><td>職員研修</td><td>研修日（開所状況に応じて設定）</td></tr>
+  </table>
+</div>
+
+<!-- Chapter 15 -->
+<div class="chapter" id="ch15">
+  <div class="chapter-header">
+    <div class="num">Chapter 15</div>
+    <h2>保護者ポータル</h2>
+    <p>保護者向け専用画面の機能</p>
+  </div>
+
+  <h3>保護者画面へのアクセス</h3>
+  <p>保護者アカウントでログインすると、専用の保護者ポータル画面が表示されます。スタッフ画面とは別のメニュー構成になっています。</p>
+
+  <h3>主な機能</h3>
+  <div class="nav-grid">
+    <div class="nav-item">
+      <div class="nav-label">🏠 ホーム</div>
+      <div class="nav-desc">お知らせ・未読連絡帳の確認</div>
+    </div>
+    <div class="nav-item">
+      <div class="nav-label">📋 連絡帳</div>
+      <div class="nav-desc">スタッフからの連絡帳閲覧・返信</div>
+    </div>
+    <div class="nav-item">
+      <div class="nav-label">📅 出席確認</div>
+      <div class="nav-desc">月次出席カレンダー・給付日数確認</div>
+    </div>
+    <div class="nav-item">
+      <div class="nav-label">📣 お知らせ</div>
+      <div class="nav-desc">施設からのお知らせ一覧</div>
+    </div>
+  </div>
+
+  <h3>保護者アカウントの作成</h3>
+  <div class="step"><span class="step-num">1</span> 管理者が「設定」→「スタッフ管理」からユーザー追加</div>
+  <div class="step"><span class="step-num">2</span> 権限を「保護者」に設定</div>
+  <div class="step"><span class="step-num">3</span> 「児童管理」→該当児童の詳細から保護者を紐づけ</div>
+  <div class="step"><span class="step-num">4</span> 保護者にメール・パスワードを連絡</div>
+
+  <div class="tip"><strong>💡 ヒント：</strong> 保護者は自分の子どもの情報のみ閲覧できます。他の児童の情報は表示されません。</div>
+</div>
+
+<!-- 末尾 -->
+<div class="chapter" style="page-break-before: always;">
+  <div class="chapter-header" style="background: linear-gradient(135deg, #064e3b, #065f46);">
+    <div class="num">付録</div>
+    <h2>よくある質問（FAQ）</h2>
+    <p>トラブルシューティング</p>
+  </div>
+
+  <h3>Q. ログインできない</h3>
+  <p>メールアドレスとパスワードを確認してください。パスワードを忘れた場合は管理者に連絡して再設定してもらいます。</p>
+
+  <h3>Q. 出席登録したのに請求データに反映されない</h3>
+  <p>受給者証が登録・有効期限内であることを確認してください。受給者証が未登録または期限切れの場合、請求対象になりません。</p>
+
+  <h3>Q. 連絡帳が保護者に届いていない</h3>
+  <p>連絡帳の「公開」ボタンを押したか確認してください。保存だけでは保護者には表示されません。</p>
+
+  <h3>Q. 帳票が正しく印刷されない</h3>
+  <p>ブラウザの印刷設定で「背景のグラフィックを印刷」をオンにしてください。またページの向き（縦/横）を帳票に合わせて設定してください。</p>
+
+  <h3>Q. 給付量チェックで上限を超えている</h3>
+  <p>今月の出席日数が受給者証の支給量を超えています。超過分の日は給付費が請求できないため、保護者・自治体と調整が必要です。</p>
+
+  <br><br>
+  <p style="text-align:center; color:#9ca3af; font-size:9pt; margin-top:40px;">
+    放デイ管理アプリ 操作マニュアル v1.0　／　プラスワン　／　2026年3月
+  </p>
+</div>
+
+</body>
+</html>

@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { BookOpen, ChevronRight, CheckCircle, Flag } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { DateNav } from '@/components/ui/date-nav'
 
 type AttendedChild = {
   id: string
@@ -81,26 +82,12 @@ export default async function RecordsPage({
 
       {/* 日付ナビ */}
       <div className="flex items-center gap-3">
-        <Link
-          href={`/records?date=${prevDate.toISOString().slice(0, 10)}`}
-          className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm"
-        >
-          ‹
-        </Link>
-        <input
-          type="date"
-          defaultValue={targetDate}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          onChange={(e) => {
-            if (e.target.value) window.location.href = `/records?date=${e.target.value}`
-          }}
+        <DateNav
+          targetDate={targetDate}
+          prevDate={prevDate.toISOString().slice(0, 10)}
+          nextDate={nextDate.toISOString().slice(0, 10)}
+          basePath="/records"
         />
-        <Link
-          href={`/records?date=${nextDate.toISOString().slice(0, 10)}`}
-          className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm"
-        >
-          ›
-        </Link>
         <span className="text-sm text-gray-500">{formatDate(targetDate, 'yyyy年MM月dd日')}</span>
         <span className="ml-auto text-sm text-gray-500">
           記録済 {writtenCount} / {totalCount} 名
