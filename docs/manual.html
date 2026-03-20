@@ -685,13 +685,22 @@
     </div>
   </div>
 
-  <h3>保護者アカウントの作成</h3>
-  <div class="step"><span class="step-num">1</span> 管理者が「設定」→「スタッフ管理」からユーザー追加</div>
-  <div class="step"><span class="step-num">2</span> 権限を「保護者」に設定</div>
-  <div class="step"><span class="step-num">3</span> 「児童管理」→該当児童の詳細から保護者を紐づけ</div>
-  <div class="step"><span class="step-num">4</span> 保護者にメール・パスワードを連絡</div>
+  <h3>保護者アカウントの招待手順</h3>
+  <div class="step"><span class="step-num">1</span> 「児童管理」→該当児童の詳細ページを開く</div>
+  <div class="step"><span class="step-num">2</span> 右上の <strong>「保護者アカウント招待」</strong> ボタンをクリック</div>
+  <div class="step"><span class="step-num">3</span> 保護者名・メールアドレスを入力して「招待メールを送信」をクリック</div>
+  <div class="step"><span class="step-num">4</span> 保護者に招待メールが届く（メール内のリンクからパスワードを設定）</div>
+  <div class="step"><span class="step-num">5</span> 保護者がログインすると自動的に保護者ポータル（<code>/parent</code>）へ遷移</div>
 
-  <div class="tip"><strong>💡 ヒント：</strong> 保護者は自分の子どもの情報のみ閲覧できます。他の児童の情報は表示されません。</div>
+  <table>
+    <thead><tr><th>ロール</th><th>ログイン後の遷移先</th></tr></thead>
+    <tbody>
+      <tr><td>管理者・スタッフ</td><td>/dashboard（スタッフ管理画面）</td></tr>
+      <tr><td>保護者</td><td>/parent（保護者ポータル）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><strong>💡 ヒント：</strong> 保護者は自分の子どもの情報のみ閲覧できます。他の児童の情報は表示されません。複数の児童がいる場合は、招待を児童ごとに繰り返してください（同じメールアドレスで複数の児童に紐づけ可能です）。</div>
 </div>
 
 <!-- 末尾 -->
