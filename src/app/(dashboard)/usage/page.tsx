@@ -46,18 +46,14 @@ export default async function UsagePage({
           .order('date')
       : Promise.resolve({ data: [] }),
 
-    selectedUnitId
-      ? supabase
-          .from('children_units')
-          .select('children(id, name)')
-          .eq('unit_id', selectedUnitId)
-      : Promise.resolve({ data: [] }),
+    supabase
+      .from('children')
+      .select('id, name')
+      .order('name'),
   ])
 
   const reservations = (reservationsResult.data ?? []) as unknown as Reservation[]
-  const childOptions = ((childrenResult.data ?? []) as unknown as { children: ChildOption | null }[])
-    .map((cu) => cu.children)
-    .filter((c): c is ChildOption => c !== null)
+  const childOptions = (childrenResult.data ?? []) as unknown as ChildOption[]
 
   const confirmedCount = reservations.filter((r) => r.status === 'confirmed').length
   const reservedCount = reservations.filter((r) => r.status === 'reserved').length
