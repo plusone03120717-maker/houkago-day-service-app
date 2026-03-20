@@ -14,6 +14,7 @@ import {
   FileText,
   BookOpen,
   Sparkles,
+  Wand2,
   Save,
   CheckCircle,
 } from 'lucide-react'
@@ -116,6 +117,7 @@ export function DailyRecordForm({
   )
   const [contactNoteContent, setContactNoteContent] = useState(initialContactNote?.content ?? '')
   const [aiLoading, setAiLoading] = useState(false)
+  const [refineLoading, setRefineLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -125,6 +127,22 @@ export function DailyRecordForm({
     )
     if (!activityLevels[programId]) {
       setActivityLevels((prev) => ({ ...prev, [programId]: 3 }))
+    }
+  }
+
+  const refineContactNote = async () => {
+    if (!contactNoteContent.trim()) return
+    setRefineLoading(true)
+    try {
+      const res = await fetch('/api/contact-notes/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: contactNoteContent }),
+      })
+      const data = await res.json()
+      if (data.refined) setContactNoteContent(data.refined)
+    } finally {
+      setRefineLoading(false)
     }
   }
 
@@ -418,16 +436,28 @@ export function DailyRecordForm({
               <FileText className="h-5 w-5 text-purple-500" />
               連絡帳
             </CardTitle>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={generateAiDraft}
-              disabled={aiLoading || !attendance}
-              className="text-purple-600 border-purple-200 hover:bg-purple-50"
-            >
-              <Sparkles className="h-4 w-4" />
-              {aiLoading ? 'AI生成中...' : 'AIで下書き生成'}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={generateAiDraft}
+                disabled={aiLoading || refineLoading || !attendance}
+                className="text-purple-600 border-purple-200 hover:bg-purple-50"
+              >
+                <Sparkles className="h-4 w-4" />
+                {aiLoading ? 'AI生成中...' : 'AIで下書き生成'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={refineContactNote}
+                disabled={refineLoading || aiLoading || !contactNoteContent.trim()}
+                className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+              >
+                <Wand2 className="h-4 w-4" />
+                {refineLoading ? '整えています...' : '文章を整える'}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
