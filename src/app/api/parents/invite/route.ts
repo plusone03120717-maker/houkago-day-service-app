@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     email,
     {
       data: { name, role: 'parent' },
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/login`,
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/auth/callback?next=/set-password`,
     }
   )
 
