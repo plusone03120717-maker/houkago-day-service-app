@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   Users, AlertTriangle, ClipboardList, MessageSquare,
-  Calendar, BookOpen, ArrowRight, TrendingUp, Pill, TriangleAlert,
+  Calendar, BookOpen, ArrowRight, TrendingUp, Pill, TriangleAlert, FileText,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
@@ -20,6 +20,13 @@ type NotableRecord = {
   content: string
   created_at: string
   daily_attendance: { date: string; children: { name: string } | null } | null
+}
+
+type UnpublishedNote = {
+  id: string
+  date: string
+  content: string
+  children: { id: string; name: string } | null
 }
 
 type Reservation = {
@@ -55,6 +62,7 @@ export default async function DashboardPage() {
     openIncidentsResult,
     todayMedLogsResult,
     activeMedsCountResult,
+    unpublishedNotesResult,
   ] = await Promise.all([
     supabase
       .from('usage_reservations')
@@ -139,6 +147,14 @@ export default async function DashboardPage() {
       .from('child_medications')
       .select('id', { count: 'exact', head: true })
       .eq('is_active', true),
+
+    // 未公開の連絡帳
+    supabase
+      .from('contact_notes')
+      .select('id, date, content, children(id, name)')
+      .is('published_at', null)
+      .order('date', { ascending: false })
+      .limit(20),
   ])
 
   const todayReservations = (todayReservationsResult.data ?? []) as unknown as Reservation[]
@@ -167,6 +183,8 @@ export default async function DashboardPage() {
     writtenCount = count ?? 0
   }
   const unwrittenCount = todayAttendedIds.length - writtenCount
+
+  const unpublishedNotes = (unpublishedNotesResult.data ?? []) as unknown as UnpublishedNote[]
 
   const openIncidentCount = openIncidentsResult.count ?? 0
   const todayGivenCount = todayMedLogsResult.count ?? 0
@@ -405,6 +423,45 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* 未公開連絡帳 */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4 text-blue-600" />
+                未公開の連絡帳
+                {unpublishedNotes.length > 0 && (
+                  <Badge variant="secondary" className="ml-1">{unpublishedNotes.length}件</Badge>
+                )}
+              </CardTitle>
+              <Link href="/records" className="text-xs text-indigo-600 hover:underline flex items-center gap-1">
+                記録一覧 <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {unpublishedNotes.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">未公開の連絡帳はありません</p>
+            ) : (
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {unpublishedNotes.map((note) => (
+                  <Link
+                    key={note.id}
+                    href={`/records/${note.children?.id}?date=${note.date}`}
+                    className="flex items-center justify-between py-2 px-1 border-b border-gray-100 last:border-0 hover:bg-gray-50 rounded transition-colors"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm font-medium text-gray-900 shrink-0">{note.children?.name}</span>
+                      <span className="text-xs text-gray-500 truncate">{note.content.slice(0, 30)}…</span>
+                    </div>
+                    <span className="text-xs text-gray-400 shrink-0 ml-2">{formatDate(note.date)}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* 特記事項 */}
         {notableRecords.length > 0 && (
