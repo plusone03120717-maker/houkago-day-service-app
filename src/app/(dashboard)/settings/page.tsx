@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car } from 'lucide-react'
+import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen } from 'lucide-react'
 
 const sections = [
   {
@@ -44,6 +44,12 @@ const sections = [
     icon: Car,
     label: '車両管理',
     description: '送迎車両の登録・定員・ドライバー設定',
+  },
+  {
+    href: '/settings/programs',
+    icon: BookOpen,
+    label: '活動プログラム管理',
+    description: '日々の記録で使用する活動プログラムの登録・管理',
   },
 ]
 
