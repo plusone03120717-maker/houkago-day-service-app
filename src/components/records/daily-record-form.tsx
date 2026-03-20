@@ -135,7 +135,23 @@ export function DailyRecordForm({
       const res = await fetch('/api/contact-notes/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ childId: child.id, date }),
+        body: JSON.stringify({
+          childId: child.id,
+          date,
+          childName: child.name,
+          dailyRecord: dailyContent,
+          notableRecord: hasNotable ? notableContent : '',
+          activities: selectedPrograms.map((pid) => ({
+            name: programs.find((p) => p.id === pid)?.name ?? '',
+            achievementLevel: activityLevels[pid] ?? 3,
+            notes: activityNotes[pid] ?? '',
+          })),
+          attendance: attendance ? {
+            checkInTime: attendance.check_in_time,
+            checkOutTime: attendance.check_out_time,
+            bodyTemperature: attendance.body_temperature,
+          } : null,
+        }),
       })
       const data = await res.json()
       if (data.draft) setContactNoteContent(data.draft)
