@@ -26,9 +26,12 @@ export function ParentInviteButton({ childId, childName }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), name: name.trim(), childId }),
       })
-      const json = await res.json() as { success?: boolean; error?: string }
+      const json = await res.json() as { success?: boolean; resent?: boolean; error?: string }
       if (res.ok && json.success) {
-        setResult({ ok: true, message: `${email} に招待メールを送信しました` })
+        const msg = json.resent
+          ? `${email} に再招待メールを送信しました`
+          : `${email} に招待メールを送信しました`
+        setResult({ ok: true, message: msg })
         setName('')
         setEmail('')
       } else {
