@@ -109,7 +109,7 @@ export function UsageCalendar({
     setUpdating(true)
     await supabase
       .from('usage_reservations')
-      .update({ status: 'cancelled' })
+      .delete()
       .eq('id', reservationId)
     setUpdating(false)
     startTransition(() => router.refresh())
