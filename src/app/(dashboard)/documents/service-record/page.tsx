@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { ArrowLeft, Printer } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { ArrowLeft } from 'lucide-react'
+import { PrintButton } from '@/components/documents/print-button'
 
 type AttendanceRow = {
   id: string
@@ -123,10 +123,7 @@ export default async function ServiceRecordPage({
             <p className="text-sm text-gray-500">{year}年{month}月 | {selectedUnit?.name}</p>
           </div>
         </div>
-        <Button onClick={() => window.print()} size="sm" variant="outline">
-          <Printer className="h-4 w-4" />
-          印刷
-        </Button>
+        <PrintButton />
       </div>
 
       {/* ユニット選択（印刷時非表示） */}

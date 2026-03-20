@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { ArrowLeft, Printer } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { ArrowLeft } from 'lucide-react'
+import { PrintButton } from '@/components/documents/print-button'
 
 type StaffUser = { id: string; name: string }
 type ShiftEntry = {
@@ -83,10 +83,7 @@ export default async function ShiftTablePage({
           </Link>
           <h1 className="text-xl font-bold text-gray-900">シフト表 — {year}年{month}月</h1>
         </div>
-        <Button onClick={() => window.print()} size="sm" variant="outline">
-          <Printer className="h-4 w-4" />
-          印刷
-        </Button>
+        <PrintButton />
       </div>
 
       <div className="bg-white border border-gray-300 rounded-lg p-6 print:border-none print:p-0">

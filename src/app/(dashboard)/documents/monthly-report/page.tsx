@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { ArrowLeft, Printer } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
+import { PrintButton } from '@/components/documents/print-button'
 import { formatDate } from '@/lib/utils'
 
 type Unit = {
@@ -169,13 +170,7 @@ export default async function MonthlyReportPage({
           ))}
         </div>
 
-        <button
-          onClick={() => window.print()}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-        >
-          <Printer className="h-4 w-4" />
-          印刷
-        </button>
+        <PrintButton />
       </div>
 
       {/* 帳票本体 */}
