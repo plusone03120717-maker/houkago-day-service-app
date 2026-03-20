@@ -93,12 +93,13 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
     const existing = attendanceMap[childId]
 
     if (existing) {
-      await supabase
+      const { error } = await supabase
         .from('daily_attendance')
         .update(updates)
         .eq('id', existing.id)
+      if (error) { alert(`更新エラー: ${error.message}`); setSaving(null); return }
     } else {
-      await supabase.from('daily_attendance').insert({
+      const { error } = await supabase.from('daily_attendance').insert({
         child_id: childId,
         unit_id: selectedUnitId,
         date,
@@ -107,6 +108,7 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
         created_by: staffId,
         ...updates,
       })
+      if (error) { alert(`登録エラー: ${error.message}`); setSaving(null); return }
     }
 
     setSaving(null)
