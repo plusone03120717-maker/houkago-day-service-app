@@ -107,11 +107,15 @@ export function UsageCalendar({
 
   const handleCancel = async (reservationId: string) => {
     setUpdating(true)
-    await supabase
+    const { error } = await supabase
       .from('usage_reservations')
       .delete()
       .eq('id', reservationId)
     setUpdating(false)
+    if (error) {
+      alert(`削除エラー: ${error.message}`)
+      return
+    }
     startTransition(() => router.refresh())
   }
 
@@ -267,16 +271,14 @@ export function UsageCalendar({
                         <Check className="h-4 w-4" />
                       </button>
                     )}
-                    {(r.status === 'reserved' || r.status === 'confirmed') && (
-                      <button
-                        onClick={() => handleCancel(r.id)}
-                        disabled={updating}
-                        className="p-1 text-red-400 hover:bg-red-50 rounded"
-                        title="キャンセル"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleCancel(r.id)}
+                      disabled={updating}
+                      className="p-1 text-red-400 hover:bg-red-50 rounded"
+                      title="削除"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
               ))}
