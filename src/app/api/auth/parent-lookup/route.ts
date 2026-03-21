@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
     .select('email')
     .in('id', userIds)
     .eq('role', 'parent')
+    .order('created_at', { ascending: true })
 
   if (!users || users.length === 0) {
     return NextResponse.json({ error: '保護者アカウントが見つかりません' }, { status: 404 })

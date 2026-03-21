@@ -42,20 +42,17 @@ export async function POST(request: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // この児童にすでに保護者アカウントが紐付いているか確認
-  const { data: existingLink } = await adminClient
+  // この児童にすでに保護者アカウントが紐付いているか確認（複数でも対応）
+  const { data: existingLinks } = await adminClient
     .from('parent_children')
     .select('user_id')
     .eq('child_id', childId)
-    .maybeSingle()
 
-  if (existingLink) {
-    // 既存アカウントのパスワードを更新
-    const { error: updateError } = await adminClient.auth.admin.updateUserById(
-      existingLink.user_id,
-      { password }
-    )
-    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
+  if (existingLinks && existingLinks.length > 0) {
+    // 既存アカウント全てのパスワードを更新
+    for (const link of existingLinks) {
+      await adminClient.auth.admin.updateUserById(link.user_id, { password })
+    }
     return NextResponse.json({ success: true })
   }
 
