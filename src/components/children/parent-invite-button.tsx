@@ -46,6 +46,14 @@ export function ParentInviteButton({ childId, childName }: Props) {
     }
   }
 
+  const handleOpen = () => {
+    setOpen(true)
+    setSuccess(false)
+    setError(null)
+    setName('')
+    setPassword('')
+  }
+
   const handleClose = () => {
     setOpen(false)
     setSuccess(false)
@@ -56,7 +64,7 @@ export function ParentInviteButton({ childId, childName }: Props) {
 
   return (
     <div>
-      <Button variant="outline" size="sm" onClick={() => { setOpen(true); setLoginCode(null); setError(null) }}>
+      <Button variant="outline" size="sm" onClick={handleOpen}>
         <UserPlus className="h-4 w-4" />
         保護者アカウント登録
       </Button>
@@ -72,23 +80,22 @@ export function ParentInviteButton({ childId, childName }: Props) {
             </div>
 
             {success ? (
-              /* 作成完了画面 */
               <div className="space-y-4">
                 <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg text-green-700 text-sm">
                   <Check className="h-4 w-4 flex-shrink-0" />
                   アカウントを作成しました
                 </div>
-                <p className="text-xs text-gray-500">
-                  保護者はログイン画面で「保護者」タブを選択し、<span className="font-medium text-gray-700">{childName}</span> の名前とパスワードでログインできます。
-                </p>
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-1">
+                  <p className="text-xs font-medium text-gray-500">保護者へのログイン案内</p>
+                  <p className="text-sm text-gray-700">お子さんの名前：<span className="font-bold">{childName}</span></p>
+                  <p className="text-xs text-gray-400 mt-1">※ パスワードは登録時に設定したものを保護者に口頭・書面で伝えてください</p>
+                </div>
                 <Button size="sm" className="w-full" onClick={handleClose}>閉じる</Button>
               </div>
             ) : (
-              /* 入力フォーム */
               <>
                 <p className="text-xs text-gray-500">
                   <span className="font-medium text-gray-700">{childName}</span> の保護者アカウントを作成します。
-                  メールアドレス不要で登録できます。
                 </p>
 
                 <div className="space-y-3">
@@ -106,16 +113,16 @@ export function ParentInviteButton({ childId, childName }: Props) {
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-700 block mb-1">
-                      初期パスワード <span className="text-red-500">*</span>
+                      パスワード <span className="text-red-500">*</span>
                     </label>
                     <input
-                      type="password"
+                      type="text"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="8文字以上"
+                      placeholder="8文字以上（保護者に伝えてください）"
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
-                    <p className="text-xs text-gray-400 mt-1">保護者に口頭・書面で伝えてください</p>
+                    <p className="text-xs text-gray-400 mt-1">保護者が覚えやすいものを設定し、口頭・書面で伝えてください</p>
                   </div>
                 </div>
 
