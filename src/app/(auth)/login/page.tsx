@@ -47,7 +47,7 @@ export default function LoginPage() {
 
     if (error) {
       setError(mode === 'parent'
-        ? 'パスワードが正しくありません'
+        ? 'パスワードが正しくありません。管理者に再設定を依頼してください'
         : 'メールアドレスまたはパスワードが正しくありません'
       )
       setLoading(false)

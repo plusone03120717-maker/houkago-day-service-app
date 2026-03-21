@@ -42,7 +42,24 @@ export async function POST(request: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // ユニークなログインコードを生成してメールアドレス代わりに使用
+  // この児童にすでに保護者アカウントが紐付いているか確認
+  const { data: existingLink } = await adminClient
+    .from('parent_children')
+    .select('user_id')
+    .eq('child_id', childId)
+    .maybeSingle()
+
+  if (existingLink) {
+    // 既存アカウントのパスワードを更新
+    const { error: updateError } = await adminClient.auth.admin.updateUserById(
+      existingLink.user_id,
+      { password }
+    )
+    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
+    return NextResponse.json({ success: true })
+  }
+
+  // 新規登録：ユニークなログインコードを生成してメールアドレス代わりに使用
   let loginCode = generateLoginCode()
   let email = `${loginCode}@parent.local`
 
@@ -73,5 +90,5 @@ export async function POST(request: NextRequest) {
   await adminClient.from('users').upsert({ id: userId, name, email, role: 'parent' })
   await adminClient.from('parent_children').upsert({ user_id: userId, child_id: childId })
 
-  return NextResponse.json({ success: true, loginCode })
+  return NextResponse.json({ success: true })
 }

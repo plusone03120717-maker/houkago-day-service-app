@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { UserPlus, X, Check, AlertTriangle, Copy } from 'lucide-react'
+import { UserPlus, X, Check, AlertTriangle } from 'lucide-react'
 
 interface Props {
   childId: string
@@ -14,9 +14,8 @@ export function ParentInviteButton({ childId, childName }: Props) {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [loginCode, setLoginCode] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
 
   const handleSubmit = async () => {
     if (!name.trim() || !password.trim()) return
@@ -32,9 +31,9 @@ export function ParentInviteButton({ childId, childName }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim(), childId, password }),
       })
-      const json = await res.json() as { success?: boolean; loginCode?: string; error?: string }
-      if (res.ok && json.success && json.loginCode) {
-        setLoginCode(json.loginCode)
+      const json = await res.json() as { success?: boolean; error?: string }
+      if (res.ok && json.success) {
+        setSuccess(true)
         setName('')
         setPassword('')
       } else {
@@ -47,16 +46,9 @@ export function ParentInviteButton({ childId, childName }: Props) {
     }
   }
 
-  const handleCopy = () => {
-    if (!loginCode) return
-    navigator.clipboard.writeText(loginCode)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
   const handleClose = () => {
     setOpen(false)
-    setLoginCode(null)
+    setSuccess(false)
     setError(null)
     setName('')
     setPassword('')
@@ -79,30 +71,16 @@ export function ParentInviteButton({ childId, childName }: Props) {
               </button>
             </div>
 
-            {loginCode ? (
+            {success ? (
               /* 作成完了画面 */
               <div className="space-y-4">
                 <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg text-green-700 text-sm">
                   <Check className="h-4 w-4 flex-shrink-0" />
                   アカウントを作成しました
                 </div>
-                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
-                  <p className="text-xs font-medium text-gray-500">保護者に伝えるログイン情報</p>
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-xs text-gray-500">ログインコード</p>
-                      <p className="text-lg font-bold text-indigo-600 tracking-widest">{loginCode}</p>
-                    </div>
-                    <button
-                      onClick={handleCopy}
-                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-100"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                      {copied ? 'コピー済' : 'コピー'}
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-400">※ このコードとパスワードを保護者に口頭・書面で伝えてください</p>
-                </div>
+                <p className="text-xs text-gray-500">
+                  保護者はログイン画面で「保護者」タブを選択し、<span className="font-medium text-gray-700">{childName}</span> の名前とパスワードでログインできます。
+                </p>
                 <Button size="sm" className="w-full" onClick={handleClose}>閉じる</Button>
               </div>
             ) : (
