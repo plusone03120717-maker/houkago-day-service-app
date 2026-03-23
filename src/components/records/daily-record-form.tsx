@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   ChevronLeft,
   Star,
@@ -17,7 +16,9 @@ import {
   Wand2,
   Save,
   CheckCircle,
+  Pill,
 } from 'lucide-react'
+import { MedicationLogForm } from '@/components/medications/medication-log-form'
 import { formatDate } from '@/lib/utils'
 
 type Child = {
@@ -68,6 +69,22 @@ type ContactNote = {
   published_at: string | null
 }
 
+type Medication = {
+  id: string
+  medication_name: string
+  dosage: string
+  timing: string
+}
+
+type MedicationLog = {
+  id: string
+  medication_id: string
+  log_date: string
+  status: string
+  notes: string | null
+  administered_at: string | null
+}
+
 interface Props {
   child: Child
   attendance: Attendance | null
@@ -78,9 +95,10 @@ interface Props {
   programs: Program[]
   contactNote: ContactNote | null
   staffId: string
+  medications: Medication[]
+  medicationLogs: MedicationLog[]
 }
 
-const ACHIEVEMENT_LABELS = ['', '△', '◯', '◎', '★', '☆']
 
 export function DailyRecordForm({
   child,
@@ -92,6 +110,8 @@ export function DailyRecordForm({
   programs,
   contactNote: initialContactNote,
   staffId,
+  medications,
+  medicationLogs,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -427,6 +447,26 @@ export function DailyRecordForm({
           </div>
         </CardContent>
       </Card>
+
+      {/* 服薬記録 */}
+      {medications.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Pill className="h-5 w-5 text-green-500" />
+              与薬記録
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MedicationLogForm
+              childId={child.id}
+              medications={medications}
+              todayLogs={medicationLogs}
+              today={date}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* 連絡帳 */}
       <Card>

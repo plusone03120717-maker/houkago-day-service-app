@@ -63,6 +63,21 @@ export default async function RecordPage({
     .eq('unit_id', unit)
     .single()
 
+  // 服薬情報（有効なもの）
+  const { data: medications } = await supabase
+    .from('medications')
+    .select('id, medication_name, dosage, timing')
+    .eq('child_id', childId)
+    .eq('is_active', true)
+    .order('medication_name')
+
+  // 本日の与薬ログ
+  const { data: medicationLogs } = await supabase
+    .from('medication_logs')
+    .select('id, medication_id, log_date, status, notes, administered_at')
+    .eq('child_id', childId)
+    .eq('log_date', date)
+
   const { data: { user } } = await supabase.auth.getUser()
 
   return (
@@ -76,6 +91,8 @@ export default async function RecordPage({
       programs={programs ?? []}
       contactNote={contactNote ?? null}
       staffId={user?.id ?? ''}
+      medications={medications ?? []}
+      medicationLogs={medicationLogs ?? []}
     />
   )
 }
