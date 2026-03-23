@@ -108,11 +108,13 @@ export function ChildForm({ units, initial }: Props) {
     }
 
     // ユニット割当を更新
-    await supabase.from('children_units').delete().eq('child_id', childId!)
+    const { error: deleteError } = await supabase.from('children_units').delete().eq('child_id', childId!)
+    if (deleteError) { setError(deleteError.message); setSaving(false); return }
     if (form.unit_ids.length > 0) {
-      await supabase.from('children_units').insert(
+      const { error: insertError } = await supabase.from('children_units').insert(
         form.unit_ids.map((uid) => ({ child_id: childId!, unit_id: uid }))
       )
+      if (insertError) { setError(insertError.message); setSaving(false); return }
     }
 
     setSaving(false)
