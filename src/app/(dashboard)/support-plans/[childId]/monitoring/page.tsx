@@ -2,10 +2,10 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, TrendingUp } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { MonitoringRecordForm } from '@/components/support-plans/monitoring-record-form'
+import { MonitoringRecordEditCard } from '@/components/support-plans/monitoring-record-edit-card'
 
 type SupportPlan = {
   id: string
@@ -179,54 +179,9 @@ export default async function MonitoringPage({
               {/* 記録一覧 */}
               {planRecords.length > 0 && (
                 <div className="space-y-3">
-                  {planRecords.map((record) => {
-                    const conf = statusConfig[record.overall_status] ?? statusConfig.ongoing
-                    return (
-                      <div
-                        key={record.id}
-                        className="p-3 rounded-lg border border-gray-100 bg-white space-y-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-gray-800">
-                            {formatDate(record.record_date)}
-                          </span>
-                          <Badge variant={conf.variant}>{conf.label}</Badge>
-                        </div>
-                        {record.long_term_progress && (
-                          <div>
-                            <p className="text-xs text-gray-400 mb-0.5">長期目標の達成状況</p>
-                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                              {record.long_term_progress}
-                            </p>
-                          </div>
-                        )}
-                        {record.short_term_progress && (
-                          <div>
-                            <p className="text-xs text-gray-400 mb-0.5">短期目標の達成状況</p>
-                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                              {record.short_term_progress}
-                            </p>
-                          </div>
-                        )}
-                        {record.issues && (
-                          <div>
-                            <p className="text-xs text-gray-400 mb-0.5">課題</p>
-                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                              {record.issues}
-                            </p>
-                          </div>
-                        )}
-                        {record.next_actions && (
-                          <div>
-                            <p className="text-xs text-gray-400 mb-0.5">今後の対応</p>
-                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                              {record.next_actions}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {planRecords.map((record) => (
+                    <MonitoringRecordEditCard key={record.id} record={record} />
+                  ))}
                 </div>
               )}
 
