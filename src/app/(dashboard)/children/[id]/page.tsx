@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, AlertTriangle, FileText, Edit, Pill, ClipboardList, Phone } from 'lucide-react'
+import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert } from 'lucide-react'
 import { formatDate, getAge } from '@/lib/utils'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 import { ParentInviteButton } from '@/components/children/parent-invite-button'
@@ -115,23 +115,6 @@ export default async function ChildDetailPage({
           <h1 className="text-2xl font-bold text-gray-900">{child.name}</h1>
           <p className="text-sm text-gray-500">{child.name_kana}</p>
         </div>
-        <Link href={`/support-plans/${id}`}>
-          <Button variant="outline" size="sm">
-            <ClipboardList className="h-4 w-4" />
-            個別支援計画
-          </Button>
-        </Link>
-        <Link href={`/children/${id}/assessments`}>
-          <Button variant="outline" size="sm">
-            アセスメント
-          </Button>
-        </Link>
-        <Link href={`/children/${id}/medications`}>
-          <Button variant="outline" size="sm">
-            <Pill className="h-4 w-4" />
-            服薬管理
-          </Button>
-        </Link>
         <Link href={`/children/${id}/edit`}>
           <Button variant="outline" size="sm">
             <Edit className="h-4 w-4" />
@@ -139,6 +122,28 @@ export default async function ChildDetailPage({
           </Button>
         </Link>
         <ParentInviteButton childId={id} childName={child.name} />
+      </div>
+
+      {/* クイックアクセス */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+        {[
+          { href: `/records/${id}`, icon: BookOpen, label: '連絡帳', color: 'text-blue-600 bg-blue-50' },
+          { href: `/support-plans/${id}`, icon: ClipboardList, label: '個別支援計画', color: 'text-indigo-600 bg-indigo-50' },
+          { href: `/children/${id}/assessments`, icon: BarChart2, label: 'アセスメント', color: 'text-purple-600 bg-purple-50' },
+          { href: `/children/${id}/medications`, icon: Pill, label: '服薬管理', color: 'text-green-600 bg-green-50' },
+          { href: `/incidents?childId=${id}`, icon: ShieldAlert, label: '事故報告', color: 'text-red-600 bg-red-50' },
+        ].map(({ href, icon: Icon, label, color }) => (
+          <Link key={href} href={href}>
+            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <CardContent className="p-4 flex flex-col items-center gap-2 text-center">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <span className="text-xs font-medium text-gray-700">{label}</span>
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
