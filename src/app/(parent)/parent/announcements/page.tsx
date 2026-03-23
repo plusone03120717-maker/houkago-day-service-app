@@ -32,17 +32,17 @@ export default async function ParentAnnouncementsPage() {
   // 公開中のお知らせ（全体 or 自分のユニット宛）
   const { data: announcementsRaw } = await supabase
     .from('announcements')
-    .select('id, title, content, target_type, published_at, units:target_unit_id(name)')
+    .select('id, title, content, target_type, target_unit_id, published_at, units:target_unit_id(name)')
     .not('published_at', 'is', null)
     .lte('published_at', new Date().toISOString())
     .order('published_at', { ascending: false })
     .limit(100)
 
-  const announcements = ((announcementsRaw ?? []) as unknown as Announcement[]).filter(
+  type AnnouncementRaw = Announcement & { target_unit_id: string | null }
+  const announcements = ((announcementsRaw ?? []) as unknown as AnnouncementRaw[]).filter(
     (ann) =>
       ann.target_type === 'all' ||
-      unitIds.length === 0 ||
-      ann.units !== null
+      (ann.target_type === 'unit' && ann.target_unit_id !== null && unitIds.includes(ann.target_unit_id))
   )
 
   return (
