@@ -127,7 +127,7 @@ export default async function ChildDetailPage({
       {/* クイックアクセス */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         {[
-          { href: `/records/${id}`, icon: BookOpen, label: '連絡帳', color: 'text-blue-600 bg-blue-50' },
+          { href: `/children/${id}/contact-notes`, icon: BookOpen, label: '連絡帳', color: 'text-blue-600 bg-blue-50' },
           { href: `/support-plans/${id}`, icon: ClipboardList, label: '個別支援計画', color: 'text-indigo-600 bg-indigo-50' },
           { href: `/children/${id}/assessments`, icon: BarChart2, label: 'アセスメント', color: 'text-purple-600 bg-purple-50' },
           { href: `/children/${id}/medications`, icon: Pill, label: '服薬管理', color: 'text-green-600 bg-green-50' },
