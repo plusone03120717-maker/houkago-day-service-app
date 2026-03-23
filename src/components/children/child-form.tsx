@@ -60,6 +60,40 @@ export function ChildForm({ units, initial }: Props) {
   const set = (key: keyof ChildData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
 
+  // ひらがな→カタカナ変換
+  const toKatakana = (str: string) =>
+    str.replace(/[\u3041-\u3096]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
+
+  // IME入力中の読み仮名を蓄積
+  const kanaBufferRef = { current: '' }
+
+  const handleNameCompositionUpdate = (e: React.CompositionEvent<HTMLInputElement>) => {
+    kanaBufferRef.current = e.data
+  }
+
+  const handleNameCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
+    const kana = toKatakana(e.data)
+    if (kana) {
+      setForm((prev) => ({
+        ...prev,
+        name_kana: prev.name_kana
+          ? prev.name_kana + kana
+          : kana,
+      }))
+    }
+    kanaBufferRef.current = ''
+  }
+
+  // 名前フィールドをクリアしたらフリガナもリセット
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setForm((prev) => ({
+      ...prev,
+      name: val,
+      name_kana: val === '' ? '' : prev.name_kana,
+    }))
+  }
+
   const toggleUnit = (unitId: string) => {
     setForm((prev) => ({
       ...prev,
@@ -136,7 +170,14 @@ export function ChildForm({ units, initial }: Props) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">氏名 *</label>
-              <Input value={form.name} onChange={set('name')} placeholder="山田 太郎" required />
+              <Input
+                value={form.name}
+                onChange={handleNameChange}
+                onCompositionUpdate={handleNameCompositionUpdate}
+                onCompositionEnd={handleNameCompositionEnd}
+                placeholder="山田 太郎"
+                required
+              />
             </div>
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">フリガナ</label>
