@@ -13,13 +13,21 @@ export async function POST(request: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // 児童名から parent_children 経由で保護者のメールを取得
-  const { data: children } = await adminClient
-    .from('children')
-    .select('id')
-    .ilike('name', childName.trim())
+  // スペース（全角・半角）を除去して正規化
+  const normalize = (s: string) => s.replace(/[\s　]/g, '')
+  const normalizedInput = normalize(childName.trim())
 
-  if (!children || children.length === 0) {
+  // まず全件取得してスペース無視で比較
+  const { data: allChildren } = await adminClient
+    .from('children')
+    .select('id, name')
+
+  const children = (allChildren ?? []).filter(
+    (c: { id: string; name: string }) =>
+      normalize(c.name).toLowerCase() === normalizedInput.toLowerCase()
+  )
+
+  if (children.length === 0) {
     return NextResponse.json({ error: 'お子さんの名前が見つかりません' }, { status: 404 })
   }
 

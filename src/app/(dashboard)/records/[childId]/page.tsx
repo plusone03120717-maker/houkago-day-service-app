@@ -64,12 +64,12 @@ export default async function RecordPage({
     .single()
 
   // 服薬情報（有効なもの）
-  const { data: medications } = await supabase
-    .from('medications')
-    .select('id, medication_name, dosage, timing')
+  const { data: medicationsRaw } = await supabase
+    .from('child_medications')
+    .select('id, medication_name, dosage, timing, is_active')
     .eq('child_id', childId)
-    .eq('is_active', true)
     .order('medication_name')
+  const medications = (medicationsRaw ?? []).filter((m) => m.is_active)
 
   // 本日の与薬ログ
   const { data: medicationLogs } = await supabase

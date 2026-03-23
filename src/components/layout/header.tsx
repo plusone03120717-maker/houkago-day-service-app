@@ -27,9 +27,8 @@ export function Header({ userName, facilityName }: HeaderProps) {
         )}
       </div>
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="relative">
+        <Button variant="ghost" size="icon" disabled>
           <Bell className="h-5 w-5" />
-          <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-red-500" />
         </Button>
         <div className="flex items-center gap-2 text-sm text-gray-700">
           <User className="h-4 w-4" />
