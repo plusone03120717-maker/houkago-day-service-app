@@ -25,11 +25,13 @@ export function AnnouncementForm({ units, facilityId }: Props) {
   const [targetType, setTargetType] = useState<'all' | 'unit'>('all')
   const [targetUnitId, setTargetUnitId] = useState(units[0]?.id ?? '')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSave = async (publish: boolean) => {
     if (!title.trim() || !content.trim()) return
     setSaving(true)
-    await supabase.from('announcements').insert({
+    setError(null)
+    const { error: insertError } = await supabase.from('announcements').insert({
       facility_id: facilityId,
       title: title.trim(),
       content: content.trim(),
@@ -38,6 +40,10 @@ export function AnnouncementForm({ units, facilityId }: Props) {
       published_at: publish ? new Date().toISOString() : null,
     })
     setSaving(false)
+    if (insertError) {
+      setError(insertError.message)
+      return
+    }
     setTitle('')
     setContent('')
     setOpen(false)
@@ -114,6 +120,10 @@ export function AnnouncementForm({ units, facilityId }: Props) {
               </select>
             )}
           </div>
+
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+          )}
 
           <div className="flex gap-2">
             <Button

@@ -1,11 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { ArrowLeft, Plus, ClipboardList } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { Card, CardContent } from '@/components/ui/card'
+import { ArrowLeft, ClipboardList } from 'lucide-react'
 import { SupportPlanForm } from '@/components/support-plans/support-plan-form'
+import { SupportPlanEditCard } from '@/components/support-plans/support-plan-edit-card'
 
 type SupportPlan = {
   id: string
@@ -25,20 +23,6 @@ type Child = {
   name_kana: string | null
   birth_date: string | null
   diagnosis: string | null
-}
-
-const statusLabel: Record<string, string> = {
-  draft: '下書き',
-  active: '有効',
-  reviewed: '見直し済',
-  archived: '保存',
-}
-
-const statusVariant: Record<string, 'secondary' | 'success' | 'warning' | 'default'> = {
-  draft: 'secondary',
-  active: 'success',
-  reviewed: 'warning',
-  archived: 'secondary',
 }
 
 export default async function SupportPlanDetailPage({
@@ -65,7 +49,6 @@ export default async function SupportPlanDetailPage({
     .order('plan_date', { ascending: false })
   const plans = (plansRaw ?? []) as unknown as SupportPlan[]
 
-  // 最新の日々の記録（AI下書き用）
   const { data: recentRecordsRaw } = await supabase
     .from('daily_records')
     .select('date, activities, notable_events, contact_note')
@@ -114,56 +97,12 @@ export default async function SupportPlanDetailPage({
         recentRecords={recentRecords}
       />
 
-      {/* 既存の計画一覧 */}
+      {/* 既存の計画一覧（編集可能） */}
       {plans.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-base font-semibold text-gray-700">過去の支援計画</h2>
           {plans.map((plan) => (
-            <Card key={plan.id}>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">
-                    {formatDate(plan.plan_date)} 作成
-                  </CardTitle>
-                  <div className="flex items-center gap-2">
-                    {plan.review_date && (
-                      <span className="text-xs text-gray-500">
-                        見直し予定: {formatDate(plan.review_date)}
-                      </span>
-                    )}
-                    <Badge variant={statusVariant[plan.status] ?? 'secondary'}>
-                      {statusLabel[plan.status] ?? plan.status}
-                    </Badge>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                {plan.long_term_goals && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 mb-1">長期目標</p>
-                    <p className="text-gray-700 whitespace-pre-wrap">{plan.long_term_goals}</p>
-                  </div>
-                )}
-                {plan.short_term_goals && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 mb-1">短期目標</p>
-                    <p className="text-gray-700 whitespace-pre-wrap">{plan.short_term_goals}</p>
-                  </div>
-                )}
-                {plan.support_content && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 mb-1">支援内容</p>
-                    <p className="text-gray-700 whitespace-pre-wrap">{plan.support_content}</p>
-                  </div>
-                )}
-                {plan.monitoring_notes && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 mb-1">モニタリング</p>
-                    <p className="text-gray-700 whitespace-pre-wrap">{plan.monitoring_notes}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <SupportPlanEditCard key={plan.id} plan={plan} />
           ))}
         </div>
       )}
