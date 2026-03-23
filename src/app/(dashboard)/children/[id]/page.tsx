@@ -115,9 +115,14 @@ export default async function ChildDetailPage({
           <h1 className="text-2xl font-bold text-gray-900">{child.name}</h1>
           <p className="text-sm text-gray-500">{child.name_kana}</p>
         </div>
-        <Link href={`/children/${id}/assessments`}>
+        <Link href={`/support-plans/${id}`}>
           <Button variant="outline" size="sm">
             <ClipboardList className="h-4 w-4" />
+            個別支援計画
+          </Button>
+        </Link>
+        <Link href={`/children/${id}/assessments`}>
+          <Button variant="outline" size="sm">
             アセスメント
           </Button>
         </Link>
