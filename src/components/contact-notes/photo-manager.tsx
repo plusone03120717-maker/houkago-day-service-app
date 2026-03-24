@@ -75,6 +75,20 @@ export function PhotoManager({ noteId, initialPhotos = [] }: Props) {
     }
   }, [noteId])
 
+  // クリップボードからの貼り付け（Ctrl+V）対応
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = Array.from(e.clipboardData?.items ?? [])
+      const imageItems = items.filter((item) => item.type.startsWith('image/'))
+      imageItems.forEach((item) => {
+        const file = item.getAsFile()
+        if (file) uploadFile(file)
+      })
+    }
+    window.addEventListener('paste', handlePaste)
+    return () => window.removeEventListener('paste', handlePaste)
+  }, [uploadFile])
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
     files.forEach((f) => uploadFile(f))
@@ -126,7 +140,7 @@ export function PhotoManager({ noteId, initialPhotos = [] }: Props) {
         >
           <Upload className="h-5 w-5 text-gray-400 mx-auto mb-1" />
           <p className="text-xs text-gray-500">
-            {uploading ? 'アップロード中...' : 'タップまたはドラッグして写真を追加'}
+            {uploading ? 'アップロード中...' : 'タップ・ドラッグ＆ドロップ・Ctrl+V で写真を追加'}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">JPEG・PNG・GIF・WebP・HEIC / 最大5MB</p>
           <input
