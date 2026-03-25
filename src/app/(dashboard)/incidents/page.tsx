@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { AlertTriangle, Plus, ChevronRight } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { IncidentForm } from '@/components/incidents/incident-form'
+import { IncidentQuickClose } from '@/components/incidents/incident-quick-close'
 
 type IncidentReport = {
   id: string
@@ -171,13 +172,16 @@ export default async function IncidentsPage({
                       )}
                     </div>
                     <p className="text-sm text-gray-700 line-clamp-2">{incident.description}</p>
-                    <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                    <div className="flex items-center gap-3 mt-2 text-xs text-gray-400 flex-wrap">
                       {incident.reported_to_family && <span className="text-green-600">家族報告済</span>}
                       {incident.reported_to_municipality && <span className="text-indigo-600">行政報告済</span>}
                       {incident.follow_up_required && incident.status === 'open' && (
                         <span className="text-yellow-600 font-medium">フォローアップ要</span>
                       )}
                       {incident.users && <span>記録者: {incident.users.name}</span>}
+                      {incident.status === 'open' && (
+                        <IncidentQuickClose incidentId={incident.id} />
+                      )}
                     </div>
                   </div>
                   <Link href={`/incidents/${incident.id}`} className="flex-shrink-0">
