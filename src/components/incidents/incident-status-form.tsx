@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Save, CheckCircle } from 'lucide-react'
+import { updateIncidentStatus } from '@/app/actions/incidents'
 
 interface Props {
   incidentId: string
@@ -20,7 +20,6 @@ export function IncidentStatusForm({
   currentReportedToMunicipality,
 }: Props) {
   const router = useRouter()
-  const supabase = createClient()
   const [, startTransition] = useTransition()
 
   const [status, setStatus] = useState(currentStatus)
@@ -29,22 +28,29 @@ export function IncidentStatusForm({
   const [municipalityDate, setMunicipalityDate] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSave = async () => {
     setSaving(true)
     setSaved(false)
-    await supabase
-      .from('incident_reports')
-      .update({
-        status,
-        follow_up_notes: followUpNotes || null,
-        reported_to_municipality: reportedToMunicipality,
-        municipality_report_date: reportedToMunicipality && municipalityDate ? municipalityDate : undefined,
-      })
-      .eq('id', incidentId)
+    setError(null)
+
+    const result = await updateIncidentStatus(incidentId, {
+      status,
+      followUpNotes: followUpNotes || null,
+      reportedToMunicipality,
+      municipalityReportDate: reportedToMunicipality && municipalityDate ? municipalityDate : null,
+    })
+
     setSaving(false)
-    setSaved(true)
-    startTransition(() => router.refresh())
+    if (result.error) {
+      setError(result.error)
+    } else {
+      setSaved(true)
+      // Server ActionでrevalidatePathを呼んでいるが、
+      // クライアント側のルーターキャッシュも更新する
+      startTransition(() => router.refresh())
+    }
   }
 
   return (
@@ -120,6 +126,9 @@ export function IncidentStatusForm({
             <CheckCircle className="h-3.5 w-3.5" />
             保存しました
           </span>
+        )}
+        {error && (
+          <span className="text-xs text-red-600">{error}</span>
         )}
       </div>
     </div>
