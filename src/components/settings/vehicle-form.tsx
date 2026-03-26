@@ -32,28 +32,39 @@ export function VehicleForm({ facilityId, vehicles, staffOptions }: Props) {
   const [driverStaffId, setDriverStaffId] = useState('')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const handleAdd = async () => {
     if (!name.trim()) return
+    if (!facilityId) {
+      setError('施設情報が取得できません。施設設定を確認してください。')
+      return
+    }
     setSaving(true)
-    await supabase.from('transport_vehicles').insert({
+    setError(null)
+    const { error: insertError } = await supabase.from('transport_vehicles').insert({
       facility_id: facilityId,
       name: name.trim(),
       capacity,
       driver_staff_id: driverStaffId || null,
     })
     setSaving(false)
+    if (insertError) {
+      setError(insertError.message)
+      return
+    }
     setName('')
     setCapacity(4)
     setDriverStaffId('')
-    startTransition(() => router.refresh())
+    startTransition(() => { router.refresh() })
   }
 
   const handleDelete = async (id: string) => {
     setDeleting(id)
-    await supabase.from('transport_vehicles').delete().eq('id', id)
+    const { error: deleteError } = await supabase.from('transport_vehicles').delete().eq('id', id)
     setDeleting(null)
-    startTransition(() => router.refresh())
+    if (deleteError) { setError(deleteError.message); return }
+    startTransition(() => { router.refresh() })
   }
 
   return (
@@ -87,6 +98,12 @@ export function VehicleForm({ facilityId, vehicles, staffOptions }: Props) {
 
       {vehicles.length === 0 && (
         <p className="text-sm text-gray-400 text-center py-4">登録された車両がありません</p>
+      )}
+
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          {error}
+        </div>
       )}
 
       {/* 追加フォーム */}
