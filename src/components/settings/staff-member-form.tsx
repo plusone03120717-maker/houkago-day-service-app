@@ -7,38 +7,51 @@ import { Button } from '@/components/ui/button'
 import { Save, CheckCircle, Trash2 } from 'lucide-react'
 
 const ROLE_OPTIONS = [
-  { value: 'driver', label: 'ドライバー' },
-  { value: 'staff', label: 'スタッフ' },
+  { value: 'driver',    label: 'ドライバー' },
+  { value: 'therapist', label: '療育士' },
+  { value: 'nurse',     label: '看護師' },
 ]
 
 interface Props {
   memberId: string
   initialName: string
-  initialRole: string
+  initialRoles: string[]
   initialLineUserId: string
 }
 
-export function StaffMemberForm({ memberId, initialName, initialRole, initialLineUserId }: Props) {
+export function StaffMemberForm({ memberId, initialName, initialRoles, initialLineUserId }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
 
   const [name, setName] = useState(initialName)
-  const [role, setRole] = useState(initialRole)
+  const [roles, setRoles] = useState<Set<string>>(new Set(initialRoles))
   const [lineUserId, setLineUserId] = useState(initialLineUserId)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  const toggleRole = (value: string) => {
+    setRoles((prev) => {
+      const next = new Set(prev)
+      if (next.has(value)) next.delete(value)
+      else next.add(value)
+      return next
+    })
+    setSaved(false)
+  }
+
   const handleSave = async () => {
     if (!name.trim()) return
     setSaving(true)
     setSaved(false)
+    const rolesArr = [...roles]
     await supabase
       .from('staff_members')
       .update({
         name: name.trim(),
-        role,
+        role: rolesArr[0] ?? 'driver',
+        roles: rolesArr,
         line_user_id: lineUserId.trim() || null,
         updated_at: new Date().toISOString(),
       })
@@ -70,15 +83,18 @@ export function StaffMemberForm({ memberId, initialName, initialRole, initialLin
 
       {/* 役職 */}
       <div>
-        <label className="text-xs font-medium text-gray-700 mb-2 block">役職</label>
-        <div className="flex gap-2">
+        <label className="text-xs font-medium text-gray-700 mb-2 block">
+          役職
+          <span className="ml-1 text-gray-400 font-normal">（複数選択可）</span>
+        </label>
+        <div className="flex flex-wrap gap-2">
           {ROLE_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type="button"
-              onClick={() => { setRole(opt.value); setSaved(false) }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                role === opt.value
+              onClick={() => toggleRole(opt.value)}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                roles.has(opt.value)
                   ? 'bg-indigo-600 text-white border-indigo-600'
                   : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
               }`}

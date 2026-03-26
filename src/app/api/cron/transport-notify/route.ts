@@ -33,6 +33,12 @@ function formatJapaneseDate(dateStr: string): string {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${days[d.getDay()]}）`
 }
 
+/** 場所名から絵文字アイコンを判定 */
+function locationIcon(location: string): string {
+  if (/学校|学園|支援学校|小学|中学|高校|幼稚園|保育/.test(location)) return '🏫'
+  return '📍'
+}
+
 /** ルートテキストを組み立てる */
 function buildRouteText(details: TransportDetail[]): string {
   const stops: { location: string; names: string[] }[] = []
@@ -46,7 +52,12 @@ function buildRouteText(details: TransportDetail[]): string {
       stops.push({ location: loc, names: [name] })
     }
   }
-  return stops.map((s, i) => `  ${i + 1}. ${s.location}（${s.names.join('・')}）`).join('\n')
+  return stops.map((s, i) => {
+    const icon = locationIcon(s.location)
+    const header = `${i + 1} ${icon} ${s.location}（${s.names.length}名）`
+    const names = s.names.map((n) => `   ${n}`).join('\n')
+    return `${header}\n${names}`
+  }).join('\n\n')
 }
 
 /** LINE Push Message を送信 */
@@ -136,7 +147,12 @@ export async function GET(request: NextRequest) {
   } else {
     for (const { unitName, schedules: unitSchedules } of grouped.values()) {
       messageText += `\n▼ ${unitName}\n`
-      for (const sched of unitSchedules) {
+      const sortedSchedules = [...unitSchedules].sort((a, b) => {
+        // pickup (お迎え) を先に、outbound (お送り) を後に
+        if (a.direction === b.direction) return 0
+        return a.direction === 'pickup' ? -1 : 1
+      })
+      for (const sched of sortedSchedules) {
         const dirLabel = sched.direction === 'pickup' ? 'お迎え' : 'お送り'
         const vehicleName = sched.transport_vehicles?.name ?? '車両未設定'
         const depTime = sched.departure_time ? ` 出発 ${sched.departure_time.slice(0, 5)}` : ''

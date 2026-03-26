@@ -47,10 +47,10 @@ export default async function StaffProfilePage({
   // ユーザー情報
   const { data: userRaw } = await supabase
     .from('users')
-    .select('id, name, email, role, line_user_id')
+    .select('id, name, email, role, line_user_id, job_titles')
     .eq('id', userId)
     .single()
-  const user = userRaw as { id: string; name: string; email: string; role: string; line_user_id: string | null } | null
+  const user = userRaw as { id: string; name: string; email: string; role: string; line_user_id: string | null; job_titles: string[] | null } | null
 
   if (!user) return <div className="p-4 text-gray-500">スタッフが見つかりません</div>
 
@@ -141,6 +141,7 @@ export default async function StaffProfilePage({
             units={units}
             facilityId={facilityId}
             initialLineUserId={user?.line_user_id ?? ''}
+            initialJobTitles={user?.job_titles ?? []}
           />
         </CardContent>
       </Card>

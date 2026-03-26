@@ -10,12 +10,14 @@ type StaffUser = {
   name: string
   email: string
   role: string
+  job_titles: string[] | null
 }
 
 type StaffMember = {
   id: string
   name: string
   role: string
+  roles: string[] | null
   line_user_id: string | null
 }
 
@@ -23,6 +25,8 @@ const roleLabel: Record<string, string> = {
   admin: '管理者',
   staff: 'スタッフ',
   driver: 'ドライバー',
+  therapist: '療育士',
+  nurse: '看護師',
   parent: '保護者',
 }
 
@@ -30,6 +34,8 @@ const roleBadgeClass: Record<string, string> = {
   admin: 'bg-indigo-100 text-indigo-700',
   staff: 'bg-gray-100 text-gray-700',
   driver: 'bg-amber-100 text-amber-700',
+  therapist: 'bg-teal-100 text-teal-700',
+  nurse: 'bg-rose-100 text-rose-700',
 }
 
 export default async function SettingsStaffPage() {
@@ -37,14 +43,14 @@ export default async function SettingsStaffPage() {
 
   const { data: staffRaw } = await supabase
     .from('users')
-    .select('id, name, email, role')
+    .select('id, name, email, role, job_titles')
     .in('role', ['admin', 'staff'])
     .order('name')
   const staffList = (staffRaw ?? []) as unknown as StaffUser[]
 
   const { data: membersRaw } = await supabase
     .from('staff_members')
-    .select('id, name, role, line_user_id')
+    .select('id, name, role, roles, line_user_id')
     .order('name')
   const memberList = (membersRaw ?? []) as unknown as StaffMember[]
 
@@ -84,10 +90,15 @@ export default async function SettingsStaffPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass[s.role] ?? 'bg-gray-100 text-gray-700'}`}>
                       {roleLabel[s.role] ?? s.role}
                     </span>
+                    {s.job_titles?.map((jt) => (
+                      <span key={jt} className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass[jt] ?? 'bg-gray-100 text-gray-700'}`}>
+                        {roleLabel[jt] ?? jt}
+                      </span>
+                    ))}
                     <span className="text-xs text-indigo-500">詳細 →</span>
                   </div>
                 </div>
@@ -124,10 +135,12 @@ export default async function SettingsStaffPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass[m.role] ?? 'bg-gray-100 text-gray-700'}`}>
-                        {roleLabel[m.role] ?? m.role}
-                      </span>
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                      {(m.roles?.length ? m.roles : [m.role]).map((r) => (
+                        <span key={r} className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass[r] ?? 'bg-gray-100 text-gray-700'}`}>
+                          {roleLabel[r] ?? r}
+                        </span>
+                      ))}
                       <span className="text-xs text-indigo-500">詳細 →</span>
                     </div>
                   </div>

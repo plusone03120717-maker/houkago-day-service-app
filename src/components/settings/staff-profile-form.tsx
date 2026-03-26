@@ -26,6 +26,13 @@ const QUALIFICATION_OPTIONS = [
 
 type Unit = { id: string; name: string }
 
+// ログインユーザーに付与できる追加役職
+const JOB_TITLE_OPTIONS = [
+  { value: 'driver',    label: 'ドライバー' },
+  { value: 'therapist', label: '療育士' },
+  { value: 'nurse',     label: '看護師' },
+]
+
 interface Props {
   userId: string
   profileId: string | null
@@ -35,6 +42,7 @@ interface Props {
   units: Unit[]
   facilityId: string
   initialLineUserId: string
+  initialJobTitles: string[]
 }
 
 export function StaffProfileForm({
@@ -46,6 +54,7 @@ export function StaffProfileForm({
   units,
   facilityId,
   initialLineUserId,
+  initialJobTitles,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -56,8 +65,19 @@ export function StaffProfileForm({
   const [selectedUnitIds, setSelectedUnitIds] = useState<Set<string>>(new Set(initialUnitIds))
   const [hireDate, setHireDate] = useState('')
   const [lineUserId, setLineUserId] = useState(initialLineUserId || '')
+  const [jobTitles, setJobTitles] = useState<Set<string>>(new Set(initialJobTitles))
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+
+  const toggleJobTitle = (value: string) => {
+    setJobTitles((prev) => {
+      const next = new Set(prev)
+      if (next.has(value)) next.delete(value)
+      else next.add(value)
+      return next
+    })
+    setSaved(false)
+  }
 
   const toggleUnit = (unitId: string) => {
     setSelectedUnitIds((prev) => {
@@ -120,10 +140,10 @@ export function StaffProfileForm({
       }
     }
 
-    // LINE User ID を更新
+    // LINE User ID と役職を更新
     await supabase
       .from('users')
-      .update({ line_user_id: lineUserId || null })
+      .update({ line_user_id: lineUserId || null, job_titles: [...jobTitles] })
       .eq('id', userId)
 
     setSaving(false)
@@ -210,6 +230,33 @@ export function StaffProfileForm({
           onChange={(e) => { setHireDate(e.target.value); setSaved(false) }}
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
+      </div>
+
+      {/* 役職（追加） */}
+      <div>
+        <label className="text-xs font-medium text-gray-700 mb-2 block">
+          役職
+          <span className="ml-1 text-gray-400 font-normal">（複数選択可）</span>
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {JOB_TITLE_OPTIONS.map((opt) => {
+            const selected = jobTitles.has(opt.value)
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => toggleJobTitle(opt.value)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                  selected
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* LINE User ID */}

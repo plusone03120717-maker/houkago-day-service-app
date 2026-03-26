@@ -8,60 +8,100 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { UserPlus } from 'lucide-react'
 
+// 役職オプション（needsAuth=trueはアプリログインが必要）
 const ROLE_OPTIONS = [
-  { value: 'staff', label: 'スタッフ' },
-  { value: 'admin', label: '管理者' },
-  { value: 'driver', label: 'ドライバー' },
+  { value: 'staff',    label: 'スタッフ',  needsAuth: true },
+  { value: 'admin',    label: '管理者',    needsAuth: true },
+  { value: 'driver',   label: 'ドライバー', needsAuth: false },
+  { value: 'therapist',label: '療育士',    needsAuth: false },
 ]
+
+function getAuthRole(selected: Set<string>): 'admin' | 'staff' | null {
+  if (selected.has('admin')) return 'admin'
+  if (selected.has('staff')) return 'staff'
+  return null
+}
 
 export function StaffInviteForm() {
   const router = useRouter()
   const supabase = createClient()
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
-  const [role, setRole] = useState('staff')
+  const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set(['staff']))
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
 
-  const isDriverRole = role === 'driver'
+  const authRole = getAuthRole(selectedRoles)
+  const needsEmail = authRole !== null
+
+  const toggleRole = (value: string) => {
+    setSelectedRoles((prev) => {
+      const next = new Set(prev)
+      if (next.has(value)) {
+        next.delete(value)
+      } else {
+        next.add(value)
+      }
+      return next
+    })
+    setError('')
+  }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!name.trim()) return
+    if (!name.trim() || selectedRoles.size === 0) return
     setLoading(true)
     setError('')
     setSuccess(false)
 
-    if (isDriverRole || !email.trim()) {
-      // メールなし → staff_membersに直接登録
-      const { error: err } = await supabase
-        .from('staff_members')
-        .insert({ name: name.trim(), role })
-      setLoading(false)
-      if (err) {
-        setError('登録に失敗しました: ' + err.message)
-      } else {
-        setSuccess(true)
-        setName('')
-        setEmail('')
-        router.refresh()
+    const nonAuthRoles = [...selectedRoles].filter((r) => !['admin', 'staff'].includes(r))
+
+    if (needsEmail) {
+      // アプリログインあり → 招待メール送信
+      if (!email.trim()) {
+        setError('メールアドレスを入力してください')
+        setLoading(false)
+        return
       }
-    } else {
-      // メールあり → 招待メール送信
       const res = await fetch('/api/staff/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), name: name.trim(), role }),
+        body: JSON.stringify({
+          email: email.trim(),
+          name: name.trim(),
+          role: authRole,
+          jobTitles: nonAuthRoles,
+        }),
       })
       setLoading(false)
       if (res.ok) {
         setSuccess(true)
         setEmail('')
         setName('')
+        setSelectedRoles(new Set(['staff']))
+        router.refresh()
       } else {
         const json = await res.json().catch(() => ({}))
         setError(json.error ?? '招待に失敗しました')
+      }
+    } else {
+      // ログイン不要 → staff_members に登録
+      const { error: err } = await supabase
+        .from('staff_members')
+        .insert({
+          name: name.trim(),
+          role: [...selectedRoles][0] ?? 'driver',
+          roles: [...selectedRoles],
+        })
+      setLoading(false)
+      if (err) {
+        setError('登録に失敗しました: ' + err.message)
+      } else {
+        setSuccess(true)
+        setName('')
+        setSelectedRoles(new Set(['driver']))
+        router.refresh()
       }
     }
   }
@@ -78,7 +118,9 @@ export function StaffInviteForm() {
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">氏名 <span className="text-red-500">*</span></label>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">
+                氏名 <span className="text-red-500">*</span>
+              </label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -89,27 +131,33 @@ export function StaffInviteForm() {
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">
                 メールアドレス
-                <span className="ml-1 text-gray-400 font-normal">（ドライバーは不要）</span>
+                {!needsEmail && (
+                  <span className="ml-1 text-gray-400 font-normal">（ログイン不要の役職は不要）</span>
+                )}
               </label>
               <Input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="staff@example.com"
-                disabled={isDriverRole}
+                disabled={!needsEmail}
               />
             </div>
           </div>
+
           <div>
-            <label className="text-xs font-medium text-gray-700 mb-1 block">役職</label>
+            <label className="text-xs font-medium text-gray-700 mb-2 block">
+              役職
+              <span className="ml-1 text-gray-400 font-normal">（複数選択可）</span>
+            </label>
             <div className="flex gap-2 flex-wrap">
               {ROLE_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => { setRole(opt.value); setError('') }}
+                  onClick={() => toggleRole(opt.value)}
                   className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                    role === opt.value
+                    selectedRoles.has(opt.value)
                       ? 'bg-indigo-600 text-white border-indigo-600'
                       : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                   }`}
@@ -118,20 +166,21 @@ export function StaffInviteForm() {
                 </button>
               ))}
             </div>
+            {!needsEmail && selectedRoles.size > 0 && (
+              <p className="text-xs text-gray-400 mt-1.5">
+                ログイン不要のスタッフとして登録されます。LINE User IDを設定することで送迎通知を受け取れます。
+              </p>
+            )}
           </div>
-          {isDriverRole && (
-            <p className="text-xs text-gray-400">
-              ドライバーはアプリにログインしません。登録後、LINE User IDを設定することで送迎通知を受け取れます。
-            </p>
-          )}
+
           {error && <p className="text-sm text-red-600">{error}</p>}
           {success && (
             <p className="text-sm text-green-600">
-              {isDriverRole || !email.trim() ? '登録しました。' : '招待メールを送信しました。'}
+              {needsEmail ? '招待メールを送信しました。' : '登録しました。'}
             </p>
           )}
-          <Button type="submit" disabled={loading || !name.trim()} size="sm">
-            {loading ? '処理中...' : isDriverRole || !email.trim() ? '登録する' : '招待メールを送信'}
+          <Button type="submit" disabled={loading || !name.trim() || selectedRoles.size === 0} size="sm">
+            {loading ? '処理中...' : needsEmail ? '招待メールを送信' : '登録する'}
           </Button>
         </form>
       </CardContent>

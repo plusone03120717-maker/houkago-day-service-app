@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { email, name, role } = body
+  const { email, name, role, jobTitles } = body
   if (!email || !name) {
     return NextResponse.json({ error: 'email と name は必須です' }, { status: 400 })
   }
@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
       name,
       email,
       role: role ?? 'staff',
+      job_titles: Array.isArray(jobTitles) ? jobTitles : [],
     })
   }
 

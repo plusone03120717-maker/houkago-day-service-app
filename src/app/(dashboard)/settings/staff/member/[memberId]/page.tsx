@@ -7,6 +7,8 @@ import { StaffMemberForm } from '@/components/settings/staff-member-form'
 
 const roleLabel: Record<string, string> = {
   driver: 'ドライバー',
+  therapist: '療育士',
+  nurse: '看護師',
   staff: 'スタッフ',
 }
 
@@ -20,12 +22,14 @@ export default async function StaffMemberPage({
 
   const { data: memberRaw } = await supabase
     .from('staff_members')
-    .select('id, name, role, line_user_id')
+    .select('id, name, role, roles, line_user_id')
     .eq('id', memberId)
     .single()
-  const member = memberRaw as { id: string; name: string; role: string; line_user_id: string | null } | null
+  const member = memberRaw as { id: string; name: string; role: string; roles: string[] | null; line_user_id: string | null } | null
 
   if (!member) return <div className="p-4 text-gray-500">スタッフが見つかりません</div>
+
+  const memberRoles = member.roles?.length ? member.roles : [member.role]
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -49,7 +53,11 @@ export default async function StaffMemberPage({
             <p className="font-semibold text-gray-900">{member.name}</p>
             <p className="text-sm text-gray-400">ログインアカウントなし</p>
           </div>
-          <Badge variant="secondary">{roleLabel[member.role] ?? member.role}</Badge>
+          <div className="flex gap-1 flex-wrap justify-end">
+            {memberRoles.map((r) => (
+              <Badge key={r} variant="secondary">{roleLabel[r] ?? r}</Badge>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
@@ -62,7 +70,7 @@ export default async function StaffMemberPage({
           <StaffMemberForm
             memberId={member.id}
             initialName={member.name}
-            initialRole={member.role}
+            initialRoles={memberRoles}
             initialLineUserId={member.line_user_id ?? ''}
           />
         </CardContent>
