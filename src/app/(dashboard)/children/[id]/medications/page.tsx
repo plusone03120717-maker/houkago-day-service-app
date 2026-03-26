@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
 import { MedicationForm } from '@/components/medications/medication-form'
 import { MedicationLogForm } from '@/components/medications/medication-log-form'
+import { MedicationList } from '@/components/medications/medication-list'
 
 type Medication = {
   id: string
@@ -26,14 +27,6 @@ type MedicationLog = {
   notes: string | null
   administered_at: string | null
   users: { name: string } | null
-}
-
-const TIMING_LABELS: Record<string, string> = {
-  after_breakfast: '朝食後',
-  after_lunch: '昼食後',
-  after_dinner: '夕食後',
-  as_needed: '必要時',
-  other: 'その他',
 }
 
 const LOG_STATUS_CONFIG: Record<string, { label: string; variant: 'success' | 'warning' | 'secondary' | 'destructive' }> = {
@@ -125,32 +118,17 @@ export default async function MedicationsPage({
         </CardContent>
       </Card>
 
-      {/* 処方中の薬一覧 */}
-      {activeMeds.length > 0 && (
+      {/* 処方中・終了した薬一覧 */}
+      {(activeMeds.length > 0 || inactiveMeds.length > 0) && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">処方中の薬（{activeMeds.length}件）</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Pill className="h-4 w-4 text-indigo-600" />
+              薬の管理
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {activeMeds.map((med) => (
-                <div key={med.id} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="font-medium text-gray-900">{med.medication_name}</p>
-                    <Badge variant="secondary" className="text-xs">{TIMING_LABELS[med.timing] ?? med.timing}</Badge>
-                  </div>
-                  <p className="text-sm text-gray-600">{med.dosage}</p>
-                  {med.instructions && (
-                    <p className="text-xs text-gray-500 mt-1">{med.instructions}</p>
-                  )}
-                  {med.parent_consent_date && (
-                    <p className="text-xs text-indigo-500 mt-1">
-                      保護者同意日: {formatDate(med.parent_consent_date)}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
+          <CardContent className="space-y-4">
+            <MedicationList activeMeds={activeMeds} inactiveMeds={inactiveMeds} />
           </CardContent>
         </Card>
       )}
@@ -182,24 +160,6 @@ export default async function MedicationsPage({
         </Card>
       )}
 
-      {/* 過去の薬 */}
-      {inactiveMeds.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base text-gray-400">終了した薬（{inactiveMeds.length}件）</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {inactiveMeds.map((med) => (
-                <div key={med.id} className="flex items-center gap-2 text-gray-400">
-                  <span className="text-sm line-through">{med.medication_name}</span>
-                  <span className="text-xs">{med.dosage}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }
