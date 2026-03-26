@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils'
 import { TransportManageBoard } from '@/components/transport/transport-board'
-import type { Schedule, AttendingChild } from '@/components/transport/transport-board'
+import type { Schedule, AttendingChild, UnitChild } from '@/components/transport/transport-board'
 import { autoCreateTransportSchedules } from '@/app/actions/transport'
 
 type Unit = { id: string; name: string; service_type: string }
@@ -61,6 +61,26 @@ export default async function TransportPage({
     : { data: [] }
   const attendingChildren = (attendingChildrenRaw ?? []) as unknown as AttendingChild[]
 
+  // このユニットに紐づく全児童（利用計画から）
+  const { data: allChildrenRaw } = selectedUnitId
+    ? await supabase
+        .from('usage_plans')
+        .select('child_id, children(id, name, name_kana, address, school_id, schools(id, name))')
+        .eq('unit_id', selectedUnitId)
+        .eq('is_active', true)
+    : { data: [] }
+
+  // child_id で重複除去
+  const allChildrenMap = new Map<string, UnitChild>()
+  for (const p of allChildrenRaw ?? []) {
+    if (p.child_id && !allChildrenMap.has(p.child_id as string)) {
+      allChildrenMap.set(p.child_id as string, p.children as unknown as UnitChild)
+    }
+  }
+  const allChildren = [...allChildrenMap.values()].sort((a, b) =>
+    (a.name_kana ?? a.name).localeCompare(b.name_kana ?? b.name, 'ja')
+  )
+
   // スケジュール未作成の場合は利用計画から自動生成
   if (schedules.length === 0 && selectedUnitId) {
     await autoCreateTransportSchedules(selectedUnitId, today)
@@ -81,6 +101,7 @@ export default async function TransportPage({
       schedules={schedules}
       vehicles={vehicles}
       attendingChildren={attendingChildren}
+      allChildren={allChildren}
     />
   )
 }

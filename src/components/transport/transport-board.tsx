@@ -16,8 +16,7 @@ import {
   School as SchoolIcon,
   Plus,
   XCircle,
-  Pencil,
-  Check,
+  UserPlus,
   X,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
@@ -25,6 +24,7 @@ import { TransportScheduleCreator } from './transport-schedule-creator'
 
 type Unit = { id: string; name: string; service_type: string }
 type Vehicle = { id: string; name: string; capacity: number }
+
 export type TransportDetail = {
   id: string
   child_id: string
@@ -42,6 +42,7 @@ export type TransportDetail = {
     schools: { id: string; name: string } | null
   } | null
 }
+
 export type Schedule = {
   id: string
   direction: string
@@ -50,10 +51,20 @@ export type Schedule = {
   transport_vehicles: { id: string; name: string; capacity: number } | null
   transport_details: TransportDetail[]
 }
+
 export type AttendingChild = {
   child_id: string
   pickup_type: string
   children: { id: string; name: string; name_kana: string | null } | null
+}
+
+export type UnitChild = {
+  id: string
+  name: string
+  name_kana: string | null
+  address: string | null
+  school_id: string | null
+  schools: { id: string; name: string } | null
 }
 
 interface Props {
@@ -63,6 +74,7 @@ interface Props {
   schedules: Schedule[]
   vehicles: Vehicle[]
   attendingChildren: AttendingChild[]
+  allChildren: UnitChild[]
 }
 
 /** 同じ場所の児童をまとめてルートのストップリストを作成 */
@@ -80,7 +92,7 @@ function buildStops(details: TransportDetail[]) {
   return stops
 }
 
-export function TransportManageBoard({ date, units, selectedUnitId, schedules, vehicles, attendingChildren }: Props) {
+export function TransportManageBoard({ date, units, selectedUnitId, schedules, vehicles, attendingChildren, allChildren }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -163,6 +175,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
           date={date}
           unitId={selectedUnitId}
           vehicles={vehicles}
+          allChildren={allChildren}
           onRemove={removeFromTransport}
           updating={updating}
         />
@@ -174,6 +187,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
           date={date}
           unitId={selectedUnitId}
           vehicles={vehicles}
+          allChildren={allChildren}
           onRemove={removeFromTransport}
           updating={updating}
         />
@@ -182,149 +196,129 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
   )
 }
 
-/** 児童1行の編集UI */
-function DetailRow({
-  detail,
+/** 児童追加パネル */
+function AddChildPanel({
+  schedule,
   direction,
-  updating,
-  onRemove,
+  date,
+  unitId,
+  allChildren,
+  onClose,
 }: {
-  detail: TransportDetail
+  schedule: Schedule
   direction: 'pickup' | 'dropoff'
-  updating: string | null
-  onRemove: (detail: TransportDetail) => void
+  date: string
+  unitId: string
+  allChildren: UnitChild[]
+  onClose: () => void
 }) {
   const supabase = createClient()
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [editing, setEditing] = useState(false)
-  const [mode, setMode] = useState<'manual' | 'auto'>('manual')
-  const [manualLocation, setManualLocation] = useState(detail.pickup_location ?? '')
-  const [saving, setSaving] = useState(false)
+  const [adding, setAdding] = useState<string | null>(null)
 
-  const homeAddress = detail.children?.address ?? null
-  const schoolName = detail.children?.schools?.name ?? null
+  // すでにスケジュールに入っている child_id を除外
+  const scheduledIds = new Set(schedule.transport_details.map((d) => d.child_id))
+  const available = allChildren.filter((c) => !scheduledIds.has(c.id))
 
-  const handleAutoSelect = (type: 'school' | 'home') => {
-    if (type === 'school') setManualLocation(schoolName ?? '')
-    else setManualLocation(homeAddress ?? '')
-  }
+  const handleAdd = async (child: UnitChild, locationType: 'school' | 'home') => {
+    setAdding(child.id)
 
-  const handleSave = async () => {
-    setSaving(true)
-    await supabase
-      .from('transport_details')
-      .update({ pickup_location: manualLocation || null })
-      .eq('id', detail.id)
-    setSaving(false)
-    setEditing(false)
+    const location = locationType === 'school'
+      ? (child.schools?.name ?? null)
+      : (child.address ?? null)
+
+    // transport_detail を追加
+    await supabase.from('transport_details').insert({
+      schedule_id: schedule.id,
+      child_id: child.id,
+      pickup_location: location,
+      status: 'scheduled',
+    })
+
+    // daily_attendance を upsert（出席として追加）
+    const { data: existing } = await supabase
+      .from('daily_attendance')
+      .select('id, pickup_type')
+      .eq('unit_id', unitId)
+      .eq('date', date)
+      .eq('child_id', child.id)
+      .maybeSingle()
+
+    if (existing) {
+      // 既存の pickup_type を拡張
+      let newPickupType = existing.pickup_type
+      if (direction === 'pickup' && newPickupType === 'dropoff_only') newPickupType = 'both'
+      else if (direction === 'pickup' && newPickupType !== 'both') newPickupType = 'pickup_only'
+      else if (direction === 'dropoff' && newPickupType === 'pickup_only') newPickupType = 'both'
+      else if (direction === 'dropoff' && newPickupType !== 'both') newPickupType = 'dropoff_only'
+
+      await supabase
+        .from('daily_attendance')
+        .update({ status: 'attended', pickup_type: newPickupType })
+        .eq('id', existing.id)
+    } else {
+      await supabase.from('daily_attendance').insert({
+        unit_id: unitId,
+        date,
+        child_id: child.id,
+        status: 'attended',
+        pickup_type: direction === 'pickup' ? 'pickup_only' : 'dropoff_only',
+      })
+    }
+
+    setAdding(null)
     startTransition(() => router.refresh())
   }
 
-  const handleCancel = () => {
-    setManualLocation(detail.pickup_location ?? '')
-    setMode('manual')
-    setEditing(false)
-  }
+  return (
+    <div className="border border-indigo-100 rounded-lg bg-indigo-50 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-indigo-700">
+          <UserPlus className="h-3.5 w-3.5 inline mr-1" />
+          児童を追加
+        </p>
+        <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-white transition-colors">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
 
-  if (editing) {
-    return (
-      <div className="py-2 px-3 bg-indigo-50 rounded border border-indigo-100 space-y-2">
-        <p className="text-xs font-medium text-gray-700">{detail.children?.name ?? '不明'}</p>
-
-        {/* 手動 / 自動 切替 */}
-        <div className="flex gap-1.5">
-          {(['manual', 'auto'] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
-                mode === m
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              {m === 'manual' ? '手動' : '自動'}
-            </button>
+      {available.length === 0 ? (
+        <p className="text-xs text-gray-400 text-center py-2">追加できる児童がいません</p>
+      ) : (
+        <div className="space-y-1.5 max-h-64 overflow-y-auto">
+          {available.map((child) => (
+            <div key={child.id} className="flex items-center gap-2 bg-white rounded px-3 py-2">
+              <span className="flex-1 text-sm text-gray-800">{child.name}</span>
+              <div className="flex gap-1.5 flex-shrink-0">
+                {direction === 'pickup' && child.schools?.name && (
+                  <button
+                    onClick={() => handleAdd(child, 'school')}
+                    disabled={adding === child.id}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-700 hover:bg-indigo-200 disabled:opacity-50 transition-colors"
+                  >
+                    <SchoolIcon className="h-3 w-3" />
+                    学校
+                  </button>
+                )}
+                {child.address && (
+                  <button
+                    onClick={() => handleAdd(child, 'home')}
+                    disabled={adding === child.id}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-50 transition-colors"
+                  >
+                    <MapPin className="h-3 w-3" />
+                    自宅
+                  </button>
+                )}
+                {!child.schools?.name && !child.address && (
+                  <span className="text-xs text-gray-400">住所未登録</span>
+                )}
+              </div>
+            </div>
           ))}
         </div>
-
-        {mode === 'manual' ? (
-          <input
-            type="text"
-            value={manualLocation}
-            onChange={(e) => setManualLocation(e.target.value)}
-            placeholder="場所を入力"
-            className="w-full border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        ) : (
-          <div className="flex gap-1.5 flex-wrap">
-            {direction === 'pickup' && schoolName && (
-              <button
-                onClick={() => handleAutoSelect('school')}
-                className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50 transition-colors"
-              >
-                <SchoolIcon className="h-3 w-3" />
-                学校（{schoolName}）
-              </button>
-            )}
-            {homeAddress && (
-              <button
-                onClick={() => handleAutoSelect('home')}
-                className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border bg-white text-green-700 border-green-200 hover:bg-green-50 transition-colors"
-              >
-                <MapPin className="h-3 w-3" />
-                自宅（{homeAddress}）
-              </button>
-            )}
-            {!schoolName && !homeAddress && (
-              <p className="text-xs text-gray-400">住所・学校データが未登録です</p>
-            )}
-            {manualLocation && (
-              <p className="text-xs text-gray-500 mt-0.5">選択中: {manualLocation}</p>
-            )}
-          </div>
-        )}
-
-        <div className="flex gap-1.5">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-          >
-            <Check className="h-3 w-3" />
-            {saving ? '保存中' : '保存'}
-          </button>
-          <button
-            onClick={handleCancel}
-            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-          >
-            <X className="h-3 w-3" />
-            キャンセル
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex items-center gap-2 py-1 px-3 bg-gray-50 rounded text-sm text-gray-700">
-      <span className="flex-1">{detail.children?.name ?? '不明'}</span>
-      <button
-        onClick={() => setEditing(true)}
-        className="p-1 rounded text-gray-300 hover:text-indigo-400 hover:bg-indigo-50 transition-colors flex-shrink-0"
-        title="場所を編集"
-      >
-        <Pencil className="h-3.5 w-3.5" />
-      </button>
-      <button
-        onClick={() => onRemove(detail)}
-        disabled={updating === detail.id}
-        className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
-        title="欠席にして外す"
-      >
-        <XCircle className="h-3.5 w-3.5" />
-      </button>
+      )}
     </div>
   )
 }
@@ -337,6 +331,7 @@ function ScheduleCard({
   date,
   unitId,
   vehicles,
+  allChildren,
   onRemove,
   updating,
 }: {
@@ -347,10 +342,12 @@ function ScheduleCard({
   date: string
   unitId: string
   vehicles: Vehicle[]
+  allChildren: UnitChild[]
   onRemove: (detail: TransportDetail) => void
   updating: string | null
 }) {
   const [showCreator, setShowCreator] = useState(false)
+  const [showAddPanel, setShowAddPanel] = useState(false)
   const stops = schedule ? buildStops(schedule.transport_details) : []
 
   return (
@@ -369,11 +366,37 @@ function ScheduleCard({
               {schedule.transport_vehicles.name}
             </Badge>
           )}
+          {/* 児童追加ボタン（スケジュールがある場合のみ表示） */}
+          {schedule && (
+            <button
+              onClick={() => setShowAddPanel((v) => !v)}
+              className={`ml-1 flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
+                showAddPanel
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'
+              }`}
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              追加
+            </button>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent>
         {schedule ? (
           <div className="space-y-3">
+            {/* 追加パネル */}
+            {showAddPanel && (
+              <AddChildPanel
+                schedule={schedule}
+                direction={direction}
+                date={date}
+                unitId={unitId}
+                allChildren={allChildren}
+                onClose={() => setShowAddPanel(false)}
+              />
+            )}
+
             {/* ルートヘッダー */}
             <div className="flex items-center gap-1.5">
               <Navigation className="h-3.5 w-3.5 text-indigo-500" />
@@ -410,13 +433,17 @@ function ScheduleCard({
                 </div>
                 <div className="ml-7 space-y-0.5">
                   {stop.children.map((detail) => (
-                    <DetailRow
-                      key={detail.id}
-                      detail={detail}
-                      direction={direction}
-                      updating={updating}
-                      onRemove={onRemove}
-                    />
+                    <div key={detail.id} className="flex items-center gap-2 py-1 px-3 bg-gray-50 rounded text-sm text-gray-700">
+                      <span className="flex-1">{detail.children?.name ?? '不明'}</span>
+                      <button
+                        onClick={() => onRemove(detail)}
+                        disabled={updating === detail.id}
+                        className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
+                        title="欠席にして外す"
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -443,7 +470,7 @@ function ScheduleCard({
             <p className="text-xs text-gray-400">
               {direction === 'pickup' ? 'お迎え' : 'お送り'}対象: {targetChildren.length}名
             </p>
-            {targetChildren.length > 0 && unitId && (
+            {unitId && (
               <Button size="sm" variant="outline" onClick={() => setShowCreator(true)} className="mt-1">
                 <Plus className="h-3.5 w-3.5" />
                 スケジュールを作成
