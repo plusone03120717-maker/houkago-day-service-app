@@ -17,6 +17,7 @@ import {
   Plus,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { TransportScheduleCreator } from './transport-schedule-creator'
 
 type Unit = { id: string; name: string; service_type: string }
 type Vehicle = { id: string; name: string; capacity: number }
@@ -69,7 +70,6 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
   const pickupSchedule = schedules.find((s) => s.direction === 'pickup')
   const dropoffSchedule = schedules.find((s) => s.direction === 'dropoff')
 
-  // 送迎対象の児童（送迎あり）
   const pickupChildren = attendingChildren.filter(
     (c) => c.pickup_type === 'both' || c.pickup_type === 'pickup_only'
   )
@@ -140,7 +140,6 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* お迎え */}
         <ScheduleCard
           title="お迎え"
           direction="pickup"
@@ -148,12 +147,12 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
           targetChildren={pickupChildren}
           date={date}
           unitId={selectedUnitId}
+          vehicles={vehicles}
           onUpdateStatus={updateDetailStatus}
           onNotify={notifyParent}
           updating={updating}
         />
 
-        {/* 送り */}
         <ScheduleCard
           title="お送り"
           direction="dropoff"
@@ -161,6 +160,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
           targetChildren={dropoffChildren}
           date={date}
           unitId={selectedUnitId}
+          vehicles={vehicles}
           onUpdateStatus={updateDetailStatus}
           onNotify={notifyParent}
           updating={updating}
@@ -177,20 +177,24 @@ function ScheduleCard({
   targetChildren,
   date,
   unitId,
+  vehicles,
   onUpdateStatus,
   onNotify,
   updating,
 }: {
   title: string
-  direction: string
+  direction: 'pickup' | 'dropoff'
   schedule: Schedule | undefined
   targetChildren: AttendingChild[]
   date: string
   unitId: string
+  vehicles: Vehicle[]
   onUpdateStatus: (id: string, status: string) => void
   onNotify: (id: string) => void
   updating: string | null
 }) {
+  const [showCreator, setShowCreator] = useState(false)
+
   const statusLabel: Record<string, string> = {
     scheduled: '予定',
     boarded: '乗車済',
@@ -280,12 +284,32 @@ function ScheduleCard({
               </div>
             ))}
           </div>
+        ) : showCreator ? (
+          <TransportScheduleCreator
+            date={date}
+            unitId={unitId}
+            direction={direction}
+            vehicles={vehicles}
+            onCreated={() => setShowCreator(false)}
+            onCancel={() => setShowCreator(false)}
+          />
         ) : (
-          <div className="py-6 text-center">
-            <p className="text-sm text-gray-400 mb-3">スケジュールが未設定です</p>
+          <div className="py-6 text-center space-y-3">
+            <p className="text-sm text-gray-400">スケジュールが未設定です</p>
             <p className="text-xs text-gray-400">
               {direction === 'pickup' ? 'お迎え' : 'お送り'}対象: {targetChildren.length}名
             </p>
+            {targetChildren.length > 0 && unitId && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowCreator(true)}
+                className="mt-1"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                スケジュールを作成
+              </Button>
+            )}
           </div>
         )}
       </CardContent>
