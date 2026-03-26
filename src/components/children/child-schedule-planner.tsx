@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Trash2, Power, CalendarRange } from 'lucide-react'
+import { Plus, Trash2, Power, CalendarRange, Clock } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 type Unit = { id: string; name: string; service_type: string }
@@ -17,6 +17,8 @@ type Plan = {
   start_date: string
   end_date: string | null
   is_active: boolean
+  pickup_time: string | null
+  dropoff_time: string | null
   units: { name: string } | null
 }
 
@@ -29,6 +31,11 @@ const DAY_COLORS: Record<number, string> = {
   4: 'bg-indigo-100 text-indigo-700 border-indigo-300',
   5: 'bg-indigo-100 text-indigo-700 border-indigo-300',
   6: 'bg-blue-100 text-blue-700 border-blue-300',
+}
+
+function formatTime(time: string | null): string {
+  if (!time) return ''
+  return time.slice(0, 5) // 'HH:MM'
 }
 
 interface Props {
@@ -54,6 +61,8 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [endDate, setEndDate] = useState('')
   const [noEndDate, setNoEndDate] = useState(true)
+  const [pickupTime, setPickupTime] = useState('')
+  const [dropoffTime, setDropoffTime] = useState('')
 
   const toggleDay = (d: number) =>
     setSelectedDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort())
@@ -89,8 +98,10 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
         start_date: startDate,
         end_date: noEndDate ? null : (endDate || null),
         is_active: true,
+        pickup_time: pickupTime || null,
+        dropoff_time: dropoffTime || null,
       })
-      .select('id, unit_id, day_of_week, start_date, end_date, is_active, units(name)')
+      .select('id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, units(name)')
       .single()
     if (error) {
       setSaving(false)
@@ -106,6 +117,8 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
       setStartDate(new Date().toISOString().slice(0, 10))
       setEndDate('')
       setNoEndDate(true)
+      setPickupTime('')
+      setDropoffTime('')
       startTransition(() => router.refresh())
     }
   }
@@ -159,6 +172,24 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                         </span>
                       ))}
                     </div>
+
+                    {/* 送迎時間 */}
+                    {(plan.pickup_time || plan.dropoff_time) && (
+                      <div className="flex gap-3 flex-wrap">
+                        {plan.pickup_time && (
+                          <span className="flex items-center gap-1 text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                            <Clock className="h-3 w-3" />
+                            お迎え {formatTime(plan.pickup_time)}
+                          </span>
+                        )}
+                        {plan.dropoff_time && (
+                          <span className="flex items-center gap-1 text-xs text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
+                            <Clock className="h-3 w-3" />
+                            お送り {formatTime(plan.dropoff_time)}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* 期間 */}
                     <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -241,6 +272,43 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
               {selectedDays.length === 0 && (
                 <p className="text-xs text-red-500 mt-1">曜日を1つ以上選択してください</p>
               )}
+            </div>
+
+            {/* 送迎時間 */}
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-2 block">
+                送迎時間
+                <span className="ml-1 text-gray-400 font-normal">（1時間単位で便が自動的に分かれます）</span>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-indigo-400"></span>
+                    お迎え時間
+                  </label>
+                  <input
+                    type="time"
+                    value={pickupTime}
+                    onChange={(e) => setPickupTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-teal-400"></span>
+                    お送り時間
+                  </label>
+                  <input
+                    type="time"
+                    value={dropoffTime}
+                    onChange={(e) => setDropoffTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 mt-1.5">
+                曜日によって時間が異なる場合は、その曜日だけ別のスケジュールとして追加してください
+              </p>
             </div>
 
             {/* 開始日 */}
