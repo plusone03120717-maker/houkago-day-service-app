@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Save } from 'lucide-react'
+import { Save, Search, Loader2 } from 'lucide-react'
 
 type Unit = { id: string; name: string; service_type: string }
 
@@ -16,6 +16,7 @@ interface ChildData {
   name_kana: string
   birth_date: string
   gender: string
+  postal_code: string
   address: string
   school_name: string
   grade: string
@@ -40,12 +41,15 @@ export function ChildForm({ units, initial }: Props) {
   const [, startTransition] = useTransition()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [postalSearching, setPostalSearching] = useState(false)
+  const [postalError, setPostalError] = useState('')
 
   const [form, setForm] = useState<ChildData>({
     name: initial?.name ?? '',
     name_kana: initial?.name_kana ?? '',
     birth_date: initial?.birth_date ?? '',
     gender: initial?.gender ?? 'male',
+    postal_code: initial?.postal_code ?? '',
     address: initial?.address ?? '',
     school_name: initial?.school_name ?? '',
     grade: initial?.grade ?? '',
@@ -94,6 +98,55 @@ export function ChildForm({ units, initial }: Props) {
     }))
   }
 
+  // 郵便番号から住所を自動入力
+  const handlePostalSearch = async () => {
+    const code = form.postal_code.replace(/[^0-9]/g, '')
+    if (code.length !== 7) {
+      setPostalError('7桁の数字で入力してください')
+      return
+    }
+    setPostalSearching(true)
+    setPostalError('')
+    try {
+      const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${code}`)
+      const json = await res.json() as { results: { address1: string; address2: string; address3: string }[] | null }
+      if (!json.results || json.results.length === 0) {
+        setPostalError('該当する住所が見つかりませんでした')
+        return
+      }
+      const { address1, address2, address3 } = json.results[0]
+      setForm((prev) => ({ ...prev, address: `${address1}${address2}${address3}` }))
+    } catch {
+      setPostalError('住所の取得に失敗しました')
+    } finally {
+      setPostalSearching(false)
+    }
+  }
+
+  const handlePostalCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/[^0-9\-]/g, '')
+    setPostalError('')
+    setForm((prev) => ({ ...prev, postal_code: val }))
+    // 7桁揃ったら自動検索
+    if (val.replace(/[^0-9]/g, '').length === 7) {
+      const code = val.replace(/[^0-9]/g, '')
+      setPostalSearching(true)
+      setPostalError('')
+      fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${code}`)
+        .then((r) => r.json())
+        .then((json: { results: { address1: string; address2: string; address3: string }[] | null }) => {
+          if (json.results?.[0]) {
+            const { address1, address2, address3 } = json.results[0]
+            setForm((prev) => ({ ...prev, address: `${address1}${address2}${address3}` }))
+          } else {
+            setPostalError('該当する住所が見つかりませんでした')
+          }
+        })
+        .catch(() => setPostalError('住所の取得に失敗しました'))
+        .finally(() => setPostalSearching(false))
+    }
+  }
+
   const toggleUnit = (unitId: string) => {
     setForm((prev) => ({
       ...prev,
@@ -117,6 +170,7 @@ export function ChildForm({ units, initial }: Props) {
       name_kana: form.name_kana || null,
       birth_date: form.birth_date,
       gender: form.gender,
+      postal_code: form.postal_code || null,
       address: form.address || null,
       school_name: form.school_name || null,
       grade: form.grade || null,
@@ -228,9 +282,36 @@ export function ChildForm({ units, initial }: Props) {
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-medium text-gray-700 mb-1 block">住所</label>
-            <Input value={form.address} onChange={set('address')} placeholder="東京都〇〇区..." />
+          <div className="space-y-2">
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">郵便番号</label>
+              <div className="flex gap-2">
+                <Input
+                  value={form.postal_code}
+                  onChange={handlePostalCodeChange}
+                  placeholder="1234567"
+                  maxLength={8}
+                  className="w-36"
+                />
+                <button
+                  type="button"
+                  onClick={handlePostalSearch}
+                  disabled={postalSearching}
+                  className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-indigo-700 border border-indigo-300 rounded-lg hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+                >
+                  {postalSearching
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <Search className="h-3.5 w-3.5" />
+                  }
+                  住所を検索
+                </button>
+              </div>
+              {postalError && <p className="text-xs text-red-500 mt-1">{postalError}</p>}
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">住所</label>
+              <Input value={form.address} onChange={set('address')} placeholder="東京都〇〇区〇〇町1-2-3" />
+            </div>
           </div>
         </CardContent>
       </Card>

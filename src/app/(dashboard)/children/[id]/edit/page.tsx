@@ -13,6 +13,7 @@ type Child = {
   name_kana: string | null
   birth_date: string
   gender: string
+  postal_code: string | null
   address: string | null
   school_name: string | null
   grade: string | null
@@ -35,7 +36,7 @@ export default async function EditChildPage({
   const [{ data: childRaw }, { data: unitsRaw }] = await Promise.all([
     supabase
       .from('children')
-      .select('id, name, name_kana, birth_date, gender, address, school_name, grade, disability_type, diagnosis, allergy_info, medical_info, notes, children_units(unit_id)')
+      .select('id, name, name_kana, birth_date, gender, postal_code, address, school_name, grade, disability_type, diagnosis, allergy_info, medical_info, notes, children_units(unit_id)')
       .eq('id', id)
       .single(),
     supabase.from('units').select('id, name, service_type').order('name'),
@@ -65,6 +66,7 @@ export default async function EditChildPage({
           name_kana: child.name_kana ?? '',
           birth_date: child.birth_date,
           gender: child.gender,
+          postal_code: child.postal_code ?? '',
           address: child.address ?? '',
           school_name: child.school_name ?? '',
           grade: child.grade ?? '',

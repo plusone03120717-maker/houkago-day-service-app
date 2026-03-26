@@ -1,0 +1,27 @@
+
+> houkago-day-service-app@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.0 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.19:3000
+- Environments: .env.local
+✓ Ready in 628ms
+- Experiments (use with caution):
+  · staleTimes
+
+ GET / 307 in 1386ms (next.js: 97ms, proxy.ts: 1121ms, application-code: 168ms)
+ GET /dashboard 200 in 1786ms (next.js: 47ms, proxy.ts: 53ms, application-code: 1686ms)
+ GET /login 200 in 119ms (next.js: 31ms, proxy.ts: 8ms, application-code: 79ms)
+ GET /login 200 in 31ms (next.js: 3ms, proxy.ts: 6ms, application-code: 23ms)
+ GET / 307 in 555ms (next.js: 3ms, proxy.ts: 467ms, application-code: 85ms)
+ GET /dashboard 200 in 3.7s (next.js: 2ms, proxy.ts: 52ms, application-code: 3.6s)
+ GET /login 200 in 34ms (next.js: 2ms, proxy.ts: 6ms, application-code: 26ms)
+ GET /login 200 in 44ms (next.js: 7ms, proxy.ts: 9ms, application-code: 28ms)
+ GET /children 200 in 408ms (next.js: 38ms, proxy.ts: 157ms, application-code: 213ms)
+ GET /login 200 in 34ms (next.js: 3ms, proxy.ts: 6ms, application-code: 25ms)
+ GET /children/4a5976e2-2b78-4d0f-b397-471b3cde7912 200 in 1209ms (next.js: 399ms, proxy.ts: 146ms, application-code: 664ms)
+ GET /login 200 in 42ms (next.js: 3ms, proxy.ts: 5ms, application-code: 33ms)
+ GET /children/4a5976e2-2b78-4d0f-b397-471b3cde7912 200 in 583ms (next.js: 37ms, proxy.ts: 479ms, application-code: 67ms)
+ GET /children/4a5976e2-2b78-4d0f-b397-471b3cde7912 200 in 95ms (next.js: 6ms, proxy.ts: 43ms, application-code: 46ms)
+ GET /login 200 in 79ms (next.js: 5ms, proxy.ts: 5ms, application-code: 68ms)
