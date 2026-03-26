@@ -144,9 +144,8 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
     startTransition(() => router.refresh())
   }
 
-  /** 便タイトル（複数便なら出発時間を付記） */
-  const scheduleTitle = (base: string, sched: Schedule, total: number) => {
-    if (total <= 1) return base
+  /** 便タイトル（常に出発時間を付記） */
+  const scheduleTitle = (base: string, sched: Schedule) => {
     return sched.departure_time
       ? `${base}（${sched.departure_time.slice(0, 5)} 便）`
       : `${base}（時間未設定便）`
@@ -208,7 +207,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
             pickupSchedules.map((sched) => (
               <ScheduleCard
                 key={sched.id}
-                title={scheduleTitle('お迎え', sched, pickupSchedules.length)}
+                title={scheduleTitle('お迎え', sched)}
                 direction="pickup"
                 schedule={sched}
                 targetChildren={pickupChildren}
@@ -242,7 +241,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
             dropoffSchedules.map((sched) => (
               <ScheduleCard
                 key={sched.id}
-                title={scheduleTitle('お送り', sched, dropoffSchedules.length)}
+                title={scheduleTitle('お送り', sched)}
                 direction="dropoff"
                 schedule={sched}
                 targetChildren={dropoffChildren}
