@@ -47,7 +47,7 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
     const payload = {
       child_id: childId,
       pickup_location_type: settings.pickup_location_type,
-      dropoff_location_type: settings.dropoff_location_type,
+      dropoff_location_type: 'home',
       notes: settings.notes || null,
       updated_at: new Date().toISOString(),
     }
@@ -120,23 +120,10 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
         </div>
         <div>
           <label className="text-xs font-medium text-gray-600 block mb-2">降車場所</label>
-          <div className="flex gap-3">
-            {(['home', 'school'] as const).map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => setSettings((prev) => ({ ...prev, dropoff_location_type: type }))}
-                className={`flex-1 py-2.5 px-4 rounded-lg border text-sm font-medium transition-colors ${
-                  settings.dropoff_location_type === type
-                    ? 'bg-green-600 text-white border-green-600'
-                    : 'bg-white text-gray-600 border-gray-300 hover:border-green-400'
-                }`}
-              >
-                {type === 'home' ? '自宅' : '学校'}
-              </button>
-            ))}
+          <div className="py-2.5 px-4 rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-600 inline-block">
+            自宅
           </div>
-          <p className="text-xs text-gray-400 mt-1.5">{locationLabel(settings.dropoff_location_type)}</p>
+          <p className="text-xs text-gray-400 mt-1.5">{childAddress ?? '自宅'}</p>
         </div>
       </div>
 
