@@ -12,8 +12,8 @@ import {
   ChevronRight,
   MapPin,
   Clock,
-  CheckCircle,
-  Bell,
+  Navigation,
+  School as SchoolIcon,
   Plus,
   XCircle,
 } from 'lucide-react'
@@ -55,6 +55,21 @@ interface Props {
   attendingChildren: AttendingChild[]
 }
 
+/** 同じ場所の児童をまとめてルートのストップリストを作成 */
+function buildStops(details: TransportDetail[]) {
+  const stops: { location: string | null; isSchool: boolean; children: TransportDetail[] }[] = []
+  for (const d of details) {
+    const last = stops[stops.length - 1]
+    if (last && last.location === d.pickup_location) {
+      last.children.push(d)
+    } else {
+      const isSchool = !!(d.pickup_location && /学校|校$/.test(d.pickup_location))
+      stops.push({ location: d.pickup_location, isSchool, children: [d] })
+    }
+  }
+  return stops
+}
+
 export function TransportManageBoard({ date, units, selectedUnitId, schedules, vehicles, attendingChildren }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -77,28 +92,6 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
     (c) => c.pickup_type === 'both' || c.pickup_type === 'dropoff_only'
   )
 
-  const updateDetailStatus = async (detailId: string, status: string) => {
-    setUpdating(detailId)
-    const updates: Record<string, string | null> = { status }
-    if (status === 'boarded' || status === 'arrived') {
-      const now = new Date()
-      updates.actual_pickup_time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-    }
-    await supabase.from('transport_details').update(updates).eq('id', detailId)
-    setUpdating(null)
-    startTransition(() => router.refresh())
-  }
-
-  const notifyParent = async (detailId: string) => {
-    setUpdating(detailId)
-    await supabase
-      .from('transport_details')
-      .update({ parent_notified: true, notification_sent_at: new Date().toISOString() })
-      .eq('id', detailId)
-    setUpdating(null)
-    startTransition(() => router.refresh())
-  }
-
   const removeFromTransport = async (detail: TransportDetail) => {
     if (!confirm(`「${detail.children?.name}」を送迎スケジュールから外して欠席にしますか？`)) return
     setUpdating(detail.id)
@@ -115,11 +108,9 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">送迎管理</h1>
-          <p className="text-sm text-gray-500 mt-0.5">送迎スケジュールとステータス管理</p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">送迎管理</h1>
+        <p className="text-sm text-gray-500 mt-0.5">本日の送迎ルート</p>
       </div>
 
       {/* 日付・ユニット選択 */}
@@ -162,12 +153,9 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
           date={date}
           unitId={selectedUnitId}
           vehicles={vehicles}
-          onUpdateStatus={updateDetailStatus}
-          onNotify={notifyParent}
-          onRemoveFromTransport={removeFromTransport}
+          onRemove={removeFromTransport}
           updating={updating}
         />
-
         <ScheduleCard
           title="お送り"
           direction="dropoff"
@@ -176,9 +164,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
           date={date}
           unitId={selectedUnitId}
           vehicles={vehicles}
-          onUpdateStatus={updateDetailStatus}
-          onNotify={notifyParent}
-          onRemoveFromTransport={removeFromTransport}
+          onRemove={removeFromTransport}
           updating={updating}
         />
       </div>
@@ -194,9 +180,7 @@ function ScheduleCard({
   date,
   unitId,
   vehicles,
-  onUpdateStatus,
-  onNotify,
-  onRemoveFromTransport,
+  onRemove,
   updating,
 }: {
   title: string
@@ -206,23 +190,11 @@ function ScheduleCard({
   date: string
   unitId: string
   vehicles: Vehicle[]
-  onUpdateStatus: (id: string, status: string) => void
-  onNotify: (id: string) => void
-  onRemoveFromTransport: (detail: TransportDetail) => void
+  onRemove: (detail: TransportDetail) => void
   updating: string | null
 }) {
   const [showCreator, setShowCreator] = useState(false)
-
-  const statusLabel: Record<string, string> = {
-    scheduled: '予定',
-    boarded: '乗車済',
-    arrived: '到着済',
-  }
-  const statusVariant: Record<string, 'secondary' | 'success' | 'default'> = {
-    scheduled: 'secondary',
-    boarded: 'default',
-    arrived: 'success',
-  }
+  const stops = schedule ? buildStops(schedule.transport_details) : []
 
   return (
     <Card>
@@ -230,8 +202,13 @@ function ScheduleCard({
         <CardTitle className="flex items-center gap-2 text-base">
           <Car className="h-5 w-5 text-indigo-500" />
           {title}
+          {schedule && (
+            <span className="ml-auto text-xs text-gray-500 font-normal">
+              {schedule.transport_details.length}名
+            </span>
+          )}
           {schedule?.transport_vehicles && (
-            <Badge variant="secondary" className="text-xs ml-auto">
+            <Badge variant="secondary" className="text-xs">
               {schedule.transport_vehicles.name}
             </Badge>
           )}
@@ -239,78 +216,64 @@ function ScheduleCard({
       </CardHeader>
       <CardContent>
         {schedule ? (
-          <div className="space-y-2">
-            {schedule.departure_time && (
-              <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-                <Clock className="h-4 w-4" />
-                出発予定: {schedule.departure_time.slice(0, 5)}
-              </div>
-            )}
-            {schedule.transport_details.map((detail) => (
-              <div key={detail.id} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{detail.children?.name}</p>
-                  {detail.pickup_location && (
-                    <div className="flex items-center gap-1 text-xs text-gray-400 mt-0.5">
-                      <MapPin className="h-3 w-3" />
-                      {detail.pickup_location}
-                    </div>
-                  )}
-                  {detail.pickup_time && (
-                    <div className="flex items-center gap-1 text-xs text-gray-400">
-                      <Clock className="h-3 w-3" />
-                      予定: {detail.pickup_time.slice(0, 5)}
-                      {detail.actual_pickup_time && ` → 実績: ${detail.actual_pickup_time.slice(0, 5)}`}
-                    </div>
-                  )}
+          <div className="space-y-3">
+            {/* ルートヘッダー */}
+            <div className="flex items-center gap-1.5">
+              <Navigation className="h-3.5 w-3.5 text-indigo-500" />
+              <p className="text-xs font-semibold text-gray-500">
+                施設から最短順のルート
+                {schedule.departure_time && (
+                  <span className="ml-2 font-normal text-gray-400">
+                    <Clock className="h-3 w-3 inline mr-0.5" />
+                    出発 {schedule.departure_time.slice(0, 5)}
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* 出発 */}
+            <div className="flex items-center gap-2 text-xs text-gray-500 pl-1">
+              <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">出</span>
+              <span>施設（富士河口湖町小立）</span>
+            </div>
+
+            {/* 各ストップ */}
+            {stops.map((stop, i) => (
+              <div key={i} className="space-y-1">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+                  <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                    {i + 1}
+                  </span>
+                  {stop.isSchool
+                    ? <SchoolIcon className="h-3.5 w-3.5 text-indigo-500" />
+                    : <MapPin className="h-3.5 w-3.5 text-green-500" />
+                  }
+                  <span className="flex-1 truncate">{stop.location ?? '場所未設定'}</span>
+                  <span className="text-gray-400 font-normal">（{stop.children.length}名）</span>
                 </div>
-                <Badge variant={statusVariant[detail.status] ?? 'secondary'} className="text-xs flex-shrink-0">
-                  {statusLabel[detail.status] ?? detail.status}
-                </Badge>
-                <div className="flex gap-1">
-                  {detail.status === 'scheduled' && (
-                    <button
-                      onClick={() => onUpdateStatus(detail.id, 'boarded')}
-                      disabled={updating === detail.id}
-                      className="p-1.5 rounded text-indigo-600 hover:bg-indigo-50"
-                      title="乗車済みにする"
-                    >
-                      <CheckCircle className="h-4 w-4" />
-                    </button>
-                  )}
-                  {detail.status === 'boarded' && (
-                    <button
-                      onClick={() => onUpdateStatus(detail.id, 'arrived')}
-                      disabled={updating === detail.id}
-                      className="p-1.5 rounded text-green-600 hover:bg-green-50"
-                      title="到着済みにする"
-                    >
-                      <CheckCircle className="h-4 w-4" />
-                    </button>
-                  )}
-                  {!detail.parent_notified && (
-                    <button
-                      onClick={() => onNotify(detail.id)}
-                      disabled={updating === detail.id}
-                      className="p-1.5 rounded text-orange-500 hover:bg-orange-50"
-                      title="保護者に通知"
-                    >
-                      <Bell className="h-4 w-4" />
-                    </button>
-                  )}
-                  {detail.status === 'scheduled' && (
-                    <button
-                      onClick={() => onRemoveFromTransport(detail)}
-                      disabled={updating === detail.id}
-                      className="p-1.5 rounded text-red-400 hover:bg-red-50"
-                      title="欠席にして送迎から外す"
-                    >
-                      <XCircle className="h-4 w-4" />
-                    </button>
-                  )}
+                <div className="ml-7 space-y-0.5">
+                  {stop.children.map((detail) => (
+                    <div key={detail.id} className="flex items-center gap-2 py-1 px-3 bg-gray-50 rounded text-sm text-gray-700">
+                      <span className="flex-1">{detail.children?.name ?? '不明'}</span>
+                      <button
+                        onClick={() => onRemove(detail)}
+                        disabled={updating === detail.id}
+                        className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
+                        title="欠席にして外す"
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
+
+            {/* 帰着 */}
+            <div className="flex items-center gap-2 text-xs text-gray-500 pl-1">
+              <span className="w-5 h-5 rounded-full bg-gray-400 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">着</span>
+              <span>施設に帰着</span>
+            </div>
           </div>
         ) : showCreator ? (
           <TransportScheduleCreator
@@ -328,12 +291,7 @@ function ScheduleCard({
               {direction === 'pickup' ? 'お迎え' : 'お送り'}対象: {targetChildren.length}名
             </p>
             {targetChildren.length > 0 && unitId && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowCreator(true)}
-                className="mt-1"
-              >
+              <Button size="sm" variant="outline" onClick={() => setShowCreator(true)} className="mt-1">
                 <Plus className="h-3.5 w-3.5" />
                 スケジュールを作成
               </Button>
