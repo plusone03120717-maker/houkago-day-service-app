@@ -34,6 +34,7 @@ interface Props {
   initialUnitIds: string[]
   units: Unit[]
   facilityId: string
+  initialLineUserId: string
 }
 
 export function StaffProfileForm({
@@ -44,6 +45,7 @@ export function StaffProfileForm({
   initialUnitIds,
   units,
   facilityId,
+  initialLineUserId,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -53,6 +55,7 @@ export function StaffProfileForm({
   const [qualification, setQualification] = useState(initialQualification || '')
   const [selectedUnitIds, setSelectedUnitIds] = useState<Set<string>>(new Set(initialUnitIds))
   const [hireDate, setHireDate] = useState('')
+  const [lineUserId, setLineUserId] = useState(initialLineUserId || '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -116,6 +119,12 @@ export function StaffProfileForm({
           )
       }
     }
+
+    // LINE User ID を更新
+    await supabase
+      .from('users')
+      .update({ line_user_id: lineUserId || null })
+      .eq('id', userId)
 
     setSaving(false)
     setSaved(true)
@@ -201,6 +210,24 @@ export function StaffProfileForm({
           onChange={(e) => { setHireDate(e.target.value); setSaved(false) }}
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
+      </div>
+
+      {/* LINE User ID */}
+      <div>
+        <label className="text-xs font-medium text-gray-700 mb-1 block">
+          LINE User ID
+          <span className="ml-1 text-gray-400 font-normal">（送迎通知を受け取るために必要）</span>
+        </label>
+        <input
+          type="text"
+          value={lineUserId}
+          onChange={(e) => { setLineUserId(e.target.value); setSaved(false) }}
+          placeholder="U1234567890abcdef..."
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+        />
+        <p className="text-xs text-gray-400 mt-1">
+          LINE Developers のMessaging API設定画面 → チャンネルのユーザーIDで確認できます
+        </p>
       </div>
 
       {/* ユニット割当 */}

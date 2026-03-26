@@ -1,0 +1,186 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const LINE_API = 'https://api.line.me/v2/bot/message/push'
+
+type TransportDetail = {
+  child_id: string
+  pickup_location: string | null
+  children: { name: string } | null
+}
+
+type Schedule = {
+  id: string
+  direction: string
+  departure_time: string | null
+  transport_vehicles: { name: string } | null
+  transport_details: TransportDetail[]
+}
+
+type UnitSchedule = {
+  unit: { name: string }
+  schedules: Schedule[]
+}
+
+/** JST の今日の日付を yyyy-MM-dd 形式で返す */
+function getTodayJST(): string {
+  const now = new Date()
+  // UTC+9
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000)
+  return jst.toISOString().slice(0, 10)
+}
+
+/** yyyy-MM-dd を "2026年3月26日（木）" 形式に変換 */
+function formatJapaneseDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00+09:00')
+  const days = ['日', '月', '火', '水', '木', '金', '土']
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${days[d.getDay()]}）`
+}
+
+/** ルートテキストを組み立てる */
+function buildRouteText(details: TransportDetail[]): string {
+  const stops: { location: string; names: string[] }[] = []
+  for (const d of details) {
+    const loc = d.pickup_location ?? '場所未設定'
+    const name = d.children?.name ?? '不明'
+    const last = stops[stops.length - 1]
+    if (last && last.location === loc) {
+      last.names.push(name)
+    } else {
+      stops.push({ location: loc, names: [name] })
+    }
+  }
+  return stops.map((s, i) => `  ${i + 1}. ${s.location}（${s.names.join('・')}）`).join('\n')
+}
+
+/** LINE Push Message を送信 */
+async function sendLinePush(lineUserId: string, text: string, token: string): Promise<void> {
+  const res = await fetch(LINE_API, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      to: lineUserId,
+      messages: [{ type: 'text', text }],
+    }),
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    console.error(`LINE push failed for ${lineUserId}: ${res.status} ${body}`)
+  }
+}
+
+export async function GET(request: NextRequest) {
+  // Vercel Cron からの呼び出しを検証
+  const authHeader = request.headers.get('authorization')
+  const cronSecret = process.env.CRON_SECRET
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const lineToken = process.env.LINE_CHANNEL_ACCESS_TOKEN
+  if (!lineToken) {
+    return NextResponse.json({ error: 'LINE_CHANNEL_ACCESS_TOKEN not configured' }, { status: 500 })
+  }
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
+  const today = getTodayJST()
+
+  // 全ユニットを取得
+  const { data: units } = await supabase
+    .from('units')
+    .select('id, name')
+    .order('name')
+
+  if (!units || units.length === 0) {
+    return NextResponse.json({ message: 'no units' })
+  }
+
+  // 各ユニットのスケジュールを取得
+  const { data: schedulesRaw } = await supabase
+    .from('transport_schedules')
+    .select(`
+      id, direction, departure_time,
+      unit_id,
+      transport_vehicles (name),
+      transport_details (
+        child_id, pickup_location,
+        children (name)
+      )
+    `)
+    .in('unit_id', units.map((u) => u.id))
+    .eq('date', today)
+    .order('direction')
+
+  const schedules = (schedulesRaw ?? []) as unknown as (Schedule & { unit_id: string })[]
+
+  // ユニットごとにグループ化
+  const unitMap = new Map(units.map((u) => [u.id, u.name]))
+  const grouped = new Map<string, { unitName: string; schedules: Schedule[] }>()
+  for (const s of schedules) {
+    const unitName = unitMap.get(s.unit_id) ?? s.unit_id
+    if (!grouped.has(s.unit_id)) {
+      grouped.set(s.unit_id, { unitName, schedules: [] })
+    }
+    grouped.get(s.unit_id)!.schedules.push(s)
+  }
+
+  // メッセージ本文を組み立て
+  const dateLabel = formatJapaneseDate(today)
+  let messageText = `【本日の送迎スケジュール】\n${dateLabel}\n`
+
+  if (grouped.size === 0) {
+    messageText += '\n本日の送迎スケジュールはありません。'
+  } else {
+    for (const { unitName, schedules: unitSchedules } of grouped.values()) {
+      messageText += `\n▼ ${unitName}\n`
+      for (const sched of unitSchedules) {
+        const dirLabel = sched.direction === 'pickup' ? 'お迎え' : 'お送り'
+        const vehicleName = sched.transport_vehicles?.name ?? '車両未設定'
+        const depTime = sched.departure_time ? ` 出発 ${sched.departure_time.slice(0, 5)}` : ''
+        messageText += `\n■ ${dirLabel}（${vehicleName}）${depTime}\n`
+        if (sched.transport_details.length === 0) {
+          messageText += '  対象者なし\n'
+        } else {
+          messageText += buildRouteText(sched.transport_details) + '\n'
+        }
+      }
+    }
+  }
+
+  messageText = messageText.trim()
+
+  // line_user_id が登録されているスタッフ全員に送信
+  const { data: staffWithLine } = await supabase
+    .from('users')
+    .select('id, name, line_user_id')
+    .in('role', ['admin', 'staff'])
+    .not('line_user_id', 'is', null)
+
+  if (!staffWithLine || staffWithLine.length === 0) {
+    return NextResponse.json({ message: 'no staff with line_user_id', text: messageText })
+  }
+
+  const results = await Promise.allSettled(
+    staffWithLine.map((staff) =>
+      sendLinePush(staff.line_user_id as string, messageText, lineToken)
+    )
+  )
+
+  const sent = results.filter((r) => r.status === 'fulfilled').length
+  const failed = results.filter((r) => r.status === 'rejected').length
+
+  return NextResponse.json({
+    ok: true,
+    date: today,
+    sent,
+    failed,
+    recipients: staffWithLine.map((s) => s.name),
+  })
+}

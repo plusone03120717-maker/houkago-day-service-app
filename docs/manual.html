@@ -202,7 +202,12 @@
     <li><a href="#ch7">ヒヤリハット報告</a></li>
     <li><a href="#ch8">連絡帳</a></li>
     <li><a href="#ch9">お知らせ</a></li>
-    <li><a href="#ch10">送迎管理</a></li>
+    <li><a href="#ch10">送迎管理</a>
+      <ul class="sub">
+        <li>ルート自動生成・表示</li>
+        <li>LINE送迎通知</li>
+      </ul>
+    </li>
     <li><a href="#ch11">シフト管理・勤務時間集計</a></li>
     <li><a href="#ch12">国保連請求</a></li>
     <li><a href="#ch13">帳票出力</a></li>
@@ -489,21 +494,51 @@
   <div class="chapter-header">
     <div class="num">Chapter 10</div>
     <h2>送迎管理</h2>
-    <p>送迎ルートと車両管理</p>
+    <p>送迎ルート自動生成・表示とLINE通知</p>
   </div>
 
-  <h3>送迎スケジュールの確認</h3>
-  <div class="step"><span class="step-num">1</span> サイドバーの「送迎管理」をクリック</div>
-  <div class="step"><span class="step-num">2</span> 対象日・方向（送り/迎え）を選択</div>
-  <div class="step"><span class="step-num">3</span> 児童の乗降ステータスを更新</div>
+  <h3>送迎ルートの確認</h3>
+  <p>「送迎管理」画面を開くと、その日の利用計画（定期・個別予約）と送迎設定をもとに、お迎え・お送りのルートが自動生成されます。ルートは施設から最短順に最適化されます。</p>
 
-  <h4>送迎ステータス</h4>
+  <div class="step"><span class="step-num">1</span> サイドバーの「送迎管理」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 日付・ユニットを選択（画面上部）</div>
+  <div class="step"><span class="step-num">3</span> 「お迎え」「お送り」それぞれの車両・ルートを確認</div>
+
   <table>
-    <tr><th>ステータス</th><th>説明</th></tr>
-    <tr><td>予定</td><td>送迎予定（未実施）</td></tr>
-    <tr><td>乗車済み</td><td>車両に乗車確認</td></tr>
-    <tr><td>到着済み</td><td>目的地に到着・引き渡し完了</td></tr>
+    <tr><th>表示内容</th><th>説明</th></tr>
+    <tr><td>車両名</td><td>スケジュールに紐づいた車両（バッジ表示）</td></tr>
+    <tr><td>出発時刻</td><td>設定されている場合に表示</td></tr>
+    <tr><td>ストップ番号</td><td>施設から最短順に並んだ経由地</td></tr>
+    <tr><td>学校アイコン</td><td>学校名が含まれる場所は学校マークで表示</td></tr>
   </table>
+
+  <h3>欠席による送迎からの除外</h3>
+  <p>各児童の右側に表示される <strong>×ボタン</strong> をクリックすると、その児童を送迎スケジュールから除外し、出席ステータスも欠席に変更します。</p>
+  <div class="tip"><strong>💡 ヒント：</strong> 出席管理画面で欠席にした場合も、同様に送迎スケジュールから自動的に除外されます。</div>
+
+  <h3>LINE送迎通知（自動）</h3>
+  <p>毎日午後2時になると、その日の送迎スケジュールがLINEに自動送信されます。パソコンがオフでも、Vercelのサーバーが自動的に実行します。</p>
+
+  <h4>通知の受け取り方（初回設定）</h4>
+  <div class="step"><span class="step-num">1</span> スタッフ自身のLINE User IDを確認する</div>
+  <div class="step"><span class="step-num">2</span> 「設定」→「スタッフ管理」→ 自分の名前をクリック</div>
+  <div class="step"><span class="step-num">3</span> 「LINE User ID」欄に入力して保存</div>
+
+  <div class="tip"><strong>💡 LINE User IDの確認方法：</strong> LINE公式アカウントを友達追加した後、そのチャットで「ユーザーID」と送信するとIDが返信されるよう設定するか、LINE DevelopersコンソールのMessaging API設定からWebhookで取得できます。</div>
+
+  <h4>通知メッセージの例</h4>
+  <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:16px; font-family:monospace; font-size:10pt; line-height:1.8; white-space:pre-wrap;">【本日の送迎スケジュール】
+2026年3月26日（木）
+
+▼ 放デイA
+
+■ お迎え（バン1号）出発 14:00
+  1. ○○小学校（山田 太郎・鈴木 花子）
+  2. ○○（佐藤 次郎）
+
+■ お送り（バン1号）
+  1. ○○（山田 太郎）
+  2. ○○小学校（鈴木 花子・佐藤 次郎）</div>
 </div>
 
 <!-- Chapter 11 -->
@@ -622,6 +657,9 @@
   <div class="step"><span class="step-num">1</span> 「設定」→「スタッフ管理」をクリック</div>
   <div class="step"><span class="step-num">2</span> 「スタッフ追加」からメール・名前・権限を設定</div>
   <div class="step"><span class="step-num">3</span> スタッフ詳細から資格・雇用形態・研修記録を管理</div>
+  <div class="step"><span class="step-num">4</span> 「LINE User ID」欄に入力すると、毎日14時の送迎通知を受け取れる</div>
+
+  <div class="tip"><strong>💡 ヒント：</strong> LINE User IDを登録したスタッフ全員に送迎通知が送信されます。通知を受け取らない場合はこの欄を空のままにしてください。</div>
 
   <h3>処遇改善加算設定</h3>
   <p>「設定」→「加算設定」から、各種加算（処遇改善加算・特定処遇改善加算・ベースアップ等支援加算など）の有効/無効を設定します。請求データ生成時に自動的に反映されます。</p>
