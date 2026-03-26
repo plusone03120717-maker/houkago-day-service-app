@@ -3,6 +3,9 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { ChildForm } from '@/components/children/child-form'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Car } from 'lucide-react'
+import { ChildTransportSettingsForm } from '@/components/children/child-transport-settings-form'
 
 type Unit = { id: string; name: string; service_type: string }
 type ChildUnit = { unit_id: string }
@@ -25,6 +28,14 @@ type Child = {
   children_units: ChildUnit[]
 }
 
+type TransportSettings = {
+  id: string
+  transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
+  pickup_location_type: 'home' | 'school'
+  dropoff_location_type: 'home' | 'school'
+  notes: string | null
+}
+
 export default async function EditChildPage({
   params,
 }: {
@@ -33,18 +44,24 @@ export default async function EditChildPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: childRaw }, { data: unitsRaw }] = await Promise.all([
+  const [{ data: childRaw }, { data: unitsRaw }, { data: transportRaw }] = await Promise.all([
     supabase
       .from('children')
       .select('id, name, name_kana, birth_date, gender, postal_code, address, school_name, grade, disability_type, diagnosis, allergy_info, medical_info, notes, children_units(unit_id)')
       .eq('id', id)
       .single(),
     supabase.from('units').select('id, name, service_type').order('name'),
+    supabase
+      .from('child_transport_settings')
+      .select('id, transport_type, pickup_location_type, dropoff_location_type, notes')
+      .eq('child_id', id)
+      .maybeSingle(),
   ])
 
   if (!childRaw) notFound()
   const child = childRaw as unknown as Child
   const units = (unitsRaw ?? []) as unknown as Unit[]
+  const transportSettings = transportRaw as TransportSettings | null
 
   return (
     <div className="space-y-5">
@@ -78,6 +95,34 @@ export default async function EditChildPage({
           unit_ids: child.children_units.map((cu) => cu.unit_id),
         }}
       />
+
+      {/* 送迎設定 */}
+      <Card className="max-w-2xl">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Car className="h-4 w-4 text-indigo-500" />
+            送迎設定
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ChildTransportSettingsForm
+            childId={id}
+            childAddress={child.address}
+            schoolName={child.school_name}
+            initial={
+              transportSettings
+                ? {
+                    id: transportSettings.id,
+                    transport_type: transportSettings.transport_type,
+                    pickup_location_type: transportSettings.pickup_location_type,
+                    dropoff_location_type: transportSettings.dropoff_location_type,
+                    notes: transportSettings.notes ?? '',
+                  }
+                : null
+            }
+          />
+        </CardContent>
+      </Card>
     </div>
   )
 }

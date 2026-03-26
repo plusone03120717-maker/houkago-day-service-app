@@ -9,6 +9,7 @@ import { ChildTransportSettingsForm } from '@/components/children/child-transpor
 
 type TransportSettings = {
   id: string
+  transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
   pickup_location_type: 'home' | 'school'
   dropoff_location_type: 'home' | 'school'
   notes: string | null
@@ -33,7 +34,7 @@ export default async function ChildTransportPage({
 
   const { data: settingsRaw } = await supabase
     .from('child_transport_settings')
-    .select('id, pickup_location_type, dropoff_location_type, notes')
+    .select('id, transport_type, pickup_location_type, dropoff_location_type, notes')
     .eq('child_id', id)
     .maybeSingle()
   const settings = settingsRaw as TransportSettings | null
@@ -66,6 +67,7 @@ export default async function ChildTransportPage({
               settings
                 ? {
                     id: settings.id,
+                    transport_type: settings.transport_type,
                     pickup_location_type: settings.pickup_location_type,
                     dropoff_location_type: settings.dropoff_location_type,
                     notes: settings.notes ?? '',
