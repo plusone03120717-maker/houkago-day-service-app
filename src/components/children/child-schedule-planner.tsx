@@ -38,6 +38,35 @@ function formatTime(time: string | null): string {
   return time.slice(0, 5)
 }
 
+/** 9:00〜18:00 を30分刻みで生成 */
+const TIME_OPTIONS: { value: string; label: string }[] = (() => {
+  const opts = []
+  for (let h = 9; h <= 18; h++) {
+    for (const m of [0, 30]) {
+      if (h === 18 && m === 30) break
+      const hh = String(h).padStart(2, '0')
+      const mm = String(m).padStart(2, '0')
+      opts.push({ value: `${hh}:${mm}`, label: `${hh}:${mm}` })
+    }
+  }
+  return opts
+})()
+
+function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+    >
+      <option value="">未設定</option>
+      {TIME_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value}>{o.label}</option>
+      ))}
+    </select>
+  )
+}
+
 /** start_date === end_date なら日付指定の一回のみ */
 function isOneTime(plan: Plan): boolean {
   return !!plan.end_date && plan.start_date === plan.end_date
@@ -240,16 +269,14 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
             <span className="inline-block w-2 h-2 rounded-full bg-indigo-400" />
             お迎え時間
           </label>
-          <input type="time" value={pt} onChange={(e) => setPt(e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <TimeSelect value={pt} onChange={setPt} />
         </div>
         <div>
           <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1">
             <span className="inline-block w-2 h-2 rounded-full bg-teal-400" />
             お送り時間
           </label>
-          <input type="time" value={dt} onChange={(e) => setDt(e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <TimeSelect value={dt} onChange={setDt} />
         </div>
       </div>
     </div>
