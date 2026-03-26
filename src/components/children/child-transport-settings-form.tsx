@@ -20,6 +20,7 @@ interface Props {
   childId: string
   childAddress: string | null
   schoolName: string | null
+  schoolAddress: string | null
   initial: TransportSettings | null
 }
 
@@ -30,7 +31,7 @@ const TRANSPORT_TYPE_OPTIONS: { value: TransportType; label: string }[] = [
   { value: 'both', label: '行き・帰り両方' },
 ]
 
-export function ChildTransportSettingsForm({ childId, childAddress, schoolName, initial }: Props) {
+export function ChildTransportSettingsForm({ childId, childAddress, schoolName, schoolAddress, initial }: Props) {
   const supabase = createClient()
   const [settings, setSettings] = useState<TransportSettings>(
     initial ?? {
@@ -46,7 +47,9 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
 
   const locationLabel = (type: LocationType) => {
     if (type === 'home') return childAddress ? `自宅（${childAddress}）` : '自宅'
-    return schoolName ? `学校（${schoolName}）` : '学校'
+    if (schoolName && schoolAddress) return `${schoolName}（${schoolAddress}）`
+    if (schoolName) return `学校（${schoolName}）`
+    return '学校'
   }
 
   const showPickup = settings.transport_type === 'pickup_only' || settings.transport_type === 'both'

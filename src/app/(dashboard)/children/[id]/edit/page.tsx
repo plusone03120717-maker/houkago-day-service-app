@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Car } from 'lucide-react'
 import { ChildForm } from '@/components/children/child-form'
+import type { School } from '@/components/children/child-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Car } from 'lucide-react'
 import { ChildTransportSettingsForm } from '@/components/children/child-transport-settings-form'
 
 type Unit = { id: string; name: string; service_type: string }
@@ -18,6 +18,7 @@ type Child = {
   gender: string
   postal_code: string | null
   address: string | null
+  school_id: string | null
   school_name: string | null
   grade: string | null
   disability_type: string | null
@@ -44,13 +45,14 @@ export default async function EditChildPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: childRaw }, { data: unitsRaw }, { data: transportRaw }] = await Promise.all([
+  const [{ data: childRaw }, { data: unitsRaw }, { data: schoolsRaw }, { data: transportRaw }] = await Promise.all([
     supabase
       .from('children')
-      .select('id, name, name_kana, birth_date, gender, postal_code, address, school_name, grade, disability_type, diagnosis, allergy_info, medical_info, notes, children_units(unit_id)')
+      .select('id, name, name_kana, birth_date, gender, postal_code, address, school_id, school_name, grade, disability_type, diagnosis, allergy_info, medical_info, notes, children_units(unit_id)')
       .eq('id', id)
       .single(),
     supabase.from('units').select('id, name, service_type').order('name'),
+    supabase.from('schools').select('id, municipality, name, address').order('municipality').order('name'),
     supabase
       .from('child_transport_settings')
       .select('id, transport_type, pickup_location_type, dropoff_location_type, notes')
@@ -61,7 +63,12 @@ export default async function EditChildPage({
   if (!childRaw) notFound()
   const child = childRaw as unknown as Child
   const units = (unitsRaw ?? []) as unknown as Unit[]
+  const schools = (schoolsRaw ?? []) as unknown as School[]
   const transportSettings = transportRaw as TransportSettings | null
+
+  const schoolAddress = child.school_id
+    ? (schools.find((s) => s.id === child.school_id)?.address ?? null)
+    : null
 
   return (
     <div className="space-y-5">
@@ -77,6 +84,7 @@ export default async function EditChildPage({
 
       <ChildForm
         units={units}
+        schools={schools}
         initial={{
           id: child.id,
           name: child.name,
@@ -85,6 +93,7 @@ export default async function EditChildPage({
           gender: child.gender,
           postal_code: child.postal_code ?? '',
           address: child.address ?? '',
+          school_id: child.school_id ?? '',
           school_name: child.school_name ?? '',
           grade: child.grade ?? '',
           disability_type: child.disability_type ?? '',
@@ -109,6 +118,7 @@ export default async function EditChildPage({
             childId={id}
             childAddress={child.address}
             schoolName={child.school_name}
+            schoolAddress={schoolAddress}
             initial={
               transportSettings
                 ? {

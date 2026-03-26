@@ -25,12 +25,19 @@ export default async function ChildTransportPage({
 
   const { data: childRaw } = await supabase
     .from('children')
-    .select('id, name, address, school_name')
+    .select('id, name, address, school_id, school_name, schools(address)')
     .eq('id', id)
     .single()
 
   if (!childRaw) notFound()
-  const child = childRaw as { id: string; name: string; address: string | null; school_name: string | null }
+  const child = childRaw as unknown as {
+    id: string
+    name: string
+    address: string | null
+    school_id: string | null
+    school_name: string | null
+    schools: { address: string } | null
+  }
 
   const { data: settingsRaw } = await supabase
     .from('child_transport_settings')
@@ -38,6 +45,8 @@ export default async function ChildTransportPage({
     .eq('child_id', id)
     .maybeSingle()
   const settings = settingsRaw as TransportSettings | null
+
+  const schoolAddress = child.schools?.address ?? null
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -63,6 +72,7 @@ export default async function ChildTransportPage({
             childId={id}
             childAddress={child.address}
             schoolName={child.school_name}
+            schoolAddress={schoolAddress}
             initial={
               settings
                 ? {
@@ -78,9 +88,9 @@ export default async function ChildTransportPage({
         </CardContent>
       </Card>
 
-      {(!child.address && !child.school_name) && (
+      {(!child.address && !child.school_id) && (
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-          自宅住所・学校名が未登録です。
+          自宅住所・学校が未登録です。
           <Link href={`/children/${id}/edit`} className="underline ml-1">
             基本情報を編集
           </Link>

@@ -2,17 +2,19 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { ChildForm } from '@/components/children/child-form'
+import type { School } from '@/components/children/child-form'
 
 type Unit = { id: string; name: string; service_type: string }
 
 export default async function NewChildPage() {
   const supabase = await createClient()
 
-  const { data: unitsRaw } = await supabase
-    .from('units')
-    .select('id, name, service_type')
-    .order('name')
+  const [{ data: unitsRaw }, { data: schoolsRaw }] = await Promise.all([
+    supabase.from('units').select('id, name, service_type').order('name'),
+    supabase.from('schools').select('id, municipality, name, address').order('municipality').order('name'),
+  ])
   const units = (unitsRaw ?? []) as unknown as Unit[]
+  const schools = (schoolsRaw ?? []) as unknown as School[]
 
   return (
     <div className="space-y-5">
@@ -26,7 +28,7 @@ export default async function NewChildPage() {
         </div>
       </div>
 
-      <ChildForm units={units} />
+      <ChildForm units={units} schools={schools} />
     </div>
   )
 }

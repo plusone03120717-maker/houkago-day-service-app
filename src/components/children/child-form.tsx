@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Save, Search, Loader2 } from 'lucide-react'
 
 type Unit = { id: string; name: string; service_type: string }
+export type School = { id: string; municipality: string; name: string; address: string }
 
 interface ChildData {
   id?: string
@@ -18,6 +19,7 @@ interface ChildData {
   gender: string
   postal_code: string
   address: string
+  school_id: string
   school_name: string
   grade: string
   disability_type: string
@@ -30,12 +32,13 @@ interface ChildData {
 
 interface Props {
   units: Unit[]
+  schools: School[]
   initial?: Partial<ChildData>
 }
 
 const GRADES = ['年少', '年中', '年長', '小1', '小2', '小3', '小4', '小5', '小6', '中1', '中2', '中3', '高1', '高2', '高3']
 
-export function ChildForm({ units, initial }: Props) {
+export function ChildForm({ units, schools, initial }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -51,6 +54,7 @@ export function ChildForm({ units, initial }: Props) {
     gender: initial?.gender ?? 'male',
     postal_code: initial?.postal_code ?? '',
     address: initial?.address ?? '',
+    school_id: initial?.school_id ?? '',
     school_name: initial?.school_name ?? '',
     grade: initial?.grade ?? '',
     disability_type: initial?.disability_type ?? '',
@@ -147,6 +151,19 @@ export function ChildForm({ units, initial }: Props) {
     }
   }
 
+  // 学校選択
+  const municipalities = [...new Set(schools.map((s) => s.municipality))]
+
+  const handleSchoolChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value
+    if (val === '') {
+      setForm((prev) => ({ ...prev, school_id: '', school_name: '' }))
+    } else {
+      const school = schools.find((s) => s.id === val)
+      setForm((prev) => ({ ...prev, school_id: val, school_name: school?.name ?? '' }))
+    }
+  }
+
   const toggleUnit = (unitId: string) => {
     setForm((prev) => ({
       ...prev,
@@ -172,7 +189,10 @@ export function ChildForm({ units, initial }: Props) {
       gender: form.gender,
       postal_code: form.postal_code || null,
       address: form.address || null,
-      school_name: form.school_name || null,
+      school_id: form.school_id || null,
+      school_name: form.school_id
+        ? (schools.find((s) => s.id === form.school_id)?.name ?? form.school_name ?? null)
+        : (form.school_name || null),
       grade: form.grade || null,
       disability_type: form.disability_type || null,
       diagnosis: form.diagnosis || null,
@@ -266,8 +286,26 @@ export function ChildForm({ units, initial }: Props) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">学校名</label>
-              <Input value={form.school_name} onChange={set('school_name')} placeholder="○○小学校" />
+              <label className="text-xs font-medium text-gray-700 mb-1 block">学校</label>
+              <select
+                value={form.school_id}
+                onChange={handleSchoolChange}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="">-- 学校を選択 --</option>
+                {municipalities.map((m) => (
+                  <optgroup key={m} label={m}>
+                    {schools.filter((s) => s.municipality === m).map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {form.school_id && (
+                <p className="text-xs text-gray-400 mt-1">
+                  {schools.find((s) => s.id === form.school_id)?.address}
+                </p>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">学年</label>
