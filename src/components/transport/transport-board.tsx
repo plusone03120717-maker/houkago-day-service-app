@@ -18,9 +18,11 @@ import {
   XCircle,
   UserPlus,
   X,
+  RefreshCw,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { TransportScheduleCreator } from './transport-schedule-creator'
+import { deleteAndRecreateTransportSchedules } from '@/app/actions/transport'
 
 type Unit = { id: string; name: string; service_type: string }
 type Vehicle = { id: string; name: string; capacity: number }
@@ -97,6 +99,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [updating, setUpdating] = useState<string | null>(null)
+  const [regenerating, setRegenerating] = useState(false)
 
   const changeDate = (delta: number) => {
     const d = new Date(date)
@@ -104,8 +107,13 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
     router.push(`/transport?date=${formatDate(d, 'yyyy-MM-dd')}&unit=${selectedUnitId}`)
   }
 
-  const pickupSchedule = schedules.find((s) => s.direction === 'pickup')
-  const dropoffSchedule = schedules.find((s) => s.direction === 'dropoff')
+  // 方向ごとに複数便を出発時間順でまとめる
+  const pickupSchedules = schedules
+    .filter((s) => s.direction === 'pickup')
+    .sort((a, b) => (a.departure_time ?? '').localeCompare(b.departure_time ?? ''))
+  const dropoffSchedules = schedules
+    .filter((s) => s.direction === 'dropoff')
+    .sort((a, b) => (a.departure_time ?? '').localeCompare(b.departure_time ?? ''))
 
   const pickupChildren = attendingChildren.filter(
     (c) => c.pickup_type === 'both' || c.pickup_type === 'pickup_only'
@@ -128,6 +136,22 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
     startTransition(() => router.refresh())
   }
 
+  const handleRegenerate = async () => {
+    if (!confirm('既存のスケジュールを削除して、利用スケジュールの時間設定をもとに再生成しますか？')) return
+    setRegenerating(true)
+    await deleteAndRecreateTransportSchedules(selectedUnitId, date)
+    setRegenerating(false)
+    startTransition(() => router.refresh())
+  }
+
+  /** 便タイトル（複数便なら出発時間を付記） */
+  const scheduleTitle = (base: string, sched: Schedule, total: number) => {
+    if (total <= 1) return base
+    return sched.departure_time
+      ? `${base}（${sched.departure_time.slice(0, 5)} 便）`
+      : `${base}（時間未設定便）`
+  }
+
   return (
     <div className="space-y-5">
       <div>
@@ -136,7 +160,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
       </div>
 
       {/* 日付・ユニット選択 */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
         <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
           <button onClick={() => changeDate(-1)} className="p-1 hover:bg-gray-100 rounded">
             <ChevronLeft className="h-4 w-4" />
@@ -164,33 +188,87 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
             </button>
           ))}
         </div>
+        {/* 再生成ボタン */}
+        {selectedUnitId && (
+          <button
+            onClick={handleRegenerate}
+            disabled={regenerating}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw className={`h-4 w-4 ${regenerating ? 'animate-spin' : ''}`} />
+            {regenerating ? '再生成中...' : 'スケジュール再生成'}
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <ScheduleCard
-          title="お迎え"
-          direction="pickup"
-          schedule={pickupSchedule}
-          targetChildren={pickupChildren}
-          date={date}
-          unitId={selectedUnitId}
-          vehicles={vehicles}
-          allChildren={allChildren}
-          onRemove={removeFromTransport}
-          updating={updating}
-        />
-        <ScheduleCard
-          title="お送り"
-          direction="dropoff"
-          schedule={dropoffSchedule}
-          targetChildren={dropoffChildren}
-          date={date}
-          unitId={selectedUnitId}
-          vehicles={vehicles}
-          allChildren={allChildren}
-          onRemove={removeFromTransport}
-          updating={updating}
-        />
+        {/* お迎え列（複数便対応） */}
+        <div className="space-y-4">
+          {pickupSchedules.length > 0 ? (
+            pickupSchedules.map((sched) => (
+              <ScheduleCard
+                key={sched.id}
+                title={scheduleTitle('お迎え', sched, pickupSchedules.length)}
+                direction="pickup"
+                schedule={sched}
+                targetChildren={pickupChildren}
+                date={date}
+                unitId={selectedUnitId}
+                vehicles={vehicles}
+                allChildren={allChildren}
+                onRemove={removeFromTransport}
+                updating={updating}
+              />
+            ))
+          ) : (
+            <ScheduleCard
+              title="お迎え"
+              direction="pickup"
+              schedule={undefined}
+              targetChildren={pickupChildren}
+              date={date}
+              unitId={selectedUnitId}
+              vehicles={vehicles}
+              allChildren={allChildren}
+              onRemove={removeFromTransport}
+              updating={updating}
+            />
+          )}
+        </div>
+
+        {/* お送り列（複数便対応） */}
+        <div className="space-y-4">
+          {dropoffSchedules.length > 0 ? (
+            dropoffSchedules.map((sched) => (
+              <ScheduleCard
+                key={sched.id}
+                title={scheduleTitle('お送り', sched, dropoffSchedules.length)}
+                direction="dropoff"
+                schedule={sched}
+                targetChildren={dropoffChildren}
+                date={date}
+                unitId={selectedUnitId}
+                vehicles={vehicles}
+                allChildren={allChildren}
+                onRemove={removeFromTransport}
+                updating={updating}
+              />
+            ))
+          ) : (
+            <ScheduleCard
+              title="お送り"
+              direction="dropoff"
+              schedule={undefined}
+              targetChildren={dropoffChildren}
+              date={date}
+              unitId={selectedUnitId}
+              vehicles={vehicles}
+              allChildren={allChildren}
+              onRemove={removeFromTransport}
+              updating={updating}
+            />
+          )}
+        </div>
       </div>
     </div>
   )

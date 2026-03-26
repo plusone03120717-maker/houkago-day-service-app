@@ -32,6 +32,17 @@ function toHourSlot(timeStr: string | null): string | null {
   return `${String(hour).padStart(2, '0')}:00:00`
 }
 
+/** 既存スケジュールを削除して再生成 */
+export async function deleteAndRecreateTransportSchedules(unitId: string, date: string) {
+  const supabase = await createClient()
+  await supabase
+    .from('transport_schedules')
+    .delete()
+    .eq('unit_id', unitId)
+    .eq('date', date)
+  await autoCreateTransportSchedules(unitId, date)
+}
+
 export async function autoCreateTransportSchedules(unitId: string, date: string) {
   const supabase = await createClient()
   const todayDow = new Date(date).getDay()
