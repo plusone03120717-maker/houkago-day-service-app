@@ -260,21 +260,21 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
   ) => (
     <div>
       <label className="text-xs font-medium text-gray-700 mb-2 block">
-        送迎時間
-        <span className="ml-1 text-gray-400 font-normal">（1時間単位で便が自動的に分かれます）</span>
+        利用時間
+        <span className="ml-1 text-gray-400 font-normal">（1時間単位でお迎え便が自動的に分かれます）</span>
       </label>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1">
             <span className="inline-block w-2 h-2 rounded-full bg-indigo-400" />
-            お迎え時間
+            開始時間
           </label>
           <TimeSelect value={pt} onChange={setPt} />
         </div>
         <div>
           <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1">
             <span className="inline-block w-2 h-2 rounded-full bg-teal-400" />
-            お送り時間
+            終了時間
           </label>
           <TimeSelect value={dt} onChange={setDt} />
         </div>
@@ -448,12 +448,12 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                         <div className="flex gap-3 flex-wrap">
                           {plan.pickup_time && (
                             <span className="flex items-center gap-1 text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                              <Clock className="h-3 w-3" />お迎え {formatTime(plan.pickup_time)}
+                              <Clock className="h-3 w-3" />開始 {formatTime(plan.pickup_time)}
                             </span>
                           )}
                           {plan.dropoff_time && (
                             <span className="flex items-center gap-1 text-xs text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
-                              <Clock className="h-3 w-3" />お送り {formatTime(plan.dropoff_time)}
+                              <Clock className="h-3 w-3" />終了 {formatTime(plan.dropoff_time)}
                             </span>
                           )}
                         </div>
