@@ -50,9 +50,13 @@ export default async function DashboardPage() {
   const lastMonthStart = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}-01`
   const lastMonthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
+  // 今日の曜日（0=日, 1=月, ..., 6=土）
+  const todayDow = now.getDay()
+
   // 並列フェッチ
   const [
     todayReservationsResult,
+    todayPlansResult,
     expiringCertsResult,
     notableRecordsResult,
     unreadMessagesResult,
@@ -71,6 +75,15 @@ export default async function DashboardPage() {
       .select('id, child_id, status, date, children(name), units(name)')
       .eq('date', today)
       .in('status', ['confirmed', 'reserved']),
+
+    // 有効な利用計画から今日の曜日に該当する児童
+    supabase
+      .from('usage_plans')
+      .select('id, child_id, unit_id, children(name), units(name)')
+      .eq('is_active', true)
+      .lte('start_date', today)
+      .or(`end_date.is.null,end_date.gte.${today}`)
+      .contains('day_of_week', [todayDow]),
 
     supabase
       .from('benefit_certificates')
@@ -159,7 +172,22 @@ export default async function DashboardPage() {
       .limit(20),
   ])
 
-  const todayReservations = (todayReservationsResult.data ?? []) as unknown as Reservation[]
+  // 予約 + 有効な利用計画から今日の予定をマージ（重複child_idは予約優先）
+  const reservations = (todayReservationsResult.data ?? []) as unknown as Reservation[]
+  const reservedChildIds = new Set(reservations.map((r) => r.child_id))
+  type PlanEntry = { id: string; child_id: string; unit_id: string; children: { name: string } | null; units: { name: string } | null }
+  const planEntries = (todayPlansResult.data ?? []) as unknown as PlanEntry[]
+  const planOnlyChildren = planEntries.filter((p) => !reservedChildIds.has(p.child_id))
+  const planAsReservations: Reservation[] = planOnlyChildren.map((p) => ({
+    id: p.id,
+    child_id: p.child_id,
+    status: 'plan',
+    date: today,
+    children: p.children,
+    units: p.units,
+  }))
+  const todayReservations = [...reservations, ...planAsReservations]
+
   const expiringCerts = (expiringCertsResult.data ?? []) as unknown as ExpiringCert[]
   const notableRecords = (notableRecordsResult.data ?? []) as unknown as NotableRecord[]
   const unreadCount = unreadMessagesResult.count ?? 0
@@ -380,8 +408,11 @@ export default async function DashboardPage() {
                     <span className="text-sm text-gray-900">{res.children?.name}</span>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500">{res.units?.name}</span>
-                      <Badge variant={res.status === 'confirmed' ? 'success' : 'secondary'} className="text-xs">
-                        {res.status === 'confirmed' ? '確定' : '予約済'}
+                      <Badge
+                        variant={res.status === 'confirmed' ? 'success' : res.status === 'plan' ? 'secondary' : 'secondary'}
+                        className="text-xs"
+                      >
+                        {res.status === 'confirmed' ? '確定' : res.status === 'plan' ? '定期' : '予約済'}
                       </Badge>
                     </div>
                   </div>

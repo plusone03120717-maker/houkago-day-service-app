@@ -111,6 +111,23 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
       if (error) { alert(`登録エラー: ${error.message}`); setSaving(null); return }
     }
 
+    // 欠席になった場合、送迎スケジュールからも削除
+    if (updates.status === 'absent') {
+      const { data: schedules } = await supabase
+        .from('transport_schedules')
+        .select('id')
+        .eq('unit_id', selectedUnitId)
+        .eq('date', date)
+      if (schedules && schedules.length > 0) {
+        const scheduleIds = schedules.map((s: { id: string }) => s.id)
+        await supabase
+          .from('transport_details')
+          .delete()
+          .eq('child_id', childId)
+          .in('schedule_id', scheduleIds)
+      }
+    }
+
     setSaving(null)
     startTransition(() => router.refresh())
   }

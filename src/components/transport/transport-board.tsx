@@ -15,6 +15,7 @@ import {
   CheckCircle,
   Bell,
   Plus,
+  XCircle,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { TransportScheduleCreator } from './transport-schedule-creator'
@@ -99,6 +100,20 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
     startTransition(() => router.refresh())
   }
 
+  const removeFromTransport = async (detail: TransportDetail) => {
+    if (!confirm(`「${detail.children?.name}」を送迎スケジュールから外して欠席にしますか？`)) return
+    setUpdating(detail.id)
+    await supabase.from('transport_details').delete().eq('id', detail.id)
+    await supabase
+      .from('daily_attendance')
+      .update({ status: 'absent' })
+      .eq('child_id', detail.child_id)
+      .eq('unit_id', selectedUnitId)
+      .eq('date', date)
+    setUpdating(null)
+    startTransition(() => router.refresh())
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -150,6 +165,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
           vehicles={vehicles}
           onUpdateStatus={updateDetailStatus}
           onNotify={notifyParent}
+          onRemoveFromTransport={removeFromTransport}
           updating={updating}
         />
 
@@ -163,6 +179,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
           vehicles={vehicles}
           onUpdateStatus={updateDetailStatus}
           onNotify={notifyParent}
+          onRemoveFromTransport={removeFromTransport}
           updating={updating}
         />
       </div>
@@ -180,6 +197,7 @@ function ScheduleCard({
   vehicles,
   onUpdateStatus,
   onNotify,
+  onRemoveFromTransport,
   updating,
 }: {
   title: string
@@ -191,6 +209,7 @@ function ScheduleCard({
   vehicles: Vehicle[]
   onUpdateStatus: (id: string, status: string) => void
   onNotify: (id: string) => void
+  onRemoveFromTransport: (detail: TransportDetail) => void
   updating: string | null
 }) {
   const [showCreator, setShowCreator] = useState(false)
@@ -278,6 +297,16 @@ function ScheduleCard({
                       title="保護者に通知"
                     >
                       <Bell className="h-4 w-4" />
+                    </button>
+                  )}
+                  {detail.status === 'scheduled' && (
+                    <button
+                      onClick={() => onRemoveFromTransport(detail)}
+                      disabled={updating === detail.id}
+                      className="p-1.5 rounded text-red-400 hover:bg-red-50"
+                      title="欠席にして送迎から外す"
+                    >
+                      <XCircle className="h-4 w-4" />
                     </button>
                   )}
                 </div>
