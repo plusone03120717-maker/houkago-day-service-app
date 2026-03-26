@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Plus, Trash2 } from 'lucide-react'
@@ -22,11 +21,10 @@ interface Props {
   staffOptions: StaffOption[]
 }
 
-export function VehicleForm({ facilityId, vehicles, staffOptions }: Props) {
-  const router = useRouter()
+export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOptions }: Props) {
   const supabase = createClient()
-  const [, startTransition] = useTransition()
 
+  const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles)
   const [name, setName] = useState('')
   const [capacity, setCapacity] = useState(4)
   const [driverStaffId, setDriverStaffId] = useState('')
@@ -42,29 +40,49 @@ export function VehicleForm({ facilityId, vehicles, staffOptions }: Props) {
     }
     setSaving(true)
     setError(null)
-    const { error: insertError } = await supabase.from('transport_vehicles').insert({
-      facility_id: facilityId,
-      name: name.trim(),
-      capacity,
-      driver_staff_id: driverStaffId || null,
-    })
+    const { data, error: insertError } = await supabase
+      .from('transport_vehicles')
+      .insert({
+        facility_id: facilityId,
+        name: name.trim(),
+        capacity,
+        driver_staff_id: driverStaffId || null,
+      })
+      .select('id, name, capacity, driver_staff_id')
+      .single()
+
     setSaving(false)
     if (insertError) {
       setError(insertError.message)
       return
     }
+    // ローカル状態を即時更新
+    const driver = driverStaffId
+      ? staffOptions.find((s) => s.id === driverStaffId) ?? null
+      : null
+    setVehicles((prev) => [
+      ...prev,
+      { ...data, driver: driver ? { name: driver.name } : null },
+    ])
     setName('')
     setCapacity(4)
     setDriverStaffId('')
-    startTransition(() => { router.refresh() })
   }
 
   const handleDelete = async (id: string) => {
     setDeleting(id)
-    const { error: deleteError } = await supabase.from('transport_vehicles').delete().eq('id', id)
+    setError(null)
+    const { error: deleteError } = await supabase
+      .from('transport_vehicles')
+      .delete()
+      .eq('id', id)
     setDeleting(null)
-    if (deleteError) { setError(deleteError.message); return }
-    startTransition(() => { router.refresh() })
+    if (deleteError) {
+      setError(deleteError.message)
+      return
+    }
+    // ローカル状態を即時更新
+    setVehicles((prev) => prev.filter((v) => v.id !== id))
   }
 
   return (
