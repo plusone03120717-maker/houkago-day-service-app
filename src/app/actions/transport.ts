@@ -3,21 +3,18 @@
 import { createClient } from '@/lib/supabase/server'
 import { buildRouteGroups, nearestNeighborSort, type RouteChildData } from '@/lib/transport-route'
 
-type AttendanceRow = {
-  child_id: string
-  pickup_type: string
-  children: {
-    id: string
-    name: string
-    postal_code: string | null
-    address: string | null
-    school_id: string | null
-    schools: { id: string; name: string; latitude: number | null; longitude: number | null } | null
-  } | null
+type ChildRow = {
+  id: string
+  name: string
+  postal_code: string | null
+  address: string | null
+  school_id: string | null
+  schools: { id: string; name: string; latitude: number | null; longitude: number | null } | null
 }
 
 type TransportSettingRow = {
   child_id: string
+  transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
   pickup_location_type: 'home' | 'school'
 }
 
@@ -30,46 +27,81 @@ function getPickupLocation(c: RouteChildData, direction: 'pickup' | 'dropoff'): 
 
 export async function autoCreateTransportSchedules(unitId: string, date: string) {
   const supabase = await createClient()
+  const todayDow = new Date(date).getDay()
 
-  // 出席中かつ送迎対象の児童を取得
-  const { data: attendanceRaw, error: attErr } = await supabase
-    .from('daily_attendance')
-    .select('child_id, pickup_type, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
+  // 利用計画から今日の対象児童を取得
+  const { data: plansRaw } = await supabase
+    .from('usage_plans')
+    .select('child_id, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
+    .eq('unit_id', unitId)
+    .eq('is_active', true)
+    .lte('start_date', date)
+    .or(`end_date.is.null,end_date.gte.${date}`)
+    .contains('day_of_week', [todayDow])
+
+  // 個別予約からも取得（重複は後でマージ）
+  const { data: reservationsRaw } = await supabase
+    .from('usage_reservations')
+    .select('child_id, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
     .eq('unit_id', unitId)
     .eq('date', date)
-    .eq('status', 'attended')
-    .in('pickup_type', ['both', 'pickup_only', 'dropoff_only'])
+    .in('status', ['confirmed', 'reserved'])
 
-  if (attErr || !attendanceRaw || attendanceRaw.length === 0) return
+  // 児童をユニーク化
+  const childrenMap = new Map<string, ChildRow>()
+  for (const p of plansRaw ?? []) {
+    if (p.child_id && !childrenMap.has(p.child_id)) {
+      childrenMap.set(p.child_id, p.children as unknown as ChildRow)
+    }
+  }
+  for (const r of reservationsRaw ?? []) {
+    if (r.child_id && !childrenMap.has(r.child_id)) {
+      childrenMap.set(r.child_id, r.children as unknown as ChildRow)
+    }
+  }
 
-  const attendance = attendanceRaw as unknown as AttendanceRow[]
-  const childIds = attendance.map((a) => a.child_id)
+  if (childrenMap.size === 0) return
+
+  const childIds = [...childrenMap.keys()]
 
   // 送迎設定を取得
   const { data: settingsRaw } = await supabase
     .from('child_transport_settings')
-    .select('child_id, pickup_location_type')
+    .select('child_id, transport_type, pickup_location_type')
     .in('child_id', childIds)
 
-  const settingsMap = new Map(
-    ((settingsRaw ?? []) as TransportSettingRow[]).map((s) => [s.child_id, s.pickup_location_type])
+  const settingsMap = new Map<string, TransportSettingRow>(
+    ((settingsRaw ?? []) as TransportSettingRow[]).map((s) => [s.child_id, s])
   )
 
-  const pickupCandidates: RouteChildData[] = attendance
-    .filter((a) => a.pickup_type === 'both' || a.pickup_type === 'pickup_only')
-    .map((a) => ({
-      child_id: a.child_id,
-      children: a.children as RouteChildData['children'],
-      pickup_location_type: settingsMap.get(a.child_id) ?? 'home',
-    }))
+  // 送迎設定がある児童のみ対象（noneは除外）
+  const pickupCandidates: RouteChildData[] = []
+  const dropoffCandidates: RouteChildData[] = []
 
-  const dropoffCandidates: RouteChildData[] = attendance
-    .filter((a) => a.pickup_type === 'both' || a.pickup_type === 'dropoff_only')
-    .map((a) => ({
-      child_id: a.child_id,
-      children: a.children as RouteChildData['children'],
-      pickup_location_type: settingsMap.get(a.child_id) ?? 'home',
-    }))
+  for (const [childId, childData] of childrenMap) {
+    const setting = settingsMap.get(childId)
+    if (!setting || setting.transport_type === 'none') continue
+
+    const routeChild: RouteChildData = {
+      child_id: childId,
+      children: {
+        id: childData?.id ?? childId,
+        name: childData?.name ?? '',
+        postal_code: childData?.postal_code ?? null,
+        address: childData?.address ?? null,
+        school_id: childData?.school_id ?? null,
+        schools: childData?.schools ?? null,
+      },
+      pickup_location_type: setting.pickup_location_type,
+    }
+
+    if (setting.transport_type === 'both' || setting.transport_type === 'pickup_only') {
+      pickupCandidates.push(routeChild)
+    }
+    if (setting.transport_type === 'both' || setting.transport_type === 'dropoff_only') {
+      dropoffCandidates.push(routeChild)
+    }
+  }
 
   // pickup・dropoff それぞれスケジュールを作成
   for (const direction of ['pickup', 'dropoff'] as const) {
@@ -92,7 +124,11 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       .select('id')
       .single()
 
-    if (schedErr || !schedule) continue
+    if (schedErr) {
+      if (schedErr.code === '23505') continue  // 既に存在する場合はスキップ
+      continue
+    }
+    if (!schedule) continue
 
     if (orderedChildren.length > 0) {
       await supabase.from('transport_details').insert(
@@ -105,5 +141,4 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       )
     }
   }
-
 }
