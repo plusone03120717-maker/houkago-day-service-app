@@ -14,7 +14,7 @@ const SCHEDULE_SELECT = `
   transport_vehicles (id, name, capacity),
   transport_details (
     id, child_id, pickup_location, pickup_time, actual_pickup_time, status, parent_notified,
-    children (id, name, name_kana)
+    children (id, name, name_kana, address, school_id, schools(id, name))
   )
 `
 

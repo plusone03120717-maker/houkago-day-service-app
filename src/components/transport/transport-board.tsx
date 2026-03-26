@@ -16,6 +16,9 @@ import {
   School as SchoolIcon,
   Plus,
   XCircle,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { TransportScheduleCreator } from './transport-schedule-creator'
@@ -30,7 +33,14 @@ export type TransportDetail = {
   actual_pickup_time: string | null
   status: string
   parent_notified: boolean
-  children: { id: string; name: string; name_kana: string | null } | null
+  children: {
+    id: string
+    name: string
+    name_kana: string | null
+    address: string | null
+    school_id: string | null
+    schools: { id: string; name: string } | null
+  } | null
 }
 export type Schedule = {
   id: string
@@ -172,6 +182,153 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
   )
 }
 
+/** 児童1行の編集UI */
+function DetailRow({
+  detail,
+  direction,
+  updating,
+  onRemove,
+}: {
+  detail: TransportDetail
+  direction: 'pickup' | 'dropoff'
+  updating: string | null
+  onRemove: (detail: TransportDetail) => void
+}) {
+  const supabase = createClient()
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [editing, setEditing] = useState(false)
+  const [mode, setMode] = useState<'manual' | 'auto'>('manual')
+  const [manualLocation, setManualLocation] = useState(detail.pickup_location ?? '')
+  const [saving, setSaving] = useState(false)
+
+  const homeAddress = detail.children?.address ?? null
+  const schoolName = detail.children?.schools?.name ?? null
+
+  const handleAutoSelect = (type: 'school' | 'home') => {
+    if (type === 'school') setManualLocation(schoolName ?? '')
+    else setManualLocation(homeAddress ?? '')
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    await supabase
+      .from('transport_details')
+      .update({ pickup_location: manualLocation || null })
+      .eq('id', detail.id)
+    setSaving(false)
+    setEditing(false)
+    startTransition(() => router.refresh())
+  }
+
+  const handleCancel = () => {
+    setManualLocation(detail.pickup_location ?? '')
+    setMode('manual')
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <div className="py-2 px-3 bg-indigo-50 rounded border border-indigo-100 space-y-2">
+        <p className="text-xs font-medium text-gray-700">{detail.children?.name ?? '不明'}</p>
+
+        {/* 手動 / 自動 切替 */}
+        <div className="flex gap-1.5">
+          {(['manual', 'auto'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                mode === m
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {m === 'manual' ? '手動' : '自動'}
+            </button>
+          ))}
+        </div>
+
+        {mode === 'manual' ? (
+          <input
+            type="text"
+            value={manualLocation}
+            onChange={(e) => setManualLocation(e.target.value)}
+            placeholder="場所を入力"
+            className="w-full border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+        ) : (
+          <div className="flex gap-1.5 flex-wrap">
+            {direction === 'pickup' && schoolName && (
+              <button
+                onClick={() => handleAutoSelect('school')}
+                className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50 transition-colors"
+              >
+                <SchoolIcon className="h-3 w-3" />
+                学校（{schoolName}）
+              </button>
+            )}
+            {homeAddress && (
+              <button
+                onClick={() => handleAutoSelect('home')}
+                className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border bg-white text-green-700 border-green-200 hover:bg-green-50 transition-colors"
+              >
+                <MapPin className="h-3 w-3" />
+                自宅（{homeAddress}）
+              </button>
+            )}
+            {!schoolName && !homeAddress && (
+              <p className="text-xs text-gray-400">住所・学校データが未登録です</p>
+            )}
+            {manualLocation && (
+              <p className="text-xs text-gray-500 mt-0.5">選択中: {manualLocation}</p>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-1.5">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            <Check className="h-3 w-3" />
+            {saving ? '保存中' : '保存'}
+          </button>
+          <button
+            onClick={handleCancel}
+            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <X className="h-3 w-3" />
+            キャンセル
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 py-1 px-3 bg-gray-50 rounded text-sm text-gray-700">
+      <span className="flex-1">{detail.children?.name ?? '不明'}</span>
+      <button
+        onClick={() => setEditing(true)}
+        className="p-1 rounded text-gray-300 hover:text-indigo-400 hover:bg-indigo-50 transition-colors flex-shrink-0"
+        title="場所を編集"
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+      <button
+        onClick={() => onRemove(detail)}
+        disabled={updating === detail.id}
+        className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
+        title="欠席にして外す"
+      >
+        <XCircle className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
 function ScheduleCard({
   title,
   direction,
@@ -253,17 +410,13 @@ function ScheduleCard({
                 </div>
                 <div className="ml-7 space-y-0.5">
                   {stop.children.map((detail) => (
-                    <div key={detail.id} className="flex items-center gap-2 py-1 px-3 bg-gray-50 rounded text-sm text-gray-700">
-                      <span className="flex-1">{detail.children?.name ?? '不明'}</span>
-                      <button
-                        onClick={() => onRemove(detail)}
-                        disabled={updating === detail.id}
-                        className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
-                        title="欠席にして外す"
-                      >
-                        <XCircle className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                    <DetailRow
+                      key={detail.id}
+                      detail={detail}
+                      direction={direction}
+                      updating={updating}
+                      onRemove={onRemove}
+                    />
                   ))}
                 </div>
               </div>
