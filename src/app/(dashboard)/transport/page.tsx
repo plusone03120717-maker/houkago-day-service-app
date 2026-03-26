@@ -12,7 +12,6 @@ type Vehicle = { id: string; name: string; capacity: number }
 const SCHEDULE_SELECT = `
   id, direction, departure_time, route_order,
   transport_vehicles (id, name, capacity),
-  users!transport_schedules_driver_staff_id_fkey (name),
   transport_details (
     id, child_id, pickup_location, pickup_time, actual_pickup_time, status, parent_notified,
     children (id, name, name_kana)

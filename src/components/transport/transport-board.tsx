@@ -38,7 +38,6 @@ export type Schedule = {
   departure_time: string | null
   route_order: number[]
   transport_vehicles: { id: string; name: string; capacity: number } | null
-  users: { name: string } | null
   transport_details: TransportDetail[]
 }
 export type AttendingChild = {
