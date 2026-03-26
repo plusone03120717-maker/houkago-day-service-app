@@ -17,10 +17,6 @@ type Schedule = {
   transport_details: TransportDetail[]
 }
 
-type UnitSchedule = {
-  unit: { name: string }
-  schedules: Schedule[]
-}
 
 /** JST の今日の日付を yyyy-MM-dd 形式で返す */
 function getTodayJST(): string {
@@ -156,21 +152,30 @@ export async function GET(request: NextRequest) {
 
   messageText = messageText.trim()
 
-  // line_user_id が登録されているスタッフ全員に送信
-  const { data: staffWithLine } = await supabase
-    .from('users')
-    .select('id, name, line_user_id')
-    .in('role', ['admin', 'staff'])
-    .not('line_user_id', 'is', null)
+  // line_user_id が登録されているスタッフ全員に送信（usersテーブル + staff_membersテーブル）
+  const [{ data: staffWithLine }, { data: membersWithLine }] = await Promise.all([
+    supabase
+      .from('users')
+      .select('id, name, line_user_id')
+      .in('role', ['admin', 'staff'])
+      .not('line_user_id', 'is', null),
+    supabase
+      .from('staff_members')
+      .select('id, name, line_user_id')
+      .not('line_user_id', 'is', null),
+  ])
 
-  if (!staffWithLine || staffWithLine.length === 0) {
-    return NextResponse.json({ message: 'no staff with line_user_id', text: messageText })
+  const recipients = [
+    ...(staffWithLine ?? []),
+    ...(membersWithLine ?? []),
+  ] as { id: string; name: string; line_user_id: string }[]
+
+  if (recipients.length === 0) {
+    return NextResponse.json({ message: 'no recipients with line_user_id', text: messageText })
   }
 
   const results = await Promise.allSettled(
-    staffWithLine.map((staff) =>
-      sendLinePush(staff.line_user_id as string, messageText, lineToken)
-    )
+    recipients.map((r) => sendLinePush(r.line_user_id, messageText, lineToken))
   )
 
   const sent = results.filter((r) => r.status === 'fulfilled').length
@@ -181,6 +186,6 @@ export async function GET(request: NextRequest) {
     date: today,
     sent,
     failed,
-    recipients: staffWithLine.map((s) => s.name),
+    recipients: recipients.map((r) => r.name),
   })
 }
