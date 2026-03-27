@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft } from 'lucide-react'
 import { NotificationSettingsForm } from '@/components/settings/notification-settings-form'
+import { LineTestButton } from '@/components/settings/line-test-button'
 
 type NotificationSettings = {
   id: string
@@ -64,6 +65,15 @@ export default async function NotificationsSettingsPage() {
             facilityId={facility?.id ?? null}
             initial={settings}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">LINE送迎通知テスト</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <LineTestButton />
         </CardContent>
       </Card>
     </div>
