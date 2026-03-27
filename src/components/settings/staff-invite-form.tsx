@@ -8,9 +8,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { UserPlus } from 'lucide-react'
 
-// 役職オプション（needsAuth=trueはアプリログインが必要）
+// 役職オプション（needsAuth=trueはアプリログイン・メールアドレスが必要）
 const ROLE_OPTIONS = [
-  { value: 'staff',    label: 'スタッフ',  needsAuth: true },
+  { value: 'staff',    label: 'スタッフ',  needsAuth: false },
   { value: 'admin',    label: '管理者',    needsAuth: true },
   { value: 'driver',   label: 'ドライバー', needsAuth: false },
   { value: 'therapist',label: '療育士',    needsAuth: false },
@@ -18,7 +18,6 @@ const ROLE_OPTIONS = [
 
 function getAuthRole(selected: Set<string>): 'admin' | 'staff' | null {
   if (selected.has('admin')) return 'admin'
-  if (selected.has('staff')) return 'staff'
   return null
 }
 
