@@ -66,6 +66,9 @@ export function ParentCalendar({
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedChild, setSelectedChild] = useState<string>(children[0]?.id ?? '')
   const [selectedUnit, setSelectedUnit] = useState<string>(units[0]?.id ?? '')
+  const [transportType, setTransportType] = useState<'none' | 'pickup_only' | 'dropoff_only' | 'both'>('both')
+  const [pickupTime, setPickupTime] = useState<string>('')
+  const [dropoffTime, setDropoffTime] = useState<string>('')
   const [loading, setLoading] = useState(false)
 
   const changeMonth = (delta: number) => {
@@ -119,6 +122,9 @@ export function ParentCalendar({
       status: 'reserved',
       requested_by: userId,
       requested_at: new Date().toISOString(),
+      transport_type: transportType,
+      pickup_time: pickupTime || null,
+      dropoff_time: dropoffTime || null,
     })
 
     setLoading(false)
@@ -334,14 +340,65 @@ export function ParentCalendar({
             <p className="text-sm text-gray-400">この日の予約はありません</p>
           )}
 
-          {/* 新規予約ボタン */}
+          {/* 新規予約フォーム */}
           {!selectedDateReservations.some(
             (r) => r.child_id === selectedChild && r.status !== 'cancelled'
           ) && (
-            <div className="pt-2">
-              {isFull ? (
+            <div className="pt-2 space-y-3">
+              {/* 送迎設定 */}
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">送迎</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'both', label: '送り・迎えあり' },
+                    { value: 'pickup_only', label: '送りのみ' },
+                    { value: 'dropoff_only', label: '迎えのみ' },
+                    { value: 'none', label: '送迎なし' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setTransportType(opt.value as typeof transportType)}
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors text-left',
+                        transportType === opt.value
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 利用時間 */}
+              {(transportType === 'pickup_only' || transportType === 'both') && (
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">送り時間（お迎え希望時刻）</label>
+                  <input
+                    type="time"
+                    value={pickupTime}
+                    onChange={(e) => setPickupTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              )}
+              {(transportType === 'dropoff_only' || transportType === 'both') && (
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">迎え時間（送り届け希望時刻）</label>
+                  <input
+                    type="time"
+                    value={dropoffTime}
+                    onChange={(e) => setDropoffTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              )}
+
+              {isFull && (
                 <p className="text-sm text-yellow-600 text-center">定員に達しているためキャンセル待ちになります</p>
-              ) : null}
+              )}
               <Button
                 onClick={makeReservation}
                 disabled={loading}

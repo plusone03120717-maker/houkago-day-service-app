@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { confirmReservation } from '@/app/actions/reservation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight, Check, X, Plus } from 'lucide-react'
@@ -97,10 +98,7 @@ export function UsageCalendar({
 
   const handleConfirm = async (reservationId: string) => {
     setUpdating(true)
-    await supabase
-      .from('usage_reservations')
-      .update({ status: 'confirmed' })
-      .eq('id', reservationId)
+    await confirmReservation(reservationId)
     setUpdating(false)
     startTransition(() => router.refresh())
   }
@@ -293,10 +291,7 @@ export function UsageCalendar({
                 const ids = selectedDateReservations
                   .filter((r) => r.status === 'reserved')
                   .map((r) => r.id)
-                await supabase
-                  .from('usage_reservations')
-                  .update({ status: 'confirmed' })
-                  .in('id', ids)
+                await Promise.all(ids.map((id) => confirmReservation(id)))
                 setUpdating(false)
                 startTransition(() => router.refresh())
               }}
