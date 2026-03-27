@@ -70,6 +70,26 @@ export default async function ChildSchedulePage({
     ?? plans[0]?.pickup_location_type
     ?? 'home'
 
+  // 曜日別設定を取得
+  const planIds = plans.map((p) => p.id)
+  const { data: daySettingsRaw } = planIds.length > 0
+    ? await supabase
+        .from('usage_plan_day_settings')
+        .select('id, plan_id, day_of_week, transport_type, pickup_location_type, pickup_time, dropoff_time')
+        .in('plan_id', planIds)
+    : { data: [] }
+
+  type DaySetting = {
+    id: string
+    plan_id: string
+    day_of_week: number
+    transport_type: string
+    pickup_location_type: string
+    pickup_time: string | null
+    dropoff_time: string | null
+  }
+  const daySettings = (daySettingsRaw ?? []) as unknown as DaySetting[]
+
   return (
     <div className="space-y-5 max-w-2xl">
       <div className="flex items-center gap-3">
@@ -92,6 +112,7 @@ export default async function ChildSchedulePage({
         schoolName={child.schools?.name ?? null}
         units={units}
         initialPlans={plans}
+        initialDaySettings={daySettings}
         defaultTransportType={defaultTransportType}
         defaultPickupLocationType={defaultPickupLocationType}
       />
