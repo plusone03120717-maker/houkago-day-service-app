@@ -4,7 +4,6 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight, Check, X } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 
@@ -121,7 +120,9 @@ export function ParentCalendar({
   }
 
   const makeReservation = async () => {
-    if (!selectedDate || !selectedChild || !selectedUnit) return
+    if (!selectedDate) { setReserveError('日付が選択されていません'); return }
+    if (!selectedChild) { setReserveError('お子様が選択されていません（ページを再読み込みしてください）'); return }
+    if (!selectedUnit) { setReserveError('ユニットが選択されていません（ページを再読み込みしてください）'); return }
     setLoading(true)
     setReserveError(null)
 
@@ -445,15 +446,15 @@ export function ParentCalendar({
               {isFull && (
                 <p className="text-sm text-yellow-600 text-center">定員に達しているためキャンセル待ちになります</p>
               )}
-              <Button
+              <button
+                type="button"
                 onClick={makeReservation}
                 disabled={loading}
-                className="w-full"
-                variant={isFull ? 'outline' : 'default'}
+                className={`w-full h-9 px-4 py-2 inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 ${isFull ? 'border border-gray-300 bg-white shadow-sm hover:bg-gray-100' : 'bg-indigo-600 text-white shadow hover:bg-indigo-700'}`}
               >
                 <Check className="h-4 w-4" />
                 {isFull ? 'キャンセル待ちで申し込む' : '利用を申し込む'}
-              </Button>
+              </button>
             </div>
           )}
         </div>
