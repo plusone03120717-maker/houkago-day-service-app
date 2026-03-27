@@ -1,0 +1,16 @@
+name: 毎日14時 送迎LINE通知
+
+on:
+  schedule:
+    - cron: '0 5 * * *'  # UTC 05:00 = JST 14:00
+  workflow_dispatch:       # 手動実行も可能
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 送迎スケジュールをLINE通知
+        run: |
+          curl -f -X GET "${{ secrets.APP_URL }}/api/cron/transport-notify" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json"
