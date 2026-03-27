@@ -3,6 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 
+// 認証ユーザーごとにデータが異なるため、サーバーキャッシュ・ルーターキャッシュを完全に無効化
+export const dynamic = 'force-dynamic'
+
 export default async function DashboardLayout({
   children,
 }: {
