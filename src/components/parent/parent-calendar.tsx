@@ -37,6 +37,13 @@ interface Props {
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
+const TIME_OPTIONS = Array.from({ length: 19 }, (_, i) => {
+  const totalMinutes = 9 * 60 + i * 30
+  const h = String(Math.floor(totalMinutes / 60)).padStart(2, '0')
+  const m = String(totalMinutes % 60).padStart(2, '0')
+  return `${h}:${m}`
+})
+
 const STATUS_COLORS: Record<string, string> = {
   confirmed: 'bg-green-500',
   reserved: 'bg-indigo-500',
@@ -376,23 +383,31 @@ export function ParentCalendar({
               {(transportType === 'pickup_only' || transportType === 'both') && (
                 <div>
                   <label className="text-xs font-medium text-gray-700 mb-1 block">送り時間（お迎え希望時刻）</label>
-                  <input
-                    type="time"
+                  <select
                     value={pickupTime}
                     onChange={(e) => setPickupTime(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                  >
+                    <option value="">時間を選択</option>
+                    {TIME_OPTIONS.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
                 </div>
               )}
               {(transportType === 'dropoff_only' || transportType === 'both') && (
                 <div>
                   <label className="text-xs font-medium text-gray-700 mb-1 block">迎え時間（送り届け希望時刻）</label>
-                  <input
-                    type="time"
+                  <select
                     value={dropoffTime}
                     onChange={(e) => setDropoffTime(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                  >
+                    <option value="">時間を選択</option>
+                    {TIME_OPTIONS.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
                 </div>
               )}
 
