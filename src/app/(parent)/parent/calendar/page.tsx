@@ -42,14 +42,14 @@ export default async function ParentCalendarPage({
 
   const childIds = children.map((c) => c.id)
 
-  // 子供が通うユニット
+  // 子供が通うユニット（children_units に登録がない場合は全ユニットを表示）
   const { data: childUnitsRaw } = childIds.length > 0
     ? await supabase
         .from('children_units')
         .select('child_id, unit_id, units(id, name, capacity)')
         .in('child_id', childIds)
     : { data: [] }
-  const units = Array.from(
+  let units = Array.from(
     new Map(
       (childUnitsRaw ?? []).map((cu) => {
         const u = cu.units as unknown as Unit | null
@@ -57,6 +57,13 @@ export default async function ParentCalendarPage({
       }).filter((v): v is [string, Unit] => v !== null)
     ).values()
   )
+  if (units.length === 0) {
+    const { data: allUnitsRaw } = await supabase
+      .from('units')
+      .select('id, name, capacity')
+      .order('name')
+    units = (allUnitsRaw ?? []) as Unit[]
+  }
 
   // 当月の予約一覧
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`
