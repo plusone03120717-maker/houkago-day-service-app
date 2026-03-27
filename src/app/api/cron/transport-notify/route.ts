@@ -144,7 +144,7 @@ export async function GET(request: NextRequest) {
   let messageText = `【本日の送迎スケジュール】\n${dateLabel}\n`
 
   if (grouped.size === 0) {
-    messageText += '\n本日の送迎スケジュールはありません。'
+    return NextResponse.json({ message: 'no schedules today, notification skipped' })
   } else {
     for (const { unitName, schedules: unitSchedules } of grouped.values()) {
       messageText += `\n▼ ${unitName}\n`
