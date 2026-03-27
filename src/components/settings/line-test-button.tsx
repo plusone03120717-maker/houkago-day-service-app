@@ -22,7 +22,7 @@ export function LineTestButton() {
     setLoading(true)
     setResult(null)
     try {
-      const res = await fetch('/api/cron/transport-notify')
+      const res = await fetch('/api/admin/test-line-notify', { method: 'POST' })
       const json = await res.json()
       setResult({ ...json, _status: res.status } as TestResult)
     } catch (e) {
