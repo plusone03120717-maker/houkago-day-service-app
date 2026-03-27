@@ -128,16 +128,12 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
     const existing = attendanceMap[childId]
 
     // 出席マーク時に利用スケジュールの時間を自動同期
+    // すでに出席済み（手動で時間編集済みの可能性あり）の場合は上書きしない
     let scheduledTimes: { check_in_time?: string; check_out_time?: string } = {}
-    if (updates.status === 'attended') {
+    if (updates.status === 'attended' && existing?.status !== 'attended') {
       const times = await fetchScheduledTimes(childId)
-      // 既存の時間が未設定の場合のみセット
-      if (times.check_in_time && (!existing || !existing.check_in_time)) {
-        scheduledTimes.check_in_time = times.check_in_time
-      }
-      if (times.check_out_time && (!existing || !existing.check_out_time)) {
-        scheduledTimes.check_out_time = times.check_out_time
-      }
+      if (times.check_in_time) scheduledTimes.check_in_time = times.check_in_time
+      if (times.check_out_time) scheduledTimes.check_out_time = times.check_out_time
     }
 
     const mergedUpdates = { ...scheduledTimes, ...updates }
@@ -188,21 +184,21 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
     const unrecorded = reservations.filter(
       (r) => r.status !== 'cancel_waiting' && !attendanceMap[r.child_id]
     )
-    const now = new Date()
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 
+    // 各児童のスケジュール時間を取得してから登録
     await Promise.all(
-      unrecorded.map((r) =>
-        supabase.from('daily_attendance').insert({
+      unrecorded.map(async (r) => {
+        const times = await fetchScheduledTimes(r.child_id)
+        return supabase.from('daily_attendance').insert({
           child_id: r.child_id,
           unit_id: selectedUnitId,
           date,
           status: 'attended',
-          check_in_time: timeStr,
           pickup_type: 'none',
           created_by: staffId,
+          ...times,
         })
-      )
+      })
     )
     setSaving(null)
     startTransition(() => router.refresh())
