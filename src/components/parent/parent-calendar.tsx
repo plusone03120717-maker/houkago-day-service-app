@@ -164,7 +164,7 @@ export function ParentCalendar({
   const isFull = selectedUnit_ ? usageOnDate >= selectedUnit_.capacity : false
 
   return (
-    <div className="space-y-4 pb-20 sm:pb-5">
+    <div className="space-y-4 pb-32 sm:pb-5">
       {/* 月ナビ */}
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-gray-900">利用予約</h1>
