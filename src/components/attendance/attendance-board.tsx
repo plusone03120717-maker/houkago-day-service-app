@@ -87,15 +87,65 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
     router.push(`/attendance?date=${date}&unit=${unitId}`)
   }
 
+  // 利用スケジュールから当日の利用時間を取得（曜日別設定を優先）
+  const fetchScheduledTimes = async (childId: string): Promise<{ check_in_time?: string; check_out_time?: string }> => {
+    const dow = new Date(date).getDay()
+    const { data: plans } = await supabase
+      .from('usage_plans')
+      .select('id, pickup_time, dropoff_time')
+      .eq('child_id', childId)
+      .eq('unit_id', selectedUnitId)
+      .eq('is_active', true)
+      .lte('start_date', date)
+      .or(`end_date.is.null,end_date.gte.${date}`)
+      .contains('day_of_week', [dow])
+      .limit(1)
+
+    if (!plans || plans.length === 0) return {}
+    const plan = plans[0]
+    let pickupTime = plan.pickup_time as string | null
+    let dropoffTime = plan.dropoff_time as string | null
+
+    // 曜日別設定があれば上書き
+    const { data: daySetting } = await supabase
+      .from('usage_plan_day_settings')
+      .select('pickup_time, dropoff_time')
+      .eq('plan_id', plan.id)
+      .eq('day_of_week', dow)
+      .maybeSingle()
+    if (daySetting?.pickup_time) pickupTime = daySetting.pickup_time as string
+    if (daySetting?.dropoff_time) dropoffTime = daySetting.dropoff_time as string
+
+    const result: { check_in_time?: string; check_out_time?: string } = {}
+    if (pickupTime) result.check_in_time = pickupTime.slice(0, 5)
+    if (dropoffTime) result.check_out_time = dropoffTime.slice(0, 5)
+    return result
+  }
+
   // 出席記録を作成/更新
   const upsertAttendance = async (childId: string, updates: Partial<Attendance>) => {
     setSaving(childId)
     const existing = attendanceMap[childId]
 
+    // 出席マーク時に利用スケジュールの時間を自動同期
+    let scheduledTimes: { check_in_time?: string; check_out_time?: string } = {}
+    if (updates.status === 'attended') {
+      const times = await fetchScheduledTimes(childId)
+      // 既存の時間が未設定の場合のみセット
+      if (times.check_in_time && (!existing || !existing.check_in_time)) {
+        scheduledTimes.check_in_time = times.check_in_time
+      }
+      if (times.check_out_time && (!existing || !existing.check_out_time)) {
+        scheduledTimes.check_out_time = times.check_out_time
+      }
+    }
+
+    const mergedUpdates = { ...scheduledTimes, ...updates }
+
     if (existing) {
       const { error } = await supabase
         .from('daily_attendance')
-        .update(updates)
+        .update(mergedUpdates)
         .eq('id', existing.id)
       if (error) { alert(`更新エラー: ${error.message}`); setSaving(null); return }
     } else {
@@ -106,7 +156,7 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
         status: 'attended',
         pickup_type: 'none',
         created_by: staffId,
-        ...updates,
+        ...mergedUpdates,
       })
       if (error) { alert(`登録エラー: ${error.message}`); setSaving(null); return }
     }
