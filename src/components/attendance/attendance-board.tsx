@@ -87,7 +87,7 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
     router.push(`/attendance?date=${date}&unit=${unitId}`)
   }
 
-  // 利用スケジュールから当日の利用時間を取得（曜日別設定を優先）
+  // 利用スケジュールから当日の利用時間を取得（特定日上書き > 曜日別設定 > プランのデフォルト）
   const fetchScheduledTimes = async (childId: string): Promise<{ check_in_time?: string; check_out_time?: string }> => {
     const dow = new Date(date).getDay()
     const { data: plans } = await supabase
@@ -106,15 +106,27 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
     let pickupTime = plan.pickup_time as string | null
     let dropoffTime = plan.dropoff_time as string | null
 
-    // 曜日別設定があれば上書き
-    const { data: daySetting } = await supabase
-      .from('usage_plan_day_settings')
+    // 特定日上書きがあれば最優先
+    const { data: dateOverride } = await supabase
+      .from('usage_plan_date_overrides')
       .select('pickup_time, dropoff_time')
       .eq('plan_id', plan.id)
-      .eq('day_of_week', dow)
+      .eq('date', date)
       .maybeSingle()
-    if (daySetting?.pickup_time) pickupTime = daySetting.pickup_time as string
-    if (daySetting?.dropoff_time) dropoffTime = daySetting.dropoff_time as string
+    if (dateOverride) {
+      if (dateOverride.pickup_time) pickupTime = dateOverride.pickup_time as string
+      if (dateOverride.dropoff_time) dropoffTime = dateOverride.dropoff_time as string
+    } else {
+      // 曜日別設定があれば上書き
+      const { data: daySetting } = await supabase
+        .from('usage_plan_day_settings')
+        .select('pickup_time, dropoff_time')
+        .eq('plan_id', plan.id)
+        .eq('day_of_week', dow)
+        .maybeSingle()
+      if (daySetting?.pickup_time) pickupTime = daySetting.pickup_time as string
+      if (daySetting?.dropoff_time) dropoffTime = daySetting.dropoff_time as string
+    }
 
     const result: { check_in_time?: string; check_out_time?: string } = {}
     if (pickupTime) result.check_in_time = pickupTime.slice(0, 5)

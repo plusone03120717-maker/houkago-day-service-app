@@ -34,6 +34,16 @@ type DaySetting = {
   dropoff_time: string | null
 }
 
+type DateOverride = {
+  id: string
+  plan_id: string
+  date: string
+  transport_type: string
+  pickup_location_type: string
+  pickup_time: string | null
+  dropoff_time: string | null
+}
+
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 const DAY_COLORS: Record<number, string> = {
   0: 'bg-red-100 text-red-700 border-red-300',
@@ -112,6 +122,13 @@ interface DayEditState {
   dropoff_time: string
 }
 
+interface DateOverrideEditState {
+  transport_type: string
+  pickup_location_type: string
+  pickup_time: string
+  dropoff_time: string
+}
+
 interface Props {
   childId: string
   childName: string
@@ -120,12 +137,13 @@ interface Props {
   units: Unit[]
   initialPlans: Plan[]
   initialDaySettings: DaySetting[]
+  initialDateOverrides: DateOverride[]
   defaultTransportType: string
   defaultPickupLocationType: string
 }
 
 export function ChildSchedulePlanner({
-  childId, units, initialPlans, initialDaySettings,
+  childId, units, initialPlans, initialDaySettings, initialDateOverrides,
   childAddress, schoolName,
   defaultTransportType, defaultPickupLocationType,
 }: Props) {
@@ -135,6 +153,15 @@ export function ChildSchedulePlanner({
 
   const [plans, setPlans] = useState<Plan[]>(initialPlans)
   const [daySettings, setDaySettings] = useState<DaySetting[]>(initialDaySettings)
+  const [dateOverrides, setDateOverrides] = useState<DateOverride[]>(initialDateOverrides)
+
+  // 特定日上書き: どの計画の追加フォームを開いているか
+  const [openDateOverridePlanId, setOpenDateOverridePlanId] = useState<string | null>(null)
+  // 編集中の上書きID（null = 新規）
+  const [editingDateOverrideId, setEditingDateOverrideId] = useState<string | null>(null)
+  const [dateOverrideDate, setDateOverrideDate] = useState('')
+  const [dateOverrideEditState, setDateOverrideEditState] = useState<DateOverrideEditState | null>(null)
+  const [dateOverrideSaving, setDateOverrideSaving] = useState(false)
 
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -251,6 +278,84 @@ export function ChildSchedulePlanner({
     setDaySettings((prev) => prev.filter((ds) => ds.id !== existing.id))
     setOpenDayKey(null)
     setDayEditState(null)
+  }
+
+  // 特定日上書き: 追加/編集フォームを開く
+  const openDateOverrideForm = (plan: Plan, override?: DateOverride) => {
+    if (openDateOverridePlanId === plan.id && editingDateOverrideId === (override?.id ?? null)) {
+      setOpenDateOverridePlanId(null)
+      setEditingDateOverrideId(null)
+      setDateOverrideEditState(null)
+      return
+    }
+    setOpenDateOverridePlanId(plan.id)
+    setEditingDateOverrideId(override?.id ?? null)
+    setDateOverrideDate(override?.date ?? '')
+    setDateOverrideEditState({
+      transport_type: override?.transport_type ?? plan.transport_type,
+      pickup_location_type: override?.pickup_location_type ?? plan.pickup_location_type,
+      pickup_time: formatTime(override?.pickup_time ?? plan.pickup_time),
+      dropoff_time: formatTime(override?.dropoff_time ?? plan.dropoff_time),
+    })
+    // 曜日別パネルは閉じる
+    setOpenDayKey(null)
+    setDayEditState(null)
+  }
+
+  const closeDateOverrideForm = () => {
+    setOpenDateOverridePlanId(null)
+    setEditingDateOverrideId(null)
+    setDateOverrideDate('')
+    setDateOverrideEditState(null)
+  }
+
+  const handleSaveDateOverride = async (planId: string) => {
+    if (!dateOverrideEditState || !dateOverrideDate) return
+    setDateOverrideSaving(true)
+
+    if (editingDateOverrideId) {
+      const { data, error } = await supabase
+        .from('usage_plan_date_overrides')
+        .update({
+          date: dateOverrideDate,
+          transport_type: dateOverrideEditState.transport_type,
+          pickup_location_type: dateOverrideEditState.pickup_location_type,
+          pickup_time: dateOverrideEditState.pickup_time || null,
+          dropoff_time: dateOverrideEditState.dropoff_time || null,
+        })
+        .eq('id', editingDateOverrideId)
+        .select('id, plan_id, date, transport_type, pickup_location_type, pickup_time, dropoff_time')
+        .single()
+      setDateOverrideSaving(false)
+      if (!error && data) {
+        setDateOverrides((prev) => prev.map((o) => o.id === editingDateOverrideId ? data as unknown as DateOverride : o))
+        closeDateOverrideForm()
+      }
+    } else {
+      const { data, error } = await supabase
+        .from('usage_plan_date_overrides')
+        .insert({
+          plan_id: planId,
+          date: dateOverrideDate,
+          transport_type: dateOverrideEditState.transport_type,
+          pickup_location_type: dateOverrideEditState.pickup_location_type,
+          pickup_time: dateOverrideEditState.pickup_time || null,
+          dropoff_time: dateOverrideEditState.dropoff_time || null,
+        })
+        .select('id, plan_id, date, transport_type, pickup_location_type, pickup_time, dropoff_time')
+        .single()
+      setDateOverrideSaving(false)
+      if (!error && data) {
+        setDateOverrides((prev) => [...prev, data as unknown as DateOverride])
+        closeDateOverrideForm()
+      }
+    }
+  }
+
+  const handleDeleteDateOverride = async (overrideId: string) => {
+    await supabase.from('usage_plan_date_overrides').delete().eq('id', overrideId)
+    setDateOverrides((prev) => prev.filter((o) => o.id !== overrideId))
+    if (editingDateOverrideId === overrideId) closeDateOverrideForm()
   }
 
   const startEdit = (plan: Plan) => {
@@ -755,6 +860,90 @@ export function ChildSchedulePlanner({
                             </button>
                           ))}
                       </div>
+                    </div>
+                  )}
+
+                  {/* 特定日上書き設定 */}
+                  {!isOneTime(plan) && (
+                    <div className="pt-1 border-t border-gray-100">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <p className="text-xs text-gray-400">特定日の変更</p>
+                        <button type="button"
+                          onClick={() => openDateOverrideForm(plan)}
+                          className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 px-2 py-0.5 rounded hover:bg-indigo-50 transition-colors">
+                          <Plus className="h-3 w-3" />追加
+                        </button>
+                      </div>
+
+                      {/* 既存の特定日上書き一覧 */}
+                      {dateOverrides.filter((o) => o.plan_id === plan.id).length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {dateOverrides
+                            .filter((o) => o.plan_id === plan.id)
+                            .sort((a, b) => a.date.localeCompare(b.date))
+                            .map((override) => (
+                              <button key={override.id} type="button"
+                                onClick={() => openDateOverrideForm(plan, override)}
+                                className="flex items-center gap-1.5 text-xs bg-white border border-purple-200 rounded-lg px-2 py-1 hover:bg-purple-50 transition-colors">
+                                <CalendarDays className="h-3 w-3 text-purple-500" />
+                                <span className="text-purple-700 font-medium">{override.date}</span>
+                                <span className="text-gray-500">{transportLabel(override.transport_type).label}</span>
+                                <ChevronDown className="h-3 w-3 text-gray-400" />
+                              </button>
+                            ))}
+                        </div>
+                      )}
+
+                      {/* 追加/編集フォーム */}
+                      {openDateOverridePlanId === plan.id && dateOverrideEditState && (
+                        <div className="border border-purple-200 rounded-xl bg-purple-50 p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-gray-700">
+                              {editingDateOverrideId ? '特定日の変更を編集' : '特定日の変更を追加'}
+                            </span>
+                            <button onClick={closeDateOverrideForm}
+                              className="p-1 rounded hover:bg-purple-100 text-gray-400">
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+
+                          <div>
+                            <label className="text-xs font-medium text-gray-700 mb-1 block">対象日</label>
+                            <input type="date" value={dateOverrideDate}
+                              onChange={(e) => setDateOverrideDate(e.target.value)}
+                              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
+                          </div>
+
+                          {transportInputs(
+                            dateOverrideEditState.transport_type,
+                            (v) => setDateOverrideEditState((p) => p ? { ...p, transport_type: v } : p),
+                            dateOverrideEditState.pickup_location_type,
+                            (v) => setDateOverrideEditState((p) => p ? { ...p, pickup_location_type: v } : p),
+                          )}
+                          {timeInputs(
+                            dateOverrideEditState.pickup_time,
+                            (v) => setDateOverrideEditState((p) => p ? { ...p, pickup_time: v } : p),
+                            dateOverrideEditState.dropoff_time,
+                            (v) => setDateOverrideEditState((p) => p ? { ...p, dropoff_time: v } : p),
+                          )}
+
+                          <div className="flex gap-2 pt-1">
+                            {editingDateOverrideId && (
+                              <Button variant="outline" size="sm"
+                                onClick={() => handleDeleteDateOverride(editingDateOverrideId)}
+                                className="text-red-500 hover:text-red-700">
+                                <Trash2 className="h-3.5 w-3.5" />削除
+                              </Button>
+                            )}
+                            <Button size="sm"
+                              onClick={() => handleSaveDateOverride(plan.id)}
+                              disabled={dateOverrideSaving || !dateOverrideDate}>
+                              <Check className="h-3.5 w-3.5" />
+                              {dateOverrideSaving ? '保存中...' : '保存する'}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </CardContent>

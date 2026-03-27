@@ -91,6 +91,26 @@ export default async function ChildSchedulePage({
   }
   const daySettings = (daySettingsRaw ?? []) as unknown as DaySetting[]
 
+  // 特定日上書き設定を取得
+  const { data: dateOverridesRaw } = planIds.length > 0
+    ? await supabase
+        .from('usage_plan_date_overrides')
+        .select('id, plan_id, date, transport_type, pickup_location_type, pickup_time, dropoff_time')
+        .in('plan_id', planIds)
+        .order('date', { ascending: true })
+    : { data: [] }
+
+  type DateOverride = {
+    id: string
+    plan_id: string
+    date: string
+    transport_type: string
+    pickup_location_type: string
+    pickup_time: string | null
+    dropoff_time: string | null
+  }
+  const dateOverrides = (dateOverridesRaw ?? []) as unknown as DateOverride[]
+
   return (
     <div className="space-y-5 max-w-2xl">
       <div className="flex items-center gap-3">
@@ -114,6 +134,7 @@ export default async function ChildSchedulePage({
         units={units}
         initialPlans={plans}
         initialDaySettings={daySettings}
+        initialDateOverrides={dateOverrides}
         defaultTransportType={defaultTransportType}
         defaultPickupLocationType={defaultPickupLocationType}
       />
