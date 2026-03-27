@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
   ChevronLeft,
-  Star,
   AlertTriangle,
   FileText,
   BookOpen,
@@ -126,9 +125,6 @@ export function DailyRecordForm({
   const [hasNotable, setHasNotable] = useState(
     dailyRecords.some((r) => r.has_notable_flag)
   )
-  const [activityLevels, setActivityLevels] = useState<Record<string, number>>(
-    Object.fromEntries(activities.map((a) => [a.program_id ?? '', a.achievement_level ?? 3]))
-  )
   const [activityNotes, setActivityNotes] = useState<Record<string, string>>(
     Object.fromEntries(activities.map((a) => [a.program_id ?? '', a.evaluation_notes ?? '']))
   )
@@ -145,9 +141,6 @@ export function DailyRecordForm({
     setSelectedPrograms((prev) =>
       prev.includes(programId) ? prev.filter((id) => id !== programId) : [...prev, programId]
     )
-    if (!activityLevels[programId]) {
-      setActivityLevels((prev) => ({ ...prev, [programId]: 3 }))
-    }
   }
 
   const refineContactNote = async () => {
@@ -181,7 +174,6 @@ export function DailyRecordForm({
           notableRecord: hasNotable ? notableContent : '',
           activities: selectedPrograms.map((pid) => ({
             name: programs.find((p) => p.id === pid)?.name ?? '',
-            achievementLevel: activityLevels[pid] ?? 3,
             notes: activityNotes[pid] ?? '',
           })),
           attendance: attendance ? {
@@ -248,7 +240,7 @@ export function DailyRecordForm({
           .from('daily_activities')
           .update({
             participated: true,
-            achievement_level: activityLevels[programId] ?? 3,
+            achievement_level: null,
             evaluation_notes: activityNotes[programId] ?? null,
           })
           .eq('id', existing.id)
@@ -257,7 +249,7 @@ export function DailyRecordForm({
           attendance_id: attendance.id,
           program_id: programId,
           participated: true,
-          achievement_level: activityLevels[programId] ?? 3,
+          achievement_level: null,
           evaluation_notes: activityNotes[programId] ?? null,
         })
       }
@@ -363,23 +355,6 @@ export function DailyRecordForm({
                         <label htmlFor={`prog-${prog.id}`} className="flex-1 text-sm font-medium cursor-pointer">
                           {prog.name}
                         </label>
-                        {selected && (
-                          <div className="flex items-center gap-1">
-                            {[1, 2, 3, 4, 5].map((level) => (
-                              <button
-                                key={level}
-                                onClick={() => setActivityLevels((prev) => ({ ...prev, [prog.id]: level }))}
-                                className={`w-7 h-7 rounded text-xs font-bold transition-colors ${
-                                  activityLevels[prog.id] >= level
-                                    ? 'bg-yellow-400 text-white'
-                                    : 'bg-gray-100 text-gray-400'
-                                }`}
-                              >
-                                <Star className="h-3 w-3 mx-auto" />
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </div>
                       {selected && (
                         <input
