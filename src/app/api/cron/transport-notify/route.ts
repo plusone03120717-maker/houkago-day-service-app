@@ -28,9 +28,10 @@ function getTodayJST(): string {
 
 /** yyyy-MM-dd を "2026年3月26日（木）" 形式に変換 */
 function formatJapaneseDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00+09:00')
+  const [y, m, d] = dateStr.split('-').map(Number)
   const days = ['日', '月', '火', '水', '木', '金', '土']
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${days[d.getDay()]}）`
+  const dow = new Date(y, m - 1, d).getDay()
+  return `${y}年${m}月${d}日（${days[dow]}）`
 }
 
 /** 場所名から絵文字アイコンを判定 */

@@ -4,9 +4,10 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 function formatJapaneseDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00+09:00')
+  const [y, m, d] = dateStr.split('-').map(Number)
   const days = ['日', '月', '火', '水', '木', '金', '土']
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${days[d.getDay()]}）`
+  const dow = new Date(y, m - 1, d).getDay()
+  return `${y}年${m}月${d}日（${days[dow]}）`
 }
 
 /** 予約を確定し、保護者ポータルのメッセージへ通知する */
