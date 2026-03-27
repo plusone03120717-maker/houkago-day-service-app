@@ -174,9 +174,16 @@ export function UsageCalendar({
           <p className="text-xl font-bold text-green-700">{summary.confirmed}</p>
           <p className="text-xs text-green-600">確定</p>
         </div>
-        <div className="p-3 bg-indigo-50 rounded-xl text-center">
-          <p className="text-xl font-bold text-indigo-700">{summary.reserved}</p>
-          <p className="text-xs text-indigo-600">承認待ち</p>
+        <div className={cn(
+          'p-3 rounded-xl text-center',
+          summary.reserved > 0 ? 'bg-yellow-100 ring-2 ring-yellow-400' : 'bg-indigo-50'
+        )}>
+          <p className={cn('text-xl font-bold', summary.reserved > 0 ? 'text-yellow-700' : 'text-indigo-700')}>
+            {summary.reserved}
+          </p>
+          <p className={cn('text-xs font-medium', summary.reserved > 0 ? 'text-yellow-600' : 'text-indigo-600')}>
+            {summary.reserved > 0 ? '⚠ 承認待ち' : '承認待ち'}
+          </p>
         </div>
         <div className="p-3 bg-gray-50 rounded-xl text-center">
           <p className="text-xl font-bold text-gray-700">{summary.cancelled}</p>
@@ -204,10 +211,12 @@ export function UsageCalendar({
             if (!date) return <div key={idx} className="h-16 border-b border-r border-gray-50" />
             const dayReservations = resByDate[date] ?? []
             const activeCount = dayReservations.filter((r) => r.status !== 'cancelled').length
+            const pendingCount = dayReservations.filter((r) => r.status === 'reserved').length
             const capacity = selectedUnit?.capacity ?? 0
             const isFull = capacity > 0 && activeCount >= capacity
             const isSelected = date === selectedDate
             const dayOfWeek = new Date(date).getDay()
+            const hasPending = pendingCount > 0
 
             return (
               <button
@@ -215,6 +224,7 @@ export function UsageCalendar({
                 onClick={() => setSelectedDate(date === selectedDate ? null : date)}
                 className={cn(
                   'h-16 border-b border-r border-gray-50 p-1 text-left transition-colors hover:bg-indigo-50',
+                  hasPending && !isSelected && 'bg-yellow-50',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
                 )}
               >
@@ -234,9 +244,30 @@ export function UsageCalendar({
                     {activeCount}{capacity > 0 ? `/${capacity}` : ''}名
                   </div>
                 )}
+                {hasPending && (
+                  <div className="text-xs px-1 rounded font-medium bg-yellow-200 text-yellow-800 mt-0.5">
+                    待{pendingCount}
+                  </div>
+                )}
               </button>
             )
           })}
+        </div>
+      </div>
+
+      {/* 凡例 */}
+      <div className="flex gap-4 text-xs text-gray-500 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-indigo-100" />
+          <span>確定済み</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-yellow-200" />
+          <span>承認待ち（黄色セル＋「待N」バッジ）</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-red-100" />
+          <span>定員満員</span>
         </div>
       </div>
 
