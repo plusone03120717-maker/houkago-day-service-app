@@ -78,6 +78,7 @@ export function ParentCalendar({
   const [pickupTime, setPickupTime] = useState<string>('')
   const [dropoffTime, setDropoffTime] = useState<string>('')
   const [loading, setLoading] = useState(false)
+  const [reserveError, setReserveError] = useState<string | null>(null)
 
   const changeMonth = (delta: number) => {
     const d = new Date(year, month - 1 + delta, 1)
@@ -122,6 +123,7 @@ export function ParentCalendar({
   const makeReservation = async () => {
     if (!selectedDate || !selectedChild || !selectedUnit) return
     setLoading(true)
+    setReserveError(null)
 
     const { error } = await supabase.from('usage_reservations').insert({
       child_id: selectedChild,
@@ -137,7 +139,9 @@ export function ParentCalendar({
     })
 
     setLoading(false)
-    if (!error) {
+    if (error) {
+      setReserveError(error.message)
+    } else {
       setSelectedDate(null)
       startTransition(() => router.refresh())
     }
@@ -435,6 +439,9 @@ export function ParentCalendar({
                 </div>
               )}
 
+              {reserveError && (
+                <p className="text-sm text-red-600">{reserveError}</p>
+              )}
               {isFull && (
                 <p className="text-sm text-yellow-600 text-center">定員に達しているためキャンセル待ちになります</p>
               )}
