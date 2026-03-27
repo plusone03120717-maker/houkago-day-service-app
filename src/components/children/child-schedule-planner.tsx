@@ -12,6 +12,7 @@ import { formatDate } from '@/lib/utils'
 type Unit = { id: string; name: string; service_type: string }
 type Plan = {
   id: string
+  name: string | null
   unit_id: string
   day_of_week: number[]
   start_date: string
@@ -90,6 +91,7 @@ function isOneTime(plan: Plan): boolean {
 }
 
 interface EditState {
+  name: string
   unit_id: string
   mode: 'repeat' | 'once'
   day_of_week: number[]
@@ -147,6 +149,7 @@ export function ChildSchedulePlanner({
   const [daySaving, setDaySaving] = useState(false)
 
   // 新規追加フォーム状態
+  const [planName, setPlanName] = useState('')
   const [addMode, setAddMode] = useState<'repeat' | 'once'>('repeat')
   const [selectedUnit, setSelectedUnit] = useState(units[0]?.id ?? '')
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5])
@@ -254,6 +257,7 @@ export function ChildSchedulePlanner({
     const once = isOneTime(plan)
     setEditingId(plan.id)
     setEditState({
+      name: plan.name ?? '',
       unit_id: plan.unit_id,
       mode: once ? 'once' : 'repeat',
       day_of_week: once ? [1, 2, 3, 4, 5] : [...plan.day_of_week],
@@ -280,6 +284,7 @@ export function ChildSchedulePlanner({
     const { data, error } = await supabase
       .from('usage_plans')
       .update({
+        name: editState.name || null,
         unit_id: editState.unit_id,
         day_of_week: isOnce ? [0, 1, 2, 3, 4, 5, 6] : editState.day_of_week,
         start_date: isOnce ? editState.once_date : editState.start_date,
@@ -290,7 +295,7 @@ export function ChildSchedulePlanner({
         pickup_location_type: editState.pickup_location_type,
       })
       .eq('id', planId)
-      .select('id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
+      .select('id, name, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
       .single()
     setEditSaving(false)
     if (error) return
@@ -323,10 +328,12 @@ export function ChildSchedulePlanner({
     setSaving(true)
     setSaveError(null)
     const isOnce = addMode === 'once'
+    const autoName = planName.trim() || `スケジュール${plans.length + 1}`
     const { data, error } = await supabase
       .from('usage_plans')
       .insert({
         child_id: childId,
+        name: autoName,
         unit_id: selectedUnit,
         day_of_week: isOnce ? [0, 1, 2, 3, 4, 5, 6] : selectedDays,
         start_date: isOnce ? onceDate : startDate,
@@ -337,7 +344,7 @@ export function ChildSchedulePlanner({
         transport_type: transportType,
         pickup_location_type: pickupLocationType,
       })
-      .select('id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
+      .select('id, name, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
       .single()
     if (error) { setSaving(false); setSaveError(error.message); return }
     if (data) {
@@ -345,6 +352,7 @@ export function ChildSchedulePlanner({
       setSaving(false)
       setPlans((prev) => [data as unknown as Plan, ...prev])
       setShowForm(false)
+      setPlanName('')
       setAddMode('repeat'); setSelectedDays([1, 2, 3, 4, 5])
       setOnceDate(new Date().toISOString().slice(0, 10))
       setStartDate(new Date().toISOString().slice(0, 10))
@@ -464,6 +472,15 @@ export function ChildSchedulePlanner({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* 名前 */}
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 mb-1 block">スケジュール名</label>
+                    <input type="text" value={editState.name}
+                      onChange={(e) => setEditState((p) => p ? { ...p, name: e.target.value } : p)}
+                      placeholder="例: 平日スケジュール"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                  </div>
+
                   {/* ユニット */}
                   <div>
                     <label className="text-xs font-medium text-gray-700 mb-1 block">ユニット</label>
@@ -568,7 +585,8 @@ export function ChildSchedulePlanner({
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-2 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium text-gray-800">{plan.units?.name ?? '—'}</span>
+                        <span className="text-sm font-bold text-gray-900">{plan.name ?? `スケジュール`}</span>
+                        <span className="text-xs text-gray-400">{plan.units?.name ?? '—'}</span>
                         {isOneTime(plan) && (
                           <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
                             <CalendarDays className="h-3 w-3" />日付指定
@@ -759,6 +777,14 @@ export function ChildSchedulePlanner({
             <CardTitle className="text-base">新しいスケジュールを追加</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* 名前 */}
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">スケジュール名</label>
+              <input type="text" value={planName} onChange={(e) => setPlanName(e.target.value)}
+                placeholder={`スケジュール${plans.length + 1}`}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            </div>
+
             {/* ユニット */}
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">ユニット</label>
