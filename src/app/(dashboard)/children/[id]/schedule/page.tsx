@@ -14,12 +14,18 @@ export default async function ChildSchedulePage({
 
   const { data: childRaw } = await supabase
     .from('children')
-    .select('id, name')
+    .select('id, name, address, school_id, schools(id, name)')
     .eq('id', childId)
     .single()
 
   if (!childRaw) notFound()
-  const child = childRaw as { id: string; name: string }
+  const child = childRaw as unknown as {
+    id: string
+    name: string
+    address: string | null
+    school_id: string | null
+    schools: { id: string; name: string } | null
+  }
 
   // 全ユニット（施設内）を取得
   type UnitRow = { id: string; name: string; service_type: string }
@@ -32,7 +38,7 @@ export default async function ChildSchedulePage({
   // 既存の利用計画
   const { data: plansRaw } = await supabase
     .from('usage_plans')
-    .select('id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, units(name)')
+    .select('id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
     .eq('child_id', childId)
     .order('start_date', { ascending: false })
 
@@ -45,9 +51,24 @@ export default async function ChildSchedulePage({
     is_active: boolean
     pickup_time: string | null
     dropoff_time: string | null
+    transport_type: string
+    pickup_location_type: string
     units: { name: string } | null
   }
   const plans = (plansRaw ?? []) as unknown as Plan[]
+
+  // 既存の送迎設定（新規追加時のデフォルト用）
+  const { data: transportSettingRaw } = await supabase
+    .from('child_transport_settings')
+    .select('transport_type, pickup_location_type')
+    .eq('child_id', childId)
+    .maybeSingle()
+  const defaultTransportType = (transportSettingRaw?.transport_type as string | null)
+    ?? plans[0]?.transport_type
+    ?? 'both'
+  const defaultPickupLocationType = (transportSettingRaw?.pickup_location_type as string | null)
+    ?? plans[0]?.pickup_location_type
+    ?? 'home'
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -67,8 +88,12 @@ export default async function ChildSchedulePage({
       <ChildSchedulePlanner
         childId={childId}
         childName={child.name}
+        childAddress={child.address}
+        schoolName={child.schools?.name ?? null}
         units={units}
         initialPlans={plans}
+        defaultTransportType={defaultTransportType}
+        defaultPickupLocationType={defaultPickupLocationType}
       />
     </div>
   )

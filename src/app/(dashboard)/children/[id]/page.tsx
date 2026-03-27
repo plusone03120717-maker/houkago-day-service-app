@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays, Car } from 'lucide-react'
+import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays } from 'lucide-react'
 import { formatDate, getAge } from '@/lib/utils'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 import { ParentInviteButton } from '@/components/children/parent-invite-button'
@@ -125,7 +125,7 @@ export default async function ChildDetailPage({
       </div>
 
       {/* クイックアクセス */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
         {[
           { href: `/children/${id}/contact-notes`, icon: BookOpen, label: '連絡帳', color: 'text-blue-600 bg-blue-50' },
           { href: `/support-plans/${id}`, icon: ClipboardList, label: '個別支援計画', color: 'text-indigo-600 bg-indigo-50' },
@@ -133,7 +133,6 @@ export default async function ChildDetailPage({
           { href: `/children/${id}/assessments`, icon: BarChart2, label: 'アセスメント', color: 'text-purple-600 bg-purple-50' },
           { href: `/children/${id}/medications`, icon: Pill, label: '服薬管理', color: 'text-green-600 bg-green-50' },
           { href: `/incidents?childId=${id}`, icon: ShieldAlert, label: '事故報告', color: 'text-red-600 bg-red-50' },
-          { href: `/children/${id}/transport`, icon: Car, label: '送迎設定', color: 'text-indigo-600 bg-indigo-50' },
         ].map(({ href, icon: Icon, label, color }) => (
           <Link key={href} href={href}>
             <Card className="hover:shadow-md transition-shadow cursor-pointer">

@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Trash2, Power, CalendarRange, Clock, Pencil, X, Check, CalendarDays, Repeat } from 'lucide-react'
+import { Plus, Trash2, Power, CalendarRange, Clock, Pencil, X, Check, CalendarDays, Repeat, Car } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 type Unit = { id: string; name: string; service_type: string }
@@ -19,6 +19,8 @@ type Plan = {
   is_active: boolean
   pickup_time: string | null
   dropoff_time: string | null
+  transport_type: string
+  pickup_location_type: string
   units: { name: string } | null
 }
 
@@ -33,9 +35,20 @@ const DAY_COLORS: Record<number, string> = {
   6: 'bg-blue-100 text-blue-700 border-blue-300',
 }
 
+const TRANSPORT_OPTIONS = [
+  { value: 'none',         label: '送迎なし',      color: 'bg-gray-100 text-gray-600' },
+  { value: 'pickup_only',  label: '行きのみ',      color: 'bg-indigo-100 text-indigo-700' },
+  { value: 'dropoff_only', label: '帰りのみ',      color: 'bg-teal-100 text-teal-700' },
+  { value: 'both',         label: '行き・帰り両方', color: 'bg-purple-100 text-purple-700' },
+] as const
+
 function formatTime(time: string | null): string {
   if (!time) return ''
   return time.slice(0, 5)
+}
+
+function transportLabel(type: string) {
+  return TRANSPORT_OPTIONS.find((o) => o.value === type) ?? TRANSPORT_OPTIONS[3]
 }
 
 /** 9:00〜18:00 を30分刻みで生成 */
@@ -54,15 +67,10 @@ const TIME_OPTIONS: { value: string; label: string }[] = (() => {
 
 function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-    >
+    <select value={value} onChange={(e) => onChange(e.target.value)}
+      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
       <option value="">未設定</option>
-      {TIME_OPTIONS.map((o) => (
-        <option key={o.value} value={o.value}>{o.label}</option>
-      ))}
+      {TIME_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   )
 }
@@ -82,16 +90,26 @@ interface EditState {
   no_end_date: boolean
   pickup_time: string
   dropoff_time: string
+  transport_type: string
+  pickup_location_type: string
 }
 
 interface Props {
   childId: string
   childName: string
+  childAddress: string | null
+  schoolName: string | null
   units: Unit[]
   initialPlans: Plan[]
+  defaultTransportType: string
+  defaultPickupLocationType: string
 }
 
-export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
+export function ChildSchedulePlanner({
+  childId, units, initialPlans,
+  childAddress, schoolName,
+  defaultTransportType, defaultPickupLocationType,
+}: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -114,6 +132,8 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
   const [noEndDate, setNoEndDate] = useState(true)
   const [pickupTime, setPickupTime] = useState('')
   const [dropoffTime, setDropoffTime] = useState('')
+  const [transportType, setTransportType] = useState(defaultTransportType)
+  const [pickupLocationType, setPickupLocationType] = useState(defaultPickupLocationType)
 
   const toggleDay = (d: number) =>
     setSelectedDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort())
@@ -141,34 +161,32 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
       no_end_date: !plan.end_date,
       pickup_time: formatTime(plan.pickup_time),
       dropoff_time: formatTime(plan.dropoff_time),
+      transport_type: plan.transport_type,
+      pickup_location_type: plan.pickup_location_type,
     })
   }
 
-  const cancelEdit = () => {
-    setEditingId(null)
-    setEditState(null)
-  }
+  const cancelEdit = () => { setEditingId(null); setEditState(null) }
 
   const handleSaveEdit = async (planId: string) => {
     if (!editState) return
     if (editState.mode === 'repeat' && editState.day_of_week.length === 0) return
     setEditSaving(true)
-
     const isOnce = editState.mode === 'once'
-    const dowForOnce = [0, 1, 2, 3, 4, 5, 6] // 日付指定は全曜日OK（期間で絞る）
-
     const { data, error } = await supabase
       .from('usage_plans')
       .update({
         unit_id: editState.unit_id,
-        day_of_week: isOnce ? dowForOnce : editState.day_of_week,
+        day_of_week: isOnce ? [0, 1, 2, 3, 4, 5, 6] : editState.day_of_week,
         start_date: isOnce ? editState.once_date : editState.start_date,
         end_date: isOnce ? editState.once_date : (editState.no_end_date ? null : (editState.end_date || null)),
         pickup_time: editState.pickup_time || null,
         dropoff_time: editState.dropoff_time || null,
+        transport_type: editState.transport_type,
+        pickup_location_type: editState.pickup_location_type,
       })
       .eq('id', planId)
-      .select('id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, units(name)')
+      .select('id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
       .single()
     setEditSaving(false)
     if (error) return
@@ -186,15 +204,13 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
       const d = new Date(now.getFullYear(), now.getMonth() + offset, 1)
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     })
-    await Promise.all(
-      months.map((month) =>
-        fetch('/api/usage-plans/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId, month }),
-        })
-      )
-    )
+    await Promise.all(months.map((month) =>
+      fetch('/api/usage-plans/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId, month }),
+      })
+    ))
   }
 
   const handleAdd = async () => {
@@ -202,7 +218,6 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
     if (addMode === 'repeat' && selectedDays.length === 0) return
     setSaving(true)
     setSaveError(null)
-
     const isOnce = addMode === 'once'
     const { data, error } = await supabase
       .from('usage_plans')
@@ -215,36 +230,30 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
         is_active: true,
         pickup_time: pickupTime || null,
         dropoff_time: dropoffTime || null,
+        transport_type: transportType,
+        pickup_location_type: pickupLocationType,
       })
-      .select('id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, units(name)')
+      .select('id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
       .single()
-    if (error) {
-      setSaving(false)
-      setSaveError(error.message)
-      return
-    }
+    if (error) { setSaving(false); setSaveError(error.message); return }
     if (data) {
       await autoGenerateReservations(data.id)
       setSaving(false)
       setPlans((prev) => [data as unknown as Plan, ...prev])
       setShowForm(false)
-      setAddMode('repeat')
-      setSelectedDays([1, 2, 3, 4, 5])
+      setAddMode('repeat'); setSelectedDays([1, 2, 3, 4, 5])
       setOnceDate(new Date().toISOString().slice(0, 10))
       setStartDate(new Date().toISOString().slice(0, 10))
-      setEndDate('')
-      setNoEndDate(true)
-      setPickupTime('')
-      setDropoffTime('')
+      setEndDate(''); setNoEndDate(true)
+      setPickupTime(''); setDropoffTime('')
+      setTransportType(defaultTransportType)
+      setPickupLocationType(defaultPickupLocationType)
       startTransition(() => router.refresh())
     }
   }
 
   const handleToggleActive = async (plan: Plan) => {
-    await supabase
-      .from('usage_plans')
-      .update({ is_active: !plan.is_active })
-      .eq('id', plan.id)
+    await supabase.from('usage_plans').update({ is_active: !plan.is_active }).eq('id', plan.id)
     setPlans((prev) => prev.map((p) => p.id === plan.id ? { ...p, is_active: !p.is_active } : p))
   }
 
@@ -254,6 +263,58 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
     setPlans((prev) => prev.filter((p) => p.id !== planId))
   }
 
+  /** 送迎区分・お迎え場所の選択UI */
+  const transportInputs = (
+    tt: string, setTt: (v: string) => void,
+    plt: string, setPlt: (v: string) => void
+  ) => (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs font-medium text-gray-700 mb-2 block">送迎</label>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {TRANSPORT_OPTIONS.map(({ value, label }) => (
+            <button key={value} type="button" onClick={() => setTt(value)}
+              className={`py-2 px-2 rounded-lg border text-xs font-medium transition-colors ${
+                tt === value
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {(tt === 'pickup_only' || tt === 'both') && (
+        <div>
+          <label className="text-xs font-medium text-gray-700 mb-2 block">
+            お迎え場所
+          </label>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setPlt('home')}
+              className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-colors ${
+                plt === 'home'
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}>
+              自宅{childAddress ? `（${childAddress.slice(0, 10)}…）` : ''}
+            </button>
+            {schoolName && (
+              <button type="button" onClick={() => setPlt('school')}
+                className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-colors ${
+                  plt === 'school'
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                }`}>
+                学校（{schoolName}）
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  /** 利用時間の選択UI */
   const timeInputs = (
     pt: string, setPt: (v: string) => void,
     dt: string, setDt: (v: string) => void
@@ -266,15 +327,13 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1">
-            <span className="inline-block w-2 h-2 rounded-full bg-indigo-400" />
-            開始時間
+            <span className="inline-block w-2 h-2 rounded-full bg-indigo-400" />開始時間
           </label>
           <TimeSelect value={pt} onChange={setPt} />
         </div>
         <div>
           <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1">
-            <span className="inline-block w-2 h-2 rounded-full bg-teal-400" />
-            終了時間
+            <span className="inline-block w-2 h-2 rounded-full bg-teal-400" />終了時間
           </label>
           <TimeSelect value={dt} onChange={setDt} />
         </div>
@@ -303,11 +362,9 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                   {/* ユニット */}
                   <div>
                     <label className="text-xs font-medium text-gray-700 mb-1 block">ユニット</label>
-                    <select
-                      value={editState.unit_id}
+                    <select value={editState.unit_id}
                       onChange={(e) => setEditState((p) => p ? { ...p, unit_id: e.target.value } : p)}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    >
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
                       {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                   </div>
@@ -315,18 +372,12 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                   {/* モード切替 */}
                   <div className="flex gap-2">
                     {([['repeat', '繰り返し', Repeat], ['once', '日付指定', CalendarDays]] as const).map(([m, label, Icon]) => (
-                      <button
-                        key={m}
-                        type="button"
+                      <button key={m} type="button"
                         onClick={() => setEditState((p) => p ? { ...p, mode: m } : p)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                          editState.mode === m
-                            ? 'bg-indigo-600 text-white border-indigo-600'
-                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                        }`}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        {label}
+                          editState.mode === m ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                        }`}>
+                        <Icon className="h-3.5 w-3.5" />{label}
                       </button>
                     ))}
                   </div>
@@ -334,12 +385,9 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                   {editState.mode === 'once' ? (
                     <div>
                       <label className="text-xs font-medium text-gray-700 mb-1 block">日付</label>
-                      <input
-                        type="date"
-                        value={editState.once_date}
+                      <input type="date" value={editState.once_date}
                         onChange={(e) => setEditState((p) => p ? { ...p, once_date: e.target.value } : p)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      />
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
                     </div>
                   ) : (
                     <>
@@ -349,18 +397,13 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                           {DAY_LABELS.map((label, d) => (
                             <button key={d} type="button" onClick={() => toggleEditDay(d)}
                               className={`w-10 h-10 rounded-full text-sm font-bold border-2 transition-colors ${
-                                editState.day_of_week.includes(d)
-                                  ? DAY_COLORS[d] + ' border-current'
-                                  : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
-                              }`}
-                            >
+                                editState.day_of_week.includes(d) ? DAY_COLORS[d] + ' border-current' : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                              }`}>
                               {label}
                             </button>
                           ))}
                         </div>
-                        {editState.day_of_week.length === 0 && (
-                          <p className="text-xs text-red-500 mt-1">曜日を1つ以上選択してください</p>
-                        )}
+                        {editState.day_of_week.length === 0 && <p className="text-xs text-red-500 mt-1">曜日を1つ以上選択してください</p>}
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -389,6 +432,13 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                     </>
                   )}
 
+                  {transportInputs(
+                    editState.transport_type,
+                    (v) => setEditState((p) => p ? { ...p, transport_type: v } : p),
+                    editState.pickup_location_type,
+                    (v) => setEditState((p) => p ? { ...p, pickup_location_type: v } : p),
+                  )}
+
                   {timeInputs(
                     editState.pickup_time,
                     (v) => setEditState((p) => p ? { ...p, pickup_time: v } : p),
@@ -398,11 +448,8 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
 
                   <div className="flex gap-2 pt-1">
                     <Button variant="outline" size="sm" onClick={cancelEdit}>キャンセル</Button>
-                    <Button
-                      size="sm"
-                      onClick={() => handleSaveEdit(plan.id)}
-                      disabled={editSaving || (editState.mode === 'repeat' && editState.day_of_week.length === 0)}
-                    >
+                    <Button size="sm" onClick={() => handleSaveEdit(plan.id)}
+                      disabled={editSaving || (editState.mode === 'repeat' && editState.day_of_week.length === 0)}>
                       <Check className="h-3.5 w-3.5" />
                       {editSaving ? '保存中...' : '保存する'}
                     </Button>
@@ -419,8 +466,7 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                         <span className="text-sm font-medium text-gray-800">{plan.units?.name ?? '—'}</span>
                         {isOneTime(plan) && (
                           <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                            <CalendarDays className="h-3 w-3" />
-                            日付指定
+                            <CalendarDays className="h-3 w-3" />日付指定
                           </span>
                         )}
                         <Badge variant={plan.is_active ? 'success' : 'secondary'} className="text-xs">
@@ -433,31 +479,39 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                       ) : (
                         <div className="flex gap-1.5 flex-wrap">
                           {[0, 1, 2, 3, 4, 5, 6].map((d) => (
-                            <span key={d}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold border ${
-                                plan.day_of_week.includes(d) ? DAY_COLORS[d] : 'bg-gray-100 text-gray-300 border-gray-200'
-                              }`}
-                            >
-                              {DAY_LABELS[d]}
-                            </span>
+                            <span key={d} className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold border ${
+                              plan.day_of_week.includes(d) ? DAY_COLORS[d] : 'bg-gray-100 text-gray-300 border-gray-200'
+                            }`}>{DAY_LABELS[d]}</span>
                           ))}
                         </div>
                       )}
 
-                      {(plan.pickup_time || plan.dropoff_time) && (
-                        <div className="flex gap-3 flex-wrap">
-                          {plan.pickup_time && (
-                            <span className="flex items-center gap-1 text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                              <Clock className="h-3 w-3" />開始 {formatTime(plan.pickup_time)}
+                      {/* 送迎バッジ */}
+                      <div className="flex gap-2 flex-wrap items-center">
+                        <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${transportLabel(plan.transport_type).color}`}>
+                          <Car className="h-3 w-3" />
+                          {transportLabel(plan.transport_type).label}
+                          {(plan.transport_type === 'pickup_only' || plan.transport_type === 'both') && (
+                            <span className="ml-0.5 opacity-75">
+                              （{plan.pickup_location_type === 'school' ? '学校' : '自宅'}から）
                             </span>
                           )}
-                          {plan.dropoff_time && (
-                            <span className="flex items-center gap-1 text-xs text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
-                              <Clock className="h-3 w-3" />終了 {formatTime(plan.dropoff_time)}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                        </span>
+                        {(plan.pickup_time || plan.dropoff_time) && (
+                          <>
+                            {plan.pickup_time && (
+                              <span className="flex items-center gap-1 text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                                <Clock className="h-3 w-3" />開始 {formatTime(plan.pickup_time)}
+                              </span>
+                            )}
+                            {plan.dropoff_time && (
+                              <span className="flex items-center gap-1 text-xs text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
+                                <Clock className="h-3 w-3" />終了 {formatTime(plan.dropoff_time)}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
 
                       {!isOneTime(plan) && (
                         <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -519,13 +573,9 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                 {([['repeat', '繰り返し', Repeat], ['once', '日付指定', CalendarDays]] as const).map(([m, label, Icon]) => (
                   <button key={m} type="button" onClick={() => setAddMode(m)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                      addMode === m
-                        ? 'bg-indigo-600 text-white border-indigo-600'
-                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {label}
+                      addMode === m ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                    }`}>
+                    <Icon className="h-3.5 w-3.5" />{label}
                   </button>
                 ))}
               </div>
@@ -545,18 +595,13 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                     {DAY_LABELS.map((label, d) => (
                       <button key={d} type="button" onClick={() => toggleDay(d)}
                         className={`w-10 h-10 rounded-full text-sm font-bold border-2 transition-colors ${
-                          selectedDays.includes(d)
-                            ? DAY_COLORS[d] + ' border-current'
-                            : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
+                          selectedDays.includes(d) ? DAY_COLORS[d] + ' border-current' : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                        }`}>
                         {label}
                       </button>
                     ))}
                   </div>
-                  {selectedDays.length === 0 && (
-                    <p className="text-xs text-red-500 mt-1">曜日を1つ以上選択してください</p>
-                  )}
+                  {selectedDays.length === 0 && <p className="text-xs text-red-500 mt-1">曜日を1つ以上選択してください</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -579,11 +624,12 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
                   </div>
                 </div>
                 <p className="text-xs text-gray-400 -mt-1">
-                  曜日によって時間が異なる場合は、その曜日だけ別のスケジュールとして追加してください
+                  曜日によって設定が異なる場合は、その曜日だけ別のスケジュールとして追加してください
                 </p>
               </>
             )}
 
+            {transportInputs(transportType, setTransportType, pickupLocationType, setPickupLocationType)}
             {timeInputs(pickupTime, setPickupTime, dropoffTime, setDropoffTime)}
 
             {saveError && (
@@ -594,11 +640,8 @@ export function ChildSchedulePlanner({ childId, units, initialPlans }: Props) {
 
             <div className="flex gap-2 pt-1">
               <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>キャンセル</Button>
-              <Button
-                size="sm"
-                onClick={handleAdd}
-                disabled={saving || !selectedUnit || (addMode === 'repeat' && selectedDays.length === 0)}
-              >
+              <Button size="sm" onClick={handleAdd}
+                disabled={saving || !selectedUnit || (addMode === 'repeat' && selectedDays.length === 0)}>
                 {saving ? '保存中...' : '保存する'}
               </Button>
             </div>

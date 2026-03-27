@@ -12,12 +12,6 @@ type ChildRow = {
   schools: { id: string; name: string; latitude: number | null; longitude: number | null } | null
 }
 
-type TransportSettingRow = {
-  child_id: string
-  transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
-  pickup_location_type: 'home' | 'school'
-}
-
 function getPickupLocation(c: RouteChildData, direction: 'pickup' | 'dropoff'): string | null {
   if (direction === 'pickup' && c.pickup_location_type === 'school') {
     return c.children?.schools?.name ?? null
@@ -47,10 +41,10 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   const supabase = await createClient()
   const todayDow = new Date(date).getDay()
 
-  // 利用計画から今日の対象児童を取得（送迎時間も含む）
+  // 利用計画から今日の対象児童を取得（送迎設定・時間も含む）
   const { data: plansRaw } = await supabase
     .from('usage_plans')
-    .select('child_id, pickup_time, dropoff_time, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
+    .select('child_id, pickup_time, dropoff_time, transport_type, pickup_location_type, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
     .eq('unit_id', unitId)
     .eq('is_active', true)
     .lte('start_date', date)
@@ -65,49 +59,41 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     .eq('date', date)
     .in('status', ['confirmed', 'reserved'])
 
-  // 児童をユニーク化（planが優先 → 時間情報を保持）
+  // 児童をユニーク化（planが優先 → 時間・送迎設定を保持）
   const childrenMap = new Map<string, ChildRow>()
-  const pickupTimeMap = new Map<string, string | null>()  // child_id → お迎えスロット
-  const dropoffTimeMap = new Map<string, string | null>() // child_id → お送りスロット
+  const pickupTimeMap = new Map<string, string | null>()
+  const dropoffTimeMap = new Map<string, string | null>()
+  const transportTypeMap = new Map<string, string>()
+  const pickupLocationTypeMap = new Map<string, string>()
 
   for (const p of plansRaw ?? []) {
     if (p.child_id && !childrenMap.has(p.child_id)) {
       childrenMap.set(p.child_id, p.children as unknown as ChildRow)
       pickupTimeMap.set(p.child_id, toHourSlot(p.pickup_time as string | null))
       dropoffTimeMap.set(p.child_id, toHourSlot(p.dropoff_time as string | null))
+      transportTypeMap.set(p.child_id, (p.transport_type as string) ?? 'both')
+      pickupLocationTypeMap.set(p.child_id, (p.pickup_location_type as string) ?? 'home')
     }
   }
   for (const r of reservationsRaw ?? []) {
     if (r.child_id && !childrenMap.has(r.child_id)) {
       childrenMap.set(r.child_id, r.children as unknown as ChildRow)
-      // 個別予約は時間情報なし → nullスロット
       pickupTimeMap.set(r.child_id, null)
       dropoffTimeMap.set(r.child_id, null)
+      transportTypeMap.set(r.child_id, 'both')
+      pickupLocationTypeMap.set(r.child_id, 'home')
     }
   }
 
   if (childrenMap.size === 0) return
 
-  const childIds = [...childrenMap.keys()]
-
-  // 送迎設定を取得
-  const { data: settingsRaw } = await supabase
-    .from('child_transport_settings')
-    .select('child_id, transport_type, pickup_location_type')
-    .in('child_id', childIds)
-
-  const settingsMap = new Map<string, TransportSettingRow>(
-    ((settingsRaw ?? []) as TransportSettingRow[]).map((s) => [s.child_id, s])
-  )
-
-  // 送迎設定がある児童を時間スロットごとにグループ化
-  // key = 時間スロット文字列 or null（時間未設定）
+  // 送迎設定に基づいて候補を時間スロットごとにグループ化
   const pickupSlots = new Map<string | null, RouteChildData[]>()
   const dropoffSlots = new Map<string | null, RouteChildData[]>()
 
   for (const [childId, childData] of childrenMap) {
-    const setting = settingsMap.get(childId)
-    if (!setting || setting.transport_type === 'none') continue
+    const transportType = transportTypeMap.get(childId) ?? 'both'
+    if (transportType === 'none') continue
 
     const routeChild: RouteChildData = {
       child_id: childId,
@@ -119,15 +105,15 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
         school_id: childData?.school_id ?? null,
         schools: childData?.schools ?? null,
       },
-      pickup_location_type: setting.pickup_location_type,
+      pickup_location_type: (pickupLocationTypeMap.get(childId) ?? 'home') as 'home' | 'school',
     }
 
-    if (setting.transport_type === 'both' || setting.transport_type === 'pickup_only') {
+    if (transportType === 'both' || transportType === 'pickup_only') {
       const slot = pickupTimeMap.get(childId) ?? null
       if (!pickupSlots.has(slot)) pickupSlots.set(slot, [])
       pickupSlots.get(slot)!.push(routeChild)
     }
-    if (setting.transport_type === 'both' || setting.transport_type === 'dropoff_only') {
+    if (transportType === 'both' || transportType === 'dropoff_only') {
       const slot = dropoffTimeMap.get(childId) ?? null
       if (!dropoffSlots.has(slot)) dropoffSlots.set(slot, [])
       dropoffSlots.get(slot)!.push(routeChild)
@@ -151,14 +137,14 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
           date,
           direction,
           vehicle_id: null,
-          departure_time: slot,  // 時間スロット（例: '15:00:00'）または null
+          departure_time: slot,
           route_order: [],
         })
         .select('id')
         .single()
 
       if (schedErr) {
-        if (schedErr.code === '23505') continue  // 既に存在する場合はスキップ
+        if (schedErr.code === '23505') continue
         continue
       }
       if (!schedule) continue
