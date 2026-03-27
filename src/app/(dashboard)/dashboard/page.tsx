@@ -107,11 +107,13 @@ export default async function DashboardPage() {
       .eq('receiver_id', user.id)
       .is('read_at', null) : Promise.resolve({ count: 0 }),
 
-    // 承認待ち予約数
+    // 承認待ち予約（詳細付き）
     supabase
       .from('usage_reservations')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'reserved'),
+      .select('id, child_id, status, date, children(name), units(name)')
+      .eq('status', 'reserved')
+      .order('date', { ascending: true })
+      .limit(10),
 
     // 当日の出席済み・記録未作成カウント
     supabase
@@ -191,7 +193,8 @@ export default async function DashboardPage() {
   const expiringCerts = (expiringCertsResult.data ?? []) as unknown as ExpiringCert[]
   const notableRecords = (notableRecordsResult.data ?? []) as unknown as NotableRecord[]
   const unreadCount = unreadMessagesResult.count ?? 0
-  const pendingCount = pendingReservationsResult.count ?? 0
+  const pendingReservations = (pendingReservationsResult.data ?? []) as unknown as Reservation[]
+  const pendingCount = pendingReservations.length
   const todayAttendedIds = (unwrittenRecordsResult.data ?? []).map((a: { id: string }) => a.id)
 
   // 月次統計
@@ -329,6 +332,24 @@ export default async function DashboardPage() {
 
       {/* アラートバナー群 */}
       <div className="space-y-2">
+        {/* 承認待ち予約アラート */}
+        {pendingCount > 0 && (
+          <Link href="/usage">
+            <Card className="border-yellow-300 bg-yellow-50 hover:bg-yellow-100 transition-colors cursor-pointer">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Calendar className="h-5 w-5 text-yellow-600" />
+                  <div>
+                    <p className="font-medium text-yellow-800">承認待ちの予約があります</p>
+                    <p className="text-sm text-yellow-700">{pendingCount}件の予約が承認待ちです。利用予約管理から確認・承認してください。</p>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-yellow-600 flex-shrink-0" />
+              </CardContent>
+            </Card>
+          </Link>
+        )}
+
         {/* 記録未作成アラート */}
         {unwrittenCount > 0 && (
           <Link href={`/records?date=${today}`}>
@@ -421,6 +442,39 @@ export default async function DashboardPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* 承認待ち予約リスト */}
+        {pendingCount > 0 && (
+          <Card className="border-yellow-200">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-base text-yellow-700">
+                  <Calendar className="h-4 w-4" />
+                  承認待ちの予約
+                  <Badge variant="warning" className="ml-1">{pendingCount}件</Badge>
+                </CardTitle>
+                <Link href="/usage" className="text-xs text-indigo-600 hover:underline flex items-center gap-1">
+                  利用予約管理 <ArrowRight className="h-3 w-3" />
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1">
+                {pendingReservations.map((res) => (
+                  <div key={res.id} className="flex items-center justify-between py-2 border-b border-yellow-100 last:border-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900">{res.children?.name}</span>
+                      <span className="text-xs text-gray-500">{res.units?.name}</span>
+                    </div>
+                    <span className="text-xs font-medium text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">
+                      {formatDate(res.date)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* 受給者証期限切れ間近 */}
         {expiringCerts.length > 0 && (
