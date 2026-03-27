@@ -74,6 +74,7 @@ export function ParentCalendar({
   const [selectedChild, setSelectedChild] = useState<string>(children[0]?.id ?? '')
   const [selectedUnit, setSelectedUnit] = useState<string>(units[0]?.id ?? '')
   const [transportType, setTransportType] = useState<'none' | 'pickup_only' | 'dropoff_only' | 'both'>('both')
+  const [pickupLocationType, setPickupLocationType] = useState<'home' | 'school'>('home')
   const [pickupTime, setPickupTime] = useState<string>('')
   const [dropoffTime, setDropoffTime] = useState<string>('')
   const [loading, setLoading] = useState(false)
@@ -130,6 +131,7 @@ export function ParentCalendar({
       requested_by: userId,
       requested_at: new Date().toISOString(),
       transport_type: transportType,
+      pickup_location_type: pickupLocationType,
       pickup_time: pickupTime || null,
       dropoff_time: dropoffTime || null,
     })
@@ -379,31 +381,53 @@ export function ParentCalendar({
                 </div>
               </div>
 
-              {/* 利用時間 */}
+              {/* 迎え（施設 → お子様のいる場所） */}
               {(transportType === 'pickup_only' || transportType === 'both') && (
-                <div>
-                  <label className="text-xs font-medium text-gray-700 mb-1 block">送り時間（お迎え希望時刻）</label>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-gray-700 block">迎え（お迎え場所・時刻）</label>
+                  <div className="flex gap-2">
+                    {[
+                      { value: 'home', label: '自宅' },
+                      { value: 'school', label: '学校' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setPickupLocationType(opt.value as 'home' | 'school')}
+                        className={cn(
+                          'flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors',
+                          pickupLocationType === opt.value
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                   <select
                     value={pickupTime}
                     onChange={(e) => setPickupTime(e.target.value)}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                   >
-                    <option value="">時間を選択</option>
+                    <option value="">お迎え希望時刻を選択</option>
                     {TIME_OPTIONS.map((t) => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                 </div>
               )}
+
+              {/* 送り（施設 → お子様の自宅） */}
               {(transportType === 'dropoff_only' || transportType === 'both') && (
                 <div>
-                  <label className="text-xs font-medium text-gray-700 mb-1 block">迎え時間（送り届け希望時刻）</label>
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">送り（送り届け希望時刻）</label>
                   <select
                     value={dropoffTime}
                     onChange={(e) => setDropoffTime(e.target.value)}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                   >
-                    <option value="">時間を選択</option>
+                    <option value="">送り届け希望時刻を選択</option>
                     {TIME_OPTIONS.map((t) => (
                       <option key={t} value={t}>{t}</option>
                     ))}
