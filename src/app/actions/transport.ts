@@ -135,21 +135,121 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     }
   }
   for (const r of reservationsRaw ?? []) {
-    if (r.child_id && !childrenMap.has(r.child_id)) {
-      // 予約の時間が設定されていればそれを使用。なければその子の利用計画を再検索（計画がある場合はplansRawに含まれているはずなのでここはフォールバック）
-      const rPickupTime = r.pickup_time as string | null
-      const rDropoffTime = r.dropoff_time as string | null
-      // 利用計画側に同じ児童のデータがあれば時間を借用
-      const planForChild = (plansRaw ?? []).find((p) => p.child_id === r.child_id)
+    if (!r.child_id) continue
+    const rPickupTime = r.pickup_time as string | null
+    const rDropoffTime = r.dropoff_time as string | null
+    if (!childrenMap.has(r.child_id)) {
+      // 予約のみの児童（プランに存在しない）
       childrenMap.set(r.child_id, r.children as unknown as ChildRow)
-      pickupTimeMap.set(r.child_id, toHourSlot(rPickupTime ?? (planForChild?.pickup_time as string | null) ?? null))
-      dropoffTimeMap.set(r.child_id, toHourSlot(rDropoffTime ?? (planForChild?.dropoff_time as string | null) ?? null))
-      transportTypeMap.set(r.child_id, (r.transport_type ?? planForChild?.transport_type ?? 'both') as string)
-      pickupLocationTypeMap.set(r.child_id, (r.pickup_location_type ?? planForChild?.pickup_location_type ?? 'home') as string)
+      pickupTimeMap.set(r.child_id, toHourSlot(rPickupTime))
+      dropoffTimeMap.set(r.child_id, toHourSlot(rDropoffTime))
+      transportTypeMap.set(r.child_id, (r.transport_type ?? 'both') as string)
+      pickupLocationTypeMap.set(r.child_id, (r.pickup_location_type ?? 'home') as string)
+    } else {
+      // プランに存在する児童: 予約のtransport_typeと時間で補完・上書き
+      // transport_typeが予約で明示されている場合はプランの設定より優先（当日のみ有効）
+      const rTransportType = r.transport_type as string | null
+      if (rTransportType && rTransportType !== transportTypeMap.get(r.child_id)) {
+        transportTypeMap.set(r.child_id, rTransportType)
+      }
+      if (r.pickup_location_type) {
+        pickupLocationTypeMap.set(r.child_id, r.pickup_location_type as string)
+      }
+      if (pickupTimeMap.get(r.child_id) === null && rPickupTime) {
+        pickupTimeMap.set(r.child_id, toHourSlot(rPickupTime))
+      }
+      if (dropoffTimeMap.get(r.child_id) === null && rDropoffTime) {
+        dropoffTimeMap.set(r.child_id, toHourSlot(rDropoffTime))
+      }
     }
   }
 
   if (childrenMap.size === 0) return
+
+  // 時間がまだnullの児童に対して、同ユニット内の曜日不問の計画から時間を補完
+  // （transport_type='none'の児童は送迎不要のためスキップ）
+  const nullTimeChildIds = [...childrenMap.keys()].filter((id) => {
+    const type = transportTypeMap.get(id) ?? 'both'
+    if (type === 'none') return false
+    const needPickup = type === 'both' || type === 'pickup_only'
+    const needDropoff = type === 'both' || type === 'dropoff_only'
+    return (needPickup && pickupTimeMap.get(id) === null) ||
+           (needDropoff && dropoffTimeMap.get(id) === null)
+  })
+  if (nullTimeChildIds.length > 0) {
+    // まず同ユニットのプラン（曜日・日付不問）から時間を補完
+    // 次にユニットを問わず検索（プランが別ユニットに存在する場合のフォールバック）
+    // さらに usage_plan_day_settings も検索して時間を補完
+    const broaderPickup = new Map<string, string>()
+    const broaderDropoff = new Map<string, string>()
+
+    const fillFromPlans = (plans: Array<{ child_id: unknown; pickup_time: unknown; dropoff_time: unknown }>) => {
+      for (const bp of plans) {
+        if (!bp.child_id) continue
+        const id = bp.child_id as string
+        if (!broaderPickup.has(id) && bp.pickup_time) broaderPickup.set(id, bp.pickup_time as string)
+        if (!broaderDropoff.has(id) && bp.dropoff_time) broaderDropoff.set(id, bp.dropoff_time as string)
+      }
+    }
+
+    // Step1: 同ユニットのプラン（曜日不問・is_active問わず）
+    // is_activeを問わない理由: 予約がある場合は時間参照のためだけに使用するため
+    const { data: sameUnitPlans } = await supabase
+      .from('usage_plans')
+      .select('child_id, pickup_time, dropoff_time')
+      .eq('unit_id', unitId)
+      .in('child_id', nullTimeChildIds)
+      .not('pickup_time', 'is', null)
+    fillFromPlans(sameUnitPlans ?? [])
+
+    // Step2: 同ユニットの usage_plan_day_settings から時間補完（plan.pickup_time が null の場合）
+    const stillNullAfterStep1 = nullTimeChildIds.filter(
+      (id) => !broaderPickup.has(id) && !broaderDropoff.has(id)
+    )
+    if (stillNullAfterStep1.length > 0) {
+      const { data: sameUnitPlanIds } = await supabase
+        .from('usage_plans')
+        .select('id, child_id')
+        .eq('unit_id', unitId)
+        .in('child_id', stillNullAfterStep1)
+      const relevantPlanIds = (sameUnitPlanIds ?? []).map((p) => p.id as string).filter(Boolean)
+      if (relevantPlanIds.length > 0) {
+        const { data: daySettingsTimes } = await supabase
+          .from('usage_plan_day_settings')
+          .select('plan_id, pickup_time, dropoff_time')
+          .in('plan_id', relevantPlanIds)
+          .not('pickup_time', 'is', null)
+        const planToChild = new Map((sameUnitPlanIds ?? []).map((p) => [p.id as string, p.child_id as string]))
+        fillFromPlans((daySettingsTimes ?? []).map((ds) => ({
+          child_id: planToChild.get(ds.plan_id as string) ?? null,
+          pickup_time: ds.pickup_time,
+          dropoff_time: ds.dropoff_time,
+        })))
+      }
+    }
+
+    // Step3: 他ユニットのプラン（同ユニットに時間情報がない場合の最終フォールバック）
+    const stillNullAfterStep2 = nullTimeChildIds.filter(
+      (id) => !broaderPickup.has(id) && !broaderDropoff.has(id)
+    )
+    if (stillNullAfterStep2.length > 0) {
+      const { data: otherUnitPlans } = await supabase
+        .from('usage_plans')
+        .select('child_id, pickup_time, dropoff_time')
+        .in('child_id', stillNullAfterStep2)
+        .not('pickup_time', 'is', null)
+      fillFromPlans(otherUnitPlans ?? [])
+    }
+
+    for (const id of nullTimeChildIds) {
+      if (pickupTimeMap.get(id) === null && broaderPickup.has(id)) {
+        pickupTimeMap.set(id, toHourSlot(broaderPickup.get(id)!))
+      }
+      if (dropoffTimeMap.get(id) === null && broaderDropoff.has(id)) {
+        dropoffTimeMap.set(id, toHourSlot(broaderDropoff.get(id)!))
+      }
+    }
+  }
 
   // 送迎設定に基づいて候補を時間スロットごとにグループ化
   const pickupSlots = new Map<string | null, RouteChildData[]>()
@@ -190,6 +290,8 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
 
     for (const [slot, candidates] of slotsMap) {
       if (candidates.length === 0) continue
+      // 時間が不明な児童は自動スケジュールを作成しない（手動で割り当てる）
+      if (slot === null) continue
 
       const groups = nearestNeighborSort(buildRouteGroups(candidates, direction))
       const orderedChildren = groups.flatMap((g) => g.children)
