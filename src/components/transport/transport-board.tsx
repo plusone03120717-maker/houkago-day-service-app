@@ -19,6 +19,7 @@ import {
   UserPlus,
   X,
   RefreshCw,
+  User,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { TransportScheduleCreator } from './transport-schedule-creator'
@@ -26,6 +27,7 @@ import { deleteAndRecreateTransportSchedules } from '@/app/actions/transport'
 
 type Unit = { id: string; name: string; service_type: string }
 type Vehicle = { id: string; name: string; capacity: number }
+export type Driver = { id: string; name: string }
 
 export type TransportDetail = {
   id: string
@@ -50,7 +52,9 @@ export type Schedule = {
   direction: string
   departure_time: string | null
   route_order: number[]
+  driver_member_id: string | null
   transport_vehicles: { id: string; name: string; capacity: number } | null
+  staff_members: { id: string; name: string } | null
   transport_details: TransportDetail[]
 }
 
@@ -75,6 +79,7 @@ interface Props {
   selectedUnitId: string
   schedules: Schedule[]
   vehicles: Vehicle[]
+  drivers: Driver[]
   attendingChildren: AttendingChild[]
   allChildren: UnitChild[]
 }
@@ -94,7 +99,7 @@ function buildStops(details: TransportDetail[]) {
   return stops
 }
 
-export function TransportManageBoard({ date, units, selectedUnitId, schedules, vehicles, attendingChildren, allChildren }: Props) {
+export function TransportManageBoard({ date, units, selectedUnitId, schedules, vehicles, drivers, attendingChildren, allChildren }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -214,6 +219,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
                 date={date}
                 unitId={selectedUnitId}
                 vehicles={vehicles}
+                drivers={drivers}
                 allChildren={allChildren}
                 onRemove={removeFromTransport}
                 updating={updating}
@@ -228,6 +234,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
               date={date}
               unitId={selectedUnitId}
               vehicles={vehicles}
+              drivers={drivers}
               allChildren={allChildren}
               onRemove={removeFromTransport}
               updating={updating}
@@ -248,6 +255,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
                 date={date}
                 unitId={selectedUnitId}
                 vehicles={vehicles}
+                drivers={drivers}
                 allChildren={allChildren}
                 onRemove={removeFromTransport}
                 updating={updating}
@@ -262,6 +270,7 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
               date={date}
               unitId={selectedUnitId}
               vehicles={vehicles}
+              drivers={drivers}
               allChildren={allChildren}
               onRemove={removeFromTransport}
               updating={updating}
@@ -408,6 +417,7 @@ function ScheduleCard({
   date,
   unitId,
   vehicles,
+  drivers,
   allChildren,
   onRemove,
   updating,
@@ -419,10 +429,26 @@ function ScheduleCard({
   date: string
   unitId: string
   vehicles: Vehicle[]
+  drivers: Driver[]
   allChildren: UnitChild[]
   onRemove: (detail: TransportDetail) => void
   updating: string | null
 }) {
+  const supabase = createClient()
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [driverSaving, setDriverSaving] = useState(false)
+
+  const handleDriverChange = async (driverId: string) => {
+    if (!schedule) return
+    setDriverSaving(true)
+    await supabase
+      .from('transport_schedules')
+      .update({ driver_member_id: driverId || null })
+      .eq('id', schedule.id)
+    setDriverSaving(false)
+    startTransition(() => router.refresh())
+  }
   const [showCreator, setShowCreator] = useState(false)
   const [showAddPanel, setShowAddPanel] = useState(false)
   const stops = schedule ? buildStops(schedule.transport_details) : []
@@ -473,6 +499,22 @@ function ScheduleCard({
                 onClose={() => setShowAddPanel(false)}
               />
             )}
+
+            {/* ドライバー選択 */}
+            <div className="flex items-center gap-2">
+              <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+              <select
+                value={schedule.driver_member_id ?? ''}
+                onChange={(e) => handleDriverChange(e.target.value)}
+                disabled={driverSaving}
+                className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                <option value="">ドライバー未設定</option>
+                {drivers.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
 
             {/* ルートヘッダー */}
             <div className="flex items-center gap-1.5">

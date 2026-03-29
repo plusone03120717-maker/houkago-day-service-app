@@ -8,10 +8,13 @@ import { autoCreateTransportSchedules } from '@/app/actions/transport'
 
 type Unit = { id: string; name: string; service_type: string }
 type Vehicle = { id: string; name: string; capacity: number }
+type Driver = { id: string; name: string }
 
 const SCHEDULE_SELECT = `
   id, direction, departure_time, route_order,
+  driver_member_id,
   transport_vehicles (id, name, capacity),
+  staff_members (id, name),
   transport_details (
     id, child_id, pickup_location, pickup_time, actual_pickup_time, status, parent_notified,
     children (id, name, name_kana, address, school_id, schools(id, name))
@@ -50,6 +53,12 @@ export default async function TransportPage({
     .select('id, name, capacity')
     .order('name')
   const vehicles = (vehiclesRaw ?? []) as Vehicle[]
+
+  const { data: driversRaw } = await supabase
+    .from('staff_members')
+    .select('id, name')
+    .order('name')
+  const drivers = (driversRaw ?? []) as Driver[]
 
   const { data: attendingChildrenRaw } = selectedUnitId
     ? await supabase
@@ -100,6 +109,7 @@ export default async function TransportPage({
       selectedUnitId={selectedUnitId}
       schedules={schedules}
       vehicles={vehicles}
+      drivers={drivers}
       attendingChildren={attendingChildren}
       allChildren={allChildren}
     />
