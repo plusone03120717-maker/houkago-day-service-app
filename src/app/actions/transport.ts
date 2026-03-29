@@ -109,7 +109,7 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   // 個別予約からも取得（重複は後でマージ）
   const { data: reservationsRaw } = await supabase
     .from('usage_reservations')
-    .select('child_id, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
+    .select('child_id, pickup_time, dropoff_time, transport_type, pickup_location_type, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
     .eq('unit_id', unitId)
     .eq('date', date)
     .in('status', ['confirmed', 'reserved'])
@@ -136,11 +136,16 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   }
   for (const r of reservationsRaw ?? []) {
     if (r.child_id && !childrenMap.has(r.child_id)) {
+      // 予約の時間が設定されていればそれを使用。なければその子の利用計画を再検索（計画がある場合はplansRawに含まれているはずなのでここはフォールバック）
+      const rPickupTime = r.pickup_time as string | null
+      const rDropoffTime = r.dropoff_time as string | null
+      // 利用計画側に同じ児童のデータがあれば時間を借用
+      const planForChild = (plansRaw ?? []).find((p) => p.child_id === r.child_id)
       childrenMap.set(r.child_id, r.children as unknown as ChildRow)
-      pickupTimeMap.set(r.child_id, null)
-      dropoffTimeMap.set(r.child_id, null)
-      transportTypeMap.set(r.child_id, 'both')
-      pickupLocationTypeMap.set(r.child_id, 'home')
+      pickupTimeMap.set(r.child_id, toHourSlot(rPickupTime ?? (planForChild?.pickup_time as string | null) ?? null))
+      dropoffTimeMap.set(r.child_id, toHourSlot(rDropoffTime ?? (planForChild?.dropoff_time as string | null) ?? null))
+      transportTypeMap.set(r.child_id, (r.transport_type ?? planForChild?.transport_type ?? 'both') as string)
+      pickupLocationTypeMap.set(r.child_id, (r.pickup_location_type ?? planForChild?.pickup_location_type ?? 'home') as string)
     }
   }
 
