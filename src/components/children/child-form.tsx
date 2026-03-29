@@ -6,10 +6,18 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Save, Search, Loader2 } from 'lucide-react'
+import { Save, Search, Loader2, Plus, Trash2, Star } from 'lucide-react'
 
 type Unit = { id: string; name: string; service_type: string }
 export type School = { id: string; municipality: string; name: string; address: string }
+
+export type AddressEntry = {
+  id?: string
+  label: string
+  postal_code: string
+  address: string
+  is_default: boolean
+}
 
 interface ChildData {
   id?: string
@@ -17,8 +25,6 @@ interface ChildData {
   name_kana: string
   birth_date: string
   gender: string
-  postal_code: string
-  address: string
   school_id: string
   school_name: string
   grade: string
@@ -34,26 +40,28 @@ interface Props {
   units: Unit[]
   schools: School[]
   initial?: Partial<ChildData>
+  initialAddresses?: AddressEntry[]
 }
 
 const GRADES = ['年少', '年中', '年長', '小1', '小2', '小3', '小4', '小5', '小6', '中1', '中2', '中3', '高1', '高2', '高3']
+const LABEL_PRESETS = ['自宅', '祖父母宅（父方）', '祖父母宅（母方）', '親戚宅', 'その他']
 
-export function ChildForm({ units, schools, initial }: Props) {
+function newAddress(isDefault = false): AddressEntry {
+  return { label: '自宅', postal_code: '', address: '', is_default: isDefault }
+}
+
+export function ChildForm({ units, schools, initial, initialAddresses }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [postalSearching, setPostalSearching] = useState(false)
-  const [postalError, setPostalError] = useState('')
 
   const [form, setForm] = useState<ChildData>({
     name: initial?.name ?? '',
     name_kana: initial?.name_kana ?? '',
     birth_date: initial?.birth_date ?? '',
     gender: initial?.gender ?? 'male',
-    postal_code: initial?.postal_code ?? '',
-    address: initial?.address ?? '',
     school_id: initial?.school_id ?? '',
     school_name: initial?.school_name ?? '',
     grade: initial?.grade ?? '',
@@ -65,6 +73,20 @@ export function ChildForm({ units, schools, initial }: Props) {
     unit_ids: initial?.unit_ids ?? [],
   })
 
+  // 住所リスト。既存データがない場合はlegacy単一住所から初期化
+  const [addresses, setAddresses] = useState<AddressEntry[]>(() => {
+    if (initialAddresses && initialAddresses.length > 0) return initialAddresses
+    // レガシー: children.address から移行
+    const legacyAddress = (initial as Record<string, string | undefined>)?.address ?? ''
+    const legacyPostal = (initial as Record<string, string | undefined>)?.postal_code ?? ''
+    if (legacyAddress) return [{ label: '自宅', postal_code: legacyPostal, address: legacyAddress, is_default: true }]
+    return [newAddress(true)]
+  })
+
+  // 郵便番号検索中フラグ（住所インデックスごと）
+  const [postalSearching, setPostalSearching] = useState<Record<number, boolean>>({})
+  const [postalErrors, setPostalErrors] = useState<Record<number, string>>({})
+
   const set = (key: keyof ChildData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
 
@@ -72,7 +94,6 @@ export function ChildForm({ units, schools, initial }: Props) {
   const toKatakana = (str: string) =>
     str.replace(/[\u3041-\u3096]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
 
-  // IME入力中の読み仮名を蓄積
   const kanaBufferRef = { current: '' }
 
   const handleNameCompositionUpdate = (e: React.CompositionEvent<HTMLInputElement>) => {
@@ -84,71 +105,15 @@ export function ChildForm({ units, schools, initial }: Props) {
     if (kana) {
       setForm((prev) => ({
         ...prev,
-        name_kana: prev.name_kana
-          ? prev.name_kana + kana
-          : kana,
+        name_kana: prev.name_kana ? prev.name_kana + kana : kana,
       }))
     }
     kanaBufferRef.current = ''
   }
 
-  // 名前フィールドをクリアしたらフリガナもリセット
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value
-    setForm((prev) => ({
-      ...prev,
-      name: val,
-      name_kana: val === '' ? '' : prev.name_kana,
-    }))
-  }
-
-  // 郵便番号から住所を自動入力
-  const handlePostalSearch = async () => {
-    const code = form.postal_code.replace(/[^0-9]/g, '')
-    if (code.length !== 7) {
-      setPostalError('7桁の数字で入力してください')
-      return
-    }
-    setPostalSearching(true)
-    setPostalError('')
-    try {
-      const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${code}`)
-      const json = await res.json() as { results: { address1: string; address2: string; address3: string }[] | null }
-      if (!json.results || json.results.length === 0) {
-        setPostalError('該当する住所が見つかりませんでした')
-        return
-      }
-      const { address1, address2, address3 } = json.results[0]
-      setForm((prev) => ({ ...prev, address: `${address1}${address2}${address3}` }))
-    } catch {
-      setPostalError('住所の取得に失敗しました')
-    } finally {
-      setPostalSearching(false)
-    }
-  }
-
-  const handlePostalCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.replace(/[^0-9\-]/g, '')
-    setPostalError('')
-    setForm((prev) => ({ ...prev, postal_code: val }))
-    // 7桁揃ったら自動検索
-    if (val.replace(/[^0-9]/g, '').length === 7) {
-      const code = val.replace(/[^0-9]/g, '')
-      setPostalSearching(true)
-      setPostalError('')
-      fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${code}`)
-        .then((r) => r.json())
-        .then((json: { results: { address1: string; address2: string; address3: string }[] | null }) => {
-          if (json.results?.[0]) {
-            const { address1, address2, address3 } = json.results[0]
-            setForm((prev) => ({ ...prev, address: `${address1}${address2}${address3}` }))
-          } else {
-            setPostalError('該当する住所が見つかりませんでした')
-          }
-        })
-        .catch(() => setPostalError('住所の取得に失敗しました'))
-        .finally(() => setPostalSearching(false))
-    }
+    setForm((prev) => ({ ...prev, name: val, name_kana: val === '' ? '' : prev.name_kana }))
   }
 
   // 学校選択
@@ -173,22 +138,86 @@ export function ChildForm({ units, schools, initial }: Props) {
     }))
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // --- 住所管理 ---
+  const updateAddress = (idx: number, patch: Partial<AddressEntry>) => {
+    setAddresses((prev) => prev.map((a, i) => i === idx ? { ...a, ...patch } : a))
+  }
+
+  const addAddress = () => {
+    setAddresses((prev) => [...prev, newAddress(prev.length === 0)])
+  }
+
+  const removeAddress = (idx: number) => {
+    setAddresses((prev) => {
+      const next = prev.filter((_, i) => i !== idx)
+      // 削除したのがデフォルトなら先頭をデフォルトに
+      if (prev[idx].is_default && next.length > 0) {
+        next[0] = { ...next[0], is_default: true }
+      }
+      return next
+    })
+  }
+
+  const setDefault = (idx: number) => {
+    setAddresses((prev) => prev.map((a, i) => ({ ...a, is_default: i === idx })))
+  }
+
+  const searchPostal = async (idx: number, code: string) => {
+    const digits = code.replace(/[^0-9]/g, '')
+    if (digits.length !== 7) {
+      setPostalErrors((prev) => ({ ...prev, [idx]: '7桁の数字で入力してください' }))
+      return
+    }
+    setPostalSearching((prev) => ({ ...prev, [idx]: true }))
+    setPostalErrors((prev) => ({ ...prev, [idx]: '' }))
+    try {
+      const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`)
+      const json = await res.json() as { results: { address1: string; address2: string; address3: string }[] | null }
+      if (!json.results?.[0]) {
+        setPostalErrors((prev) => ({ ...prev, [idx]: '該当する住所が見つかりませんでした' }))
+        return
+      }
+      const { address1, address2, address3 } = json.results[0]
+      updateAddress(idx, { address: `${address1}${address2}${address3}` })
+    } catch {
+      setPostalErrors((prev) => ({ ...prev, [idx]: '住所の取得に失敗しました' }))
+    } finally {
+      setPostalSearching((prev) => ({ ...prev, [idx]: false }))
+    }
+  }
+
+  const handlePostalCodeChange = (idx: number, val: string) => {
+    const cleaned = val.replace(/[^0-9\-]/g, '')
+    setPostalErrors((prev) => ({ ...prev, [idx]: '' }))
+    updateAddress(idx, { postal_code: cleaned })
+    if (cleaned.replace(/[^0-9]/g, '').length === 7) {
+      searchPostal(idx, cleaned)
+    }
+  }
+
+  // --- 保存 ---
+  const handleSubmit = async () => {
     if (!form.name || !form.birth_date) {
       setError('氏名と生年月日は必須です')
       return
     }
+    if (addresses.length > 0 && !addresses.some((a) => a.address.trim())) {
+      setError('住所を入力してください')
+      return
+    }
     setSaving(true)
     setError('')
+
+    // デフォルト住所をchildren.address / postal_code に同期（後方互換）
+    const defaultAddr = addresses.find((a) => a.is_default) ?? addresses[0]
 
     const payload = {
       name: form.name,
       name_kana: form.name_kana || null,
       birth_date: form.birth_date,
       gender: form.gender,
-      postal_code: form.postal_code || null,
-      address: form.address || null,
+      postal_code: defaultAddr?.postal_code || null,
+      address: defaultAddr?.address || null,
       school_id: form.school_id || null,
       school_name: form.school_id
         ? (schools.find((s) => s.id === form.school_id)?.name ?? form.school_name ?? null)
@@ -205,24 +234,38 @@ export function ChildForm({ units, schools, initial }: Props) {
     let childId: string | undefined = initial?.id
 
     if (childId) {
-      // 更新
       const { error: updateError } = await supabase.from('children').update(payload).eq('id', childId)
       if (updateError) { setError(updateError.message); setSaving(false); return }
     } else {
-      // 新規
       const { data, error: insertError } = await supabase.from('children').insert(payload).select('id').single()
       if (insertError || !data) { setError(insertError?.message ?? '保存に失敗しました'); setSaving(false); return }
       childId = data.id
     }
 
     // ユニット割当を更新
-    const { error: deleteError } = await supabase.from('children_units').delete().eq('child_id', childId!)
-    if (deleteError) { setError(deleteError.message); setSaving(false); return }
+    await supabase.from('children_units').delete().eq('child_id', childId!)
     if (form.unit_ids.length > 0) {
-      const { error: insertError } = await supabase.from('children_units').insert(
+      const { error: unitError } = await supabase.from('children_units').insert(
         form.unit_ids.map((uid) => ({ child_id: childId!, unit_id: uid }))
       )
-      if (insertError) { setError(insertError.message); setSaving(false); return }
+      if (unitError) { setError(unitError.message); setSaving(false); return }
+    }
+
+    // 住所を更新（全削除→再挿入）
+    await supabase.from('child_addresses').delete().eq('child_id', childId!)
+    const validAddresses = addresses.filter((a) => a.address.trim())
+    if (validAddresses.length > 0) {
+      const { error: addrError } = await supabase.from('child_addresses').insert(
+        validAddresses.map((a, i) => ({
+          child_id: childId!,
+          label: a.label || '自宅',
+          postal_code: a.postal_code || null,
+          address: a.address,
+          is_default: a.is_default,
+          sort_order: i,
+        }))
+      )
+      if (addrError) { setError(addrError.message); setSaving(false); return }
     }
 
     setSaving(false)
@@ -230,7 +273,7 @@ export function ChildForm({ units, schools, initial }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5 max-w-2xl">
+    <div className="space-y-5 max-w-2xl">
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
       )}
@@ -319,38 +362,124 @@ export function ChildForm({ units, schools, initial }: Props) {
               </select>
             </div>
           </div>
+        </CardContent>
+      </Card>
 
-          <div className="space-y-2">
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">郵便番号</label>
-              <div className="flex gap-2">
-                <Input
-                  value={form.postal_code}
-                  onChange={handlePostalCodeChange}
-                  placeholder="1234567"
-                  maxLength={8}
-                  className="w-36"
-                />
-                <button
-                  type="button"
-                  onClick={handlePostalSearch}
-                  disabled={postalSearching}
-                  className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-indigo-700 border border-indigo-300 rounded-lg hover:bg-indigo-50 disabled:opacity-50 transition-colors"
-                >
-                  {postalSearching
-                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : <Search className="h-3.5 w-3.5" />
-                  }
-                  住所を検索
-                </button>
+      {/* 住所 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">住所</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {addresses.map((addr, idx) => (
+            <div key={idx} className={`rounded-xl border p-4 space-y-3 ${addr.is_default ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white'}`}>
+              {/* ヘッダー行 */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-1 flex-wrap">
+                  {addr.is_default && (
+                    <span className="flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
+                      <Star className="h-3 w-3" />メイン
+                    </span>
+                  )}
+                  {/* ラベル */}
+                  <input
+                    type="text"
+                    value={addr.label}
+                    onChange={(e) => updateAddress(idx, { label: e.target.value })}
+                    placeholder="名前（例: 自宅）"
+                    className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  {!addr.is_default && (
+                    <button
+                      type="button"
+                      onClick={() => setDefault(idx)}
+                      title="メイン住所に設定"
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors text-xs"
+                    >
+                      <Star className="h-4 w-4" />
+                    </button>
+                  )}
+                  {addresses.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeAddress(idx)}
+                      title="削除"
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
-              {postalError && <p className="text-xs text-red-500 mt-1">{postalError}</p>}
+
+              {/* ラベルのプリセット */}
+              <div className="flex flex-wrap gap-1.5">
+                {LABEL_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => updateAddress(idx, { label: preset })}
+                    className={`px-2 py-0.5 rounded-full text-xs border transition-colors ${
+                      addr.label === preset
+                        ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
+                        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+
+              {/* 郵便番号 */}
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">郵便番号</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={addr.postal_code}
+                    onChange={(e) => handlePostalCodeChange(idx, e.target.value)}
+                    placeholder="1234567"
+                    maxLength={8}
+                    className="w-36 bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => searchPostal(idx, addr.postal_code)}
+                    disabled={postalSearching[idx]}
+                    className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-indigo-700 border border-indigo-300 rounded-lg hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+                  >
+                    {postalSearching[idx]
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Search className="h-3.5 w-3.5" />
+                    }
+                    住所を検索
+                  </button>
+                </div>
+                {postalErrors[idx] && <p className="text-xs text-red-500 mt-1">{postalErrors[idx]}</p>}
+              </div>
+
+              {/* 住所 */}
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">住所</label>
+                <Input
+                  value={addr.address}
+                  onChange={(e) => updateAddress(idx, { address: e.target.value })}
+                  placeholder="東京都〇〇区〇〇町1-2-3"
+                  className="bg-white"
+                />
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">住所</label>
-              <Input value={form.address} onChange={set('address')} placeholder="東京都〇〇区〇〇町1-2-3" />
-            </div>
-          </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={addAddress}
+            className="flex items-center gap-2 w-full py-2.5 border border-dashed border-gray-300 rounded-xl text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            住所を追加
+          </button>
         </CardContent>
       </Card>
 
@@ -430,10 +559,10 @@ export function ChildForm({ units, schools, initial }: Props) {
         </Card>
       )}
 
-      <Button type="submit" disabled={saving} className="w-full sm:w-auto">
+      <Button type="button" onClick={handleSubmit} disabled={saving} className="w-full sm:w-auto">
         <Save className="h-4 w-4" />
         {saving ? '保存中...' : initial?.id ? '変更を保存' : '児童を登録'}
       </Button>
-    </form>
+    </div>
   )
 }

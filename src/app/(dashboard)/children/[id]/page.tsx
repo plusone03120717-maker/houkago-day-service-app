@@ -105,6 +105,14 @@ export default async function ChildDetailPage({
     .order('sort_order')
   const emergencyContacts = (emergencyContactsRaw ?? []) as unknown as EmergencyContact[]
 
+  const { data: addressesRaw } = await supabase
+    .from('child_addresses')
+    .select('id, label, postal_code, address, is_default')
+    .eq('child_id', id)
+    .order('sort_order')
+  type ChildAddress = { id: string; label: string; postal_code: string | null; address: string; is_default: boolean }
+  const childAddresses = (addressesRaw ?? []) as unknown as ChildAddress[]
+
   return (
     <div className="space-y-5 max-w-4xl">
       <div className="flex items-center gap-3">
@@ -155,7 +163,23 @@ export default async function ChildDetailPage({
           <CardContent className="space-y-3 text-sm">
             <Row label="生年月日" value={`${formatDate(child.birth_date)} (${getAge(child.birth_date)}歳)`} />
             <Row label="性別" value={child.gender === 'male' ? '男' : child.gender === 'female' ? '女' : 'その他'} />
-            <Row label="住所" value={child.address} />
+            {childAddresses.length > 0 ? (
+              <div>
+                <p className="text-xs text-gray-500 mb-1">住所</p>
+                <div className="space-y-1">
+                  {childAddresses.map((a) => (
+                    <div key={a.id} className="flex items-start gap-2">
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 ${a.is_default ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {a.label}
+                      </span>
+                      <span className="text-gray-800">{a.address}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <Row label="住所" value={child.address} />
+            )}
             <Row label="学校名" value={child.school_name} />
             <Row label="学年" value={child.grade} />
             <Row label="障害種別" value={child.disability_type} />
