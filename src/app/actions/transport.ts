@@ -210,11 +210,12 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
 
       if (orderedChildren.length > 0) {
         await supabase.from('transport_details').insert(
-          orderedChildren.map((c) => ({
+          orderedChildren.map((c, idx) => ({
             schedule_id: schedule.id,
             child_id: c.child_id,
             pickup_location: getPickupLocation(c, direction),
             status: 'scheduled',
+            sort_order: idx,
           }))
         )
       }

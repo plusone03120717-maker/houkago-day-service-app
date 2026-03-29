@@ -20,6 +20,7 @@ import {
   X,
   RefreshCw,
   User,
+  GripVertical,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { TransportScheduleCreator } from './transport-schedule-creator'
@@ -37,6 +38,7 @@ export type TransportDetail = {
   actual_pickup_time: string | null
   status: string
   parent_notified: boolean
+  sort_order: number
   children: {
     id: string
     name: string
@@ -84,20 +86,6 @@ interface Props {
   allChildren: UnitChild[]
 }
 
-/** 同じ場所の児童をまとめてルートのストップリストを作成 */
-function buildStops(details: TransportDetail[]) {
-  const stops: { location: string | null; isSchool: boolean; children: TransportDetail[] }[] = []
-  for (const d of details) {
-    const last = stops[stops.length - 1]
-    if (last && last.location === d.pickup_location) {
-      last.children.push(d)
-    } else {
-      const isSchool = !!(d.pickup_location && /学校|校$/.test(d.pickup_location))
-      stops.push({ location: d.pickup_location, isSchool, children: [d] })
-    }
-  }
-  return stops
-}
 
 export function TransportManageBoard({ date, units, selectedUnitId, schedules, vehicles, drivers, attendingChildren, allChildren }: Props) {
   const router = useRouter()
@@ -438,6 +426,25 @@ function ScheduleCard({
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [driverSaving, setDriverSaving] = useState(false)
+  const [showCreator, setShowCreator] = useState(false)
+  const [showAddPanel, setShowAddPanel] = useState(false)
+
+  // ドラッグ&ドロップ用: sort_order 順にソートしたローカル状態
+  const sortedDetails = schedule
+    ? [...schedule.transport_details].sort((a, b) => a.sort_order - b.sort_order)
+    : []
+  const [localDetails, setLocalDetails] = useState<TransportDetail[]>(sortedDetails)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const [reordering, setReordering] = useState(false)
+
+  // schedule が変わったらローカル状態をリセット
+  const scheduleId = schedule?.id
+  const [lastScheduleId, setLastScheduleId] = useState(scheduleId)
+  if (scheduleId !== lastScheduleId) {
+    setLocalDetails(sortedDetails)
+    setLastScheduleId(scheduleId)
+  }
 
   const handleDriverChange = async (driverId: string) => {
     if (!schedule) return
@@ -449,9 +456,40 @@ function ScheduleCard({
     setDriverSaving(false)
     startTransition(() => router.refresh())
   }
-  const [showCreator, setShowCreator] = useState(false)
-  const [showAddPanel, setShowAddPanel] = useState(false)
-  const stops = schedule ? buildStops(schedule.transport_details) : []
+
+  const handleDragStart = (idx: number) => setDragIndex(idx)
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault()
+    setDragOverIndex(idx)
+  }
+  const handleDrop = async (dropIdx: number) => {
+    if (dragIndex === null || dragIndex === dropIdx || !schedule) {
+      setDragIndex(null)
+      setDragOverIndex(null)
+      return
+    }
+    const next = [...localDetails]
+    const [moved] = next.splice(dragIndex, 1)
+    next.splice(dropIdx, 0, moved)
+    setLocalDetails(next)
+    setDragIndex(null)
+    setDragOverIndex(null)
+
+    // DB に sort_order を一括更新
+    setReordering(true)
+    await Promise.all(
+      next.map((d, i) =>
+        supabase.from('transport_details').update({ sort_order: i }).eq('id', d.id)
+      )
+    )
+    setReordering(false)
+    startTransition(() => router.refresh())
+  }
+  const handleDragEnd = () => {
+    setDragIndex(null)
+    setDragOverIndex(null)
+  }
+
 
   return (
     <Card>
@@ -519,8 +557,8 @@ function ScheduleCard({
             {/* ルートヘッダー */}
             <div className="flex items-center gap-1.5">
               <Navigation className="h-3.5 w-3.5 text-indigo-500" />
-              <p className="text-xs font-semibold text-gray-500">
-                施設から最短順のルート
+              <p className="text-xs font-semibold text-gray-500 flex-1">
+                ルート順
                 {schedule.departure_time && (
                   <span className="ml-2 font-normal text-gray-400">
                     <Clock className="h-3 w-3 inline mr-0.5" />
@@ -528,6 +566,7 @@ function ScheduleCard({
                   </span>
                 )}
               </p>
+              {reordering && <span className="text-xs text-gray-400">保存中…</span>}
             </div>
 
             {/* 出発 */}
@@ -536,37 +575,52 @@ function ScheduleCard({
               <span>施設（富士河口湖町小立）</span>
             </div>
 
-            {/* 各ストップ */}
-            {stops.map((stop, i) => (
-              <div key={i} className="space-y-1">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
-                  <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                    {i + 1}
-                  </span>
-                  {stop.isSchool
-                    ? <SchoolIcon className="h-3.5 w-3.5 text-indigo-500" />
-                    : <MapPin className="h-3.5 w-3.5 text-green-500" />
-                  }
-                  <span className="flex-1 truncate">{stop.location ?? '場所未設定'}</span>
-                  <span className="text-gray-400 font-normal">（{stop.children.length}名）</span>
-                </div>
-                <div className="ml-7 space-y-0.5">
-                  {stop.children.map((detail) => (
-                    <div key={detail.id} className="flex items-center gap-2 py-1 px-3 bg-gray-50 rounded text-sm text-gray-700">
-                      <span className="flex-1">{detail.children?.name ?? '不明'}</span>
-                      <button
-                        onClick={() => onRemove(detail)}
-                        disabled={updating === detail.id}
-                        className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
-                        title="欠席にして外す"
-                      >
-                        <XCircle className="h-3.5 w-3.5" />
-                      </button>
+            {/* ドラッグ可能な児童リスト */}
+            <div className="space-y-1">
+              {localDetails.map((detail, i) => {
+                const isSchool = !!(detail.pickup_location && /学校|校$/.test(detail.pickup_location))
+                const isDragging = dragIndex === i
+                const isOver = dragOverIndex === i
+                return (
+                  <div
+                    key={detail.id}
+                    draggable
+                    onDragStart={() => handleDragStart(i)}
+                    onDragOver={(e) => handleDragOver(e, i)}
+                    onDrop={() => handleDrop(i)}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-2 py-1.5 px-2 rounded text-sm transition-colors ${
+                      isDragging
+                        ? 'opacity-40 bg-indigo-50 border border-dashed border-indigo-300'
+                        : isOver
+                        ? 'bg-indigo-50 border border-indigo-300'
+                        : 'bg-gray-50 border border-transparent'
+                    }`}
+                  >
+                    <GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing flex-shrink-0" />
+                    <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                      {i + 1}
+                    </span>
+                    {isSchool
+                      ? <SchoolIcon className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
+                      : <MapPin className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                    }
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-800 truncate">{detail.children?.name ?? '不明'}</p>
+                      <p className="text-xs text-gray-400 truncate">{detail.pickup_location ?? '場所未設定'}</p>
                     </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+                    <button
+                      onClick={() => onRemove(detail)}
+                      disabled={updating === detail.id}
+                      className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
+                      title="欠席にして外す"
+                    >
+                      <XCircle className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
 
             {/* 帰着 */}
             <div className="flex items-center gap-2 text-xs text-gray-500 pl-1">
