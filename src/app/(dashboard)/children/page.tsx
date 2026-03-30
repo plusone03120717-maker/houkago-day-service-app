@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { UserPlus, AlertTriangle, Search } from 'lucide-react'
-import { formatDate, getAge } from '@/lib/utils'
+import { formatDate, getAge, formatWareki } from '@/lib/utils'
 
 type Child = {
   id: string
@@ -114,7 +114,7 @@ export default async function ChildrenPage({
                     <p className="text-xs text-gray-400 mt-0.5">{child.name_kana}</p>
                     <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
                       <span>{getAge(child.birth_date)}歳</span>
-                      <span>{formatDate(child.birth_date)} 生</span>
+                      <span>{formatWareki(child.birth_date)} 生</span>
                     </div>
                     <div className="flex gap-1 mt-2 flex-wrap">
                       {child.children_units?.map((cu) => cu.units && (

@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { PrintButton } from '@/components/documents/print-button'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatWareki } from '@/lib/utils'
 
 type Child = {
   id: string
@@ -136,7 +136,7 @@ export default async function SupportPlanPrintPage({
               <tr>
                 <td className="border border-gray-400 bg-gray-50 px-3 py-1.5 font-medium text-xs">生年月日</td>
                 <td className="border border-gray-400 px-3 py-1.5">
-                  {child.birth_date ? formatDate(child.birth_date, 'yyyy年MM月dd日') : '—'}
+                  {child.birth_date ? formatWareki(child.birth_date) : '—'}
                 </td>
                 <td className="border border-gray-400 bg-gray-50 px-3 py-1.5 font-medium text-xs">障害の種類</td>
                 <td className="border border-gray-400 px-3 py-1.5">{child.disability_type ?? '—'}</td>

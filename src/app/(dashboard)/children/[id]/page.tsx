@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays } from 'lucide-react'
-import { formatDate, getAge } from '@/lib/utils'
+import { formatDate, getAge, formatWareki } from '@/lib/utils'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 import { ParentInviteButton } from '@/components/children/parent-invite-button'
 
@@ -161,7 +161,7 @@ export default async function ChildDetailPage({
             <CardTitle className="text-base">基本情報</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <Row label="生年月日" value={`${formatDate(child.birth_date)} (${getAge(child.birth_date)}歳)`} />
+            <Row label="生年月日" value={`${formatWareki(child.birth_date)}（${getAge(child.birth_date)}歳）`} />
             <Row label="性別" value={child.gender === 'male' ? '男' : child.gender === 'female' ? '女' : 'その他'} />
             {childAddresses.length > 0 ? (
               <div>
