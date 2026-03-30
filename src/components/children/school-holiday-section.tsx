@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, Trash2, CalendarX } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 type Holiday = {
@@ -28,8 +28,8 @@ export function SchoolHolidaySection({ childId, initial }: Props) {
   const [error, setError] = useState('')
   const [form, setForm] = useState({ label: '', start_date: '', end_date: '', type: 'period' as 'period' | 'single' })
 
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleAdd = async (ev: React.FormEvent) => {
+    ev.preventDefault()
     if (!form.label.trim() || !form.start_date) {
       setError('名称と開始日は必須です')
       return

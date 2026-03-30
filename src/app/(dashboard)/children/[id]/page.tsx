@@ -4,11 +4,10 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays, Building2, GraduationCap } from 'lucide-react'
+import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays, Building2 } from 'lucide-react'
 import { formatDate, getAge, formatWareki } from '@/lib/utils'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 import { ParentInviteButton } from '@/components/children/parent-invite-button'
-import { SchoolHolidaySection } from '@/components/children/school-holiday-section'
 
 type Cert = {
   id: string
@@ -41,15 +40,6 @@ type Child = {
   notes: string | null
   benefit_certificates: Cert[]
   children_units: ChildUnit[]
-}
-
-type AttendanceRecord = {
-  id: string
-  date: string
-  status: string
-  check_in_time: string | null
-  check_out_time: string | null
-  units: { name: string } | null
 }
 
 type EmergencyContact = {
@@ -93,17 +83,6 @@ export default async function ChildDetailPage({
   const child = childRaw as unknown as Child
 
   const today = new Date()
-  const thirtyDaysAgo = new Date()
-  thirtyDaysAgo.setDate(today.getDate() - 30)
-
-  const { data: recentAttendancesRaw } = await supabase
-    .from('daily_attendance')
-    .select('id, date, status, check_in_time, check_out_time, units(name)')
-    .eq('child_id', id)
-    .gte('date', formatDate(thirtyDaysAgo, 'yyyy-MM-dd'))
-    .order('date', { ascending: false })
-    .limit(10)
-  const recentAttendances = (recentAttendancesRaw ?? []) as unknown as AttendanceRecord[]
 
   const { data: emergencyContactsRaw } = await supabase
     .from('emergency_contacts')
@@ -126,14 +105,6 @@ export default async function ChildDetailPage({
     .eq('child_id', id)
     .order('start_date', { ascending: false })
   const limitManagements = (limitManagementsRaw ?? []) as unknown as LimitManagement[]
-
-  type SchoolHoliday = { id: string; label: string; start_date: string; end_date: string }
-  const { data: schoolHolidaysRaw } = await supabase
-    .from('child_school_holidays')
-    .select('id, label, start_date, end_date')
-    .eq('child_id', id)
-    .order('start_date', { ascending: true })
-  const schoolHolidays = (schoolHolidaysRaw ?? []) as unknown as SchoolHoliday[]
 
   return (
     <div className="space-y-5 max-w-4xl">
@@ -350,19 +321,6 @@ export default async function ChildDetailPage({
           </CardContent>
         </Card>
 
-        {/* 学校休日 */}
-        <Card className="md:col-span-2">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <GraduationCap className="h-4 w-4 text-blue-500" />
-              学校休日
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SchoolHolidaySection childId={id} initial={schoolHolidays} />
-          </CardContent>
-        </Card>
-
         <Card className="md:col-span-2">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -375,38 +333,14 @@ export default async function ChildDetailPage({
           </CardContent>
         </Card>
 
-        <Card className="md:col-span-2">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">直近30日の出席記録</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recentAttendances.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-4">出席記録がありません</p>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {recentAttendances.map((att) => (
-                  <div key={att.id} className="flex items-center justify-between py-2">
-                    <span className="text-sm text-gray-700">{formatDate(att.date)}</span>
-                    <span className="text-xs text-gray-400">{att.units?.name}</span>
-                    <div className="flex items-center gap-2">
-                      {att.check_in_time && att.check_out_time && (
-                        <span className="text-xs text-gray-500">
-                          {att.check_in_time.slice(0, 5)} 〜 {att.check_out_time.slice(0, 5)}
-                        </span>
-                      )}
-                      <Badge
-                        variant={att.status === 'attended' ? 'success' : 'secondary'}
-                        className="text-xs"
-                      >
-                        {att.status === 'attended' ? '出席' : att.status === 'absent' ? '欠席' : 'キャンセル待'}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="md:col-span-2">
+          <Link href={`/attendance/child/${id}`}>
+            <Button variant="outline" className="w-full py-6 text-base gap-2">
+              <CalendarDays className="h-5 w-5 text-indigo-500" />
+              出席履歴を見る
+            </Button>
+          </Link>
+        </div>
       </div>
     </div>
   )
