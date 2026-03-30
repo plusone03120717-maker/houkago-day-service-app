@@ -184,3 +184,27 @@ export async function generateBilling(formData: FormData): Promise<void> {
 
   redirect('/billing')
 }
+
+export async function updateBillingDetail(
+  id: string,
+  values: {
+    total_days: number
+    total_units: number
+    unit_price: number
+    billed_amount: number
+    copay_amount: number
+    service_code: string
+  }
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'ログインが必要です' }
+
+  const { error } = await supabase
+    .from('billing_details')
+    .update(values)
+    .eq('id', id)
+
+  if (error) return { error: error.message }
+  return {}
+}

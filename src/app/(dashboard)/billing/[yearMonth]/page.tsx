@@ -7,6 +7,7 @@ import { ArrowLeft, AlertCircle } from 'lucide-react'
 import { BillingExportButton } from '@/components/billing/billing-export-button'
 import { AiCheckButton } from '@/components/billing/ai-check-button'
 import { ActualCostForm } from '@/components/billing/actual-cost-form'
+import { BillingDetailsTable } from '@/components/billing/billing-details-table'
 
 type BillingDetail = {
   id: string
@@ -171,54 +172,8 @@ export default async function BillingDetailPage({
                 </div>
               )}
 
-              {/* 児童別明細 */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 text-xs text-gray-500">
-                      <th className="text-left py-2 pr-3 font-medium">氏名</th>
-                      <th className="text-right py-2 px-3 font-medium">利用日数</th>
-                      <th className="text-right py-2 px-3 font-medium">単位数</th>
-                      <th className="text-right py-2 px-3 font-medium">給付単価</th>
-                      <th className="text-right py-2 px-3 font-medium">給付費請求額</th>
-                      <th className="text-right py-2 pl-3 font-medium">利用者負担</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {details.map((d) => (
-                      <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-2 pr-3 font-medium">
-                          {d.children?.name ?? '—'}
-                          {Array.isArray(d.errors) && d.errors.length > 0 && (
-                            <AlertCircle className="inline h-3 w-3 ml-1 text-red-500" />
-                          )}
-                        </td>
-                        <td className="text-right py-2 px-3">{d.total_days}日</td>
-                        <td className="text-right py-2 px-3">{d.total_units.toLocaleString()}</td>
-                        <td className="text-right py-2 px-3">{d.unit_price.toLocaleString()}円</td>
-                        <td className="text-right py-2 px-3 font-medium text-indigo-600">
-                          {d.billed_amount.toLocaleString()}円
-                        </td>
-                        <td className="text-right py-2 pl-3 text-orange-600">
-                          {d.copay_amount.toLocaleString()}円
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-gray-200 font-semibold">
-                      <td className="py-2 pr-3">合計</td>
-                      <td className="text-right py-2 px-3">{details.reduce((s, d) => s + d.total_days, 0)}日</td>
-                      <td className="text-right py-2 px-3">
-                        {details.reduce((s, d) => s + d.total_units, 0).toLocaleString()}
-                      </td>
-                      <td className="text-right py-2 px-3">—</td>
-                      <td className="text-right py-2 px-3 text-indigo-600">{totalBilled.toLocaleString()}円</td>
-                      <td className="text-right py-2 pl-3 text-orange-600">{totalCopay.toLocaleString()}円</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+              {/* 児童別明細（編集可） */}
+              <BillingDetailsTable initial={details} />
 
               {/* AIチェック */}
               <AiCheckButton billingMonthlyId={billing.id} />
