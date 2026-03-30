@@ -191,7 +191,12 @@ export default async function ChildAttendanceHistoryPage({
                   <div key={att.id} className={`flex items-center justify-between px-4 py-3 ${rowBg}`}>
                     <div className="flex items-center gap-3">
                       <div>
-                        <p className="text-sm font-medium text-gray-900">{formatDate(att.date)}</p>
+                        <Link
+                          href={`/attendance/child/${childId}/${att.date}`}
+                          className="text-sm font-medium text-gray-900 hover:text-indigo-600 hover:underline"
+                        >
+                          {formatDate(att.date)}
+                        </Link>
                         <p className="text-xs text-gray-400">{att.units?.name}</p>
                       </div>
                       <div className="flex gap-1 flex-wrap">
