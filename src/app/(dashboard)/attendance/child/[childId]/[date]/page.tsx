@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, BookOpen, ClipboardList, ExternalLink, MessageCircle } from 'lucide-react'
+import { ArrowLeft, BookOpen, ClipboardList, ExternalLink, MessageCircle, CheckSquare } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
@@ -46,6 +46,17 @@ export default async function AttendanceDateDetailPage({
         .order('created_at')
     : { data: [] }
   const dailyRecords = (dailyRecordsRaw ?? []) as unknown as DailyRecord[]
+
+  // 活動記録
+  type Activity = { id: string; participated: boolean; achievement_level: number | null; evaluation_notes: string | null; activity_programs: { name: string; category: string | null } | null }
+  const { data: activitiesRaw } = attendance
+    ? await supabase
+        .from('daily_activities')
+        .select('id, participated, achievement_level, evaluation_notes, activity_programs(name, category)')
+        .eq('attendance_id', attendance.id)
+        .order('created_at')
+    : { data: [] }
+  const activities = (activitiesRaw ?? []) as unknown as Activity[]
 
   // 連絡帳
   type ContactNote = { id: string; content: string; published_at: string | null; parent_comment: string | null }
@@ -122,6 +133,47 @@ export default async function AttendanceDateDetailPage({
                       <span className="inline-block text-xs font-medium text-yellow-700 bg-yellow-100 rounded px-1.5 py-0.5 mb-1">特記事項</span>
                     )}
                     <p className="text-gray-800 whitespace-pre-wrap">{r.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 活動記録 */}
+      {attendance && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <CheckSquare className="h-4 w-4 text-green-500" />
+              活動記録
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {activities.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-3">活動記録がありません</p>
+            ) : (
+              <div className="space-y-2">
+                {activities.map((act) => (
+                  <div key={act.id} className="flex items-start gap-3 rounded-lg bg-gray-50 px-3 py-2">
+                    <span className={`mt-0.5 h-4 w-4 rounded flex-shrink-0 flex items-center justify-center text-xs ${act.participated ? 'text-green-600' : 'text-gray-400'}`}>
+                      {act.participated ? '✓' : '—'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{act.activity_programs?.name ?? '—'}</p>
+                      {act.activity_programs?.category && (
+                        <p className="text-xs text-gray-400">{act.activity_programs.category}</p>
+                      )}
+                      {act.evaluation_notes && (
+                        <p className="text-xs text-gray-600 mt-0.5">{act.evaluation_notes}</p>
+                      )}
+                    </div>
+                    {act.achievement_level && (
+                      <span className="text-xs text-gray-500 flex-shrink-0">
+                        {'★'.repeat(act.achievement_level)}{'☆'.repeat(5 - act.achievement_level)}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>

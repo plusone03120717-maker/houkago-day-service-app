@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, GraduationCap } from 'lucide-react'
+import { ArrowLeft, GraduationCap, ClipboardList, BookOpen, CheckSquare } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
@@ -82,6 +82,24 @@ export default async function ChildAttendanceHistoryPage({
   const attendances = (attendancesRaw ?? []) as unknown as AttendanceRow[]
   const schoolHolidays = (schoolHolidaysRaw ?? []) as { id: string; label: string; start_date: string; end_date: string }[]
   const nationalHolidayDates = new Set((nationalHolidaysRaw ?? []).map((h: { event_date: string }) => h.event_date))
+
+  // 記録・連絡帳・活動記録の有無をまとめて取得
+  const attendanceIds = attendances.map((a) => a.id)
+  const [
+    { data: recordsExist },
+    { data: notesExist },
+    { data: activitiesExist },
+  ] = attendanceIds.length > 0
+    ? await Promise.all([
+        supabase.from('daily_records').select('attendance_id').in('attendance_id', attendanceIds),
+        supabase.from('contact_notes').select('date').eq('child_id', childId).gte('date', start).lte('date', end),
+        supabase.from('daily_activities').select('attendance_id').in('attendance_id', attendanceIds),
+      ])
+    : [{ data: [] }, { data: [] }, { data: [] }]
+
+  const attendanceIdsWithRecords = new Set((recordsExist ?? []).map((r: { attendance_id: string }) => r.attendance_id))
+  const datesWithNotes = new Set((notesExist ?? []).map((n: { date: string }) => n.date))
+  const attendanceIdsWithActivities = new Set((activitiesExist ?? []).map((a: { attendance_id: string }) => a.attendance_id))
 
   // 利用可能な年度を生成（最初の記録の年度〜現在の年度）
   const oldest = allAttendancesRaw?.[0]?.date
@@ -199,7 +217,7 @@ export default async function ChildAttendanceHistoryPage({
                         </Link>
                         <p className="text-xs text-gray-400">{att.units?.name}</p>
                       </div>
-                      <div className="flex gap-1 flex-wrap">
+                      <div className="flex gap-1 flex-wrap items-center">
                         {isNational && (
                           <Badge variant="secondary" className="text-xs bg-red-50 text-red-600 border-red-200">
                             祝日
@@ -209,6 +227,21 @@ export default async function ChildAttendanceHistoryPage({
                           <Badge variant="secondary" className="text-xs bg-blue-50 text-blue-600 border-blue-200">
                             {schoolHolidayLabel}
                           </Badge>
+                        )}
+                        {attendanceIdsWithRecords.has(att.id) && (
+                          <span title="日々の記録あり">
+                            <ClipboardList className="h-3.5 w-3.5 text-indigo-400" />
+                          </span>
+                        )}
+                        {datesWithNotes.has(att.date) && (
+                          <span title="連絡帳あり">
+                            <BookOpen className="h-3.5 w-3.5 text-blue-400" />
+                          </span>
+                        )}
+                        {attendanceIdsWithActivities.has(att.id) && (
+                          <span title="活動記録あり">
+                            <CheckSquare className="h-3.5 w-3.5 text-green-400" />
+                          </span>
                         )}
                       </div>
                     </div>
