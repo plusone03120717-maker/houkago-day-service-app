@@ -14,6 +14,7 @@ type Schedule = {
   direction: string
   departure_time: string | null
   transport_vehicles: { name: string } | null
+  staff_members: { name: string } | null
   transport_details: TransportDetail[]
 }
 
@@ -117,6 +118,7 @@ export async function GET(request: NextRequest) {
       id, direction, departure_time,
       unit_id,
       transport_vehicles (name),
+      staff_members (name),
       transport_details (
         child_id, pickup_location,
         children (name)
@@ -156,8 +158,10 @@ export async function GET(request: NextRequest) {
       for (const sched of sortedSchedules) {
         const dirLabel = sched.direction === 'pickup' ? 'お迎え' : 'お送り'
         const vehicleName = sched.transport_vehicles?.name ?? '車両未設定'
+        const driverName = sched.staff_members?.name
         const depTime = sched.departure_time ? ` 出発 ${sched.departure_time.slice(0, 5)}` : ''
-        messageText += `\n■ ${dirLabel}（${vehicleName}）${depTime}\n`
+        const driverText = driverName ? ` 🚗 ${driverName}` : ''
+        messageText += `\n■ ${dirLabel}（${vehicleName}）${depTime}${driverText}\n`
         if (sched.transport_details.length === 0) {
           messageText += '  対象者なし\n'
         } else {
