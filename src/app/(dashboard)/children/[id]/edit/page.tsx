@@ -6,6 +6,7 @@ import { ChildForm } from '@/components/children/child-form'
 import type { School } from '@/components/children/child-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChildTransportSettingsForm } from '@/components/children/child-transport-settings-form'
+import { DeleteChildButton } from '@/components/children/delete-child-button'
 
 type Unit = { id: string; name: string; service_type: string }
 type ChildUnit = { unit_id: string }
@@ -144,6 +145,11 @@ export default async function EditChildPage({
           />
         </CardContent>
       </Card>
+
+      {/* 削除 */}
+      <div className="max-w-2xl pt-2 border-t border-gray-200">
+        <DeleteChildButton childId={id} childName={child.name} />
+      </div>
     </div>
   )
 }
