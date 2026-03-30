@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FileText, AlertCircle, CheckCircle, Download } from 'lucide-react'
+import { generateBilling } from '@/app/actions/billing'
 
 type BillingDetail = {
   id: string
@@ -164,7 +165,7 @@ export default async function BillingPage({
                 ) : (
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-gray-400">この月の請求データがありません</p>
-                    <form action="/api/billing/generate" method="POST">
+                    <form action={generateBilling}>
                       <input type="hidden" name="unitId" value={unit.id} />
                       <input type="hidden" name="yearMonth" value={yearMonth} />
                       <Button type="submit" size="sm">
