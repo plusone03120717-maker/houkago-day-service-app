@@ -1,24 +1,23 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, GraduationCap, ClipboardList, BookOpen, CheckSquare } from 'lucide-react'
+import { ArrowLeft, GraduationCap, ClipboardList, BookOpen, CheckSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
 import { SchoolHolidaySection } from '@/components/children/school-holiday-section'
 
-// 年度 N = N/04/01 〜 (N+1)/03/31
-function fiscalYearRange(year: number): { start: string; end: string } {
+function monthRange(year: number, month: number): { start: string; end: string } {
+  const lastDay = new Date(year, month, 0).getDate()
   return {
-    start: `${year}-04-01`,
-    end: `${year + 1}-03-31`,
+    start: `${year}-${String(month).padStart(2, '0')}-01`,
+    end: `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
   }
 }
 
-function currentFiscalYear(): number {
-  const today = new Date()
-  const m = today.getMonth() + 1 // 1-12
-  return m >= 4 ? today.getFullYear() : today.getFullYear() - 1
+function addMonths(year: number, month: number, delta: number): { year: number; month: number } {
+  const d = new Date(year, month - 1 + delta, 1)
+  return { year: d.getFullYear(), month: d.getMonth() + 1 }
 }
 
 export default async function ChildAttendanceHistoryPage({
@@ -26,13 +25,18 @@ export default async function ChildAttendanceHistoryPage({
   searchParams,
 }: {
   params: Promise<{ childId: string }>
-  searchParams: Promise<{ year?: string }>
+  searchParams: Promise<{ year?: string; month?: string }>
 }) {
   const { childId } = await params
-  const { year: yearParam } = await searchParams
+  const sp = await searchParams
 
-  const selectedYear = yearParam ? parseInt(yearParam, 10) : currentFiscalYear()
-  const { start, end } = fiscalYearRange(selectedYear)
+  const now = new Date()
+  const selectedYear = sp.year ? parseInt(sp.year, 10) : now.getFullYear()
+  const selectedMonth = sp.month ? parseInt(sp.month, 10) : now.getMonth() + 1
+
+  const { start, end } = monthRange(selectedYear, selectedMonth)
+  const prev = addMonths(selectedYear, selectedMonth, -1)
+  const next = addMonths(selectedYear, selectedMonth, 1)
 
   const supabase = await createClient()
 
@@ -41,7 +45,7 @@ export default async function ChildAttendanceHistoryPage({
     { data: attendancesRaw },
     { data: schoolHolidaysRaw },
     { data: nationalHolidaysRaw },
-    { data: allAttendancesRaw },
+    { data: firstAttRaw },
   ] = await Promise.all([
     supabase.from('children').select('id, name').eq('id', childId).single(),
     supabase
@@ -59,7 +63,6 @@ export default async function ChildAttendanceHistoryPage({
       .from('facility_events')
       .select('event_date')
       .eq('event_type', 'holiday'),
-    // 年度選択肢を生成するために全件の年を取得
     supabase
       .from('daily_attendance')
       .select('date')
@@ -83,7 +86,7 @@ export default async function ChildAttendanceHistoryPage({
   const schoolHolidays = (schoolHolidaysRaw ?? []) as { id: string; label: string; start_date: string; end_date: string }[]
   const nationalHolidayDates = new Set((nationalHolidaysRaw ?? []).map((h: { event_date: string }) => h.event_date))
 
-  // 記録・連絡帳・活動記録の有無をまとめて取得
+  // 記録・連絡帳・活動記録の有無
   const attendanceIds = attendances.map((a) => a.id)
   const [
     { data: recordsExist },
@@ -101,14 +104,12 @@ export default async function ChildAttendanceHistoryPage({
   const datesWithNotes = new Set((notesExist ?? []).map((n: { date: string }) => n.date))
   const attendanceIdsWithActivities = new Set((activitiesExist ?? []).map((a: { attendance_id: string }) => a.attendance_id))
 
-  // 利用可能な年度を生成（最初の記録の年度〜現在の年度）
-  const oldest = allAttendancesRaw?.[0]?.date
-  const oldestYear = oldest
-    ? (() => { const [y, m] = oldest.split('-').map(Number); return m >= 4 ? y : y - 1 })()
-    : currentFiscalYear()
-  const latestYear = currentFiscalYear()
-  const availableYears: number[] = []
-  for (let y = latestYear; y >= oldestYear; y--) availableYears.push(y)
+  // 最古の記録月を求めて「前月」ボタンの制限に使う
+  const firstDate = firstAttRaw?.[0]?.date ?? start
+  const firstYear = parseInt(firstDate.slice(0, 4))
+  const firstMonth = parseInt(firstDate.slice(5, 7))
+  const isEarliestMonth = selectedYear < firstYear || (selectedYear === firstYear && selectedMonth <= firstMonth)
+  const isFutureMonth = selectedYear > now.getFullYear() || (selectedYear === now.getFullYear() && selectedMonth >= now.getMonth() + 1)
 
   const isSchoolHoliday = (date: string): string | null => {
     for (const h of schoolHolidays) {
@@ -119,6 +120,8 @@ export default async function ChildAttendanceHistoryPage({
 
   const totalAttended = attendances.filter((a) => a.status === 'attended').length
   const totalAbsent = attendances.filter((a) => a.status === 'absent').length
+
+  const monthLabel = `${selectedYear}年${selectedMonth}月`
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -131,45 +134,38 @@ export default async function ChildAttendanceHistoryPage({
           <h1 className="text-2xl font-bold text-gray-900">出席履歴</h1>
           <p className="text-sm text-gray-500 mt-0.5">{child.name}</p>
         </div>
-
-        {/* 年度フィルター */}
-        <div className="flex items-center gap-1 flex-wrap justify-end">
-          {availableYears.map((y) => (
-            <Link
-              key={y}
-              href={`/attendance/child/${childId}?year=${y}`}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                y === selectedYear
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {y}年度
-            </Link>
-          ))}
-        </div>
       </div>
 
-      {/* 集計 */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-indigo-600">{totalAttended}</div>
-            <div className="text-xs text-gray-500 mt-1">出席日数</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-red-500">{totalAbsent}</div>
-            <div className="text-xs text-gray-500 mt-1">欠席日数</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-gray-700">{attendances.length}</div>
-            <div className="text-xs text-gray-500 mt-1">記録件数</div>
-          </CardContent>
-        </Card>
+      {/* 月ナビゲーション */}
+      <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3">
+        {!isEarliestMonth ? (
+          <Link
+            href={`/attendance/child/${childId}?year=${prev.year}&month=${prev.month}`}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            {prev.year}年{prev.month}月
+          </Link>
+        ) : (
+          <div className="w-24" />
+        )}
+
+        <div className="text-center">
+          <p className="text-lg font-bold text-gray-900">{monthLabel}</p>
+          <p className="text-xs text-gray-400">出席 {totalAttended}日 / 欠席 {totalAbsent}日</p>
+        </div>
+
+        {!isFutureMonth ? (
+          <Link
+            href={`/attendance/child/${childId}?year=${next.year}&month=${next.month}`}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            {next.year}年{next.month}月
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        ) : (
+          <div className="w-24" />
+        )}
       </div>
 
       {/* 学校休日 */}
@@ -188,22 +184,17 @@ export default async function ChildAttendanceHistoryPage({
       {/* 履歴一覧 */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">出席記録一覧（{selectedYear}年度）</CardTitle>
+          <CardTitle className="text-base">出席記録一覧（{monthLabel}）</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {attendances.length === 0 ? (
-            <p className="p-6 text-sm text-gray-500 text-center">この年度の出席記録はありません</p>
+            <p className="p-6 text-sm text-gray-500 text-center">この月の出席記録はありません</p>
           ) : (
             <div className="divide-y divide-gray-100">
               {attendances.map((att) => {
                 const isNational = nationalHolidayDates.has(att.date)
                 const schoolHolidayLabel = isSchoolHoliday(att.date)
-
-                const rowBg = isNational
-                  ? 'bg-red-50'
-                  : schoolHolidayLabel
-                  ? 'bg-blue-50'
-                  : ''
+                const rowBg = isNational ? 'bg-red-50' : schoolHolidayLabel ? 'bg-blue-50' : ''
 
                 return (
                   <div key={att.id} className={`flex items-center justify-between px-4 py-3 ${rowBg}`}>
@@ -219,29 +210,19 @@ export default async function ChildAttendanceHistoryPage({
                       </div>
                       <div className="flex gap-1 flex-wrap items-center">
                         {isNational && (
-                          <Badge variant="secondary" className="text-xs bg-red-50 text-red-600 border-red-200">
-                            祝日
-                          </Badge>
+                          <Badge variant="secondary" className="text-xs bg-red-50 text-red-600 border-red-200">祝日</Badge>
                         )}
                         {schoolHolidayLabel && (
-                          <Badge variant="secondary" className="text-xs bg-blue-50 text-blue-600 border-blue-200">
-                            {schoolHolidayLabel}
-                          </Badge>
+                          <Badge variant="secondary" className="text-xs bg-blue-50 text-blue-600 border-blue-200">{schoolHolidayLabel}</Badge>
                         )}
                         {attendanceIdsWithRecords.has(att.id) && (
-                          <span title="日々の記録あり">
-                            <ClipboardList className="h-3.5 w-3.5 text-indigo-400" />
-                          </span>
+                          <span title="日々の記録あり"><ClipboardList className="h-3.5 w-3.5 text-indigo-400" /></span>
                         )}
                         {datesWithNotes.has(att.date) && (
-                          <span title="連絡帳あり">
-                            <BookOpen className="h-3.5 w-3.5 text-blue-400" />
-                          </span>
+                          <span title="連絡帳あり"><BookOpen className="h-3.5 w-3.5 text-blue-400" /></span>
                         )}
                         {attendanceIdsWithActivities.has(att.id) && (
-                          <span title="活動記録あり">
-                            <CheckSquare className="h-3.5 w-3.5 text-green-400" />
-                          </span>
+                          <span title="活動記録あり"><CheckSquare className="h-3.5 w-3.5 text-green-400" /></span>
                         )}
                       </div>
                     </div>
@@ -251,10 +232,7 @@ export default async function ChildAttendanceHistoryPage({
                           {att.check_in_time.slice(0, 5)} 〜 {att.check_out_time.slice(0, 5)}
                         </span>
                       )}
-                      <Badge
-                        variant={att.status === 'attended' ? 'success' : 'secondary'}
-                        className="text-xs"
-                      >
+                      <Badge variant={att.status === 'attended' ? 'success' : 'secondary'} className="text-xs">
                         {att.status === 'attended' ? '出席' : att.status === 'absent' ? '欠席' : 'その他'}
                       </Badge>
                     </div>
