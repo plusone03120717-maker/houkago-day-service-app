@@ -4,10 +4,11 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays, Building2 } from 'lucide-react'
+import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays, Building2, GraduationCap } from 'lucide-react'
 import { formatDate, getAge, formatWareki } from '@/lib/utils'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 import { ParentInviteButton } from '@/components/children/parent-invite-button'
+import { SchoolHolidaySection } from '@/components/children/school-holiday-section'
 
 type Cert = {
   id: string
@@ -125,6 +126,14 @@ export default async function ChildDetailPage({
     .eq('child_id', id)
     .order('start_date', { ascending: false })
   const limitManagements = (limitManagementsRaw ?? []) as unknown as LimitManagement[]
+
+  type SchoolHoliday = { id: string; label: string; start_date: string; end_date: string }
+  const { data: schoolHolidaysRaw } = await supabase
+    .from('child_school_holidays')
+    .select('id, label, start_date, end_date')
+    .eq('child_id', id)
+    .order('start_date', { ascending: true })
+  const schoolHolidays = (schoolHolidaysRaw ?? []) as unknown as SchoolHoliday[]
 
   return (
     <div className="space-y-5 max-w-4xl">
@@ -338,6 +347,19 @@ export default async function ChildDetailPage({
                 ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* 学校休日 */}
+        <Card className="md:col-span-2">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <GraduationCap className="h-4 w-4 text-blue-500" />
+              学校休日
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SchoolHolidaySection childId={id} initial={schoolHolidays} />
           </CardContent>
         </Card>
 

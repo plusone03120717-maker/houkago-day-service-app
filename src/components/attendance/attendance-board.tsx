@@ -361,7 +361,7 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">{child.name}</span>
+                          <Link href={`/attendance/child/${child.id}`} className="font-medium text-gray-900 hover:text-indigo-600 hover:underline">{child.name}</Link>
                           {child.allergy_info && (
                             <Badge variant="destructive" className="text-xs">アレルギー</Badge>
                           )}
