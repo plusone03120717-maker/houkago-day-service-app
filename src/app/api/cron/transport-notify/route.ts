@@ -182,10 +182,16 @@ export async function GET(request: NextRequest) {
       .not('line_user_id', 'is', null),
   ])
 
+  // line_user_id の重複を排除（usersとstaff_membersの両方に登録されている場合を考慮）
+  const seen = new Set<string>()
   const recipients = [
     ...(staffWithLine ?? []),
     ...(membersWithLine ?? []),
-  ] as { id: string; name: string; line_user_id: string }[]
+  ].filter((r) => {
+    if (seen.has(r.line_user_id)) return false
+    seen.add(r.line_user_id)
+    return true
+  }) as { id: string; name: string; line_user_id: string }[]
 
   if (recipients.length === 0) {
     return NextResponse.json({ message: 'no recipients with line_user_id', text: messageText })
