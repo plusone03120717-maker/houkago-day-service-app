@@ -3,10 +3,10 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { confirmReservation } from '@/app/actions/reservation'
+import { confirmReservation, confirmAllReservations } from '@/app/actions/reservation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, Check, X, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, CheckCheck, X, Plus, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Unit = { id: string; name: string; capacity: number }
@@ -28,13 +28,6 @@ interface Props {
   reservations: Reservation[]
   childOptions: ChildOption[]
   summary: { confirmed: number; reserved: number; cancelled: number }
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  confirmed: 'bg-green-500',
-  reserved: 'bg-indigo-500',
-  cancelled: 'bg-gray-300',
-  cancel_waiting: 'bg-yellow-400',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -96,9 +89,21 @@ export function UsageCalendar({
   const selectedUnit = units.find((u) => u.id === selectedUnitId)
   const selectedDateReservations = selectedDate ? (resByDate[selectedDate] ?? []) : []
 
+  const pendingReservations = reservations
+    .filter((r) => r.status === 'reserved')
+    .sort((a, b) => a.date.localeCompare(b.date))
+
   const handleConfirm = async (reservationId: string) => {
     setUpdating(true)
     await confirmReservation(reservationId)
+    setUpdating(false)
+    startTransition(() => router.refresh())
+  }
+
+  const handleConfirmAll = async () => {
+    if (!confirm(`承認待ちの予約 ${pendingReservations.length}件をすべて確定しますか？`)) return
+    setUpdating(true)
+    await confirmAllReservations(pendingReservations.map((r) => r.id))
     setUpdating(false)
     startTransition(() => router.refresh())
   }
@@ -190,6 +195,61 @@ export function UsageCalendar({
           <p className="text-xs text-gray-500">キャンセル</p>
         </div>
       </div>
+
+      {/* 承認待ち一覧 */}
+      {pendingReservations.length > 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-yellow-600 shrink-0" />
+              <span className="font-semibold text-yellow-800 text-sm">
+                承認待ち予約（{pendingReservations.length}件）
+              </span>
+            </div>
+            <Button
+              size="sm"
+              onClick={handleConfirmAll}
+              disabled={updating}
+              className="bg-green-600 hover:bg-green-700 text-white text-xs h-8"
+            >
+              <CheckCheck className="h-3.5 w-3.5" />
+              全件一括確定
+            </Button>
+          </div>
+          <div className="space-y-1.5">
+            {pendingReservations.map((r) => {
+              const [y, m, d] = r.date.split('-').map(Number)
+              const dow = ['日','月','火','水','木','金','土'][new Date(y, m - 1, d).getDay()]
+              return (
+                <div key={r.id} className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-yellow-100">
+                  <span className="text-xs text-gray-500 shrink-0 w-24">
+                    {m}月{d}日（{dow}）
+                  </span>
+                  <span className="text-sm font-medium text-gray-800 flex-1">
+                    {r.children?.name ?? '—'}
+                  </span>
+                  <div className="flex gap-1 shrink-0">
+                    <button
+                      onClick={() => handleConfirm(r.id)}
+                      disabled={updating}
+                      className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-50 transition-colors"
+                    >
+                      <Check className="h-3 w-3" />確定
+                    </button>
+                    <button
+                      onClick={() => handleCancel(r.id)}
+                      disabled={updating}
+                      className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-600 hover:bg-red-200 disabled:opacity-50 transition-colors"
+                    >
+                      <X className="h-3 w-3" />削除
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* カレンダー */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

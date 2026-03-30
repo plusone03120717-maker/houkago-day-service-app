@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { makeParentReservation } from '@/app/actions/parent-reservation'
 import { Badge } from '@/components/ui/badge'
 import { ChevronLeft, ChevronRight, Check, X } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
@@ -126,24 +127,24 @@ export function ParentCalendar({
     setLoading(true)
     setReserveError(null)
 
-    const { error } = await supabase.from('usage_reservations').insert({
-      child_id: selectedChild,
-      unit_id: selectedUnit,
+    const { error, autoConfirmed } = await makeParentReservation({
+      childId: selectedChild,
+      unitId: selectedUnit,
       date: selectedDate,
-      status: 'reserved',
-      requested_by: userId,
-      requested_at: new Date().toISOString(),
-      transport_type: transportType,
-      pickup_location_type: pickupLocationType,
-      pickup_time: pickupTime || null,
-      dropoff_time: dropoffTime || null,
+      transportType,
+      pickupLocationType,
+      pickupTime: pickupTime || null,
+      dropoffTime: dropoffTime || null,
     })
 
     setLoading(false)
     if (error) {
-      setReserveError(error.message)
+      setReserveError(error)
     } else {
       setSelectedDate(null)
+      if (autoConfirmed) {
+        alert('利用計画に基づき、予約が自動的に確定されました。')
+      }
       startTransition(() => router.refresh())
     }
   }
