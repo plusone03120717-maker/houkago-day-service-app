@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays } from 'lucide-react'
+import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays, Building2 } from 'lucide-react'
 import { formatDate, getAge, formatWareki } from '@/lib/utils'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 import { ParentInviteButton } from '@/components/children/parent-invite-button'
@@ -63,6 +63,12 @@ type EmergencyContact = {
   sort_order: number
 }
 
+type LimitManagement = {
+  id: string
+  start_date: string
+  facility_name: string
+}
+
 export default async function ChildDetailPage({
   params,
 }: {
@@ -112,6 +118,13 @@ export default async function ChildDetailPage({
     .order('sort_order')
   type ChildAddress = { id: string; label: string; postal_code: string | null; address: string; is_default: boolean }
   const childAddresses = (addressesRaw ?? []) as unknown as ChildAddress[]
+
+  const { data: limitManagementsRaw } = await supabase
+    .from('child_limit_management')
+    .select('id, start_date, facility_name')
+    .eq('child_id', id)
+    .order('start_date', { ascending: false })
+  const limitManagements = (limitManagementsRaw ?? []) as unknown as LimitManagement[]
 
   return (
     <div className="space-y-5 max-w-4xl">
@@ -281,6 +294,48 @@ export default async function ChildDetailPage({
                     </div>
                   )
                 })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 上限管理事業所 */}
+        <Card className="md:col-span-2">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-orange-500" />
+                上限管理事業所情報
+              </CardTitle>
+              <Link href={`/children/${id}/limit-management/new`}>
+                <Button variant="outline" size="sm">
+                  <FileText className="h-4 w-4" />
+                  追加
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {limitManagements.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-4">上限管理事業所が登録されていません</p>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {limitManagements.map((lm) => (
+                  <div key={lm.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{lm.facility_name}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        適用開始: {formatWareki(lm.start_date)}から
+                      </p>
+                    </div>
+                    <Link href={`/children/${id}/limit-management/${lm.id}`}>
+                      <Button variant="outline" size="sm">
+                        <Edit className="h-3.5 w-3.5" />
+                        編集
+                      </Button>
+                    </Link>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
