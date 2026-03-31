@@ -31,6 +31,7 @@ export function StaffInviteForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [isExisting, setIsExisting] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const authRole = getAuthRole(selectedRoles)
@@ -87,6 +88,7 @@ export function StaffInviteForm() {
       const json = await res.json().catch(() => ({}))
       if (res.ok) {
         setInviteLink(json.inviteLink ?? null)
+        setIsExisting(json.isExisting ?? false)
         setEmail('')
         setName('')
         setSelectedRoles(new Set(['staff']))
@@ -195,10 +197,13 @@ export function StaffInviteForm() {
             <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 space-y-2">
               <div className="flex items-center gap-1.5 text-sm font-medium text-indigo-700">
                 <LinkIcon className="h-4 w-4" />
-                スタッフ招待リンクが生成されました
+                {isExisting ? 'パスワードリセットリンクを生成しました' : 'スタッフ招待リンクが生成されました'}
               </div>
               <p className="text-xs text-indigo-600">
-                以下のリンクをコピーして、スタッフにメールやLINEでお送りください。リンクは一度のみ使用できます。
+                {isExisting
+                  ? 'このメールアドレスは登録済みです。以下のリンクをスタッフに送ることでパスワードを再設定できます。'
+                  : '以下のリンクをコピーして、スタッフにメールやLINEでお送りください。リンクは一度のみ使用できます。'
+                }
               </p>
               <div className="flex items-center gap-2">
                 <input
