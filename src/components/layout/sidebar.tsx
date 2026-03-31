@@ -83,7 +83,6 @@ const staffNav = [
     items: [
       { href: '/support-plans', label: '個別支援計画', icon: ClipboardCheck },
       { href: '/transport', label: '送迎管理', icon: Car },
-      { href: '/billing', label: '国保連請求', icon: CreditCard },
     ],
   },
   {

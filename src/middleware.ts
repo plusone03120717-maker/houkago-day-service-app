@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 // スタッフ（staff ロール）がアクセスできないパス（前方一致）
-const STAFF_BLOCKED_PREFIX = ['/shifts', '/settings']
+const STAFF_BLOCKED_PREFIX = ['/shifts', '/settings', '/billing']
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
