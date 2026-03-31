@@ -41,6 +41,14 @@ type ActualCost = {
   children: { name: string } | null
 }
 
+type ExtraChargeRow = {
+  child_id: string
+  child_name: string
+  program_name: string
+  extra_charge: number
+  unit_id: string
+}
+
 const statusLabel: Record<string, string> = {
   draft: '作成中',
   checked: 'チェック済',
@@ -96,6 +104,51 @@ export default async function BillingDetailPage({
     : { data: [] }
   const actualCosts = (actualCostsRaw ?? []) as unknown as ActualCost[]
 
+  // 保険適用外料金の集計
+  const unitIds = billings.map((b) => b.unit_id)
+  const nextMonthYear = month === '12' ? String(parseInt(year) + 1) : year
+  const nextMonthNum = month === '12' ? '01' : String(parseInt(month) + 1).padStart(2, '0')
+  const dateStart = `${year}-${month}-01`
+  const dateEnd = `${nextMonthYear}-${nextMonthNum}-01`
+
+  const extraChargeRows: ExtraChargeRow[] = []
+  if (unitIds.length > 0) {
+    const { data: attendancesRaw } = await supabase
+      .from('daily_attendance')
+      .select('id, child_id, unit_id, children(name)')
+      .in('unit_id', unitIds)
+      .gte('date', dateStart)
+      .lt('date', dateEnd)
+    const attendances = (attendancesRaw ?? []) as unknown as { id: string; child_id: string; unit_id: string; children: { name: string } | null }[]
+
+    if (attendances.length > 0) {
+      const attendanceIds = attendances.map((a) => a.id)
+      const attendanceMap = Object.fromEntries(attendances.map((a) => [a.id, a]))
+
+      const { data: activitiesRaw } = await supabase
+        .from('daily_activities')
+        .select('attendance_id, activity_programs(name, extra_charge)')
+        .in('attendance_id', attendanceIds)
+        .eq('participated', true)
+        .not('program_id', 'is', null)
+      const activities = (activitiesRaw ?? []) as unknown as { attendance_id: string; activity_programs: { name: string; extra_charge: number | null } | null }[]
+
+      for (const act of activities) {
+        const prog = act.activity_programs
+        if (!prog || prog.extra_charge == null) continue
+        const att = attendanceMap[act.attendance_id]
+        if (!att) continue
+        extraChargeRows.push({
+          child_id: att.child_id,
+          child_name: att.children?.name ?? '—',
+          program_name: prog.name,
+          extra_charge: prog.extra_charge,
+          unit_id: att.unit_id,
+        })
+      }
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
@@ -116,6 +169,16 @@ export default async function BillingDetailPage({
         const errorDetails = details.filter((d) => Array.isArray(d.errors) && d.errors.length > 0)
 
         const billCosts = actualCosts.filter((c) => c.billing_monthly_id === billing.id)
+        const unitExtraCharges = extraChargeRows.filter((r) => r.unit_id === billing.unit_id)
+        // 児童ごとに集計
+        const extraByChild = unitExtraCharges.reduce<Record<string, { name: string; items: { program: string; amount: number }[]; total: number }>>((acc, r) => {
+          if (!acc[r.child_id]) acc[r.child_id] = { name: r.child_name, items: [], total: 0 }
+          acc[r.child_id].items.push({ program: r.program_name, amount: r.extra_charge })
+          acc[r.child_id].total += r.extra_charge
+          return acc
+        }, {})
+        const extraTotal = unitExtraCharges.reduce((s, r) => s + r.extra_charge, 0)
+
         const childOptions = details.map((d) => ({
           child_id: d.child_id,
           name: d.children?.name ?? '—',
@@ -174,6 +237,42 @@ export default async function BillingDetailPage({
 
               {/* 児童別明細（編集可） */}
               <BillingDetailsTable initial={details} />
+
+              {/* 保険適用外料金集計 */}
+              {Object.keys(extraByChild).length > 0 && (
+                <div className="border border-amber-200 rounded-lg overflow-hidden">
+                  <div className="bg-amber-50 px-3 py-2 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-amber-800">保険適用外料金</p>
+                    <p className="text-sm font-bold text-amber-700">合計: {extraTotal.toLocaleString()}円</p>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-gray-500 border-b border-amber-100">
+                        <th className="px-3 py-1.5 text-left font-medium">氏名</th>
+                        <th className="px-3 py-1.5 text-left font-medium">プログラム</th>
+                        <th className="px-3 py-1.5 text-right font-medium">料金</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-amber-50">
+                      {Object.values(extraByChild).map((child) =>
+                        child.items.map((item, idx) => (
+                          <tr key={`${child.name}-${idx}`} className="bg-white">
+                            <td className="px-3 py-1.5 text-gray-900">{idx === 0 ? child.name : ''}</td>
+                            <td className="px-3 py-1.5 text-gray-700">{item.program}</td>
+                            <td className="px-3 py-1.5 text-right text-gray-900">{item.amount.toLocaleString()}円</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-amber-50 border-t border-amber-200">
+                        <td colSpan={2} className="px-3 py-1.5 text-xs font-medium text-amber-700">児童数: {Object.keys(extraByChild).length}名</td>
+                        <td className="px-3 py-1.5 text-right text-sm font-bold text-amber-700">{extraTotal.toLocaleString()}円</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
 
               {/* AIチェック */}
               <AiCheckButton billingMonthlyId={billing.id} />
