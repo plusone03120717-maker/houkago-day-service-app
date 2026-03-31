@@ -11,7 +11,7 @@ export default async function ActivityProgramsPage() {
 
   const { data: programs } = await supabase
     .from('activity_programs')
-    .select('id, name, category')
+    .select('id, name, category, extra_charge')
     .eq('facility_id', facility?.id ?? '')
     .order('category')
     .order('name')

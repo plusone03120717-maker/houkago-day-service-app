@@ -22,9 +22,7 @@ function getAuthRole(selected: Set<string>): 'admin' | 'staff' | null {
   return null
 }
 
-type InviteResult =
-  | { isExisting: true }
-  | { isExisting: false; email: string; tempPassword: string }
+type InviteResult = { isExisting: boolean; email: string; tempPassword: string }
 
 export function StaffInviteForm() {
   const router = useRouter()
@@ -89,7 +87,7 @@ export function StaffInviteForm() {
         return
       }
       if (json.isExisting) {
-        setResult({ isExisting: true })
+        setResult({ isExisting: true, email: email.trim(), tempPassword: json.tempPassword })
       } else {
         setResult({ isExisting: false, email: email.trim(), tempPassword: json.tempPassword })
       }
@@ -196,19 +194,17 @@ export function StaffInviteForm() {
 
           {/* 登録結果 */}
           {result && (
-            result.isExisting ? (
-              <div className="rounded-lg border border-green-200 bg-green-50 p-3">
-                <p className="text-sm font-medium text-green-700">登録情報を更新しました</p>
-                <p className="text-xs text-green-600 mt-0.5">このメールアドレスは登録済みです。ロール・名前を更新しました。</p>
-              </div>
-            ) : result.tempPassword ? (
+            result.tempPassword ? (
               <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 space-y-2">
                 <div className="flex items-center gap-1.5 text-sm font-medium text-indigo-700">
                   <KeyRound className="h-4 w-4" />
-                  スタッフを登録しました
+                  {result.isExisting ? 'パスワードをリセットしました' : 'スタッフを登録しました'}
                 </div>
                 <p className="text-xs text-indigo-600">
-                  以下のログイン情報をスタッフにお伝えください。初回ログイン後にパスワードの変更が求められます。
+                  {result.isExisting
+                    ? '登録済みのメールアドレスです。情報を更新し新しい仮パスワードを発行しました。以下をスタッフにお伝えください。'
+                    : '以下のログイン情報をスタッフにお伝えください。初回ログイン後にパスワードの変更が求められます。'
+                  }
                 </p>
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2">

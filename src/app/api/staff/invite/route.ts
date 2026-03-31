@@ -44,22 +44,33 @@ export async function POST(request: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  // すでに登録済みかチェック
-  const { data: existingUser } = await supabase
-    .from('users')
-    .select('id')
-    .eq('email', email)
-    .maybeSingle()
+  // Supabase Auth 側で既存ユーザーをメールアドレスで検索
+  const { data: authList } = await adminClient.auth.admin.listUsers({ perPage: 1000 })
+  const existingAuthUser = authList?.users?.find((u) => u.email === email)
 
-  if (existingUser) {
-    // 既存ユーザー: ロール・名前のみ更新
-    await supabase.from('users').update({
+  if (existingAuthUser) {
+    // 既存ユーザー: 仮パスワードをリセットしてロール・名前を更新
+    const tempPassword = generateTempPassword()
+
+    await adminClient.auth.admin.updateUserById(existingAuthUser.id, {
+      password: tempPassword,
+      user_metadata: {
+        ...existingAuthUser.user_metadata,
+        name,
+        role: role ?? 'staff',
+        needs_password_change: true,
+      },
+    })
+
+    await adminClient.from('users').upsert({
+      id: existingAuthUser.id,
       name,
+      email,
       role: role ?? 'staff',
       job_titles: Array.isArray(jobTitles) ? jobTitles : [],
-    }).eq('id', existingUser.id)
+    })
 
-    return NextResponse.json({ success: true, isExisting: true })
+    return NextResponse.json({ success: true, isExisting: true, tempPassword })
   }
 
   // 新規スタッフ: 仮パスワードで作成
