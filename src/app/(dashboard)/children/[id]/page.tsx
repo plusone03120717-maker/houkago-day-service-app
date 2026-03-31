@@ -263,13 +263,21 @@ export default async function ChildDetailPage({
                             {cert.municipality && <span>支給決定自治体: {cert.municipality}</span>}
                           </div>
                         </div>
-                        {isExpired ? (
-                          <Badge variant="destructive">期限切れ</Badge>
-                        ) : isExpiring ? (
-                          <Badge variant="warning">残り{daysLeft}日</Badge>
-                        ) : (
-                          <Badge variant="success">有効</Badge>
-                        )}
+                        <div className="flex flex-col items-end gap-1.5 shrink-0 ml-3">
+                          {isExpired ? (
+                            <Badge variant="destructive">期限切れ</Badge>
+                          ) : isExpiring ? (
+                            <Badge variant="warning">残り{daysLeft}日</Badge>
+                          ) : (
+                            <Badge variant="success">有効</Badge>
+                          )}
+                          <Link href={`/children/${id}/certificates/${cert.id}`}>
+                            <Button variant="outline" size="sm" className="h-7 text-xs">
+                              <Edit className="h-3 w-3" />
+                              編集
+                            </Button>
+                          </Link>
+                        </div>
                       </div>
                     </div>
                   )
