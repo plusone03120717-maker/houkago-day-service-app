@@ -66,18 +66,40 @@ const adminNav = [
   },
 ]
 
-// staff ロール向け（シフト・児童管理のみ）
+// staff ロール向け（シフト管理・設定ページを除く）
 const staffNav = [
   {
-    group: 'シフト',
+    group: 'メイン',
     items: [
-      { href: '/shifts', label: 'シフト管理', icon: CalendarDays },
+      { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
+      { href: '/attendance', label: '出席管理', icon: ClipboardList },
+      { href: '/attendance/monthly', label: '給付量チェック', icon: ShieldAlert },
+      { href: '/incidents', label: 'ヒヤリハット', icon: TriangleAlert },
+      { href: '/records', label: '日々の記録', icon: BookOpen },
+    ],
+  },
+  {
+    group: '支援・管理',
+    items: [
+      { href: '/support-plans', label: '個別支援計画', icon: ClipboardCheck },
+      { href: '/transport', label: '送迎管理', icon: Car },
+      { href: '/billing', label: '国保連請求', icon: CreditCard },
+    ],
+  },
+  {
+    group: 'コミュニケーション',
+    items: [
+      { href: '/contact-notes', label: '連絡帳', icon: FileText },
+      { href: '/messages', label: 'メッセージ', icon: MessageSquare },
+      { href: '/announcements', label: 'お知らせ', icon: Bell },
+      { href: '/usage', label: '利用状況', icon: CalendarDays },
     ],
   },
   {
     group: '設定',
     items: [
       { href: '/children', label: '児童管理', icon: Users },
+      { href: '/documents', label: '帳票出力', icon: FileText },
     ],
   },
 ]
