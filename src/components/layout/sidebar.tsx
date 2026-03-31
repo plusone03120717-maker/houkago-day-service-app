@@ -66,13 +66,12 @@ const adminNav = [
   },
 ]
 
-// staff ロール向け（シフト・勤務時間・児童管理のみ）
+// staff ロール向け（シフト・児童管理のみ）
 const staffNav = [
   {
     group: 'シフト',
     items: [
       { href: '/shifts', label: 'シフト管理', icon: CalendarDays },
-      { href: '/shifts/summary', label: '勤務時間集計', icon: BarChart2 },
     ],
   },
   {

@@ -2,8 +2,11 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// スタッフ（staff ロール）がアクセスできるパス
-const STAFF_ALLOWED = ['/shifts', '/children']
+// スタッフ（staff ロール）がアクセスできるパス（完全一致 or 前方一致）
+// /shifts/summary・/settings は含めない
+const STAFF_ALLOWED = ['/shifts/actual', '/children']
+// 完全一致のみ許可するパス
+const STAFF_ALLOWED_EXACT = ['/shifts']
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
@@ -37,9 +40,9 @@ export async function middleware(request: NextRequest) {
     .single()
 
   if (userData?.role === 'staff') {
-    const allowed = STAFF_ALLOWED.some(
-      (p) => pathname === p || pathname.startsWith(p + '/')
-    )
+    const allowed =
+      STAFF_ALLOWED_EXACT.includes(pathname) ||
+      STAFF_ALLOWED.some((p) => pathname === p || pathname.startsWith(p + '/'))
     if (!allowed) {
       return NextResponse.redirect(new URL('/shifts', request.url))
     }
