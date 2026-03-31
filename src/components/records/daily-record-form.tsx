@@ -368,58 +368,6 @@ export function DailyRecordForm({
         </div>
       )}
 
-      {/* 活動プログラム */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <BookOpen className="h-5 w-5 text-indigo-500" />
-            活動記録
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {Object.entries(programsByCategory).map(([category, progs]) => (
-            <div key={category}>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{category}</p>
-              <div className="space-y-2">
-                {progs.map((prog) => {
-                  const selected = selectedPrograms.includes(prog.id)
-                  return (
-                    <div key={prog.id} className={`rounded-lg border p-3 transition-colors ${selected ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200'}`}>
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          id={`prog-${prog.id}`}
-                          checked={selected}
-                          onChange={() => toggleProgram(prog.id)}
-                          className="w-4 h-4 accent-indigo-600"
-                        />
-                        <label htmlFor={`prog-${prog.id}`} className="flex-1 text-sm font-medium cursor-pointer">
-                          {prog.name}
-                        </label>
-                      </div>
-                      {selected && (
-                        <input
-                          type="text"
-                          placeholder="コメント（任意）"
-                          value={activityNotes[prog.id] ?? ''}
-                          onChange={(e) => setActivityNotes((prev) => ({ ...prev, [prog.id]: e.target.value }))}
-                          className="mt-2 w-full text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-          {programs.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-4">
-              活動プログラムがまだ登録されていません
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
       {/* 送迎時間 */}
       <Card>
         <CardHeader className="pb-3">
@@ -480,6 +428,58 @@ export function DailyRecordForm({
             </div>
             <p className="text-xs text-gray-400 mt-1">※ 自宅到着時間を入力すると事務所出発時間を10分前で自動入力します</p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* 活動プログラム */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BookOpen className="h-5 w-5 text-indigo-500" />
+            活動記録
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {Object.entries(programsByCategory).map(([category, progs]) => (
+            <div key={category}>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{category}</p>
+              <div className="space-y-2">
+                {progs.map((prog) => {
+                  const selected = selectedPrograms.includes(prog.id)
+                  return (
+                    <div key={prog.id} className={`rounded-lg border p-3 transition-colors ${selected ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          id={`prog-${prog.id}`}
+                          checked={selected}
+                          onChange={() => toggleProgram(prog.id)}
+                          className="w-4 h-4 accent-indigo-600"
+                        />
+                        <label htmlFor={`prog-${prog.id}`} className="flex-1 text-sm font-medium cursor-pointer">
+                          {prog.name}
+                        </label>
+                      </div>
+                      {selected && (
+                        <input
+                          type="text"
+                          placeholder="コメント（任意）"
+                          value={activityNotes[prog.id] ?? ''}
+                          onChange={(e) => setActivityNotes((prev) => ({ ...prev, [prog.id]: e.target.value }))}
+                          className="mt-2 w-full text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+          {programs.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-4">
+              活動プログラムがまだ登録されていません
+            </p>
+          )}
         </CardContent>
       </Card>
 
