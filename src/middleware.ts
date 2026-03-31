@@ -2,10 +2,9 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// スタッフ（staff ロール）がアクセスできるパス（完全一致 or 前方一致）
-// /shifts/summary・/settings は含めない
-const STAFF_ALLOWED = ['/shifts/actual', '/children']
-// 完全一致のみ許可するパス
+// スタッフ（staff ロール）が前方一致でアクセスできるパス
+const STAFF_ALLOWED_PREFIX = ['/shifts/actual', '/children']
+// スタッフが完全一致でアクセスできるパス
 const STAFF_ALLOWED_EXACT = ['/shifts']
 
 export async function middleware(request: NextRequest) {
@@ -31,18 +30,16 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return response
 
-  const pathname = request.nextUrl.pathname
+  // DBクエリを使わず JWT の user_metadata.role を直接使用（RLS の影響を受けない）
+  const role = user.user_metadata?.role as string | undefined
+  if (!role) return response // metadataにroleがない場合は通す（管理者等）
 
-  const { data: userData } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (userData?.role === 'staff') {
+  if (role === 'staff') {
+    const pathname = request.nextUrl.pathname
     const allowed =
       STAFF_ALLOWED_EXACT.includes(pathname) ||
-      STAFF_ALLOWED.some((p) => pathname === p || pathname.startsWith(p + '/'))
+      STAFF_ALLOWED_PREFIX.some((p) => pathname === p || pathname.startsWith(p + '/'))
+
     if (!allowed) {
       return NextResponse.redirect(new URL('/shifts', request.url))
     }
@@ -53,7 +50,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // api・静的ファイル・認証フロー・set-password は除外
     '/((?!api|_next/static|_next/image|favicon\\.ico|login|auth|set-password).*)',
   ],
 }
