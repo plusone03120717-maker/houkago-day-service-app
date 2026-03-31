@@ -2,6 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
+function generateTempPassword(): string {
+  const upper = 'ABCDEFGHJKMNPQRSTUVWXYZ'
+  const lower = 'abcdefghjkmnpqrstuvwxyz'
+  const digits = '23456789'
+  const all = upper + lower + digits
+  const arr = new Uint8Array(12)
+  crypto.getRandomValues(arr)
+  // 最初の3文字は大文字・小文字・数字を必ず含める
+  return (
+    upper[arr[0] % upper.length] +
+    lower[arr[1] % lower.length] +
+    digits[arr[2] % digits.length] +
+    Array.from(arr.slice(3), (b) => all[b % all.length]).join('')
+  )
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -28,53 +44,41 @@ export async function POST(request: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-  const setPasswordUrl = `${appUrl}/auth/callback?next=/set-password`
-  let userId: string | undefined
-  let actionLink: string | null = null
-  let isExisting = false
+  // すでに登録済みかチェック
+  const { data: existingUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('email', email)
+    .maybeSingle()
 
-  // 招待リンクを生成（メールは送信しない）
-  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
-    type: 'invite',
-    email,
-    options: {
-      data: { name, role: role ?? 'staff' },
-      redirectTo: `${appUrl}/login`,
-    },
-  })
+  if (existingUser) {
+    // 既存ユーザー: ロール・名前のみ更新
+    await supabase.from('users').update({
+      name,
+      role: role ?? 'staff',
+      job_titles: Array.isArray(jobTitles) ? jobTitles : [],
+    }).eq('id', existingUser.id)
 
-  if (linkError) {
-    // すでに登録済みの場合はパスワードリセットリンクにフォールバック
-    const alreadyExists =
-      linkError.message.toLowerCase().includes('already been registered') ||
-      linkError.message.toLowerCase().includes('already registered') ||
-      linkError.message.toLowerCase().includes('already exists')
-
-    if (!alreadyExists) {
-      return NextResponse.json({ error: linkError.message }, { status: 500 })
-    }
-
-    const { data: recoveryData, error: recoveryError } = await adminClient.auth.admin.generateLink({
-      type: 'recovery',
-      email,
-      options: { redirectTo: `${appUrl}/login` },
-    })
-    if (recoveryError) {
-      return NextResponse.json({ error: recoveryError.message }, { status: 500 })
-    }
-    userId = recoveryData?.user?.id
-    actionLink = recoveryData?.properties?.action_link ?? null
-    isExisting = true
-  } else {
-    userId = linkData?.user?.id
-    actionLink = linkData?.properties?.action_link ?? null
+    return NextResponse.json({ success: true, isExisting: true })
   }
 
-  // users テーブルに登録（既存ユーザーはロール・名前を更新）
-  if (userId) {
-    await supabase.from('users').upsert({
-      id: userId,
+  // 新規スタッフ: 仮パスワードで作成
+  const tempPassword = generateTempPassword()
+
+  const { data: createData, error: createError } = await adminClient.auth.admin.createUser({
+    email,
+    password: tempPassword,
+    email_confirm: true,
+    user_metadata: { name, role: role ?? 'staff', needs_password_change: true },
+  })
+
+  if (createError) {
+    return NextResponse.json({ error: createError.message }, { status: 500 })
+  }
+
+  if (createData?.user) {
+    await adminClient.from('users').upsert({
+      id: createData.user.id,
       name,
       email,
       role: role ?? 'staff',
@@ -84,7 +88,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    inviteLink: actionLink,
-    isExisting,
+    isExisting: false,
+    tempPassword,
   })
 }

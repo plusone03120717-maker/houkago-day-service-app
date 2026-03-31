@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { UserPlus, Copy, Check, Link as LinkIcon } from 'lucide-react'
+import { UserPlus, Copy, Check, KeyRound } from 'lucide-react'
 
 // 役職オプション（needsAuth=trueはアプリログイン・メールアドレスが必要）
 const ROLE_OPTIONS = [
@@ -22,6 +22,10 @@ function getAuthRole(selected: Set<string>): 'admin' | 'staff' | null {
   return null
 }
 
+type InviteResult =
+  | { isExisting: true }
+  | { isExisting: false; email: string; tempPassword: string }
+
 export function StaffInviteForm() {
   const router = useRouter()
   const supabase = createClient()
@@ -30,8 +34,7 @@ export function StaffInviteForm() {
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set(['staff']))
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [inviteLink, setInviteLink] = useState<string | null>(null)
-  const [isExisting, setIsExisting] = useState(false)
+  const [result, setResult] = useState<InviteResult | null>(null)
   const [copied, setCopied] = useState(false)
 
   const authRole = getAuthRole(selectedRoles)
@@ -40,20 +43,16 @@ export function StaffInviteForm() {
   const toggleRole = (value: string) => {
     setSelectedRoles((prev) => {
       const next = new Set(prev)
-      if (next.has(value)) {
-        next.delete(value)
-      } else {
-        next.add(value)
-      }
+      if (next.has(value)) next.delete(value)
+      else next.add(value)
       return next
     })
     setError('')
-    setInviteLink(null)
+    setResult(null)
   }
 
-  const handleCopy = async () => {
-    if (!inviteLink) return
-    await navigator.clipboard.writeText(inviteLink)
+  const handleCopy = async (text: string) => {
+    await navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -63,12 +62,11 @@ export function StaffInviteForm() {
     if (!name.trim() || selectedRoles.size === 0) return
     setLoading(true)
     setError('')
-    setInviteLink(null)
+    setResult(null)
 
     const nonAuthRoles = [...selectedRoles].filter((r) => !['admin', 'staff'].includes(r))
 
     if (needsEmail) {
-      // アプリログインあり → 招待リンクを生成
       if (!email.trim()) {
         setError('メールアドレスを入力してください')
         setLoading(false)
@@ -86,16 +84,19 @@ export function StaffInviteForm() {
       })
       setLoading(false)
       const json = await res.json().catch(() => ({}))
-      if (res.ok) {
-        setInviteLink(json.inviteLink ?? null)
-        setIsExisting(json.isExisting ?? false)
-        setEmail('')
-        setName('')
-        setSelectedRoles(new Set(['staff']))
-        router.refresh()
-      } else {
-        setError(json.error ?? '招待リンクの生成に失敗しました')
+      if (!res.ok) {
+        setError(json.error ?? '登録に失敗しました')
+        return
       }
+      if (json.isExisting) {
+        setResult({ isExisting: true })
+      } else {
+        setResult({ isExisting: false, email: email.trim(), tempPassword: json.tempPassword })
+      }
+      setEmail('')
+      setName('')
+      setSelectedRoles(new Set(['staff']))
+      router.refresh()
     } else {
       // ログイン不要 → staff_members に登録
       const { error: err } = await supabase
@@ -109,6 +110,7 @@ export function StaffInviteForm() {
       if (err) {
         setError('登録に失敗しました: ' + err.message)
       } else {
+        setResult({ isExisting: false, email: '', tempPassword: '' })
         setName('')
         setSelectedRoles(new Set(['driver']))
         router.refresh()
@@ -185,49 +187,57 @@ export function StaffInviteForm() {
             )}
             {needsEmail && (
               <p className="text-xs text-gray-400 mt-1.5">
-                招待リンクを生成します。リンクをコピーしてスタッフにメール等でお送りください。
+                仮パスワードを発行します。スタッフにメールアドレスと仮パスワードをお伝えください。
               </p>
             )}
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 
-          {/* 招待リンク表示 */}
-          {inviteLink && (
-            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 space-y-2">
-              <div className="flex items-center gap-1.5 text-sm font-medium text-indigo-700">
-                <LinkIcon className="h-4 w-4" />
-                {isExisting ? 'パスワードリセットリンクを生成しました' : 'スタッフ招待リンクが生成されました'}
+          {/* 登録結果 */}
+          {result && (
+            result.isExisting ? (
+              <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                <p className="text-sm font-medium text-green-700">登録情報を更新しました</p>
+                <p className="text-xs text-green-600 mt-0.5">このメールアドレスは登録済みです。ロール・名前を更新しました。</p>
               </div>
-              <p className="text-xs text-indigo-600">
-                {isExisting
-                  ? 'このメールアドレスは登録済みです。以下のリンクをスタッフに送ることでパスワードを再設定できます。'
-                  : '以下のリンクをコピーして、スタッフにメールやLINEでお送りください。リンクは一度のみ使用できます。'
-                }
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  readOnly
-                  value={inviteLink}
-                  className="flex-1 text-xs bg-white border border-indigo-200 rounded px-2 py-1.5 text-gray-700 select-all"
-                  onFocus={(e) => e.target.select()}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopy}
-                  className="shrink-0 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
-                >
-                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  {copied ? 'コピー済' : 'コピー'}
-                </Button>
+            ) : result.tempPassword ? (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 space-y-2">
+                <div className="flex items-center gap-1.5 text-sm font-medium text-indigo-700">
+                  <KeyRound className="h-4 w-4" />
+                  スタッフを登録しました
+                </div>
+                <p className="text-xs text-indigo-600">
+                  以下のログイン情報をスタッフにお伝えください。初回ログイン後にパスワードの変更が求められます。
+                </p>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 w-28 shrink-0">メールアドレス</span>
+                    <span className="text-sm font-mono text-gray-800 flex-1">{result.email}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 w-28 shrink-0">仮パスワード</span>
+                    <span className="text-sm font-mono font-bold text-gray-900 flex-1 tracking-widest">{result.tempPassword}</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleCopy(`メールアドレス: ${result.email}\n仮パスワード: ${result.tempPassword}`)}
+                      className="shrink-0 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                    >
+                      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      {copied ? 'コピー済' : 'コピー'}
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <p className="text-sm text-green-600">登録しました。</p>
+            )
           )}
 
           <Button type="submit" disabled={loading || !name.trim() || selectedRoles.size === 0} size="sm">
-            {loading ? '処理中...' : needsEmail ? '招待リンクを生成' : '登録する'}
+            {loading ? '処理中...' : needsEmail ? '登録して仮パスワードを発行' : '登録する'}
           </Button>
         </form>
       </CardContent>

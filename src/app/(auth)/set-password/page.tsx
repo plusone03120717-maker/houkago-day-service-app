@@ -16,7 +16,7 @@ export default function SetPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.BaseSyntheticEvent) => {
     e.preventDefault()
     setError(null)
 
@@ -30,7 +30,10 @@ export default function SetPasswordPage() {
     }
 
     setLoading(true)
-    const { error: updateError } = await supabase.auth.updateUser({ password })
+    const { error: updateError } = await supabase.auth.updateUser({
+      password,
+      data: { needs_password_change: false },
+    })
     if (updateError) {
       setError('パスワードの設定に失敗しました。もう一度お試しください。')
       setLoading(false)
