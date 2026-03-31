@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -25,7 +24,6 @@ function getAuthRole(selected: Set<string>): 'admin' | 'staff' | null {
 type InviteResult = { isExisting: boolean; email: string; tempPassword: string }
 
 export function StaffInviteForm() {
-  const router = useRouter()
   const supabase = createClient()
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
@@ -94,7 +92,7 @@ export function StaffInviteForm() {
       setEmail('')
       setName('')
       setSelectedRoles(new Set(['staff']))
-      router.refresh()
+      window.location.reload()
     } else {
       // ログイン不要 → staff_members に登録
       const { error: err } = await supabase
@@ -111,7 +109,7 @@ export function StaffInviteForm() {
         setResult({ isExisting: false, email: '', tempPassword: '' })
         setName('')
         setSelectedRoles(new Set(['driver']))
-        router.refresh()
+        window.location.reload()
       }
     }
   }
