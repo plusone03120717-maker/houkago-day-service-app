@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { UserPlus } from 'lucide-react'
+import { UserPlus, Copy, Check, Link as LinkIcon } from 'lucide-react'
 
 // 役職オプション（needsAuth=trueはアプリログイン・メールアドレスが必要）
 const ROLE_OPTIONS = [
@@ -29,8 +29,9 @@ export function StaffInviteForm() {
   const [name, setName] = useState('')
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set(['staff']))
   const [loading, setLoading] = useState(false)
-  const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
+  const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const authRole = getAuthRole(selectedRoles)
   const needsEmail = authRole !== null
@@ -46,19 +47,27 @@ export function StaffInviteForm() {
       return next
     })
     setError('')
+    setInviteLink(null)
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
+  const handleCopy = async () => {
+    if (!inviteLink) return
+    await navigator.clipboard.writeText(inviteLink)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleSubmit = async (ev: React.BaseSyntheticEvent) => {
+    ev.preventDefault()
     if (!name.trim() || selectedRoles.size === 0) return
     setLoading(true)
     setError('')
-    setSuccess(false)
+    setInviteLink(null)
 
     const nonAuthRoles = [...selectedRoles].filter((r) => !['admin', 'staff'].includes(r))
 
     if (needsEmail) {
-      // アプリログインあり → 招待メール送信
+      // アプリログインあり → 招待リンクを生成
       if (!email.trim()) {
         setError('メールアドレスを入力してください')
         setLoading(false)
@@ -75,15 +84,15 @@ export function StaffInviteForm() {
         }),
       })
       setLoading(false)
+      const json = await res.json().catch(() => ({}))
       if (res.ok) {
-        setSuccess(true)
+        setInviteLink(json.inviteLink ?? null)
         setEmail('')
         setName('')
         setSelectedRoles(new Set(['staff']))
         router.refresh()
       } else {
-        const json = await res.json().catch(() => ({}))
-        setError(json.error ?? '招待に失敗しました')
+        setError(json.error ?? '招待リンクの生成に失敗しました')
       }
     } else {
       // ログイン不要 → staff_members に登録
@@ -98,7 +107,6 @@ export function StaffInviteForm() {
       if (err) {
         setError('登録に失敗しました: ' + err.message)
       } else {
-        setSuccess(true)
         setName('')
         setSelectedRoles(new Set(['driver']))
         router.refresh()
@@ -173,16 +181,48 @@ export function StaffInviteForm() {
                 ログイン不要のスタッフとして登録されます。LINE User IDを設定することで送迎通知を受け取れます。
               </p>
             )}
+            {needsEmail && (
+              <p className="text-xs text-gray-400 mt-1.5">
+                招待リンクを生成します。リンクをコピーしてスタッフにメール等でお送りください。
+              </p>
+            )}
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
-          {success && (
-            <p className="text-sm text-green-600">
-              {needsEmail ? '招待メールを送信しました。' : '登録しました。'}
-            </p>
+
+          {/* 招待リンク表示 */}
+          {inviteLink && (
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 space-y-2">
+              <div className="flex items-center gap-1.5 text-sm font-medium text-indigo-700">
+                <LinkIcon className="h-4 w-4" />
+                スタッフ招待リンクが生成されました
+              </div>
+              <p className="text-xs text-indigo-600">
+                以下のリンクをコピーして、スタッフにメールやLINEでお送りください。リンクは一度のみ使用できます。
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={inviteLink}
+                  className="flex-1 text-xs bg-white border border-indigo-200 rounded px-2 py-1.5 text-gray-700 select-all"
+                  onFocus={(e) => e.target.select()}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCopy}
+                  className="shrink-0 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copied ? 'コピー済' : 'コピー'}
+                </Button>
+              </div>
+            </div>
           )}
+
           <Button type="submit" disabled={loading || !name.trim() || selectedRoles.size === 0} size="sm">
-            {loading ? '処理中...' : needsEmail ? '招待メールを送信' : '登録する'}
+            {loading ? '処理中...' : needsEmail ? '招待リンクを生成' : '登録する'}
           </Button>
         </form>
       </CardContent>

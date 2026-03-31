@@ -28,22 +28,24 @@ export async function POST(request: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(
+  // 招待リンクを生成（メールは送信しない）
+  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+    type: 'invite',
     email,
-    {
+    options: {
       data: { name, role: role ?? 'staff' },
       redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/login`,
-    }
-  )
+    },
+  })
 
-  if (inviteError) {
-    return NextResponse.json({ error: inviteError.message }, { status: 500 })
+  if (linkError) {
+    return NextResponse.json({ error: linkError.message }, { status: 500 })
   }
 
   // users テーブルに登録
-  if (inviteData?.user) {
+  if (linkData?.user) {
     await supabase.from('users').upsert({
-      id: inviteData.user.id,
+      id: linkData.user.id,
       name,
       email,
       role: role ?? 'staff',
@@ -51,5 +53,8 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({
+    success: true,
+    inviteLink: linkData?.properties?.action_link ?? null,
+  })
 }
