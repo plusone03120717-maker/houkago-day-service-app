@@ -10,7 +10,7 @@ import { UserPlus } from 'lucide-react'
 
 // 役職オプション（needsAuth=trueはアプリログイン・メールアドレスが必要）
 const ROLE_OPTIONS = [
-  { value: 'staff',    label: 'スタッフ',  needsAuth: false },
+  { value: 'staff',    label: 'スタッフ',  needsAuth: true },
   { value: 'admin',    label: '管理者',    needsAuth: true },
   { value: 'driver',   label: 'ドライバー', needsAuth: false },
   { value: 'therapist',label: '療育士',    needsAuth: false },
@@ -18,6 +18,7 @@ const ROLE_OPTIONS = [
 
 function getAuthRole(selected: Set<string>): 'admin' | 'staff' | null {
   if (selected.has('admin')) return 'admin'
+  if (selected.has('staff')) return 'staff'
   return null
 }
 
@@ -130,9 +131,10 @@ export function StaffInviteForm() {
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">
                 メールアドレス
-                {!needsEmail && (
-                  <span className="ml-1 text-gray-400 font-normal">（ログイン不要の役職は不要）</span>
-                )}
+                {needsEmail
+                  ? <span className="text-red-500 ml-0.5">*</span>
+                  : <span className="ml-1 text-gray-400 font-normal">（ドライバー等ログイン不要）</span>
+                }
               </label>
               <Input
                 type="email"
@@ -140,6 +142,7 @@ export function StaffInviteForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="staff@example.com"
                 disabled={!needsEmail}
+                required={needsEmail}
               />
             </div>
           </div>
