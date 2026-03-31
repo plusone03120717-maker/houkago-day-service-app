@@ -25,7 +25,8 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
-const staffNav = [
+// 管理者・全スタッフ向けナビ
+const adminNav = [
   {
     group: 'メイン',
     items: [
@@ -65,9 +66,27 @@ const staffNav = [
   },
 ]
 
-export function Sidebar() {
+// staff ロール向け（シフト・勤務時間・児童管理のみ）
+const staffNav = [
+  {
+    group: 'シフト',
+    items: [
+      { href: '/shifts', label: 'シフト管理', icon: CalendarDays },
+      { href: '/shifts/summary', label: '勤務時間集計', icon: BarChart2 },
+    ],
+  },
+  {
+    group: '設定',
+    items: [
+      { href: '/children', label: '児童管理', icon: Users },
+    ],
+  },
+]
+
+export function Sidebar({ role }: { role: string }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  const nav = role === 'staff' ? staffNav : adminNav
 
   return (
     <div
@@ -98,7 +117,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4">
-        {staffNav.map((group) => (
+        {nav.map((group) => (
           <div key={group.group} className="mb-4">
             {!collapsed && (
               <div className="px-4 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
