@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -51,6 +52,7 @@ export default async function IncidentsPage({
 }: {
   searchParams: Promise<{ status?: string }>
 }) {
+  await requireAdmin()
   const { status: statusFilter } = await searchParams
   const supabase = await createClient()
 

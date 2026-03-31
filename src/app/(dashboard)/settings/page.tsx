@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen } from 'lucide-react'
+import { requireAdmin } from '@/lib/require-admin'
 
 const sections = [
   {
@@ -53,7 +54,8 @@ const sections = [
   },
 ]
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  await requireAdmin()
   return (
     <div className="space-y-5 max-w-2xl">
       <div>

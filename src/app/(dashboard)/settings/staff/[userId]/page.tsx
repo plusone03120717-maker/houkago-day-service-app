@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { ArrowLeft, User } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -41,6 +42,7 @@ export default async function StaffProfilePage({
 }: {
   params: Promise<{ userId: string }>
 }) {
+  await requireAdmin()
   const { userId } = await params
   const supabase = await createClient()
 

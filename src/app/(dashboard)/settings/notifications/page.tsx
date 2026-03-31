@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft } from 'lucide-react'
@@ -17,6 +18,7 @@ type NotificationSettings = {
 }
 
 export default async function NotificationsSettingsPage() {
+  await requireAdmin()
   const supabase = await createClient()
 
   const { data: facilityRaw } = await supabase

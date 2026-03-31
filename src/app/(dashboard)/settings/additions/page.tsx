@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft } from 'lucide-react'
@@ -26,6 +27,7 @@ type AdditionSetting = {
 }
 
 export default async function AdditionsSettingsPage() {
+  await requireAdmin()
   const supabase = await createClient()
 
   const { data: unitsRaw } = await supabase

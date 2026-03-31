@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, Car } from 'lucide-react'
@@ -17,6 +18,7 @@ type Vehicle = {
 type StaffOption = { id: string; name: string }
 
 export default async function VehiclesPage() {
+  await requireAdmin()
   const supabase = await createClient()
 
   const [{ data: facilitiesRaw }, { data: vehiclesRaw }, { data: staffRaw }] = await Promise.all([

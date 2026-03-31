@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { FileText, Calendar, ClipboardList, Receipt, BookOpen, BarChart3, Wallet, ScrollText } from 'lucide-react'
@@ -14,6 +15,7 @@ export default async function DocumentsPage({
 }: {
   searchParams: Promise<{ year?: string; month?: string }>
 }) {
+  await requireAdmin()
   const params = await searchParams
   const year = parseInt(params.year ?? String(currentYear))
   const month = parseInt(params.month ?? String(currentMonth))

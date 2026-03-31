@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -39,6 +40,7 @@ const roleBadgeClass: Record<string, string> = {
 }
 
 export default async function SettingsStaffPage() {
+  await requireAdmin()
   const supabase = await createClient()
 
   const { data: staffRaw } = await supabase

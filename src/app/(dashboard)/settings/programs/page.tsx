@@ -1,7 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/require-admin'
 import { ActivityProgramForm } from '@/components/settings/activity-program-form'
 
 export default async function ActivityProgramsPage() {
+  await requireAdmin()
   const supabase = await createClient()
 
   const { data: facility } = await supabase

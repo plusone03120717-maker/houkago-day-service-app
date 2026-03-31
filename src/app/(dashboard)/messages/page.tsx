@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/require-admin'
 import { StaffMessagesUI } from '@/components/messages/staff-messages-ui'
 
 type Message = {
@@ -17,6 +18,7 @@ type ParentUser = {
 }
 
 export default async function StaffMessagesPage() {
+  await requireAdmin()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { ArrowLeft, Calendar } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,6 +30,7 @@ export default async function FacilityCalendarPage({
 }: {
   searchParams: Promise<{ year?: string; month?: string }>
 }) {
+  await requireAdmin()
   const params = await searchParams
   const now = new Date()
   const year = parseInt(params.year ?? String(now.getFullYear()))

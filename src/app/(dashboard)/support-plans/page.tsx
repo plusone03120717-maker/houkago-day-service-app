@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +36,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string 
 }
 
 export default async function SupportPlansPage() {
+  await requireAdmin()
   const supabase = await createClient()
 
   const [{ data: childrenRaw }, { data: monitoringRaw }] = await Promise.all([
