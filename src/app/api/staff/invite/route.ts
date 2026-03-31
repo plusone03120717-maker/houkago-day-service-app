@@ -49,7 +49,21 @@ export async function POST(request: NextRequest) {
   const existingAuthUser = authList?.users?.find((u) => u.email === email)
 
   if (existingAuthUser) {
-    // 既存ユーザー: 仮パスワードをリセットしてロール・名前を更新
+    // 既存ユーザーのロールを確認（adminは上書き禁止）
+    const { data: existingDbUser } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', existingAuthUser.id)
+      .single()
+
+    if (existingDbUser?.role === 'admin') {
+      return NextResponse.json(
+        { error: 'このメールアドレスは管理者アカウントです。スタッフとして登録できません。' },
+        { status: 409 }
+      )
+    }
+
+    // 既存スタッフ: 仮パスワードをリセットしてロール・名前を更新
     const tempPassword = generateTempPassword()
 
     await adminClient.auth.admin.updateUserById(existingAuthUser.id, {
