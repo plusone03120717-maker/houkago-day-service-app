@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { ArrowLeft, AlertTriangle, CheckCircle, AlertCircle, Filter } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,7 +20,6 @@ export default async function MonthlyBenefitPage({
 }: {
   searchParams: Promise<{ unit?: string; month?: string }>
 }) {
-  await requireAdmin()
   const { unit: unitFilter, month: monthParam } = await searchParams
   const supabase = await createClient()
 

@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Bell } from 'lucide-react'
@@ -19,7 +18,6 @@ type Announcement = {
 type Unit = { id: string; name: string }
 
 export default async function AnnouncementsPage() {
-  await requireAdmin()
   const supabase = await createClient()
 
   const { data: announcementsRaw } = await supabase

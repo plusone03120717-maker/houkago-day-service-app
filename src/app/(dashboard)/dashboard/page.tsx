@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -42,7 +41,6 @@ type Reservation = {
 }
 
 export default async function DashboardPage() {
-  await requireAdmin()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const today = formatDate(new Date(), 'yyyy-MM-dd')

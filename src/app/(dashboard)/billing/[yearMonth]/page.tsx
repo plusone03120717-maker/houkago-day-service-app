@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -73,7 +72,6 @@ export default async function BillingDetailPage({
   params: Promise<{ yearMonth: string }>
   searchParams: Promise<{ unit?: string }>
 }) {
-  await requireAdmin()
   const { yearMonth } = await params
   const { unit: unitId } = await searchParams
   const supabase = await createClient()

@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
 import { UsageCalendar } from '@/components/usage/usage-calendar'
 
 type Unit = { id: string; name: string; capacity: number }
@@ -18,7 +17,6 @@ export default async function UsagePage({
 }: {
   searchParams: Promise<{ year?: string; month?: string; unit?: string }>
 }) {
-  await requireAdmin()
   const params = await searchParams
   const supabase = await createClient()
 

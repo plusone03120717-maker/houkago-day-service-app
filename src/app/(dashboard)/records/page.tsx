@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -27,7 +26,6 @@ export default async function RecordsPage({
 }: {
   searchParams: Promise<{ date?: string }>
 }) {
-  await requireAdmin()
   const params = await searchParams
   const supabase = await createClient()
 

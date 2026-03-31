@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
 import { formatDate } from '@/lib/utils'
 import { TransportManageBoard } from '@/components/transport/transport-board'
 import type { Schedule, AttendingChild, UnitChild } from '@/components/transport/transport-board'
@@ -27,7 +26,6 @@ export default async function TransportPage({
 }: {
   searchParams: Promise<{ date?: string; unit?: string }>
 }) {
-  await requireAdmin()
   const params = await searchParams
   const supabase = await createClient()
   const today = params.date ?? formatDate(new Date(), 'yyyy-MM-dd')

@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
 import { formatDate } from '@/lib/utils'
 import { AttendanceBoard } from '@/components/attendance/attendance-board'
 import type { Unit, Reservation, Attendance } from '@/components/attendance/attendance-board'
@@ -9,7 +8,6 @@ export default async function AttendancePage({
 }: {
   searchParams: Promise<{ date?: string; unit?: string }>
 }) {
-  await requireAdmin()
   const params = await searchParams
   const supabase = await createClient()
   const today = params.date ?? formatDate(new Date(), 'yyyy-MM-dd')

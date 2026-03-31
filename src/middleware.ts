@@ -2,10 +2,8 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// スタッフ（staff ロール）が前方一致でアクセスできるパス
-const STAFF_ALLOWED_PREFIX = ['/shifts/actual', '/children']
-// スタッフが完全一致でアクセスできるパス
-const STAFF_ALLOWED_EXACT = ['/shifts']
+// スタッフ（staff ロール）がアクセスできないパス（前方一致）
+const STAFF_BLOCKED_PREFIX = ['/shifts', '/settings']
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
@@ -36,12 +34,9 @@ export async function middleware(request: NextRequest) {
 
   if (role === 'staff') {
     const pathname = request.nextUrl.pathname
-    const allowed =
-      STAFF_ALLOWED_EXACT.includes(pathname) ||
-      STAFF_ALLOWED_PREFIX.some((p) => pathname === p || pathname.startsWith(p + '/'))
-
-    if (!allowed) {
-      return NextResponse.redirect(new URL('/shifts', request.url))
+    const blocked = STAFF_BLOCKED_PREFIX.some((p) => pathname === p || pathname.startsWith(p + '/'))
+    if (blocked) {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
     }
   }
 
