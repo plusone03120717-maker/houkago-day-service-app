@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,36 @@ export default function LoginPage() {
   const router = useRouter()
   const supabase = createClient()
   const [mode, setMode] = useState<Mode>('staff')
+
+  // 招待リンク・パスワードリセットリンクのトークンを処理してパスワード設定画面へ転送
+  useEffect(() => {
+    const handleAuthToken = async () => {
+      // PKCE フロー: ?code= がある場合
+      const searchParams = new URLSearchParams(window.location.search)
+      const code = searchParams.get('code')
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (!error) {
+          router.replace('/set-password')
+        }
+        return
+      }
+
+      // Implicit フロー: #access_token= がある場合
+      const hash = window.location.hash.substring(1)
+      const hashParams = new URLSearchParams(hash)
+      const accessToken = hashParams.get('access_token')
+      const refreshToken = hashParams.get('refresh_token')
+      const type = hashParams.get('type')
+      if (accessToken && refreshToken && (type === 'invite' || type === 'recovery')) {
+        const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+        if (!error) {
+          router.replace('/set-password')
+        }
+      }
+    }
+    handleAuthToken()
+  }, [])
   const [email, setEmail] = useState('')
   const [childName, setChildName] = useState('')
   const [password, setPassword] = useState('')

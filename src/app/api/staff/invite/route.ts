@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     email,
     options: {
       data: { name, role: role ?? 'staff' },
-      redirectTo: setPasswordUrl,
+      redirectTo: `${appUrl}/login`,
     },
   })
 
