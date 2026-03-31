@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Pencil, Wand2, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { StarRating } from '@/components/ui/star-rating'
 
 type SupportPlan = {
   id: string
@@ -18,6 +19,8 @@ type SupportPlan = {
   short_term_goals: string | null
   support_content: string | null
   monitoring_notes: string | null
+  long_term_goal_rating: number | null
+  short_term_goal_rating: number | null
 }
 
 const statusLabel: Record<string, string> = {
@@ -48,6 +51,8 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
   const [status, setStatus] = useState(plan.status)
   const [longTermGoals, setLongTermGoals] = useState(plan.long_term_goals ?? '')
   const [shortTermGoals, setShortTermGoals] = useState(plan.short_term_goals ?? '')
+  const [longTermGoalRating, setLongTermGoalRating] = useState<number | null>(plan.long_term_goal_rating ?? null)
+  const [shortTermGoalRating, setShortTermGoalRating] = useState<number | null>(plan.short_term_goal_rating ?? null)
   const [supportContent, setSupportContent] = useState(plan.support_content ?? '')
   const [monitoringNotes, setMonitoringNotes] = useState(plan.monitoring_notes ?? '')
   const [saving, setSaving] = useState(false)
@@ -79,15 +84,15 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
       short_term_goals: shortTermGoals || null,
       support_content: supportContent || null,
       monitoring_notes: monitoringNotes || null,
+      long_term_goal_rating: longTermGoalRating || null,
+      short_term_goal_rating: shortTermGoalRating || null,
     }).eq('id', plan.id)
     setSaving(false)
     setEditing(false)
     startTransition(() => router.refresh())
   }
 
-  const fields = [
-    { key: 'long_term_goals', label: '長期目標', value: longTermGoals, setter: setLongTermGoals, rows: 3 },
-    { key: 'short_term_goals', label: '短期目標', value: shortTermGoals, setter: setShortTermGoals, rows: 3 },
+  const otherFields = [
     { key: 'support_content', label: '支援内容・方法', value: supportContent, setter: setSupportContent, rows: 4 },
     { key: 'monitoring_notes', label: 'モニタリング記録', value: monitoringNotes, setter: setMonitoringNotes, rows: 3 },
   ] as const
@@ -125,12 +130,24 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1">長期目標</p>
                 <p className="text-gray-700 whitespace-pre-wrap">{plan.long_term_goals}</p>
+                {plan.long_term_goal_rating != null && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-gray-400">達成度:</span>
+                    <StarRating value={plan.long_term_goal_rating} readOnly />
+                  </div>
+                )}
               </div>
             )}
             {plan.short_term_goals && (
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1">短期目標</p>
                 <p className="text-gray-700 whitespace-pre-wrap">{plan.short_term_goals}</p>
+                {plan.short_term_goal_rating != null && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-gray-400">達成度:</span>
+                    <StarRating value={plan.short_term_goal_rating} readOnly />
+                  </div>
+                )}
               </div>
             )}
             {plan.support_content && (
@@ -184,7 +201,59 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
               </select>
             </div>
 
-            {fields.map(({ key, label, value, setter, rows }) => (
+            {/* 長期目標 */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700">長期目標</label>
+                <button
+                  type="button"
+                  onClick={() => refineField('long_term_goals', longTermGoals, setLongTermGoals)}
+                  disabled={refining === 'long_term_goals' || !longTermGoals.trim()}
+                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Wand2 className="h-3 w-3" />
+                  {refining === 'long_term_goals' ? '整えています...' : '文章を整える'}
+                </button>
+              </div>
+              <textarea
+                value={longTermGoals}
+                onChange={(e) => setLongTermGoals(e.target.value)}
+                rows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              />
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs text-gray-500">達成度評価:</span>
+                <StarRating value={longTermGoalRating} onChange={(v) => setLongTermGoalRating(v || null)} />
+              </div>
+            </div>
+
+            {/* 短期目標 */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700">短期目標</label>
+                <button
+                  type="button"
+                  onClick={() => refineField('short_term_goals', shortTermGoals, setShortTermGoals)}
+                  disabled={refining === 'short_term_goals' || !shortTermGoals.trim()}
+                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Wand2 className="h-3 w-3" />
+                  {refining === 'short_term_goals' ? '整えています...' : '文章を整える'}
+                </button>
+              </div>
+              <textarea
+                value={shortTermGoals}
+                onChange={(e) => setShortTermGoals(e.target.value)}
+                rows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              />
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs text-gray-500">達成度評価:</span>
+                <StarRating value={shortTermGoalRating} onChange={(v) => setShortTermGoalRating(v || null)} />
+              </div>
+            </div>
+
+            {otherFields.map(({ key, label, value, setter, rows }) => (
               <div key={key}>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-medium text-gray-700">{label}</label>

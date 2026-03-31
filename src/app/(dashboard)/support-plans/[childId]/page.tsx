@@ -14,6 +14,8 @@ type SupportPlan = {
   short_term_goals: string | null
   support_content: string | null
   monitoring_notes: string | null
+  long_term_goal_rating: number | null
+  short_term_goal_rating: number | null
   created_at: string
 }
 
@@ -46,7 +48,7 @@ export default async function SupportPlanDetailPage({
 
   const { data: plansRaw } = await supabase
     .from('support_plans')
-    .select('id, plan_date, review_date, status, long_term_goals, short_term_goals, support_content, monitoring_notes, created_at')
+    .select('id, plan_date, review_date, status, long_term_goals, short_term_goals, support_content, monitoring_notes, long_term_goal_rating, short_term_goal_rating, created_at')
     .eq('child_id', childId)
     .order('plan_date', { ascending: false })
   const plans = (plansRaw ?? []) as unknown as SupportPlan[]

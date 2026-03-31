@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Sparkles, Wand2, Plus, ChevronDown, ChevronUp } from 'lucide-react'
+import { StarRating } from '@/components/ui/star-rating'
 
 interface Props {
   childId: string
@@ -34,6 +35,8 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
   })
   const [longTermGoals, setLongTermGoals] = useState('')
   const [shortTermGoals, setShortTermGoals] = useState('')
+  const [longTermGoalRating, setLongTermGoalRating] = useState<number | null>(null)
+  const [shortTermGoalRating, setShortTermGoalRating] = useState<number | null>(null)
   const [supportContent, setSupportContent] = useState('')
   const [monitoringNotes, setMonitoringNotes] = useState('')
   const [generating, setGenerating] = useState(false)
@@ -88,6 +91,8 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
       short_term_goals: shortTermGoals || null,
       support_content: supportContent || null,
       monitoring_notes: monitoringNotes || null,
+      long_term_goal_rating: longTermGoalRating || null,
+      short_term_goal_rating: shortTermGoalRating || null,
     })
     setSaving(false)
     setOpen(false)
@@ -95,6 +100,8 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
     setShortTermGoals('')
     setSupportContent('')
     setMonitoringNotes('')
+    setLongTermGoalRating(null)
+    setShortTermGoalRating(null)
     startTransition(() => router.refresh())
   }
 
@@ -148,10 +155,63 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
             {generating ? 'AI生成中...' : 'AIで下書きを生成'}
           </Button>
 
+          {/* 長期目標 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-700">長期目標（6ヶ月〜1年）</label>
+              <button
+                type="button"
+                onClick={() => refineField('long_term_goals', longTermGoals, setLongTermGoals)}
+                disabled={refining === 'long_term_goals' || !longTermGoals.trim()}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Wand2 className="h-3 w-3" />
+                {refining === 'long_term_goals' ? '整えています...' : '文章を整える'}
+              </button>
+            </div>
+            <textarea
+              value={longTermGoals}
+              onChange={(e) => setLongTermGoals(e.target.value)}
+              rows={3}
+              placeholder="例：自分の気持ちを言葉で伝えられるようになる"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            />
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-gray-500">達成度評価:</span>
+              <StarRating value={longTermGoalRating} onChange={(v) => setLongTermGoalRating(v || null)} />
+            </div>
+          </div>
+
+          {/* 短期目標 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-700">短期目標（3〜6ヶ月）</label>
+              <button
+                type="button"
+                onClick={() => refineField('short_term_goals', shortTermGoals, setShortTermGoals)}
+                disabled={refining === 'short_term_goals' || !shortTermGoals.trim()}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Wand2 className="h-3 w-3" />
+                {refining === 'short_term_goals' ? '整えています...' : '文章を整える'}
+              </button>
+            </div>
+            <textarea
+              value={shortTermGoals}
+              onChange={(e) => setShortTermGoals(e.target.value)}
+              rows={3}
+              placeholder="例：スタッフに要求を伝えるサインを使える"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            />
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-gray-500">達成度評価:</span>
+              <StarRating value={shortTermGoalRating} onChange={(v) => setShortTermGoalRating(v || null)} />
+            </div>
+          </div>
+
+          {/* 支援内容・モニタリング */}
           {(
             [
-              { key: 'long_term_goals', label: '長期目標（6ヶ月〜1年）', value: longTermGoals, setter: setLongTermGoals, rows: 3, placeholder: '例：自分の気持ちを言葉で伝えられるようになる' },
-              { key: 'short_term_goals', label: '短期目標（3〜6ヶ月）', value: shortTermGoals, setter: setShortTermGoals, rows: 3, placeholder: '例：スタッフに要求を伝えるサインを使える' },
               { key: 'support_content', label: '支援内容・方法', value: supportContent, setter: setSupportContent, rows: 4, placeholder: '具体的な支援方法、活動内容、配慮事項など' },
               { key: 'monitoring_notes', label: 'モニタリング記録', value: monitoringNotes, setter: setMonitoringNotes, rows: 3, placeholder: '目標の達成状況・今後の課題など' },
             ] as const
