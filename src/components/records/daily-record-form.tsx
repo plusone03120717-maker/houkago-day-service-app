@@ -16,6 +16,7 @@ import {
   Save,
   CheckCircle,
   Pill,
+  Car,
 } from 'lucide-react'
 import { MedicationLogForm } from '@/components/medications/medication-log-form'
 import { formatDate } from '@/lib/utils'
@@ -36,6 +37,10 @@ type Attendance = {
   check_out_time: string | null
   body_temperature: number | null
   pickup_type: string
+  pickup_departure_time: string | null
+  pickup_arrival_time: string | null
+  dropoff_departure_time: string | null
+  dropoff_arrival_time: string | null
 }
 
 type Program = {
@@ -136,6 +141,31 @@ export function DailyRecordForm({
   const [refineLoading, setRefineLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+
+  // 送迎時間
+  const [pickupDepartureTime, setPickupDepartureTime] = useState(attendance?.pickup_departure_time?.slice(0, 5) ?? '')
+  const [pickupArrivalTime, setPickupArrivalTime] = useState(attendance?.pickup_arrival_time?.slice(0, 5) ?? '')
+  const [dropoffDepartureTime, setDropoffDepartureTime] = useState(attendance?.dropoff_departure_time?.slice(0, 5) ?? '')
+  const [dropoffArrivalTime, setDropoffArrivalTime] = useState(attendance?.dropoff_arrival_time?.slice(0, 5) ?? '')
+
+  // "HH:MM" に分を加減算して "HH:MM" を返す
+  const addMinutes = (hhmm: string, minutes: number): string => {
+    const [h, m] = hhmm.split(':').map(Number)
+    const total = h * 60 + m + minutes
+    const hh = Math.floor(((total % 1440) + 1440) % 1440 / 60)
+    const mm = ((total % 1440) + 1440) % 1440 % 60
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+  }
+
+  const handlePickupDepartureChange = (val: string) => {
+    setPickupDepartureTime(val)
+    if (val && !pickupArrivalTime) setPickupArrivalTime(addMinutes(val, 10))
+  }
+
+  const handleDropoffArrivalChange = (val: string) => {
+    setDropoffArrivalTime(val)
+    if (val && !dropoffDepartureTime) setDropoffDepartureTime(addMinutes(val, -10))
+  }
 
   const toggleProgram = (programId: string) => {
     setSelectedPrograms((prev) =>
@@ -254,6 +284,17 @@ export function DailyRecordForm({
         })
       }
     }
+
+    // 送迎時間を保存
+    await supabase
+      .from('daily_attendance')
+      .update({
+        pickup_departure_time: pickupDepartureTime || null,
+        pickup_arrival_time: pickupArrivalTime || null,
+        dropoff_departure_time: dropoffDepartureTime || null,
+        dropoff_arrival_time: dropoffArrivalTime || null,
+      })
+      .eq('id', attendance.id)
 
     // 連絡帳を保存
     if (contactNoteContent) {
@@ -376,6 +417,69 @@ export function DailyRecordForm({
               活動プログラムがまだ登録されていません
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* 送迎時間 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Car className="h-5 w-5 text-teal-500" />
+            送迎時間
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* お迎え */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 mb-2">お迎え</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">お迎えに行った時間</label>
+                <input
+                  type="time"
+                  value={pickupDepartureTime}
+                  onChange={(e) => handlePickupDepartureChange(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">事務所に到着した時間</label>
+                <input
+                  type="time"
+                  value={pickupArrivalTime}
+                  onChange={(e) => setPickupArrivalTime(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">※ お迎え時間を入力すると事務所到着時間を10分後で自動入力します</p>
+          </div>
+
+          {/* 送り */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 mb-2">送り</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">事務所を出た時間</label>
+                <input
+                  type="time"
+                  value={dropoffDepartureTime}
+                  onChange={(e) => setDropoffDepartureTime(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">自宅に到着した時間</label>
+                <input
+                  type="time"
+                  value={dropoffArrivalTime}
+                  onChange={(e) => handleDropoffArrivalChange(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">※ 自宅到着時間を入力すると事務所出発時間を10分前で自動入力します</p>
+          </div>
         </CardContent>
       </Card>
 
