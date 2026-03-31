@@ -16,9 +16,11 @@ const STATUS_OPTIONS = [
 interface Props {
   supportPlanId: string
   childId: string
+  readOnly?: boolean
 }
 
-export function MonitoringRecordForm({ supportPlanId, childId }: Props) {
+export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props) {
+  if (readOnly) return null
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()

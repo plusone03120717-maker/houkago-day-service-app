@@ -35,9 +35,10 @@ const statusVariant: Record<string, 'secondary' | 'success' | 'warning' | 'defau
 
 interface Props {
   plan: SupportPlan
+  readOnly?: boolean
 }
 
-export function SupportPlanEditCard({ plan }: Props) {
+export function SupportPlanEditCard({ plan, readOnly }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -103,13 +104,15 @@ export function SupportPlanEditCard({ plan }: Props) {
             <Badge variant={statusVariant[plan.status] ?? 'secondary'}>
               {statusLabel[plan.status] ?? plan.status}
             </Badge>
-            <button
-              onClick={() => setEditing(!editing)}
-              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded-md px-2 py-1"
-            >
-              {editing ? <ChevronUp className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
-              {editing ? '閉じる' : '編集'}
-            </button>
+            {!readOnly && (
+              <button
+                onClick={() => setEditing(!editing)}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded-md px-2 py-1"
+              >
+                {editing ? <ChevronUp className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
+                {editing ? '閉じる' : '編集'}
+              </button>
+            )}
           </div>
         </div>
       </CardHeader>

@@ -17,9 +17,11 @@ interface Props {
     notable_events: string | null
     contact_note: string | null
   }>
+  readOnly?: boolean
 }
 
-export function SupportPlanForm({ childId, childName, diagnosis, recentRecords }: Props) {
+export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, readOnly }: Props) {
+  if (readOnly) return null
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()

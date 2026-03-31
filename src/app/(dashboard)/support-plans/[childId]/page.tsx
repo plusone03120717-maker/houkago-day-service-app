@@ -32,6 +32,8 @@ export default async function SupportPlanDetailPage({
 }) {
   const { childId } = await params
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const isReadOnly = (user?.user_metadata?.role as string | undefined) === 'staff'
 
   const { data: childRaw } = await supabase
     .from('children')
@@ -95,6 +97,7 @@ export default async function SupportPlanDetailPage({
         childName={child.name}
         diagnosis={child.diagnosis}
         recentRecords={recentRecords}
+        readOnly={isReadOnly}
       />
 
       {/* 既存の計画一覧（編集可能） */}
@@ -102,7 +105,7 @@ export default async function SupportPlanDetailPage({
         <div className="space-y-4">
           <h2 className="text-base font-semibold text-gray-700">過去の支援計画</h2>
           {plans.map((plan) => (
-            <SupportPlanEditCard key={plan.id} plan={plan} />
+            <SupportPlanEditCard key={plan.id} plan={plan} readOnly={isReadOnly} />
           ))}
         </div>
       )}

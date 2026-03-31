@@ -42,6 +42,8 @@ export default async function MonitoringPage({
 }) {
   const { childId } = await params
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const isReadOnly = (user?.user_metadata?.role as string | undefined) === 'staff'
 
   const { data: childRaw } = await supabase
     .from('children')
@@ -180,13 +182,13 @@ export default async function MonitoringPage({
               {planRecords.length > 0 && (
                 <div className="space-y-3">
                   {planRecords.map((record) => (
-                    <MonitoringRecordEditCard key={record.id} record={record} />
+                    <MonitoringRecordEditCard key={record.id} record={record} readOnly={isReadOnly} />
                   ))}
                 </div>
               )}
 
               {/* 新規追加フォーム */}
-              <MonitoringRecordForm supportPlanId={plan.id} childId={childId} />
+              <MonitoringRecordForm supportPlanId={plan.id} childId={childId} readOnly={isReadOnly} />
             </CardContent>
           </Card>
         )

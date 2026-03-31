@@ -27,9 +27,10 @@ const statusConfig: Record<string, { label: string; variant: 'success' | 'warnin
 
 interface Props {
   record: MonitoringRecord
+  readOnly?: boolean
 }
 
-export function MonitoringRecordEditCard({ record }: Props) {
+export function MonitoringRecordEditCard({ record, readOnly }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -89,13 +90,15 @@ export function MonitoringRecordEditCard({ record }: Props) {
         <span className="text-sm font-medium text-gray-800">{formatDate(record.record_date)}</span>
         <div className="flex items-center gap-2">
           <Badge variant={conf.variant}>{conf.label}</Badge>
-          <button
-            onClick={() => setEditing(!editing)}
-            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded-md px-2 py-1"
-          >
-            {editing ? <ChevronUp className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
-            {editing ? '閉じる' : '編集'}
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => setEditing(!editing)}
+              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded-md px-2 py-1"
+            >
+              {editing ? <ChevronUp className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
+              {editing ? '閉じる' : '編集'}
+            </button>
+          )}
         </div>
       </div>
 
