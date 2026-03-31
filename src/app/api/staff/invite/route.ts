@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
   )
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const setPasswordUrl = `${appUrl}/auth/callback?next=/set-password`
   let userId: string | undefined
   let actionLink: string | null = null
   let isExisting = false
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
     email,
     options: {
       data: { name, role: role ?? 'staff' },
-      redirectTo: `${appUrl}/login`,
+      redirectTo: setPasswordUrl,
     },
   })
 
