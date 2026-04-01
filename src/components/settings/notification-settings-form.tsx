@@ -14,6 +14,8 @@ type Settings = {
   notify_reservation: boolean
   notify_announcement: boolean
   notify_transport_status: boolean
+  default_service_end_time: string
+  holiday_service_end_time: string
 }
 
 interface Props {
@@ -32,6 +34,8 @@ export function NotificationSettingsForm({ facilityId, initial }: Props) {
       notify_reservation: true,
       notify_announcement: true,
       notify_transport_status: false,
+      default_service_end_time: '16:30',
+      holiday_service_end_time: '16:00',
     }
   )
   const [saving, setSaving] = useState(false)
@@ -147,6 +151,34 @@ export function NotificationSettingsForm({ facilityId, initial }: Props) {
           />
         </div>
       ))}
+
+      {/* 提供時間デフォルト */}
+      <div className="p-3 rounded-lg border border-gray-200 bg-gray-50 space-y-3">
+        <div>
+          <p className="text-sm font-medium text-gray-900">提供時間デフォルト設定</p>
+          <p className="text-xs text-gray-500">日々の記録でお迎え到着時間を入力したときの提供終了時間の初期値</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">通常日の終了時間</label>
+            <input
+              type="time"
+              value={settings.default_service_end_time}
+              onChange={(e) => setSettings((prev) => ({ ...prev, default_service_end_time: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">学校休日の終了時間</label>
+            <input
+              type="time"
+              value={settings.holiday_service_end_time}
+              onChange={(e) => setSettings((prev) => ({ ...prev, holiday_service_end_time: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+        </div>
+      </div>
 
       <div className="flex items-center gap-3 pt-2">
         <Button onClick={handleSave} disabled={saving} size="sm">

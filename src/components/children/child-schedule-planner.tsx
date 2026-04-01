@@ -13,6 +13,7 @@ type Unit = { id: string; name: string; service_type: string }
 type Plan = {
   id: string
   name: string | null
+  child_id: string
   unit_id: string
   day_of_week: number[]
   start_date: string

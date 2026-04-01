@@ -38,13 +38,14 @@ export default async function ChildSchedulePage({
   // 既存の利用計画
   const { data: plansRaw } = await supabase
     .from('usage_plans')
-    .select('id, name, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
+    .select('id, name, child_id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
     .eq('child_id', childId)
     .order('start_date', { ascending: false })
 
   type Plan = {
     id: string
     name: string | null
+    child_id: string
     unit_id: string
     day_of_week: number[]
     start_date: string

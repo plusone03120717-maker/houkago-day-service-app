@@ -78,6 +78,33 @@ export default async function RecordPage({
     .eq('child_id', childId)
     .eq('log_date', date)
 
+  // 学校休日チェック（この日が子どもの学校休日か）
+  const { data: schoolHolidaysRaw } = await supabase
+    .from('child_school_holidays')
+    .select('start_date, end_date')
+    .eq('child_id', childId)
+  const isSchoolHoliday = (schoolHolidaysRaw ?? []).some(
+    (h: { start_date: string; end_date: string }) => date >= h.start_date && date <= h.end_date
+  )
+
+  // 施設の提供時間デフォルト設定を取得
+  const { data: facilityRaw } = await supabase
+    .from('facilities')
+    .select('id')
+    .limit(1)
+    .single()
+  const { data: notifSettings } = facilityRaw
+    ? await supabase
+        .from('notification_settings')
+        .select('default_service_end_time, holiday_service_end_time')
+        .eq('facility_id', facilityRaw.id)
+        .limit(1)
+        .single()
+    : { data: null }
+
+  const defaultServiceEndTime = (notifSettings?.default_service_end_time as string | null)?.slice(0, 5) ?? '16:30'
+  const holidayServiceEndTime = (notifSettings?.holiday_service_end_time as string | null)?.slice(0, 5) ?? '16:00'
+
   const { data: { user } } = await supabase.auth.getUser()
 
   return (
@@ -93,6 +120,9 @@ export default async function RecordPage({
       staffId={user?.id ?? ''}
       medications={medications ?? []}
       medicationLogs={medicationLogs ?? []}
+      isSchoolHoliday={isSchoolHoliday}
+      defaultServiceEndTime={defaultServiceEndTime}
+      holidayServiceEndTime={holidayServiceEndTime}
     />
   )
 }

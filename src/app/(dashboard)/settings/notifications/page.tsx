@@ -15,6 +15,8 @@ type NotificationSettings = {
   notify_reservation: boolean
   notify_announcement: boolean
   notify_transport_status: boolean
+  default_service_end_time: string | null
+  holiday_service_end_time: string | null
 }
 
 export default async function NotificationsSettingsPage() {
@@ -65,7 +67,11 @@ export default async function NotificationsSettingsPage() {
         <CardContent>
           <NotificationSettingsForm
             facilityId={facility?.id ?? null}
-            initial={settings}
+            initial={settings ? {
+              ...settings,
+              default_service_end_time: (settings.default_service_end_time as string | null)?.slice(0, 5) ?? '16:30',
+              holiday_service_end_time: (settings.holiday_service_end_time as string | null)?.slice(0, 5) ?? '16:00',
+            } : null}
           />
         </CardContent>
       </Card>

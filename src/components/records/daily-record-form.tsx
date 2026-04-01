@@ -41,6 +41,8 @@ type Attendance = {
   pickup_arrival_time: string | null
   dropoff_departure_time: string | null
   dropoff_arrival_time: string | null
+  service_start_time: string | null
+  service_end_time: string | null
 }
 
 type Program = {
@@ -101,6 +103,9 @@ interface Props {
   staffId: string
   medications: Medication[]
   medicationLogs: MedicationLog[]
+  isSchoolHoliday: boolean
+  defaultServiceEndTime: string
+  holidayServiceEndTime: string
 }
 
 
@@ -116,6 +121,9 @@ export function DailyRecordForm({
   staffId,
   medications,
   medicationLogs,
+  isSchoolHoliday,
+  defaultServiceEndTime,
+  holidayServiceEndTime,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -148,6 +156,13 @@ export function DailyRecordForm({
   const [dropoffDepartureTime, setDropoffDepartureTime] = useState(attendance?.dropoff_departure_time?.slice(0, 5) ?? '')
   const [dropoffArrivalTime, setDropoffArrivalTime] = useState(attendance?.dropoff_arrival_time?.slice(0, 5) ?? '')
 
+  // 提供時間
+  const [serviceStartTime, setServiceStartTime] = useState(attendance?.service_start_time?.slice(0, 5) ?? '')
+  const [serviceEndTime, setServiceEndTime] = useState(attendance?.service_end_time?.slice(0, 5) ?? '')
+
+  // 休日かどうかによって使うデフォルト終了時間を決定
+  const serviceEndDefault = isSchoolHoliday ? holidayServiceEndTime : defaultServiceEndTime
+
   // "HH:MM" に分を加減算して "HH:MM" を返す
   const addMinutes = (hhmm: string, minutes: number): string => {
     const [h, m] = hhmm.split(':').map(Number)
@@ -157,9 +172,22 @@ export function DailyRecordForm({
     return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
   }
 
+  const handlePickupArrivalChange = (val: string) => {
+    setPickupArrivalTime(val)
+    if (val) {
+      if (!serviceStartTime) setServiceStartTime(val)
+      if (!serviceEndTime) setServiceEndTime(serviceEndDefault)
+    }
+  }
+
   const handlePickupDepartureChange = (val: string) => {
     setPickupDepartureTime(val)
-    if (val && !pickupArrivalTime) setPickupArrivalTime(addMinutes(val, 10))
+    if (val && !pickupArrivalTime) {
+      const arrival = addMinutes(val, 10)
+      setPickupArrivalTime(arrival)
+      if (!serviceStartTime) setServiceStartTime(arrival)
+      if (!serviceEndTime) setServiceEndTime(serviceEndDefault)
+    }
   }
 
   const handleDropoffArrivalChange = (val: string) => {
@@ -285,7 +313,7 @@ export function DailyRecordForm({
       }
     }
 
-    // 送迎時間を保存
+    // 送迎時間・提供時間を保存
     await supabase
       .from('daily_attendance')
       .update({
@@ -293,6 +321,8 @@ export function DailyRecordForm({
         pickup_arrival_time: pickupArrivalTime || null,
         dropoff_departure_time: dropoffDepartureTime || null,
         dropoff_arrival_time: dropoffArrivalTime || null,
+        service_start_time: serviceStartTime || null,
+        service_end_time: serviceEndTime || null,
       })
       .eq('id', attendance.id)
 
@@ -395,7 +425,7 @@ export function DailyRecordForm({
                 <input
                   type="time"
                   value={pickupArrivalTime}
-                  onChange={(e) => setPickupArrivalTime(e.target.value)}
+                  onChange={(e) => handlePickupArrivalChange(e.target.value)}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
@@ -427,6 +457,39 @@ export function DailyRecordForm({
               </div>
             </div>
             <p className="text-xs text-gray-400 mt-1">※ 自宅到着時間を入力すると事務所出発時間を10分前で自動入力します</p>
+          </div>
+
+          {/* 提供時間 */}
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-xs font-semibold text-gray-500 mb-2">
+              提供時間
+              {isSchoolHoliday && (
+                <span className="ml-2 text-blue-500 font-normal">（学校休日）</span>
+              )}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">開始時間</label>
+                <input
+                  type="time"
+                  value={serviceStartTime}
+                  onChange={(e) => setServiceStartTime(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">終了時間</label>
+                <input
+                  type="time"
+                  value={serviceEndTime}
+                  onChange={(e) => setServiceEndTime(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              ※ お迎え到着時間を入力すると開始時間を自動入力します（終了は{isSchoolHoliday ? holidayServiceEndTime : defaultServiceEndTime}がデフォルト）
+            </p>
           </div>
         </CardContent>
       </Card>
