@@ -43,6 +43,9 @@ type Attendance = {
   dropoff_arrival_time: string | null
   service_start_time: string | null
   service_end_time: string | null
+  daytime_support: boolean
+  daytime_support_start_time: string | null
+  daytime_support_end_time: string | null
 }
 
 type Program = {
@@ -159,6 +162,11 @@ export function DailyRecordForm({
   // 提供時間
   const [serviceStartTime, setServiceStartTime] = useState(attendance?.service_start_time?.slice(0, 5) ?? '')
   const [serviceEndTime, setServiceEndTime] = useState(attendance?.service_end_time?.slice(0, 5) ?? '')
+
+  // 日中一時利用
+  const [daytimeSupport, setDaytimeSupport] = useState(attendance?.daytime_support ?? false)
+  const [daytimeSupportStartTime, setDaytimeSupportStartTime] = useState(attendance?.daytime_support_start_time?.slice(0, 5) ?? '')
+  const [daytimeSupportEndTime, setDaytimeSupportEndTime] = useState(attendance?.daytime_support_end_time?.slice(0, 5) ?? '')
 
   // 休日かどうかによって使うデフォルト終了時間を決定
   const serviceEndDefault = isSchoolHoliday ? holidayServiceEndTime : defaultServiceEndTime
@@ -313,7 +321,7 @@ export function DailyRecordForm({
       }
     }
 
-    // 送迎時間・提供時間を保存
+    // 送迎時間・提供時間・日中一時利用を保存
     await supabase
       .from('daily_attendance')
       .update({
@@ -323,6 +331,9 @@ export function DailyRecordForm({
         dropoff_arrival_time: dropoffArrivalTime || null,
         service_start_time: serviceStartTime || null,
         service_end_time: serviceEndTime || null,
+        daytime_support: daytimeSupport,
+        daytime_support_start_time: daytimeSupport ? (daytimeSupportStartTime || null) : null,
+        daytime_support_end_time: daytimeSupport ? (daytimeSupportEndTime || null) : null,
       })
       .eq('id', attendance.id)
 
@@ -492,6 +503,49 @@ export function DailyRecordForm({
             </p>
           </div>
         </CardContent>
+      </Card>
+
+      {/* 日中一時利用 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={daytimeSupport}
+                onChange={(e) => setDaytimeSupport(e.target.checked)}
+                className="w-4 h-4 accent-teal-600"
+                disabled={!attendance}
+              />
+              <Car className="h-5 w-5 text-teal-500" />
+              日中一時利用
+            </label>
+          </CardTitle>
+        </CardHeader>
+        {daytimeSupport && (
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">開始時間</label>
+                <input
+                  type="time"
+                  value={daytimeSupportStartTime}
+                  onChange={(e) => setDaytimeSupportStartTime(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">終了時間</label>
+                <input
+                  type="time"
+                  value={daytimeSupportEndTime}
+                  onChange={(e) => setDaytimeSupportEndTime(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       {/* 活動プログラム */}
