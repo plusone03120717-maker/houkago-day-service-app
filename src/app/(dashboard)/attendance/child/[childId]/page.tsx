@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
 import { SchoolHolidaySection } from '@/components/children/school-holiday-section'
+import { AttendanceStatusToggle } from '@/components/attendance/attendance-status-toggle'
 
 function monthRange(year: number, month: number): { start: string; end: string } {
   const lastDay = new Date(year, month, 0).getDate()
@@ -232,9 +233,10 @@ export default async function ChildAttendanceHistoryPage({
                           {att.check_in_time.slice(0, 5)} 〜 {att.check_out_time.slice(0, 5)}
                         </span>
                       )}
-                      <Badge variant={att.status === 'attended' ? 'success' : 'secondary'} className="text-xs">
-                        {att.status === 'attended' ? '出席' : att.status === 'absent' ? '欠席' : 'その他'}
-                      </Badge>
+                      <AttendanceStatusToggle
+                        attendanceId={att.id}
+                        currentStatus={att.status}
+                      />
                     </div>
                   </div>
                 )
