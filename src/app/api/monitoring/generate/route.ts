@@ -64,6 +64,23 @@ export async function POST(request: NextRequest) {
   }
   const dailyRecords = (dailyRecordsRaw ?? []) as unknown as DailyRecordRow[]
 
+  // 活動記録を取得（参加したもののみ、プログラム名とコメント）
+  const { data: dailyActivitiesRaw } = attendanceIds.length > 0
+    ? await supabase
+        .from('daily_activities')
+        .select('evaluation_notes, daily_attendance!inner(date), activity_programs(name)')
+        .in('attendance_id', attendanceIds)
+        .eq('participated', true)
+        .not('program_id', 'is', null)
+    : { data: [] }
+
+  type DailyActivityRow = {
+    evaluation_notes: string | null
+    daily_attendance: { date: string }
+    activity_programs: { name: string } | null
+  }
+  const dailyActivities = (dailyActivitiesRaw ?? []) as unknown as DailyActivityRow[]
+
   // 日々の記録をテキストに整形（日付ごとにまとめる）
   const recordsByDate: Record<string, string[]> = {}
   for (const rec of dailyRecords) {
@@ -72,6 +89,15 @@ export async function POST(request: NextRequest) {
     const prefix = rec.record_type === 'notable' ? '【特記】' : ''
     if (rec.content?.trim()) {
       recordsByDate[date].push(`${prefix}${rec.content.trim()}`)
+    }
+  }
+  for (const act of dailyActivities) {
+    const date = act.daily_attendance?.date ?? ''
+    if (!recordsByDate[date]) recordsByDate[date] = []
+    const name = act.activity_programs?.name
+    if (name) {
+      const note = act.evaluation_notes?.trim()
+      recordsByDate[date].push(note ? `【活動】${name}（${note}）` : `【活動】${name}`)
     }
   }
 
