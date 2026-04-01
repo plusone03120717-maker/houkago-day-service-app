@@ -192,12 +192,12 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       }
     }
 
-    // Step1: 同ユニットのプラン（曜日不問・is_active問わず）
-    // is_activeを問わない理由: 予約がある場合は時間参照のためだけに使用するため
+    // Step1: 同ユニットの有効なプラン（曜日不問）から時間を補完
     const { data: sameUnitPlans } = await supabase
       .from('usage_plans')
       .select('child_id, pickup_time, dropoff_time')
       .eq('unit_id', unitId)
+      .eq('is_active', true)
       .in('child_id', nullTimeChildIds)
       .not('pickup_time', 'is', null)
     fillFromPlans(sameUnitPlans ?? [])
@@ -211,6 +211,7 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
         .from('usage_plans')
         .select('id, child_id')
         .eq('unit_id', unitId)
+        .eq('is_active', true)
         .in('child_id', stillNullAfterStep1)
       const relevantPlanIds = (sameUnitPlanIds ?? []).map((p) => p.id as string).filter(Boolean)
       if (relevantPlanIds.length > 0) {
@@ -236,6 +237,7 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       const { data: otherUnitPlans } = await supabase
         .from('usage_plans')
         .select('child_id, pickup_time, dropoff_time')
+        .eq('is_active', true)
         .in('child_id', stillNullAfterStep2)
         .not('pickup_time', 'is', null)
       fillFromPlans(otherUnitPlans ?? [])

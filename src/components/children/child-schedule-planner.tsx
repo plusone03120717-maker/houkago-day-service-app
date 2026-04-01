@@ -470,6 +470,17 @@ export function ChildSchedulePlanner({
   }
 
   const handleToggleActive = async (plan: Plan) => {
+    // プランを無効化する場合、今日以降の予約をキャンセルして送迎スケジュールに反映されないようにする
+    if (plan.is_active) {
+      const today = new Date().toISOString().slice(0, 10)
+      await supabase
+        .from('usage_reservations')
+        .update({ status: 'cancelled' })
+        .eq('child_id', plan.child_id)
+        .eq('unit_id', plan.unit_id)
+        .gte('date', today)
+        .in('status', ['confirmed', 'reserved'])
+    }
     await supabase.from('usage_plans').update({ is_active: !plan.is_active }).eq('id', plan.id)
     setPlans((prev) => prev.map((p) => p.id === plan.id ? { ...p, is_active: !p.is_active } : p))
   }
