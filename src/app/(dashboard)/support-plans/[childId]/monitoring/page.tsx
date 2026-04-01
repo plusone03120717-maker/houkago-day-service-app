@@ -182,7 +182,7 @@ export default async function MonitoringPage({
               {planRecords.length > 0 && (
                 <div className="space-y-3">
                   {planRecords.map((record) => (
-                    <MonitoringRecordEditCard key={record.id} record={record} readOnly={isReadOnly} />
+                    <MonitoringRecordEditCard key={record.id} record={record} supportPlanId={plan.id} childId={childId} readOnly={isReadOnly} />
                   ))}
                 </div>
               )}

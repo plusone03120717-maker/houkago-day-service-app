@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Pencil, Wand2, ChevronUp } from 'lucide-react'
+import { Pencil, Wand2, ChevronUp, Bot } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 type MonitoringRecord = {
@@ -27,10 +27,12 @@ const statusConfig: Record<string, { label: string; variant: 'success' | 'warnin
 
 interface Props {
   record: MonitoringRecord
+  supportPlanId: string
+  childId: string
   readOnly?: boolean
 }
 
-export function MonitoringRecordEditCard({ record, readOnly }: Props) {
+export function MonitoringRecordEditCard({ record, supportPlanId, childId, readOnly }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -43,6 +45,26 @@ export function MonitoringRecordEditCard({ record, readOnly }: Props) {
   const [nextActions, setNextActions] = useState(record.next_actions ?? '')
   const [saving, setSaving] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
+  const [generating, setGenerating] = useState(false)
+
+  const handleAiGenerate = async () => {
+    setGenerating(true)
+    try {
+      const res = await fetch('/api/monitoring/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ supportPlanId, childId }),
+      })
+      const json = await res.json()
+      if (json.long_term_progress) setLongTermProgress(json.long_term_progress)
+      if (json.short_term_progress) setShortTermProgress(json.short_term_progress)
+      if (json.issues) setIssues(json.issues)
+      if (json.next_actions) setNextActions(json.next_actions)
+      if (json.overall_status) setOverallStatus(json.overall_status)
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   const refineField = async (fieldType: string, value: string, setter: (v: string) => void) => {
     if (!value.trim()) return
@@ -178,10 +200,20 @@ export function MonitoringRecordEditCard({ record, readOnly }: Props) {
             </div>
           ))}
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={() => setEditing(false)}>キャンセル</Button>
             <Button size="sm" onClick={handleSave} disabled={saving}>
               {saving ? '保存中...' : '保存する'}
+            </Button>
+            <Button
+              onClick={handleAiGenerate}
+              disabled={generating}
+              variant="outline"
+              size="sm"
+              className="ml-auto text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+            >
+              <Bot className="h-3.5 w-3.5 mr-1" />
+              {generating ? 'AI判断中...' : 'AIで再生成'}
             </Button>
           </div>
         </div>

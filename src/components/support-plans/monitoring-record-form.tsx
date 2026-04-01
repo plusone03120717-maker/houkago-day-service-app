@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Plus, ChevronDown, ChevronUp, Wand2 } from 'lucide-react'
+import { Plus, ChevronDown, ChevronUp, Wand2, Bot } from 'lucide-react'
 
 const STATUS_OPTIONS = [
   { value: 'ongoing', label: '継続中', color: 'text-blue-700' },
@@ -33,6 +33,27 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
   const [overallStatus, setOverallStatus] = useState<'ongoing' | 'achieved' | 'revised' | 'needs_review'>('ongoing')
   const [saving, setSaving] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
+  const [generating, setGenerating] = useState(false)
+
+  const handleAiGenerate = async () => {
+    setGenerating(true)
+    try {
+      const res = await fetch('/api/monitoring/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ supportPlanId, childId }),
+      })
+      const json = await res.json()
+      if (json.long_term_progress) setLongTermProgress(json.long_term_progress)
+      if (json.short_term_progress) setShortTermProgress(json.short_term_progress)
+      if (json.issues) setIssues(json.issues)
+      if (json.next_actions) setNextActions(json.next_actions)
+      if (json.overall_status) setOverallStatus(json.overall_status)
+      if (json.period) setRecordDate(json.period.endDate)
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   const refineField = async (fieldType: string, value: string, setter: (v: string) => void) => {
     if (!value.trim()) return
@@ -145,12 +166,22 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
             </div>
           ))}
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex gap-2 pt-1 flex-wrap">
             <Button onClick={handleSave} disabled={saving || !recordDate} size="sm">
               {saving ? '保存中...' : '記録を保存'}
             </Button>
             <Button onClick={() => setOpen(false)} variant="outline" size="sm">
               キャンセル
+            </Button>
+            <Button
+              onClick={handleAiGenerate}
+              disabled={generating}
+              variant="outline"
+              size="sm"
+              className="ml-auto text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+            >
+              <Bot className="h-3.5 w-3.5 mr-1" />
+              {generating ? 'AI判断中...' : 'AIで自動入力'}
             </Button>
           </div>
         </div>
