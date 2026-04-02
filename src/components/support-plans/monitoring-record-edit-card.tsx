@@ -18,6 +18,14 @@ type MonitoringRecord = {
   overall_status: string
 }
 
+type AiResult = {
+  long_term_progress?: string
+  short_term_progress?: string
+  issues?: string
+  next_actions?: string
+  overall_status?: string
+}
+
 const statusConfig: Record<string, { label: string; variant: 'success' | 'warning' | 'secondary' | 'destructive' }> = {
   ongoing:      { label: '継続中',    variant: 'secondary' },
   achieved:     { label: '目標達成',  variant: 'success' },
@@ -45,24 +53,31 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
   const [nextActions, setNextActions] = useState(record.next_actions ?? '')
   const [saving, setSaving] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
-  const [generating, setGenerating] = useState(false)
+  const [generating, setGenerating] = useState<string | null>(null)
 
-  const handleAiGenerate = async () => {
-    setGenerating(true)
+  const fetchAiResult = async (): Promise<AiResult | null> => {
+    const res = await fetch('/api/monitoring/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ supportPlanId, childId }),
+    })
+    if (!res.ok) return null
+    return res.json()
+  }
+
+  const handleAiGenerateField = async (
+    fieldKey: string,
+    resultKey: keyof AiResult,
+    setter: (v: string) => void,
+  ) => {
+    setGenerating(fieldKey)
     try {
-      const res = await fetch('/api/monitoring/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supportPlanId, childId }),
-      })
-      const json = await res.json()
-      if (json.long_term_progress) setLongTermProgress(json.long_term_progress)
-      if (json.short_term_progress) setShortTermProgress(json.short_term_progress)
-      if (json.issues) setIssues(json.issues)
-      if (json.next_actions) setNextActions(json.next_actions)
-      if (json.overall_status) setOverallStatus(json.overall_status)
+      const json = await fetchAiResult()
+      if (!json) return
+      const value = json[resultKey]
+      if (value && typeof value === 'string') setter(value)
     } finally {
-      setGenerating(false)
+      setGenerating(null)
     }
   }
 
@@ -100,10 +115,10 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
   const conf = statusConfig[record.overall_status] ?? statusConfig.ongoing
 
   const fields = [
-    { key: 'long_term_progress', label: '長期目標の達成状況', value: longTermProgress, setter: setLongTermProgress, rows: 3 },
-    { key: 'short_term_progress', label: '短期目標の達成状況', value: shortTermProgress, setter: setShortTermProgress, rows: 3 },
-    { key: 'issues', label: '課題', value: issues, setter: setIssues, rows: 3 },
-    { key: 'next_actions', label: '今後の対応', value: nextActions, setter: setNextActions, rows: 3 },
+    { key: 'long_term_progress', resultKey: 'long_term_progress' as keyof AiResult, label: '長期目標の達成状況', value: longTermProgress, setter: setLongTermProgress, rows: 3 },
+    { key: 'short_term_progress', resultKey: 'short_term_progress' as keyof AiResult, label: '短期目標の達成状況', value: shortTermProgress, setter: setShortTermProgress, rows: 3 },
+    { key: 'issues', resultKey: 'issues' as keyof AiResult, label: '課題', value: issues, setter: setIssues, rows: 3 },
+    { key: 'next_actions', resultKey: 'next_actions' as keyof AiResult, label: '今後の対応', value: nextActions, setter: setNextActions, rows: 3 },
   ] as const
 
   return (
@@ -177,19 +192,30 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
             </div>
           </div>
 
-          {fields.map(({ key, label, value, setter, rows }) => (
+          {fields.map(({ key, resultKey, label, value, setter, rows }) => (
             <div key={key}>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-medium text-gray-700">{label}</label>
-                <button
-                  type="button"
-                  onClick={() => refineField(key, value, setter as (v: string) => void)}
-                  disabled={refining === key || !value.trim()}
-                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Wand2 className="h-3 w-3" />
-                  {refining === key ? '整えています...' : '文章を整える'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleAiGenerateField(key, resultKey, setter as (v: string) => void)}
+                    disabled={generating === key}
+                    className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Bot className="h-3 w-3" />
+                    {generating === key ? 'AI生成中...' : 'AI生成'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => refineField(key, value, setter as (v: string) => void)}
+                    disabled={refining === key || !value.trim()}
+                    className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Wand2 className="h-3 w-3" />
+                    {refining === key ? '整えています...' : '文章を整える'}
+                  </button>
+                </div>
               </div>
               <textarea
                 value={value}
@@ -200,20 +226,10 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
             </div>
           ))}
 
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => setEditing(false)}>キャンセル</Button>
             <Button size="sm" onClick={handleSave} disabled={saving}>
               {saving ? '保存中...' : '保存する'}
-            </Button>
-            <Button
-              onClick={handleAiGenerate}
-              disabled={generating}
-              variant="outline"
-              size="sm"
-              className="ml-auto text-indigo-600 border-indigo-200 hover:bg-indigo-50"
-            >
-              <Bot className="h-3.5 w-3.5 mr-1" />
-              {generating ? 'AI判断中...' : 'AIで再生成'}
             </Button>
           </div>
         </div>
