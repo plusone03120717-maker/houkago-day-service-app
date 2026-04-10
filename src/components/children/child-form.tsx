@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -145,7 +145,9 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
     setForm((prev) => ({ ...prev, birth_date: iso }))
   }
 
+  const isMounted = useRef(false)
   useEffect(() => {
+    if (!isMounted.current) { isMounted.current = true; return }
     const grade = calculateGrade(form.birth_date)
     if (grade) setForm((prev) => ({ ...prev, grade }))
   }, [form.birth_date])
@@ -336,7 +338,10 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
     }
 
     setSaving(false)
-    startTransition(() => router.push(`/children/${childId}`))
+    startTransition(() => {
+      router.refresh()
+      router.push(`/children/${childId}`)
+    })
   }
 
   return (
