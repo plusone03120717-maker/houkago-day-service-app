@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -78,6 +78,21 @@ function eraMaxYear(era: string): number {
   if (era === '昭和') return 64
   return 99
 }
+
+function calculateGrade(birthDate: string): string {
+  if (!birthDate) return ''
+  const birth = new Date(birthDate)
+  if (isNaN(birth.getTime())) return ''
+  const now = new Date()
+  const schoolYearStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
+  const bm = birth.getMonth() + 1
+  const bd = birth.getDate()
+  // 4月1日以前生まれは前年度生まれ扱い（日本の学齢計算）
+  const birthSchoolYear = bm < 4 || (bm === 4 && bd === 1) ? birth.getFullYear() - 1 : birth.getFullYear()
+  const y = schoolYearStart - birthSchoolYear
+  const map: Record<number, string> = { 3: '年少', 4: '年中', 5: '年長', 6: '小1', 7: '小2', 8: '小3', 9: '小4', 10: '小5', 11: '小6', 12: '中1', 13: '中2', 14: '中3', 15: '高1', 16: '高2', 17: '高3' }
+  return map[y] ?? ''
+}
 const LABEL_PRESETS = ['自宅', '祖父母宅（父方）', '祖父母宅（母方）', '親戚宅', 'その他']
 
 function newAddress(isDefault = false): AddressEntry {
@@ -129,6 +144,11 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
     const iso = warekiToIso(era, year, month, day)
     setForm((prev) => ({ ...prev, birth_date: iso }))
   }
+
+  useEffect(() => {
+    const grade = calculateGrade(form.birth_date)
+    if (grade) setForm((prev) => ({ ...prev, grade }))
+  }, [form.birth_date])
 
   // 郵便番号検索中フラグ（住所インデックスごと）
   const [postalSearching, setPostalSearching] = useState<Record<number, boolean>>({})
