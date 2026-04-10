@@ -44,6 +44,40 @@ interface Props {
 }
 
 const GRADES = ['年少', '年中', '年長', '小1', '小2', '小3', '小4', '小5', '小6', '中1', '中2', '中3', '高1', '高2', '高3']
+
+// 和暦
+const ERAS = [
+  { name: '令和', baseYear: 2018, start: '2019-05-01' },
+  { name: '平成', baseYear: 1988, start: '1989-01-08' },
+  { name: '昭和', baseYear: 1925, start: '1926-12-25' },
+] as const
+type EraName = typeof ERAS[number]['name']
+
+function isoToWareki(iso: string): { era: EraName; year: number; month: number; day: number } | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return null
+  for (const era of ERAS) {
+    if (iso >= era.start) {
+      return { era: era.name, year: d.getFullYear() - era.baseYear, month: d.getMonth() + 1, day: d.getDate() }
+    }
+  }
+  return null
+}
+
+function warekiToIso(era: string, year: string, month: string, day: string): string {
+  const eraConfig = ERAS.find((e) => e.name === era)
+  if (!eraConfig || !year || !month || !day) return ''
+  const y = eraConfig.baseYear + parseInt(year)
+  return `${y}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+}
+
+function eraMaxYear(era: string): number {
+  if (era === '令和') return new Date().getFullYear() - 2018
+  if (era === '平成') return 31
+  if (era === '昭和') return 64
+  return 99
+}
 const LABEL_PRESETS = ['自宅', '祖父母宅（父方）', '祖父母宅（母方）', '親戚宅', 'その他']
 
 function newAddress(isDefault = false): AddressEntry {
@@ -82,6 +116,19 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
     if (legacyAddress) return [{ label: '自宅', postal_code: legacyPostal, address: legacyAddress, is_default: true }]
     return [newAddress(true)]
   })
+
+  // 和暦入力モード
+  const [warekiMode, setWarekiMode] = useState(false)
+  const initWareki = isoToWareki(initial?.birth_date ?? '')
+  const [warekiEra, setWarekiEra] = useState<EraName>(initWareki?.era ?? '令和')
+  const [warekiYear, setWarekiYear] = useState(initWareki ? String(initWareki.year) : '')
+  const [warekiMonth, setWarekiMonth] = useState(initWareki ? String(initWareki.month) : '')
+  const [warekiDay, setWarekiDay] = useState(initWareki ? String(initWareki.day) : '')
+
+  const handleWarekiChange = (era: EraName, year: string, month: string, day: string) => {
+    const iso = warekiToIso(era, year, month, day)
+    setForm((prev) => ({ ...prev, birth_date: iso }))
+  }
 
   // 郵便番号検索中フラグ（住所インデックスごと）
   const [postalSearching, setPostalSearching] = useState<Record<number, boolean>>({})
@@ -304,14 +351,96 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">生年月日 *</label>
-              <input
-                type="date"
-                value={form.birth_date}
-                onChange={set('birth_date')}
-                required
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700">生年月日 *</label>
+                <div className="flex text-xs border border-gray-200 rounded overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setWarekiMode(false)}
+                    className={`px-2 py-0.5 ${!warekiMode ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                  >西暦</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWarekiMode(true)
+                      const w = isoToWareki(form.birth_date)
+                      if (w) {
+                        setWarekiEra(w.era)
+                        setWarekiYear(String(w.year))
+                        setWarekiMonth(String(w.month))
+                        setWarekiDay(String(w.day))
+                      }
+                    }}
+                    className={`px-2 py-0.5 ${warekiMode ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                  >和暦</button>
+                </div>
+              </div>
+              {!warekiMode ? (
+                <input
+                  type="date"
+                  value={form.birth_date}
+                  onChange={set('birth_date')}
+                  required
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              ) : (
+                <div className="flex items-center gap-1">
+                  <select
+                    value={warekiEra}
+                    onChange={(e) => {
+                      const era = e.target.value as EraName
+                      setWarekiEra(era)
+                      setWarekiYear('')
+                      handleWarekiChange(era, '', warekiMonth, warekiDay)
+                    }}
+                    className="border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    {ERAS.map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
+                  </select>
+                  <select
+                    value={warekiYear}
+                    onChange={(e) => {
+                      setWarekiYear(e.target.value)
+                      handleWarekiChange(warekiEra, e.target.value, warekiMonth, warekiDay)
+                    }}
+                    className="w-16 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">年</option>
+                    {Array.from({ length: eraMaxYear(warekiEra) }, (_, i) => i + 1).map((y) => (
+                      <option key={y} value={String(y)}>{y}</option>
+                    ))}
+                  </select>
+                  <span className="text-sm text-gray-600">年</span>
+                  <select
+                    value={warekiMonth}
+                    onChange={(e) => {
+                      setWarekiMonth(e.target.value)
+                      handleWarekiChange(warekiEra, warekiYear, e.target.value, warekiDay)
+                    }}
+                    className="w-14 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">月</option>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                      <option key={m} value={String(m)}>{m}</option>
+                    ))}
+                  </select>
+                  <span className="text-sm text-gray-600">月</span>
+                  <select
+                    value={warekiDay}
+                    onChange={(e) => {
+                      setWarekiDay(e.target.value)
+                      handleWarekiChange(warekiEra, warekiYear, warekiMonth, e.target.value)
+                    }}
+                    className="w-14 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">日</option>
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                      <option key={d} value={String(d)}>{d}</option>
+                    ))}
+                  </select>
+                  <span className="text-sm text-gray-600">日</span>
+                </div>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">性別</label>
