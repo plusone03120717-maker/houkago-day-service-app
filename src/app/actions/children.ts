@@ -19,8 +19,7 @@ export async function deleteChild(childId: string): Promise<void> {
 
   const { error } = await supabase.from('children').delete().eq('id', childId)
   if (error) {
-    // エラーは無視してリダイレクト（実運用では適切なエラーハンドリングを）
-    console.error('delete child error:', error.message)
+    throw new Error(error.message)
   }
 
   redirect('/children')
