@@ -17,6 +17,7 @@ import {
   CheckCircle,
   Pill,
   Car,
+  Bot,
 } from 'lucide-react'
 import { MedicationLogForm } from '@/components/medications/medication-log-form'
 import { formatDate } from '@/lib/utils'
@@ -152,6 +153,50 @@ export function DailyRecordForm({
   const [refineLoading, setRefineLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+
+  // 日常記録AI生成
+  const [bulletPoints, setBulletPoints] = useState('')
+  const [generatingDaily, setGeneratingDaily] = useState(false)
+  const [refiningNotable, setRefiningNotable] = useState(false)
+
+  const generateDailyRecord = async () => {
+    if (!bulletPoints.trim()) return
+    setGeneratingDaily(true)
+    try {
+      const res = await fetch('/api/daily-records/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          childId: child.id,
+          bulletPoints,
+          activities: selectedPrograms.map((pid) => ({
+            name: programs.find((p) => p.id === pid)?.name ?? '',
+            notes: activityNotes[pid] ?? '',
+          })),
+        }),
+      })
+      const data = await res.json()
+      if (data.content) setDailyContent(data.content)
+    } finally {
+      setGeneratingDaily(false)
+    }
+  }
+
+  const refineNotableRecord = async () => {
+    if (!notableContent.trim()) return
+    setRefiningNotable(true)
+    try {
+      const res = await fetch('/api/support-plans/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fieldType: 'notable_record', content: notableContent }),
+      })
+      const data = await res.json()
+      if (data.refined) setNotableContent(data.refined)
+    } finally {
+      setRefiningNotable(false)
+    }
+  }
 
   // 送迎時間
   const [pickupDepartureTime, setPickupDepartureTime] = useState(attendance?.pickup_departure_time?.slice(0, 5) ?? '')
@@ -609,6 +654,31 @@ export function DailyRecordForm({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          {/* 箇条書きAI生成エリア */}
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 space-y-2">
+            <p className="text-xs font-medium text-indigo-700 flex items-center gap-1.5">
+              <Bot className="h-3.5 w-3.5" />
+              箇条書きから文章を生成（個別支援計画と照合）
+            </p>
+            <textarea
+              value={bulletPoints}
+              onChange={(e) => setBulletPoints(e.target.value)}
+              placeholder={"・〇〇に積極的に取り組んだ\n・△△で支援が必要だった\n・□□ができるようになった"}
+              rows={3}
+              className="w-full text-sm border border-indigo-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400 resize-none bg-white"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={generateDailyRecord}
+              disabled={generatingDaily || !bulletPoints.trim()}
+              className="text-indigo-600 border-indigo-300 hover:bg-indigo-100"
+            >
+              <Bot className="h-3.5 w-3.5" />
+              {generatingDaily ? 'AI生成中...' : 'AI文章生成'}
+            </Button>
+          </div>
+
           <textarea
             value={dailyContent}
             onChange={(e) => setDailyContent(e.target.value)}
@@ -632,13 +702,24 @@ export function DailyRecordForm({
               </span>
             </label>
             {hasNotable && (
-              <textarea
-                value={notableContent}
-                onChange={(e) => setNotableContent(e.target.value)}
-                placeholder="特記事項の内容（保護者への報告・ヒヤリハット・体調異変など）"
-                rows={3}
-                className="mt-2 w-full text-sm border border-red-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-red-400 resize-none bg-red-50"
-              />
+              <div className="mt-2 space-y-1.5">
+                <textarea
+                  value={notableContent}
+                  onChange={(e) => setNotableContent(e.target.value)}
+                  placeholder="特記事項の内容（保護者への報告・ヒヤリハット・体調異変など）"
+                  rows={3}
+                  className="w-full text-sm border border-red-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-red-400 resize-none bg-red-50"
+                />
+                <button
+                  type="button"
+                  onClick={refineNotableRecord}
+                  disabled={refiningNotable || !notableContent.trim()}
+                  className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Wand2 className="h-3 w-3" />
+                  {refiningNotable ? '整えています...' : 'AI文章生成'}
+                </button>
+              </div>
             )}
           </div>
         </CardContent>
