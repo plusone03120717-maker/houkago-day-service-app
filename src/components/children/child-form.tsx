@@ -87,8 +87,10 @@ function calculateGrade(birthDate: string): string {
   const schoolYearStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
   const bm = birth.getMonth() + 1
   const bd = birth.getDate()
-  // 4月1日以前生まれは前年度生まれ扱い（日本の学齢計算）
-  const birthSchoolYear = bm < 4 || (bm === 4 && bd === 1) ? birth.getFullYear() - 1 : birth.getFullYear()
+  // 4月2日以降生まれは翌学年度扱い、4月1日以前（早生まれ）は当年度扱い
+  const birthSchoolYear = (bm > 4 || (bm === 4 && bd >= 2))
+    ? birth.getFullYear() + 1
+    : birth.getFullYear()
   const y = schoolYearStart - birthSchoolYear
   const map: Record<number, string> = { 3: '年少', 4: '年中', 5: '年長', 6: '小1', 7: '小2', 8: '小3', 9: '小4', 10: '小5', 11: '小6', 12: '中1', 13: '中2', 14: '中3', 15: '高1', 16: '高2', 17: '高3' }
   return map[y] ?? ''
