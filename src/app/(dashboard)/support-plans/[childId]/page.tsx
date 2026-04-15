@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { ArrowLeft, ClipboardList } from 'lucide-react'
 import { SupportPlanForm } from '@/components/support-plans/support-plan-form'
 import { SupportPlanEditCard } from '@/components/support-plans/support-plan-edit-card'
+import { NotableRecordsSummary } from '@/components/support-plans/notable-records-summary'
 
 type SupportPlan = {
   id: string
@@ -66,6 +67,27 @@ export default async function SupportPlanDetailPage({
     contact_note: string | null
   }>
 
+  // 直近3ヶ月の特記事項
+  const threeMonthsAgo = new Date()
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+  const threeMonthsAgoStr = threeMonthsAgo.toISOString().slice(0, 10)
+
+  const { data: notableRaw } = await supabase
+    .from('daily_attendance')
+    .select('date, daily_records!inner(content, record_type)')
+    .eq('child_id', childId)
+    .gte('date', threeMonthsAgoStr)
+    .eq('daily_records.record_type', 'notable')
+    .order('date', { ascending: false })
+
+  type NotableRow = { date: string; daily_records: { content: string; record_type: string } | { content: string; record_type: string }[] }
+  const notableRecords = ((notableRaw ?? []) as unknown as NotableRow[]).flatMap((row) => {
+    const records = Array.isArray(row.daily_records) ? row.daily_records : [row.daily_records]
+    return records
+      .filter((r) => r.record_type === 'notable')
+      .map((r) => ({ date: row.date, content: r.content }))
+  })
+
   return (
     <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-3">
@@ -92,6 +114,9 @@ export default async function SupportPlanDetailPage({
           </CardContent>
         </Card>
       </Link>
+
+      {/* 特記事項まとめ */}
+      <NotableRecordsSummary records={notableRecords} />
 
       {/* 新規作成フォーム */}
       <SupportPlanForm
