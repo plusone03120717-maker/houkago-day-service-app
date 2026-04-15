@@ -190,6 +190,17 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
     startTransition(() => router.refresh())
   }
 
+  // 出席取り消し（レコードを削除して未記録に戻す）
+  const cancelAttendance = async (childId: string) => {
+    const existing = attendanceMap[childId]
+    if (!existing) return
+    setSaving(childId)
+    const { error } = await supabase.from('daily_attendance').delete().eq('id', existing.id)
+    if (error) { alert(`取り消しエラー: ${error.message}`); setSaving(null); return }
+    setSaving(null)
+    startTransition(() => router.refresh())
+  }
+
   // 一括出席登録
   const markAllPresent = async () => {
     setSaving('all')
@@ -418,11 +429,12 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
                       {res.status !== 'cancel_waiting' && (
                         <>
                           <button
-                            onClick={() => upsertAttendance(child.id, { status: 'attended' })}
+                            onClick={() => isPresent ? cancelAttendance(child.id) : upsertAttendance(child.id, { status: 'attended' })}
                             disabled={saving === child.id}
+                            title={isPresent ? 'もう一度押すと取り消し' : '出席にする'}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                               isPresent
-                                ? 'bg-green-500 text-white'
+                                ? 'bg-green-500 text-white hover:bg-green-600'
                                 : 'bg-gray-100 text-gray-600 hover:bg-green-100 hover:text-green-700'
                             }`}
                           >
