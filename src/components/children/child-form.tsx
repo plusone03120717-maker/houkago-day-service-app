@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Save, Search, Loader2, Plus, Trash2, Star } from 'lucide-react'
 
 type Unit = { id: string; name: string; service_type: string }
-export type School = { id: string; municipality: string; name: string; address: string }
+export type School = { id: string; municipality: string; name: string; address: string; facility_type: string }
 
 export type AddressEntry = {
   id?: string
@@ -157,6 +157,13 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
     const grade = calculateGrade(form.birth_date)
     if (grade) setForm((prev) => ({ ...prev, grade }))
   }, [form.birth_date])
+
+  // 学校タブ（学校 or 保育園・幼稚園）
+  const [schoolTab, setSchoolTab] = useState<'school' | 'nursery'>(() => {
+    if (!initial?.school_id) return 'school'
+    const matched = schools.find((s) => s.id === initial.school_id)
+    return matched?.facility_type === 'nursery' ? 'nursery' : 'school'
+  })
 
   // 郵便番号検索中フラグ（住所インデックスごと）
   const [postalSearching, setPostalSearching] = useState<Record<number, boolean>>({})
@@ -491,20 +498,38 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">学校</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700">学校・通園先</label>
+                <div className="flex text-xs border border-gray-200 rounded overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setSchoolTab('school')}
+                    className={`px-2 py-0.5 ${schoolTab === 'school' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                  >学校</button>
+                  <button
+                    type="button"
+                    onClick={() => setSchoolTab('nursery')}
+                    className={`px-2 py-0.5 ${schoolTab === 'nursery' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                  >保育園・幼稚園</button>
+                </div>
+              </div>
               <select
                 value={form.school_id}
                 onChange={handleSchoolChange}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
               >
-                <option value="">-- 学校を選択 --</option>
-                {municipalities.map((m) => (
-                  <optgroup key={m} label={m}>
-                    {schools.filter((s) => s.municipality === m).map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </optgroup>
-                ))}
+                <option value="">-- {schoolTab === 'school' ? '学校' : '保育園・幼稚園'}を選択 --</option>
+                {municipalities.map((m) => {
+                  const list = schools.filter((s) => s.municipality === m && s.facility_type === schoolTab)
+                  if (list.length === 0) return null
+                  return (
+                    <optgroup key={m} label={m}>
+                      {list.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </optgroup>
+                  )
+                })}
               </select>
               {form.school_id && (
                 <p className="text-xs text-gray-400 mt-1">

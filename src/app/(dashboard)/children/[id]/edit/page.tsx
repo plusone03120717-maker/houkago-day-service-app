@@ -55,7 +55,7 @@ export default async function EditChildPage({
       .eq('id', id)
       .single(),
     supabase.from('units').select('id, name, service_type').order('name'),
-    supabase.from('schools').select('id, municipality, name, address').order('municipality').order('name'),
+    supabase.from('schools').select('id, municipality, name, address, facility_type').order('municipality').order('name'),
     supabase
       .from('child_transport_settings')
       .select('id, transport_type, pickup_location_type, dropoff_location_type, notes')

@@ -11,7 +11,7 @@ export default async function NewChildPage() {
 
   const [{ data: unitsRaw }, { data: schoolsRaw }] = await Promise.all([
     supabase.from('units').select('id, name, service_type').order('name'),
-    supabase.from('schools').select('id, municipality, name, address').order('municipality').order('name'),
+    supabase.from('schools').select('id, municipality, name, address, facility_type').order('municipality').order('name'),
   ])
   const units = (unitsRaw ?? []) as unknown as Unit[]
   const schools = (schoolsRaw ?? []) as unknown as School[]
