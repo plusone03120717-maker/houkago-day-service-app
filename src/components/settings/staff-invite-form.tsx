@@ -92,7 +92,6 @@ export function StaffInviteForm() {
       setEmail('')
       setName('')
       setSelectedRoles(new Set(['staff']))
-      window.location.reload()
     } else {
       // ログイン不要 → staff_members に登録
       const { error: err } = await supabase
@@ -223,6 +222,16 @@ export function StaffInviteForm() {
                       {copied ? 'コピー済' : 'コピー'}
                     </Button>
                   </div>
+                </div>
+                <div className="pt-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => window.location.reload()}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                  >
+                    確認しました
+                  </Button>
                 </div>
               </div>
             ) : (
