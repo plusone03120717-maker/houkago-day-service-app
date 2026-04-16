@@ -27,6 +27,7 @@ type Child = {
   allergy_info: string | null
   medical_info: string | null
   notes: string | null
+  service_type: string | null
   childcare_type: string | null
   children_units: ChildUnit[]
 }
@@ -50,7 +51,7 @@ export default async function EditChildPage({
   const [{ data: childRaw }, { data: unitsRaw }, { data: schoolsRaw }, { data: transportRaw }, { data: addressesRaw }] = await Promise.all([
     supabase
       .from('children')
-      .select('id, name, name_kana, birth_date, gender, postal_code, address, school_id, school_name, grade, disability_type, diagnosis, allergy_info, medical_info, notes, childcare_type, children_units(unit_id)')
+      .select('id, name, name_kana, birth_date, gender, postal_code, address, school_id, school_name, grade, disability_type, diagnosis, allergy_info, medical_info, notes, service_type, childcare_type, children_units(unit_id)')
       .eq('id', id)
       .single(),
     supabase.from('units').select('id, name, service_type').order('name'),
@@ -108,6 +109,7 @@ export default async function EditChildPage({
           medical_info: child.medical_info ?? '',
           notes: child.notes ?? '',
           unit_ids: child.children_units.map((cu) => cu.unit_id),
+          service_type: (child.service_type as 'afterschool' | 'development_support' | null) ?? '',
           childcare_type: (child.childcare_type as 'nursery' | 'other' | null) ?? '',
         }}
         initialAddresses={initialAddresses.map((a) => ({
