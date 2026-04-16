@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { StaffProfileForm } from '@/components/settings/staff-profile-form'
 import { TrainingRecordForm } from '@/components/settings/training-record-form'
+import { DeleteStaffButton } from '@/components/settings/delete-staff-button'
 
 type StaffProfile = {
   id: string
@@ -166,6 +167,11 @@ export default async function StaffProfilePage({
           )}
         </CardContent>
       </Card>
+
+      {/* 削除 */}
+      <div className="pt-2 border-t border-gray-200">
+        <DeleteStaffButton userId={userId} staffName={user.name} />
+      </div>
     </div>
   )
 }
