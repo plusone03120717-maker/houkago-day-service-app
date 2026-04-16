@@ -34,6 +34,7 @@ interface ChildData {
   medical_info: string
   notes: string
   unit_ids: string[]
+  childcare_type: 'nursery' | 'other' | ''
 }
 
 interface Props {
@@ -122,6 +123,7 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
     medical_info: initial?.medical_info ?? '',
     notes: initial?.notes ?? '',
     unit_ids: initial?.unit_ids ?? [],
+    childcare_type: (initial as ChildData | undefined)?.childcare_type ?? '',
   })
 
   // 住所リスト。既存データがない場合はlegacy単一住所から初期化
@@ -299,6 +301,7 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
       allergy_info: form.allergy_info || null,
       medical_info: form.medical_info || null,
       notes: form.notes || null,
+      childcare_type: form.childcare_type || null,
       is_active: true,
     }
 
@@ -689,31 +692,82 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
       </Card>
 
       {/* ユニット */}
-      {units.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">所属ユニット</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {units.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => toggleUnit(u.id)}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                    form.unit_ids.includes(u.id)
-                      ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
-                  }`}
-                >
-                  {u.name}
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {units.length > 0 && (() => {
+        const developmentUnits = units.filter((u) => u.service_type === 'development_support')
+        const afterschoolUnits = units.filter((u) => u.service_type === 'afterschool')
+        const otherUnits = units.filter((u) => u.service_type !== 'development_support' && u.service_type !== 'afterschool')
+        const hasDevelopmentSelected = form.unit_ids.some((id) => developmentUnits.some((u) => u.id === id))
+
+        const UnitButtons = ({ list }: { list: typeof units }) => (
+          <div className="flex flex-wrap gap-2">
+            {list.map((u) => (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => toggleUnit(u.id)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                  form.unit_ids.includes(u.id)
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
+                }`}
+              >
+                {u.name}
+              </button>
+            ))}
+          </div>
+        )
+
+        return (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">所属ユニット</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {developmentUnits.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">児童発達支援</p>
+                  <UnitButtons list={developmentUnits} />
+                  {hasDevelopmentSelected && (
+                    <div className="mt-2">
+                      <p className="text-xs font-medium text-gray-600 mb-1.5">通園先</p>
+                      <div className="flex gap-2">
+                        {(['nursery', 'other'] as const).map((type) => (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => setForm((prev) => ({ ...prev, childcare_type: type }))}
+                            className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                              form.childcare_type === type
+                                ? 'bg-teal-600 text-white border-teal-600'
+                                : 'bg-white text-gray-600 border-gray-300 hover:border-teal-400'
+                            }`}
+                          >
+                            {type === 'nursery' ? '保育園' : 'その他'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {afterschoolUnits.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">放課後等デイサービス</p>
+                  <UnitButtons list={afterschoolUnits} />
+                </div>
+              )}
+
+              {otherUnits.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">その他</p>
+                  <UnitButtons list={otherUnits} />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )
+      })()}
 
       <Button type="button" onClick={handleSubmit} disabled={saving} className="w-full sm:w-auto">
         <Save className="h-4 w-4" />
