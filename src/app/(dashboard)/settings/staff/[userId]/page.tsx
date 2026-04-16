@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { StaffProfileForm } from '@/components/settings/staff-profile-form'
 import { TrainingRecordForm } from '@/components/settings/training-record-form'
 import { DeleteStaffButton } from '@/components/settings/delete-staff-button'
+import { ResetStaffPasswordButton } from '@/components/settings/reset-staff-password-button'
 
 type StaffProfile = {
   id: string
@@ -168,8 +169,9 @@ export default async function StaffProfilePage({
         </CardContent>
       </Card>
 
-      {/* 削除 */}
-      <div className="pt-2 border-t border-gray-200">
+      {/* パスワード再発行・削除 */}
+      <div className="pt-2 border-t border-gray-200 space-y-3">
+        <ResetStaffPasswordButton userId={userId} staffName={user.name} email={user.email} />
         <DeleteStaffButton userId={userId} staffName={user.name} />
       </div>
     </div>
