@@ -15,6 +15,7 @@ type Child = {
   disability_type: string | null
   allergy_info: string | null
   photo_url: string | null
+  service_type: string | null
   benefit_certificates: Array<{
     id: string
     end_date: string
@@ -26,18 +27,32 @@ type Child = {
   }>
 }
 
+const SERVICE_TABS = [
+  { value: '',                   label: 'すべて' },
+  { value: 'development_support', label: '児童発達支援' },
+  { value: 'afterschool',         label: '放課後等デイサービス' },
+  { value: 'other',               label: 'その他' },
+] as const
+
+const SERVICE_LABEL: Record<string, string> = {
+  development_support: '児童発達支援',
+  afterschool: '放課後等デイサービス',
+  other: 'その他',
+}
+
 export default async function ChildrenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>
+  searchParams: Promise<{ q?: string; service?: string }>
 }) {
   const params = await searchParams
   const supabase = await createClient()
+  const serviceFilter = params.service ?? ''
 
   let query = supabase
     .from('children')
     .select(`
-      id, name, name_kana, birth_date, gender, disability_type, allergy_info, photo_url,
+      id, name, name_kana, birth_date, gender, disability_type, allergy_info, photo_url, service_type,
       benefit_certificates (id, end_date, service_type, max_days_per_month),
       children_units (units (id, name, service_type))
     `)
@@ -45,6 +60,9 @@ export default async function ChildrenPage({
 
   if (params.q) {
     query = query.or(`name.ilike.%${params.q}%,name_kana.ilike.%${params.q}%`)
+  }
+  if (serviceFilter) {
+    query = query.eq('service_type', serviceFilter)
   }
 
   const { data: childrenRaw } = await query
@@ -63,6 +81,14 @@ export default async function ChildrenPage({
     return { ...child, expiringCert, expiredCert }
   })
 
+  const buildUrl = (service: string) => {
+    const qs = new URLSearchParams()
+    if (params.q) qs.set('q', params.q)
+    if (service) qs.set('service', service)
+    const str = qs.toString()
+    return `/children${str ? `?${str}` : ''}`
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -78,7 +104,25 @@ export default async function ChildrenPage({
         </Link>
       </div>
 
+      {/* サービス種別フィルター */}
+      <div className="flex gap-2 flex-wrap">
+        {SERVICE_TABS.map((tab) => (
+          <Link key={tab.value} href={buildUrl(tab.value)}>
+            <button
+              className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                serviceFilter === tab.value
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
+              }`}
+            >
+              {tab.label}
+            </button>
+          </Link>
+        ))}
+      </div>
+
       <form method="GET" className="relative">
+        {serviceFilter && <input type="hidden" name="service" value={serviceFilter} />}
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
         <input
           type="text"
@@ -117,6 +161,11 @@ export default async function ChildrenPage({
                       <span>{formatWareki(child.birth_date)} 生</span>
                     </div>
                     <div className="flex gap-1 mt-2 flex-wrap">
+                      {child.service_type && (
+                        <Badge variant="outline" className="text-xs text-indigo-600 border-indigo-200">
+                          {SERVICE_LABEL[child.service_type] ?? child.service_type}
+                        </Badge>
+                      )}
                       {child.children_units?.map((cu) => cu.units && (
                         <Badge key={cu.units.id} variant="secondary" className="text-xs">
                           {cu.units.name}
