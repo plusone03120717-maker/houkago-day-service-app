@@ -23,7 +23,7 @@ type AiResult = {
 }
 
 interface Props {
-  supportPlanId: string
+  supportPlanId: string | null
   childId: string
   readOnly?: boolean
 }
@@ -45,6 +45,7 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
   const [generating, setGenerating] = useState<string | null>(null)
 
   const fetchAiResult = async (): Promise<AiResult | null> => {
+    if (!supportPlanId) return null
     const res = await fetch('/api/monitoring/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -165,7 +166,8 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
                   <button
                     type="button"
                     onClick={() => handleAiGenerateField(key, resultKey, setter as (v: string) => void)}
-                    disabled={generating === key}
+                    disabled={generating === key || !supportPlanId}
+                    title={!supportPlanId ? '支援計画がない場合はAI生成を利用できません' : undefined}
                     className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Bot className="h-3 w-3" />

@@ -18,7 +18,7 @@ type SupportPlan = {
 
 type MonitoringRecord = {
   id: string
-  support_plan_id: string
+  support_plan_id: string | null
   record_date: string
   long_term_progress: string | null
   short_term_progress: string | null
@@ -62,24 +62,23 @@ export default async function MonitoringPage({
     .order('plan_date', { ascending: false })
   const plans = (plansRaw ?? []) as unknown as SupportPlan[]
 
-  // 全プランのモニタリング記録を取得
-  const planIds = plans.map((p) => p.id)
-  const { data: recordsRaw } =
-    planIds.length > 0
-      ? await supabase
-          .from('monitoring_records')
-          .select('id, support_plan_id, record_date, long_term_progress, short_term_progress, issues, next_actions, overall_status, created_at')
-          .in('support_plan_id', planIds)
-          .order('record_date', { ascending: false })
-      : { data: [] }
+  // 全モニタリング記録を取得（支援計画の有無に関わらず）
+  const { data: recordsRaw } = await supabase
+    .from('monitoring_records')
+    .select('id, support_plan_id, record_date, long_term_progress, short_term_progress, issues, next_actions, overall_status, created_at')
+    .eq('child_id', childId)
+    .order('record_date', { ascending: false })
   const records = (recordsRaw ?? []) as unknown as MonitoringRecord[]
 
-  // プランIDでグルーピング
+  // プランIDでグルーピング（nullは'__none__'キーで管理）
+  const NULL_PLAN_KEY = '__none__'
   const recordsByPlan: Record<string, MonitoringRecord[]> = {}
   records.forEach((r) => {
-    if (!recordsByPlan[r.support_plan_id]) recordsByPlan[r.support_plan_id] = []
-    recordsByPlan[r.support_plan_id].push(r)
+    const key = r.support_plan_id ?? NULL_PLAN_KEY
+    if (!recordsByPlan[key]) recordsByPlan[key] = []
+    recordsByPlan[key].push(r)
   })
+  const standaloneRecords = recordsByPlan[NULL_PLAN_KEY] ?? []
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -145,11 +144,27 @@ export default async function MonitoringPage({
         </Card>
       )}
 
-      {plans.length === 0 && (
-        <div className="text-center py-12 text-gray-400 text-sm">
-          有効な支援計画がありません。先に支援計画を作成・確定してください。
-        </div>
-      )}
+      {/* 支援計画なしのスタンドアロン記録セクション（計画なし、または計画なし記録が存在する場合に表示） */}
+      {(plans.length === 0 || standaloneRecords.length > 0) && <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base text-gray-600">
+            {plans.length === 0 ? 'モニタリング記録' : '支援計画なしの記録'}
+          </CardTitle>
+          {plans.length === 0 && (
+            <p className="text-xs text-gray-400 mt-1">支援計画がない場合でもモニタリング記録を追加できます</p>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {standaloneRecords.length > 0 && (
+            <div className="space-y-3">
+              {standaloneRecords.map((record) => (
+                <MonitoringRecordEditCard key={record.id} record={record} supportPlanId={null} childId={childId} readOnly={isReadOnly} />
+              ))}
+            </div>
+          )}
+          <MonitoringRecordForm supportPlanId={null} childId={childId} readOnly={isReadOnly} />
+        </CardContent>
+      </Card>}
 
       {plans.map((plan) => {
         const planRecords = recordsByPlan[plan.id] ?? []
