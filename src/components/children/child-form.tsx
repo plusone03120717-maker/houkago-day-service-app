@@ -159,10 +159,12 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
   }, [form.birth_date])
 
   // 学校タブ（学校 or 保育園・幼稚園）
-  const [schoolTab, setSchoolTab] = useState<'school' | 'nursery'>(() => {
+  const [schoolTab, setSchoolTab] = useState<'school' | 'nursery' | 'junior_high'>(() => {
     if (!initial?.school_id) return 'school'
     const matched = schools.find((s) => s.id === initial.school_id)
-    return matched?.facility_type === 'nursery' ? 'nursery' : 'school'
+    if (matched?.facility_type === 'nursery') return 'nursery'
+    if (matched?.facility_type === 'junior_high') return 'junior_high'
+    return 'school'
   })
 
   // 郵便番号検索中フラグ（住所インデックスごと）
@@ -505,7 +507,12 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
                     type="button"
                     onClick={() => setSchoolTab('school')}
                     className={`px-2 py-0.5 ${schoolTab === 'school' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-                  >学校</button>
+                  >小学校</button>
+                  <button
+                    type="button"
+                    onClick={() => setSchoolTab('junior_high')}
+                    className={`px-2 py-0.5 ${schoolTab === 'junior_high' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                  >中学校</button>
                   <button
                     type="button"
                     onClick={() => setSchoolTab('nursery')}
@@ -518,7 +525,7 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
                 onChange={handleSchoolChange}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
               >
-                <option value="">-- {schoolTab === 'school' ? '学校' : '保育園・幼稚園'}を選択 --</option>
+                <option value="">-- {schoolTab === 'school' ? '小学校' : schoolTab === 'junior_high' ? '中学校' : '保育園・幼稚園'}を選択 --</option>
                 {municipalities.map((m) => {
                   const list = schools.filter((s) => s.municipality === m && s.facility_type === schoolTab)
                   if (list.length === 0) return null
