@@ -84,7 +84,7 @@ export default async function MonitoringPage({
     <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-3">
         <Link
-          href={`/support-plans/${childId}`}
+          href={`/children/${childId}`}
           className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50"
         >
           <ArrowLeft className="h-4 w-4" />
