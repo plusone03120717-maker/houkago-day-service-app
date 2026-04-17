@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays, Building2 } from 'lucide-react'
+import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays, Building2, Users } from 'lucide-react'
 import { formatDate, getAge, formatWareki } from '@/lib/utils'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 import { ParentInviteButton } from '@/components/children/parent-invite-button'
@@ -139,6 +139,7 @@ export default async function ChildDetailPage({
           { href: `/children/${id}/contact-notes`, icon: BookOpen, label: '連絡帳', color: 'text-blue-600 bg-blue-50' },
           { href: `/support-plans/${id}`, icon: ClipboardList, label: '個別支援計画', color: 'text-indigo-600 bg-indigo-50' },
           { href: `/support-plans/${id}/monitoring`, icon: BarChart2, label: 'モニタリング', color: 'text-violet-600 bg-violet-50' },
+          { href: `/children/${id}/family-meetings`, icon: Users, label: '家族支援会議', color: 'text-orange-600 bg-orange-50' },
           { href: `/attendance/child/${id}`, icon: CalendarDays, label: '支援記録', color: 'text-teal-600 bg-teal-50' },
           { href: `/children/${id}/schedule`, icon: CalendarDays, label: '利用スケジュール', color: 'text-cyan-600 bg-cyan-50' },
           { href: `/children/${id}/assessments`, icon: BarChart2, label: 'アセスメント', color: 'text-purple-600 bg-purple-50' },
