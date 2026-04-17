@@ -34,7 +34,7 @@ interface ChildData {
   medical_info: string
   notes: string
   unit_ids: string[]
-  service_type: 'afterschool' | 'development_support' | ''
+  service_type: 'afterschool' | 'development_support' | 'other' | ''
   childcare_type: 'nursery' | 'other' | ''
 }
 
@@ -739,6 +739,7 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
               {([
                 { value: 'development_support', label: '児童発達支援' },
                 { value: 'afterschool', label: '放課後等デイサービス' },
+                { value: 'other', label: 'その他' },
               ] as const).map(({ value, label }) => (
                 <button
                   key={value}
