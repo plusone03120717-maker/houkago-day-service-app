@@ -109,7 +109,7 @@ export default async function EditChildPage({
           medical_info: child.medical_info ?? '',
           notes: child.notes ?? '',
           unit_ids: child.children_units.map((cu) => cu.unit_id),
-          service_type: (child.service_type as 'afterschool' | 'afterschool2' | 'development_support' | null) ?? '',
+          service_type: (child.service_type as 'afterschool' | 'development_support' | null) ?? '',
           childcare_type: (child.childcare_type as 'nursery' | 'other' | null) ?? '',
         }}
         initialAddresses={initialAddresses.map((a) => ({
