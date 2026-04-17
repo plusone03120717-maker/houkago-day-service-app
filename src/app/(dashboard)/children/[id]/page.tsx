@@ -99,6 +99,14 @@ export default async function ChildDetailPage({
   type ChildAddress = { id: string; label: string; postal_code: string | null; address: string; is_default: boolean }
   const childAddresses = (addressesRaw ?? []) as unknown as ChildAddress[]
 
+  const { data: phonesRaw } = await supabase
+    .from('child_phone_numbers')
+    .select('id, label, phone_number')
+    .eq('child_id', id)
+    .order('sort_order')
+  type ChildPhone = { id: string; label: string; phone_number: string }
+  const childPhones = (phonesRaw ?? []) as unknown as ChildPhone[]
+
   const { data: limitManagementsRaw } = await supabase
     .from('child_limit_management')
     .select('id, start_date, facility_name')
@@ -172,6 +180,19 @@ export default async function ChildDetailPage({
               </div>
             ) : (
               <Row label="住所" value={child.address} />
+            )}
+            {childPhones.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 mb-1">電話番号</p>
+                <div className="space-y-1">
+                  {childPhones.map((p) => (
+                    <div key={p.id} className="flex items-center gap-2">
+                      <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-600 shrink-0">{p.label}</span>
+                      <span className="text-gray-800">{p.phone_number}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
             <Row label="学校名" value={child.school_name} />
             <Row label="学年" value={child.grade} />

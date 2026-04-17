@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, Car } from 'lucide-react'
 import { ChildForm } from '@/components/children/child-form'
-import type { School } from '@/components/children/child-form'
+import type { School, PhoneEntry } from '@/components/children/child-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChildTransportSettingsForm } from '@/components/children/child-transport-settings-form'
 import { DeleteChildButton } from '@/components/children/delete-child-button'
@@ -48,7 +48,7 @@ export default async function EditChildPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: childRaw }, { data: unitsRaw }, { data: schoolsRaw }, { data: transportRaw }, { data: addressesRaw }] = await Promise.all([
+  const [{ data: childRaw }, { data: unitsRaw }, { data: schoolsRaw }, { data: transportRaw }, { data: addressesRaw }, { data: phonesRaw }] = await Promise.all([
     supabase
       .from('children')
       .select('id, name, name_kana, birth_date, gender, postal_code, address, school_id, school_name, grade, disability_type, diagnosis, allergy_info, medical_info, notes, service_type, childcare_type, children_units(unit_id)')
@@ -66,6 +66,11 @@ export default async function EditChildPage({
       .select('id, label, postal_code, address, is_default')
       .eq('child_id', id)
       .order('sort_order'),
+    supabase
+      .from('child_phone_numbers')
+      .select('id, label, phone_number')
+      .eq('child_id', id)
+      .order('sort_order'),
   ])
 
   if (!childRaw) notFound()
@@ -74,6 +79,7 @@ export default async function EditChildPage({
   const schools = (schoolsRaw ?? []) as unknown as School[]
   const transportSettings = transportRaw as TransportSettings | null
   const initialAddresses = (addressesRaw ?? []) as unknown as { id: string; label: string; postal_code: string | null; address: string; is_default: boolean }[]
+  const initialPhones = (phonesRaw ?? []) as unknown as PhoneEntry[]
 
   const schoolAddress = child.school_id
     ? (schools.find((s) => s.id === child.school_id)?.address ?? null)
@@ -119,6 +125,7 @@ export default async function EditChildPage({
           address: a.address,
           is_default: a.is_default,
         }))}
+        initialPhones={initialPhones}
       />
 
       {/* 送迎設定 */}

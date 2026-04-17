@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Save, Search, Loader2, Plus, Trash2, Star } from 'lucide-react'
+import { Save, Search, Loader2, Plus, Trash2, Star, Phone } from 'lucide-react'
 
 type Unit = { id: string; name: string; service_type: string }
 export type School = { id: string; municipality: string; name: string; address: string; facility_type: string }
@@ -17,6 +17,12 @@ export type AddressEntry = {
   postal_code: string
   address: string
   is_default: boolean
+}
+
+export type PhoneEntry = {
+  id?: string
+  label: string
+  phone_number: string
 }
 
 interface ChildData {
@@ -43,6 +49,7 @@ interface Props {
   schools: School[]
   initial?: Partial<ChildData>
   initialAddresses?: AddressEntry[]
+  initialPhones?: PhoneEntry[]
 }
 
 const GRADES = ['年少', '年中', '年長', '小1', '小2', '小3', '小4', '小5', '小6', '中1', '中2', '中3', '高1', '高2', '高3']
@@ -99,11 +106,17 @@ function calculateGrade(birthDate: string): string {
 }
 const LABEL_PRESETS = ['自宅', '祖父母宅（父方）', '祖父母宅（母方）', '親戚宅', 'その他']
 
+const PHONE_LABEL_PRESETS = ['自宅', '父携帯', '母携帯', '祖父母', 'その他']
+
 function newAddress(isDefault = false): AddressEntry {
   return { label: '自宅', postal_code: '', address: '', is_default: isDefault }
 }
 
-export function ChildForm({ units, schools, initial, initialAddresses }: Props) {
+function newPhone(): PhoneEntry {
+  return { label: '自宅', phone_number: '' }
+}
+
+export function ChildForm({ units, schools, initial, initialAddresses, initialPhones }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -127,6 +140,19 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
     service_type: (initial as ChildData | undefined)?.service_type ?? '',
     childcare_type: (initial as ChildData | undefined)?.childcare_type ?? '',
   })
+
+  // 電話番号リスト
+  const [phones, setPhones] = useState<PhoneEntry[]>(
+    initialPhones && initialPhones.length > 0 ? initialPhones : [newPhone()]
+  )
+
+  const updatePhone = (idx: number, patch: Partial<PhoneEntry>) =>
+    setPhones((prev) => prev.map((p, i) => i === idx ? { ...p, ...patch } : p))
+
+  const addPhone = () => setPhones((prev) => [...prev, newPhone()])
+
+  const removePhone = (idx: number) =>
+    setPhones((prev) => prev.filter((_, i) => i !== idx))
 
   // 住所リスト。既存データがない場合はlegacy単一住所から初期化
   const [addresses, setAddresses] = useState<AddressEntry[]>(() => {
@@ -352,6 +378,21 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
         }))
       )
       if (addrError) { setError(addrError.message); setSaving(false); return }
+    }
+
+    // 電話番号を更新（全削除→再挿入）
+    await supabase.from('child_phone_numbers').delete().eq('child_id', childId!)
+    const validPhones = phones.filter((p) => p.phone_number.trim())
+    if (validPhones.length > 0) {
+      const { error: phoneError } = await supabase.from('child_phone_numbers').insert(
+        validPhones.map((p, i) => ({
+          child_id: childId!,
+          label: p.label || '自宅',
+          phone_number: p.phone_number,
+          sort_order: i,
+        }))
+      )
+      if (phoneError) { setError(phoneError.message); setSaving(false); return }
     }
 
     setSaving(false)
@@ -673,6 +714,53 @@ export function ChildForm({ units, schools, initial, initialAddresses }: Props) 
           >
             <Plus className="h-4 w-4" />
             住所を追加
+          </button>
+        </CardContent>
+      </Card>
+
+      {/* 電話番号 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Phone className="h-4 w-4 text-indigo-500" />
+            電話番号
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {phones.map((phone, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <select
+                value={phone.label}
+                onChange={(e) => updatePhone(idx, { label: e.target.value })}
+                className="border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 w-28 shrink-0"
+              >
+                {PHONE_LABEL_PRESETS.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <Input
+                type="tel"
+                value={phone.phone_number}
+                onChange={(e) => updatePhone(idx, { phone_number: e.target.value })}
+                placeholder="000-0000-0000"
+                className="flex-1"
+              />
+              {phones.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => removePhone(idx)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={addPhone}
+            className="flex items-center gap-2 w-full py-2.5 border border-dashed border-gray-300 rounded-xl text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            電話番号を追加
           </button>
         </CardContent>
       </Card>
