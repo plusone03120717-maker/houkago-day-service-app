@@ -134,11 +134,13 @@ export default async function ChildDetailPage({
       </div>
 
       {/* クイックアクセス */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3">
         {[
           { href: `/children/${id}/contact-notes`, icon: BookOpen, label: '連絡帳', color: 'text-blue-600 bg-blue-50' },
           { href: `/support-plans/${id}`, icon: ClipboardList, label: '個別支援計画', color: 'text-indigo-600 bg-indigo-50' },
-          { href: `/children/${id}/schedule`, icon: CalendarDays, label: '利用スケジュール', color: 'text-teal-600 bg-teal-50' },
+          { href: `/support-plans/${id}/monitoring`, icon: BarChart2, label: 'モニタリング', color: 'text-violet-600 bg-violet-50' },
+          { href: `/attendance/child/${id}`, icon: CalendarDays, label: '支援記録', color: 'text-teal-600 bg-teal-50' },
+          { href: `/children/${id}/schedule`, icon: CalendarDays, label: '利用スケジュール', color: 'text-cyan-600 bg-cyan-50' },
           { href: `/children/${id}/assessments`, icon: BarChart2, label: 'アセスメント', color: 'text-purple-600 bg-purple-50' },
           { href: `/children/${id}/medications`, icon: Pill, label: '服薬管理', color: 'text-green-600 bg-green-50' },
           { href: `/incidents?childId=${id}`, icon: ShieldAlert, label: '事故報告', color: 'text-red-600 bg-red-50' },
@@ -362,14 +364,6 @@ export default async function ChildDetailPage({
           </CardContent>
         </Card>
 
-        <div className="md:col-span-2">
-          <Link href={`/attendance/child/${id}`}>
-            <Button variant="outline" className="w-full py-6 text-base gap-2">
-              <CalendarDays className="h-5 w-5 text-indigo-500" />
-              出席履歴を見る
-            </Button>
-          </Link>
-        </div>
       </div>
     </div>
   )
