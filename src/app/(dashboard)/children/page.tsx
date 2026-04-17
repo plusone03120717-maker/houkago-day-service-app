@@ -40,14 +40,31 @@ const SERVICE_LABEL: Record<string, string> = {
   other: 'その他',
 }
 
+type Unit = { id: string; name: string }
+
 export default async function ChildrenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; service?: string }>
+  searchParams: Promise<{ q?: string; service?: string; unit?: string }>
 }) {
   const params = await searchParams
   const supabase = await createClient()
   const serviceFilter = params.service ?? ''
+  const unitFilter = params.unit ?? ''
+
+  // ユニット一覧取得（フィルターボタン用）
+  const { data: unitsRaw } = await supabase.from('units').select('id, name').order('name')
+  const units = (unitsRaw ?? []) as unknown as Unit[]
+
+  // ユニットフィルター時: children_units から対象の child_id を取得
+  let unitChildIds: string[] | null = null
+  if (unitFilter) {
+    const { data: cuRaw } = await supabase
+      .from('children_units')
+      .select('child_id')
+      .eq('unit_id', unitFilter)
+    unitChildIds = (cuRaw ?? []).map((r: { child_id: string }) => r.child_id)
+  }
 
   let query = supabase
     .from('children')
@@ -63,6 +80,14 @@ export default async function ChildrenPage({
   }
   if (serviceFilter) {
     query = query.eq('service_type', serviceFilter)
+  }
+  if (unitChildIds !== null) {
+    if (unitChildIds.length === 0) {
+      // 該当なし → 空を返す
+      query = query.in('id', ['00000000-0000-0000-0000-000000000000'])
+    } else {
+      query = query.in('id', unitChildIds)
+    }
   }
 
   const { data: childrenRaw } = await query
@@ -81,10 +106,20 @@ export default async function ChildrenPage({
     return { ...child, expiringCert, expiredCert }
   })
 
-  const buildUrl = (service: string) => {
+  const buildUrl = (service: string, unit = unitFilter) => {
     const qs = new URLSearchParams()
     if (params.q) qs.set('q', params.q)
     if (service) qs.set('service', service)
+    if (unit) qs.set('unit', unit)
+    const str = qs.toString()
+    return `/children${str ? `?${str}` : ''}`
+  }
+
+  const buildUnitUrl = (unitId: string) => {
+    const qs = new URLSearchParams()
+    if (params.q) qs.set('q', params.q)
+    if (serviceFilter) qs.set('service', serviceFilter)
+    if (unitId) qs.set('unit', unitId)
     const str = qs.toString()
     return `/children${str ? `?${str}` : ''}`
   }
@@ -105,24 +140,61 @@ export default async function ChildrenPage({
       </div>
 
       {/* サービス種別フィルター */}
-      <div className="flex gap-2 flex-wrap">
-        {SERVICE_TABS.map((tab) => (
-          <Link key={tab.value} href={buildUrl(tab.value)}>
-            <button
-              className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                serviceFilter === tab.value
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
-              }`}
-            >
-              {tab.label}
-            </button>
-          </Link>
-        ))}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-gray-500">サービス種別</p>
+        <div className="flex gap-2 flex-wrap">
+          {SERVICE_TABS.map((tab) => (
+            <Link key={tab.value} href={buildUrl(tab.value)}>
+              <button
+                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                  serviceFilter === tab.value
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
+                }`}
+              >
+                {tab.label}
+              </button>
+            </Link>
+          ))}
+        </div>
       </div>
+
+      {/* ユニットフィルター */}
+      {units.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-gray-500">ユニット</p>
+          <div className="flex gap-2 flex-wrap">
+            <Link href={buildUnitUrl('')}>
+              <button
+                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                  unitFilter === ''
+                    ? 'bg-teal-600 text-white border-teal-600'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-teal-400'
+                }`}
+              >
+                すべて
+              </button>
+            </Link>
+            {units.map((unit) => (
+              <Link key={unit.id} href={buildUnitUrl(unit.id)}>
+                <button
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                    unitFilter === unit.id
+                      ? 'bg-teal-600 text-white border-teal-600'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-teal-400'
+                  }`}
+                >
+                  {unit.name}
+                </button>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <form method="GET" className="relative">
         {serviceFilter && <input type="hidden" name="service" value={serviceFilter} />}
+        {unitFilter && <input type="hidden" name="unit" value={unitFilter} />}
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
         <input
           type="text"
