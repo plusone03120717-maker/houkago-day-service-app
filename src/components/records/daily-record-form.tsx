@@ -245,7 +245,7 @@ export function DailyRecordForm({
 
   const handleDropoffArrivalChange = (val: string) => {
     setDropoffArrivalTime(val)
-    if (val && !dropoffDepartureTime) setDropoffDepartureTime(addMinutes(val, -10))
+    if (val) setDropoffDepartureTime(addMinutes(val, -10))
   }
 
   const toggleProgram = (programId: string) => {
