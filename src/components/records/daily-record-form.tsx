@@ -243,8 +243,7 @@ export function DailyRecordForm({
     }
   }
 
-  const handleDropoffArrivalChange = (val: string) => {
-    setDropoffArrivalTime(val)
+  const handleDropoffArrivalConfirm = (val: string) => {
     if (val) setDropoffDepartureTime(addMinutes(val, -10))
   }
 
@@ -507,7 +506,9 @@ export function DailyRecordForm({
                 <input
                   type="time"
                   value={dropoffArrivalTime}
-                  onChange={(e) => handleDropoffArrivalChange(e.target.value)}
+                  onChange={(e) => setDropoffArrivalTime(e.target.value)}
+                  onBlur={(e) => handleDropoffArrivalConfirm(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleDropoffArrivalConfirm(dropoffArrivalTime) }}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
