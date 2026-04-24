@@ -228,7 +228,7 @@ export function DailyRecordForm({
   const handlePickupArrivalChange = (val: string) => {
     setPickupArrivalTime(val)
     if (val) {
-      if (!serviceStartTime) setServiceStartTime(val)
+      setServiceStartTime(val)
       if (!serviceEndTime) setServiceEndTime(serviceEndDefault)
     }
   }
@@ -238,7 +238,7 @@ export function DailyRecordForm({
     if (val && !pickupArrivalTime) {
       const arrival = addMinutes(val, 10)
       setPickupArrivalTime(arrival)
-      if (!serviceStartTime) setServiceStartTime(arrival)
+      setServiceStartTime(arrival)
       if (!serviceEndTime) setServiceEndTime(serviceEndDefault)
     }
   }
@@ -544,7 +544,7 @@ export function DailyRecordForm({
               </div>
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              ※ お迎え到着時間を入力すると開始時間を自動入力します（終了は{isSchoolHoliday ? holidayServiceEndTime : defaultServiceEndTime}がデフォルト）
+              ※ 事務所到着時間を入力すると提供時間の開始時間に自動反映します（終了は{isSchoolHoliday ? holidayServiceEndTime : defaultServiceEndTime}がデフォルト）
             </p>
           </div>
         </CardContent>
