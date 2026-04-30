@@ -182,6 +182,7 @@ export default async function ChildSchedulePage({
             month={month}
             childId={childId}
             attendances={attendances}
+            units={units.map((u) => ({ id: u.id, name: u.name }))}
           />
         </CardContent>
       </Card>

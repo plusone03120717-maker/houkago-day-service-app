@@ -32,6 +32,7 @@ interface Props {
   month: number
   childId: string
   attendances: AttendanceRecord[]
+  units?: Array<{ id: string; name: string }>
   basePath?: string
 }
 
@@ -63,13 +64,14 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, basePath }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], basePath }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [newUnitId, setNewUnitId] = useState('')
 
   // 編集フィールドの状態
   const [pickupDeparture, setPickupDeparture] = useState('')
@@ -97,59 +99,97 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, bas
       setDaytimeSupport(selected.daytime_support)
       setDaytimeSupportStart(fmt(selected.daytime_support_start_time))
       setDaytimeSupportEnd(fmt(selected.daytime_support_end_time))
+    } else {
+      setPickupDeparture('')
+      setPickupArrival('')
+      setDropoffDeparture('')
+      setDropoffArrival('')
+      setServiceStart('')
+      setServiceEnd('')
+      setDaytimeSupport(false)
+      setDaytimeSupportStart('')
+      setDaytimeSupportEnd('')
+      setNewUnitId(units.length === 1 ? units[0].id : '')
     }
   }, [selectedDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const syncTransportSchedules = async (unitId: string, date: string) => {
+    const { data: schedules } = await supabase
+      .from('transport_schedules')
+      .select('id, direction')
+      .eq('unit_id', unitId)
+      .eq('date', date)
+
+    if (!schedules || schedules.length === 0) return
+
+    const scheduleIds = schedules.map((s) => s.id)
+    const { data: childDetails } = await supabase
+      .from('transport_details')
+      .select('schedule_id')
+      .eq('child_id', childId)
+      .in('schedule_id', scheduleIds)
+
+    const childScheduleIds = new Set((childDetails ?? []).map((d) => d.schedule_id))
+    for (const schedule of schedules) {
+      if (!childScheduleIds.has(schedule.id)) continue
+      const newDeparture =
+        schedule.direction === 'pickup' ? (pickupDeparture || null)
+        : schedule.direction === 'dropoff' ? (dropoffDeparture || null)
+        : null
+      if (newDeparture !== undefined) {
+        await supabase
+          .from('transport_schedules')
+          .update({ departure_time: newDeparture })
+          .eq('id', schedule.id)
+      }
+    }
+  }
+
   const handleSave = async () => {
-    if (!selected) return
+    if (!selectedDate) return
     setSaving(true)
 
-    await supabase
-      .from('daily_attendance')
-      .update({
-        pickup_departure_time: pickupDeparture || null,
-        pickup_arrival_time: pickupArrival || null,
-        dropoff_departure_time: dropoffDeparture || null,
-        dropoff_arrival_time: dropoffArrival || null,
-        service_start_time: serviceStart || null,
-        service_end_time: serviceEnd || null,
-        daytime_support: daytimeSupport,
-        daytime_support_start_time: daytimeSupport ? (daytimeSupportStart || null) : null,
-        daytime_support_end_time: daytimeSupport ? (daytimeSupportEnd || null) : null,
+    const timeFields = {
+      pickup_departure_time: pickupDeparture || null,
+      pickup_arrival_time: pickupArrival || null,
+      dropoff_departure_time: dropoffDeparture || null,
+      dropoff_arrival_time: dropoffArrival || null,
+      service_start_time: serviceStart || null,
+      service_end_time: serviceEnd || null,
+      daytime_support: daytimeSupport,
+      daytime_support_start_time: daytimeSupport ? (daytimeSupportStart || null) : null,
+      daytime_support_end_time: daytimeSupport ? (daytimeSupportEnd || null) : null,
+    }
+
+    let unitId: string
+
+    if (selected) {
+      // 既存レコードを更新
+      await supabase
+        .from('daily_attendance')
+        .update(timeFields)
+        .eq('id', selected.id)
+      unitId = selected.unit_id
+    } else {
+      // 新規レコードを追加
+      const resolvedUnitId = newUnitId || (units.length === 1 ? units[0].id : '')
+      if (!resolvedUnitId) {
+        setSaving(false)
+        return
+      }
+      await supabase.from('daily_attendance').insert({
+        child_id: childId,
+        unit_id: resolvedUnitId,
+        date: selectedDate,
+        status: 'attended',
+        ...timeFields,
       })
-      .eq('id', selected.id)
+      unitId = resolvedUnitId
+    }
 
     // 送迎スケジュールの出発時間を同期
-    if (selected.unit_id && selectedDate) {
-      const { data: schedules } = await supabase
-        .from('transport_schedules')
-        .select('id, direction')
-        .eq('unit_id', selected.unit_id)
-        .eq('date', selectedDate)
-
-      if (schedules && schedules.length > 0) {
-        const scheduleIds = schedules.map((s) => s.id)
-        const { data: childDetails } = await supabase
-          .from('transport_details')
-          .select('schedule_id')
-          .eq('child_id', childId)
-          .in('schedule_id', scheduleIds)
-
-        const childScheduleIds = new Set((childDetails ?? []).map((d) => d.schedule_id))
-        for (const schedule of schedules) {
-          if (!childScheduleIds.has(schedule.id)) continue
-          const newDeparture =
-            schedule.direction === 'pickup' ? (pickupDeparture || null)
-            : schedule.direction === 'dropoff' ? (dropoffDeparture || null)
-            : null
-          if (newDeparture !== undefined) {
-            await supabase
-              .from('transport_schedules')
-              .update({ departure_time: newDeparture })
-              .eq('id', schedule.id)
-          }
-        }
-      }
+    if (unitId) {
+      await syncTransportSchedules(unitId, selectedDate)
     }
 
     setSaving(false)
@@ -279,75 +319,92 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, bas
                 {selected.status === 'attended' ? '出席' : '欠席'}
               </Badge>
             ) : (
-              <span className="text-xs text-gray-400">記録なし</span>
+              <span className="text-xs text-gray-400">記録なし（新規追加）</span>
             )}
           </div>
 
-          {!selected ? (
-            <p className="text-sm text-gray-400 text-center py-2">この日の出席記録がありません</p>
-          ) : (
-            <>
-              {/* ユニット */}
-              {selected.units?.name && (
-                <p className="text-xs text-gray-500">ユニット: {selected.units.name}</p>
-              )}
+          {/* ユニット表示 or 選択 */}
+          {selected ? (
+            selected.units?.name && (
+              <p className="text-xs text-gray-500">ユニット: {selected.units.name}</p>
+            )
+          ) : units.length > 1 ? (
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">ユニット</label>
+              <select
+                value={newUnitId}
+                onChange={(e) => setNewUnitId(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+              >
+                <option value="">選択してください</option>
+                {units.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : units.length === 1 ? (
+            <p className="text-xs text-gray-500">ユニット: {units[0].name}</p>
+          ) : null}
 
-              {/* 送迎時間 */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5">
-                  <Car className="h-3.5 w-3.5 text-teal-500" />
-                  <span className="text-xs font-semibold text-gray-600">送迎時間</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <TimeField label="お迎え出発" value={pickupDeparture} onChange={setPickupDeparture} />
-                  <TimeField label="事務所到着" value={pickupArrival} onChange={setPickupArrival} />
-                  <TimeField label="事務所出発" value={dropoffDeparture} onChange={setDropoffDeparture} />
-                  <TimeField label="自宅到着" value={dropoffArrival} onChange={setDropoffArrival} />
-                </div>
+          {/* 送迎時間 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Car className="h-3.5 w-3.5 text-teal-500" />
+              <span className="text-xs font-semibold text-gray-600">送迎時間</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <TimeField label="お迎え出発" value={pickupDeparture} onChange={setPickupDeparture} />
+              <TimeField label="事務所到着" value={pickupArrival} onChange={setPickupArrival} />
+              <TimeField label="事務所出発" value={dropoffDeparture} onChange={setDropoffDeparture} />
+              <TimeField label="自宅到着" value={dropoffArrival} onChange={setDropoffArrival} />
+            </div>
+          </div>
+
+          {/* 提供時間 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-indigo-500" />
+              <span className="text-xs font-semibold text-gray-600">提供時間</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <TimeField label="開始時間" value={serviceStart} onChange={setServiceStart} />
+              <TimeField label="終了時間" value={serviceEnd} onChange={setServiceEnd} />
+            </div>
+          </div>
+
+          {/* 日中一時利用 */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={daytimeSupport}
+                onChange={(e) => setDaytimeSupport(e.target.checked)}
+                className="w-4 h-4 accent-orange-500"
+              />
+              <Clock className="h-3.5 w-3.5 text-orange-500" />
+              <span className="text-xs font-semibold text-gray-600">日中一時利用</span>
+            </label>
+            {daytimeSupport && (
+              <div className="grid grid-cols-2 gap-2 pl-6">
+                <TimeField label="開始時間" value={daytimeSupportStart} onChange={setDaytimeSupportStart} />
+                <TimeField label="終了時間" value={daytimeSupportEnd} onChange={setDaytimeSupportEnd} />
               </div>
+            )}
+          </div>
 
-              {/* 提供時間 */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5 text-indigo-500" />
-                  <span className="text-xs font-semibold text-gray-600">提供時間</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <TimeField label="開始時間" value={serviceStart} onChange={setServiceStart} />
-                  <TimeField label="終了時間" value={serviceEnd} onChange={setServiceEnd} />
-                </div>
-              </div>
-
-              {/* 日中一時利用 */}
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={daytimeSupport}
-                    onChange={(e) => setDaytimeSupport(e.target.checked)}
-                    className="w-4 h-4 accent-orange-500"
-                  />
-                  <Clock className="h-3.5 w-3.5 text-orange-500" />
-                  <span className="text-xs font-semibold text-gray-600">日中一時利用</span>
-                </label>
-                {daytimeSupport && (
-                  <div className="grid grid-cols-2 gap-2 pl-6">
-                    <TimeField label="開始時間" value={daytimeSupportStart} onChange={setDaytimeSupportStart} />
-                    <TimeField label="終了時間" value={daytimeSupportEnd} onChange={setDaytimeSupportEnd} />
-                  </div>
-                )}
-              </div>
-
-              {/* 保存ボタン */}
-              <Button onClick={handleSave} disabled={saving} size="sm" className="w-full">
-                {saved ? (
-                  <><CheckCircle className="h-4 w-4" />保存しました</>
-                ) : (
-                  <><Save className="h-4 w-4" />{saving ? '保存中...' : '変更を保存'}</>
-                )}
-              </Button>
-            </>
-          )}
+          {/* 保存ボタン */}
+          <Button
+            onClick={handleSave}
+            disabled={saving || (!selected && units.length > 1 && !newUnitId)}
+            size="sm"
+            className="w-full"
+          >
+            {saved ? (
+              <><CheckCircle className="h-4 w-4" />保存しました</>
+            ) : (
+              <><Save className="h-4 w-4" />{saving ? '保存中...' : selected ? '変更を保存' : '出席として記録'}</>
+            )}
+          </Button>
         </div>
       )}
     </div>
