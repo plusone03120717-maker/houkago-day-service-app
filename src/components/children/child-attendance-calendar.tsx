@@ -3,7 +3,7 @@
 import { useState, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, ChevronRight, Car, Clock, CalendarDays, Save, CheckCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Car, Clock, CalendarDays, Save, CheckCircle, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -73,6 +73,8 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [newUnitId, setNewUnitId] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // 編集フィールドの状態
   const [pickupDeparture, setPickupDeparture] = useState('')
@@ -208,6 +210,16 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+    startTransition(() => router.refresh())
+  }
+
+  const handleDelete = async () => {
+    if (!selected) return
+    setDeleting(true)
+    await supabase.from('daily_attendance').delete().eq('id', selected.id)
+    setDeleting(false)
+    setConfirmDelete(false)
+    setSelectedDate(null)
     startTransition(() => router.refresh())
   }
 
@@ -425,6 +437,42 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
           </Button>
           {saveError && (
             <p className="text-xs text-red-500 text-center">{saveError}</p>
+          )}
+
+          {/* 削除ボタン（既存レコードのみ） */}
+          {selected && (
+            confirmDelete ? (
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  size="sm"
+                  variant="destructive"
+                  className="flex-1"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {deleting ? '削除中...' : '本当に削除する'}
+                </Button>
+                <Button
+                  onClick={() => setConfirmDelete(false)}
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                >
+                  キャンセル
+                </Button>
+              </div>
+            ) : (
+              <Button
+                onClick={() => setConfirmDelete(true)}
+                size="sm"
+                variant="outline"
+                className="w-full text-red-500 border-red-200 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                この記録を削除
+              </Button>
+            )
           )}
         </div>
       )}
