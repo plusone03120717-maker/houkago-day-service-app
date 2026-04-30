@@ -2,14 +2,22 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, CalendarDays } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChildSchedulePlanner } from '@/components/children/child-schedule-planner'
+import { ChildAttendanceCalendar, type AttendanceRecord } from '@/components/children/child-attendance-calendar'
 
 export default async function ChildSchedulePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ year?: string; month?: string }>
 }) {
   const { id: childId } = await params
+  const sp = await searchParams
+  const now = new Date()
+  const year = parseInt(sp.year ?? String(now.getFullYear()))
+  const month = parseInt(sp.month ?? String(now.getMonth() + 1))
   const supabase = await createClient()
 
   const { data: childRaw } = await supabase
@@ -112,6 +120,26 @@ export default async function ChildSchedulePage({
   }
   const dateOverrides = (dateOverridesRaw ?? []) as unknown as DateOverride[]
 
+  // 当月の出席記録を取得
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01`
+  const endDate = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
+  const { data: attendancesRaw } = await supabase
+    .from('daily_attendance')
+    .select(`
+      id, date, status,
+      check_in_time, check_out_time,
+      pickup_departure_time, pickup_arrival_time,
+      dropoff_departure_time, dropoff_arrival_time,
+      service_start_time, service_end_time,
+      daytime_support, daytime_support_start_time, daytime_support_end_time,
+      units(name)
+    `)
+    .eq('child_id', childId)
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .order('date')
+  const attendances = (attendancesRaw ?? []) as unknown as AttendanceRecord[]
+
   return (
     <div className="space-y-5 max-w-2xl">
       <div className="flex items-center gap-3">
@@ -139,6 +167,24 @@ export default async function ChildSchedulePage({
         defaultTransportType={defaultTransportType}
         defaultPickupLocationType={defaultPickupLocationType}
       />
+
+      {/* 出席カレンダー */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-indigo-500" />
+            出席カレンダー
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ChildAttendanceCalendar
+            year={year}
+            month={month}
+            childId={childId}
+            attendances={attendances}
+          />
+        </CardContent>
+      </Card>
     </div>
   )
 }

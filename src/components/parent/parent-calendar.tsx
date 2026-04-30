@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { makeParentReservation } from '@/app/actions/parent-reservation'
 import { Badge } from '@/components/ui/badge'
-import { ChevronLeft, ChevronRight, Check, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, X, Car, Clock } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
+import type { AttendanceRecord } from '@/components/children/child-attendance-calendar'
 
 type Child = { id: string; name: string }
 type Unit = { id: string; name: string; capacity: number }
@@ -23,6 +24,7 @@ type FacilityEvent = {
   title: string
   affects_reservation: boolean
 }
+type AttendanceWithChild = AttendanceRecord & { child_id: string }
 
 interface Props {
   year: number
@@ -32,7 +34,12 @@ interface Props {
   reservations: Reservation[]
   usageCountMap: Record<string, Record<string, number>>
   facilityEvents?: FacilityEvent[]
+  attendances?: AttendanceWithChild[]
   userId: string
+}
+
+function fmt(time: string | null | undefined) {
+  return time ? time.slice(0, 5) : null
 }
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -65,6 +72,7 @@ export function ParentCalendar({
   reservations,
   usageCountMap,
   facilityEvents = [],
+  attendances = [],
   userId,
 }: Props) {
   const router = useRouter()
@@ -113,10 +121,18 @@ export function ParentCalendar({
 
   const today = formatDate(new Date(), 'yyyy-MM-dd')
 
+  // 出席マップ: date → child_id → AttendanceWithChild
+  const attendanceMap: Record<string, Record<string, AttendanceWithChild>> = {}
+  attendances.forEach((a) => {
+    if (!attendanceMap[a.date]) attendanceMap[a.date] = {}
+    attendanceMap[a.date][a.child_id] = a
+  })
+
   const handleDayClick = (date: string) => {
-    if (date < today) return
+    const hasAttendance = !!attendanceMap[date]
+    if (date < today && !hasAttendance) return
     const dayEvents = eventMap.get(date) ?? []
-    if (dayEvents.some((e) => e.affects_reservation)) return // 予約停止日は選択不可
+    if (dayEvents.some((e) => e.affects_reservation) && !hasAttendance) return
     setSelectedDate(date === selectedDate ? null : date)
   }
 
@@ -245,7 +261,8 @@ export function ParentCalendar({
             const dayOfWeek = new Date(date).getDay()
             const dayEvents = eventMap.get(date) ?? []
             const isClosed = dayEvents.some((e) => e.affects_reservation)
-            const isDisabled = isPast || isClosed
+            const hasAttendance = !!attendanceMap[date]
+            const isDisabled = (isPast || isClosed) && !hasAttendance
 
             return (
               <button
@@ -254,8 +271,8 @@ export function ParentCalendar({
                 disabled={isDisabled}
                 className={cn(
                   'h-14 border-b border-r border-gray-50 p-1 text-left transition-colors',
-                  isClosed ? 'bg-red-50 cursor-not-allowed' :
-                  isPast ? 'bg-gray-50 cursor-not-allowed' : 'hover:bg-indigo-50',
+                  isClosed && !hasAttendance ? 'bg-red-50 cursor-not-allowed' :
+                  isPast && !hasAttendance ? 'bg-gray-50 cursor-not-allowed' : 'hover:bg-indigo-50',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400',
                 )}
               >
@@ -266,12 +283,12 @@ export function ParentCalendar({
                     !isToday && isClosed && 'text-red-400',
                     !isToday && !isClosed && dayOfWeek === 0 && 'text-red-500',
                     !isToday && !isClosed && dayOfWeek === 6 && 'text-blue-500',
-                    !isToday && !isClosed && dayOfWeek > 0 && dayOfWeek < 6 && (isPast ? 'text-gray-300' : 'text-gray-700'),
+                    !isToday && !isClosed && dayOfWeek > 0 && dayOfWeek < 6 && (isPast && !hasAttendance ? 'text-gray-300' : 'text-gray-700'),
                   )}
                 >
                   {new Date(date).getDate()}
                 </div>
-                {isClosed ? (
+                {isClosed && !hasAttendance ? (
                   <p className="text-xs text-red-400 leading-none truncate">
                     {dayEvents[0]?.title ?? '休業'}
                   </p>
@@ -283,6 +300,9 @@ export function ParentCalendar({
                         className={cn('w-1.5 h-1.5 rounded-full', STATUS_COLORS[r.status] ?? 'bg-gray-300')}
                       />
                     ))}
+                    {hasAttendance && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-500" title="出席記録あり" />
+                    )}
                   </div>
                 )}
               </button>
@@ -301,10 +321,65 @@ export function ParentCalendar({
         ))}
       </div>
 
+      {/* 凡例に出席を追加 */}
+      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+        <div className="w-2 h-2 rounded-full bg-green-500" />出席記録
+      </div>
+
       {/* 日付詳細パネル */}
       {selectedDate && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
           <h2 className="font-semibold text-gray-900">{formatDate(selectedDate, 'MM月dd日')}</h2>
+
+          {/* 出席詳細（過去日・出席記録がある場合） */}
+          {attendanceMap[selectedDate] && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-600">出席記録</p>
+              {Object.values(attendanceMap[selectedDate]).map((att) => {
+                const child = children.find((c) => c.id === att.child_id)
+                const hasTransport = att.pickup_departure_time || att.pickup_arrival_time ||
+                  att.dropoff_departure_time || att.dropoff_arrival_time
+                const hasService = att.service_start_time || att.service_end_time
+                return (
+                  <div key={att.id} className="rounded-lg border border-green-100 bg-green-50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-gray-800">{child?.name}</p>
+                      <Badge variant={att.status === 'attended' ? 'success' : 'secondary'} className="text-xs">
+                        {att.status === 'attended' ? '出席' : '欠席'}
+                      </Badge>
+                    </div>
+                    {hasTransport && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1 text-xs font-medium text-teal-700">
+                          <Car className="h-3 w-3" />送迎時間
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-gray-600 pl-1">
+                          {att.pickup_departure_time && <span>お迎え出発: {fmt(att.pickup_departure_time)}</span>}
+                          {att.pickup_arrival_time && <span>事務所到着: {fmt(att.pickup_arrival_time)}</span>}
+                          {att.dropoff_departure_time && <span>事務所出発: {fmt(att.dropoff_departure_time)}</span>}
+                          {att.dropoff_arrival_time && <span>自宅到着: {fmt(att.dropoff_arrival_time)}</span>}
+                        </div>
+                      </div>
+                    )}
+                    {hasService && (
+                      <div className="flex items-center gap-2 text-xs text-gray-600">
+                        <Clock className="h-3 w-3 text-indigo-500" />
+                        <span className="font-medium text-indigo-700">提供時間:</span>
+                        <span>{fmt(att.service_start_time) ?? '—'} 〜 {fmt(att.service_end_time) ?? '—'}</span>
+                      </div>
+                    )}
+                    {att.daytime_support && (
+                      <div className="flex items-center gap-2 text-xs text-gray-600">
+                        <Clock className="h-3 w-3 text-orange-500" />
+                        <span className="font-medium text-orange-700">日中一時:</span>
+                        <span>{fmt(att.daytime_support_start_time) ?? '—'} 〜 {fmt(att.daytime_support_end_time) ?? '—'}</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
           {/* 施設イベント */}
           {selectedDateEvents.length > 0 && (

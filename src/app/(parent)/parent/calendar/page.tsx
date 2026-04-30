@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { ParentCalendar } from '@/components/parent/parent-calendar'
+import type { AttendanceRecord } from '@/components/children/child-attendance-calendar'
 
 type Child = { id: string; name: string }
 type Unit = { id: string; name: string; capacity: number }
@@ -106,6 +107,26 @@ export default async function ParentCalendarPage({
     .order('event_date')
   const facilityEvents = (facilityEventsRaw ?? []) as FacilityEvent[]
 
+  // 当月の出席記録（全子ども）
+  const { data: attendancesRaw } = childIds.length > 0
+    ? await supabase
+        .from('daily_attendance')
+        .select(`
+          id, date, status, child_id,
+          check_in_time, check_out_time,
+          pickup_departure_time, pickup_arrival_time,
+          dropoff_departure_time, dropoff_arrival_time,
+          service_start_time, service_end_time,
+          daytime_support, daytime_support_start_time, daytime_support_end_time,
+          units(name)
+        `)
+        .in('child_id', childIds)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date')
+    : { data: [] }
+  const attendances = (attendancesRaw ?? []) as unknown as (AttendanceRecord & { child_id: string })[]
+
   return (
     <ParentCalendar
       year={year}
@@ -115,6 +136,7 @@ export default async function ParentCalendarPage({
       reservations={reservations}
       usageCountMap={usageCountMap}
       facilityEvents={facilityEvents}
+      attendances={attendances}
       userId={user.id}
     />
   )
