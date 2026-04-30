@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Car, Clock, CalendarDays } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { ChevronLeft, ChevronRight, Car, Clock, CalendarDays, Save, CheckCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export type AttendanceRecord = {
@@ -35,24 +37,90 @@ interface Props {
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
 function fmt(time: string | null | undefined) {
-  return time ? time.slice(0, 5) : null
+  return time ? time.slice(0, 5) : ''
 }
 
-function TimeRow({ label, start, end }: { label: string; start: string | null; end: string | null }) {
-  if (!start && !end) return null
+function TimeField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+}) {
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="text-gray-500 w-20 flex-shrink-0">{label}</span>
-      <span className="text-gray-800">
-        {start ?? '—'}{start && end ? ' 〜 ' : ''}{end ?? ''}
-      </span>
+    <div>
+      <label className="text-xs text-gray-500 mb-1 block">{label}</label>
+      <input
+        type="time"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+      />
     </div>
   )
 }
 
 export function ChildAttendanceCalendar({ year, month, childId, attendances, basePath }: Props) {
   const router = useRouter()
+  const supabase = createClient()
+  const [, startTransition] = useTransition()
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  // 編集フィールドの状態
+  const [pickupDeparture, setPickupDeparture] = useState('')
+  const [pickupArrival, setPickupArrival] = useState('')
+  const [dropoffDeparture, setDropoffDeparture] = useState('')
+  const [dropoffArrival, setDropoffArrival] = useState('')
+  const [serviceStart, setServiceStart] = useState('')
+  const [serviceEnd, setServiceEnd] = useState('')
+  const [daytimeSupport, setDaytimeSupport] = useState(false)
+  const [daytimeSupportStart, setDaytimeSupportStart] = useState('')
+  const [daytimeSupportEnd, setDaytimeSupportEnd] = useState('')
+
+  const attendanceMap = Object.fromEntries(attendances.map((a) => [a.date, a]))
+  const selected = selectedDate ? (attendanceMap[selectedDate] ?? null) : null
+
+  // 日付が変わったら編集フィールドを初期化
+  useEffect(() => {
+    if (selected) {
+      setPickupDeparture(fmt(selected.pickup_departure_time))
+      setPickupArrival(fmt(selected.pickup_arrival_time))
+      setDropoffDeparture(fmt(selected.dropoff_departure_time))
+      setDropoffArrival(fmt(selected.dropoff_arrival_time))
+      setServiceStart(fmt(selected.service_start_time))
+      setServiceEnd(fmt(selected.service_end_time))
+      setDaytimeSupport(selected.daytime_support)
+      setDaytimeSupportStart(fmt(selected.daytime_support_start_time))
+      setDaytimeSupportEnd(fmt(selected.daytime_support_end_time))
+    }
+  }, [selectedDate]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSave = async () => {
+    if (!selected) return
+    setSaving(true)
+    await supabase
+      .from('daily_attendance')
+      .update({
+        pickup_departure_time: pickupDeparture || null,
+        pickup_arrival_time: pickupArrival || null,
+        dropoff_departure_time: dropoffDeparture || null,
+        dropoff_arrival_time: dropoffArrival || null,
+        service_start_time: serviceStart || null,
+        service_end_time: serviceEnd || null,
+        daytime_support: daytimeSupport,
+        daytime_support_start_time: daytimeSupport ? (daytimeSupportStart || null) : null,
+        daytime_support_end_time: daytimeSupport ? (daytimeSupportEnd || null) : null,
+      })
+      .eq('id', selected.id)
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+    startTransition(() => router.refresh())
+  }
 
   const changeMonth = (delta: number) => {
     const d = new Date(year, month - 1 + delta, 1)
@@ -73,9 +141,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, bas
     }
   )
 
-  const attendanceMap = Object.fromEntries(attendances.map((a) => [a.date, a]))
   const today = new Date().toISOString().slice(0, 10)
-  const selected = selectedDate ? (attendanceMap[selectedDate] ?? null) : null
 
   return (
     <div className="space-y-3">
@@ -161,9 +227,9 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, bas
         </div>
       </div>
 
-      {/* 日付詳細パネル */}
+      {/* 日付詳細・編集パネル */}
       {selectedDate && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-sm text-gray-900">
               {new Date(selectedDate + 'T00:00:00').toLocaleDateString('ja-JP', {
@@ -184,77 +250,67 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, bas
           {!selected ? (
             <p className="text-sm text-gray-400 text-center py-2">この日の出席記録がありません</p>
           ) : (
-            <div className="space-y-3">
+            <>
               {/* ユニット */}
               {selected.units?.name && (
                 <p className="text-xs text-gray-500">ユニット: {selected.units.name}</p>
               )}
 
               {/* 送迎時間 */}
-              {(selected.pickup_departure_time ||
-                selected.pickup_arrival_time ||
-                selected.dropoff_departure_time ||
-                selected.dropoff_arrival_time) && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <Car className="h-3.5 w-3.5 text-teal-500" />
-                    <span className="text-xs font-semibold text-gray-600">送迎時間</span>
-                  </div>
-                  <div className="bg-teal-50 rounded-lg p-2.5 space-y-1">
-                    <TimeRow
-                      label="お迎え出発"
-                      start={fmt(selected.pickup_departure_time)}
-                      end={null}
-                    />
-                    <TimeRow
-                      label="事務所到着"
-                      start={fmt(selected.pickup_arrival_time)}
-                      end={null}
-                    />
-                    <TimeRow
-                      label="事務所出発"
-                      start={fmt(selected.dropoff_departure_time)}
-                      end={null}
-                    />
-                    <TimeRow
-                      label="自宅到着"
-                      start={fmt(selected.dropoff_arrival_time)}
-                      end={null}
-                    />
-                  </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Car className="h-3.5 w-3.5 text-teal-500" />
+                  <span className="text-xs font-semibold text-gray-600">送迎時間</span>
                 </div>
-              )}
+                <div className="grid grid-cols-2 gap-2">
+                  <TimeField label="お迎え出発" value={pickupDeparture} onChange={setPickupDeparture} />
+                  <TimeField label="事務所到着" value={pickupArrival} onChange={setPickupArrival} />
+                  <TimeField label="事務所出発" value={dropoffDeparture} onChange={setDropoffDeparture} />
+                  <TimeField label="自宅到着" value={dropoffArrival} onChange={setDropoffArrival} />
+                </div>
+              </div>
 
               {/* 提供時間 */}
-              {(selected.service_start_time || selected.service_end_time) && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5 text-indigo-500" />
-                    <span className="text-xs font-semibold text-gray-600">提供時間</span>
-                  </div>
-                  <div className="bg-indigo-50 rounded-lg p-2.5">
-                    <span className="text-sm text-gray-800">
-                      {fmt(selected.service_start_time) ?? '—'} 〜 {fmt(selected.service_end_time) ?? '—'}
-                    </span>
-                  </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-indigo-500" />
+                  <span className="text-xs font-semibold text-gray-600">提供時間</span>
                 </div>
-              )}
+                <div className="grid grid-cols-2 gap-2">
+                  <TimeField label="開始時間" value={serviceStart} onChange={setServiceStart} />
+                  <TimeField label="終了時間" value={serviceEnd} onChange={setServiceEnd} />
+                </div>
+              </div>
 
               {/* 日中一時利用 */}
-              {selected.daytime_support && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5 text-orange-500" />
-                    <span className="text-xs font-semibold text-gray-600">日中一時利用</span>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={daytimeSupport}
+                    onChange={(e) => setDaytimeSupport(e.target.checked)}
+                    className="w-4 h-4 accent-orange-500"
+                  />
+                  <Clock className="h-3.5 w-3.5 text-orange-500" />
+                  <span className="text-xs font-semibold text-gray-600">日中一時利用</span>
+                </label>
+                {daytimeSupport && (
+                  <div className="grid grid-cols-2 gap-2 pl-6">
+                    <TimeField label="開始時間" value={daytimeSupportStart} onChange={setDaytimeSupportStart} />
+                    <TimeField label="終了時間" value={daytimeSupportEnd} onChange={setDaytimeSupportEnd} />
                   </div>
-                  <div className="bg-orange-50 rounded-lg p-2.5">
-                    <span className="text-sm text-gray-800">
-                      {fmt(selected.daytime_support_start_time) ?? '—'} 〜 {fmt(selected.daytime_support_end_time) ?? '—'}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+
+              {/* 保存ボタン */}
+              <Button onClick={handleSave} disabled={saving} size="sm" className="w-full">
+                {saved ? (
+                  <><CheckCircle className="h-4 w-4" />保存しました</>
+                ) : (
+                  <><Save className="h-4 w-4" />{saving ? '保存中...' : '変更を保存'}</>
+                )}
+              </Button>
+            </>
           )}
         </div>
       )}
