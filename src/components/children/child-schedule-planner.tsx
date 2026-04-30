@@ -526,11 +526,13 @@ export function ChildSchedulePlanner({
     </div>
   )
 
-  /** 送迎区分・お迎え場所・送る場所の選択UI */
+  /** 送迎区分・お迎え場所・お迎え時間・送る場所・送り時間の選択UI */
   const transportInputs = (
     tt: string, setTt: (v: string) => void,
     plt: string, setPlt: (v: string) => void,
     dlt: string, setDlt: (v: string) => void,
+    pt: string, setPt: (v: string) => void,
+    dt: string, setDt: (v: string) => void,
   ) => (
     <div className="space-y-3">
       <div>
@@ -549,50 +551,38 @@ export function ChildSchedulePlanner({
         </div>
       </div>
       {(tt === 'pickup_only' || tt === 'both') && (
-        <LocationButtons
-          label="お迎え場所"
-          value={plt}
-          onChange={setPlt}
-          childAddress={childAddress}
-          schoolName={schoolName}
-        />
+        <div className="space-y-2">
+          <LocationButtons
+            label="お迎え場所"
+            value={plt}
+            onChange={setPlt}
+            childAddress={childAddress}
+            schoolName={schoolName}
+          />
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">
+              お迎え時間
+              <span className="ml-1 text-gray-400">（1時間単位でお迎え便が自動的に分かれます）</span>
+            </label>
+            <TimeSelect value={pt} onChange={setPt} />
+          </div>
+        </div>
       )}
       {(tt === 'dropoff_only' || tt === 'both') && (
-        <LocationButtons
-          label="送る場所"
-          value={dlt}
-          onChange={setDlt}
-          childAddress={childAddress}
-          schoolName={schoolName}
-        />
+        <div className="space-y-2">
+          <LocationButtons
+            label="送る場所"
+            value={dlt}
+            onChange={setDlt}
+            childAddress={childAddress}
+            schoolName={schoolName}
+          />
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">送り時間</label>
+            <TimeSelect value={dt} onChange={setDt} />
+          </div>
+        </div>
       )}
-    </div>
-  )
-
-  /** 利用時間の選択UI */
-  const timeInputs = (
-    pt: string, setPt: (v: string) => void,
-    dt: string, setDt: (v: string) => void
-  ) => (
-    <div>
-      <label className="text-xs font-medium text-gray-700 mb-2 block">
-        利用時間
-        <span className="ml-1 text-gray-400 font-normal">（1時間単位でお迎え便が自動的に分かれます）</span>
-      </label>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1">
-            <span className="inline-block w-2 h-2 rounded-full bg-indigo-400" />開始時間
-          </label>
-          <TimeSelect value={pt} onChange={setPt} />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1">
-            <span className="inline-block w-2 h-2 rounded-full bg-teal-400" />終了時間
-          </label>
-          <TimeSelect value={dt} onChange={setDt} />
-        </div>
-      </div>
     </div>
   )
 
@@ -702,13 +692,10 @@ export function ChildSchedulePlanner({
                     (v) => setEditState((p) => p ? { ...p, pickup_location_type: v } : p),
                     editState.dropoff_location_type,
                     (v) => setEditState((p) => p ? { ...p, dropoff_location_type: v } : p),
-                  )}
-
-                  {timeInputs(
                     editState.pickup_time,
-                    (v) => setEditState((p) => p ? { ...p, pickup_time: v } : p),
+                    (v: string) => setEditState((p) => p ? { ...p, pickup_time: v } : p),
                     editState.dropoff_time,
-                    (v) => setEditState((p) => p ? { ...p, dropoff_time: v } : p),
+                    (v: string) => setEditState((p) => p ? { ...p, dropoff_time: v } : p),
                   )}
 
                   <div className="flex gap-2 pt-1">
@@ -857,12 +844,10 @@ export function ChildSchedulePlanner({
                               (v) => setDayEditState((p) => p ? { ...p, pickup_location_type: v } : p),
                               dayEditState.dropoff_location_type,
                               (v) => setDayEditState((p) => p ? { ...p, dropoff_location_type: v } : p),
-                            )}
-                            {timeInputs(
                               dayEditState.pickup_time,
-                              (v) => setDayEditState((p) => p ? { ...p, pickup_time: v } : p),
+                              (v: string) => setDayEditState((p) => p ? { ...p, pickup_time: v } : p),
                               dayEditState.dropoff_time,
-                              (v) => setDayEditState((p) => p ? { ...p, dropoff_time: v } : p),
+                              (v: string) => setDayEditState((p) => p ? { ...p, dropoff_time: v } : p),
                             )}
                             <div className="flex gap-2 pt-1">
                               {existing && (
@@ -964,12 +949,10 @@ export function ChildSchedulePlanner({
                             (v) => setDateOverrideEditState((p) => p ? { ...p, pickup_location_type: v } : p),
                             dateOverrideEditState.dropoff_location_type,
                             (v) => setDateOverrideEditState((p) => p ? { ...p, dropoff_location_type: v } : p),
-                          )}
-                          {timeInputs(
                             dateOverrideEditState.pickup_time,
-                            (v) => setDateOverrideEditState((p) => p ? { ...p, pickup_time: v } : p),
+                            (v: string) => setDateOverrideEditState((p) => p ? { ...p, pickup_time: v } : p),
                             dateOverrideEditState.dropoff_time,
-                            (v) => setDateOverrideEditState((p) => p ? { ...p, dropoff_time: v } : p),
+                            (v: string) => setDateOverrideEditState((p) => p ? { ...p, dropoff_time: v } : p),
                           )}
 
                           <div className="flex gap-2 pt-1">
@@ -1085,8 +1068,7 @@ export function ChildSchedulePlanner({
               </>
             )}
 
-            {transportInputs(transportType, setTransportType, pickupLocationType, setPickupLocationType, dropoffLocationType, setDropoffLocationType)}
-            {timeInputs(pickupTime, setPickupTime, dropoffTime, setDropoffTime)}
+            {transportInputs(transportType, setTransportType, pickupLocationType, setPickupLocationType, dropoffLocationType, setDropoffLocationType, pickupTime, setPickupTime, dropoffTime, setDropoffTime)}
 
             {saveError && (
               <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
