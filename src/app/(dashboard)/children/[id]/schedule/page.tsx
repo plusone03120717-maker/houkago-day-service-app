@@ -126,7 +126,7 @@ export default async function ChildSchedulePage({
   const { data: attendancesRaw } = await supabase
     .from('daily_attendance')
     .select(`
-      id, date, status,
+      id, unit_id, date, status,
       check_in_time, check_out_time,
       pickup_departure_time, pickup_arrival_time,
       dropoff_departure_time, dropoff_arrival_time,

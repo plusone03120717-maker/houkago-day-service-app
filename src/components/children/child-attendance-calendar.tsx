@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 
 export type AttendanceRecord = {
   id: string
+  unit_id: string
   date: string
   status: string
   check_in_time: string | null
@@ -102,6 +103,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, bas
   const handleSave = async () => {
     if (!selected) return
     setSaving(true)
+
     await supabase
       .from('daily_attendance')
       .update({
@@ -116,6 +118,40 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, bas
         daytime_support_end_time: daytimeSupport ? (daytimeSupportEnd || null) : null,
       })
       .eq('id', selected.id)
+
+    // 送迎スケジュールの出発時間を同期
+    if (selected.unit_id && selectedDate) {
+      const { data: schedules } = await supabase
+        .from('transport_schedules')
+        .select('id, direction')
+        .eq('unit_id', selected.unit_id)
+        .eq('date', selectedDate)
+
+      if (schedules && schedules.length > 0) {
+        const scheduleIds = schedules.map((s) => s.id)
+        const { data: childDetails } = await supabase
+          .from('transport_details')
+          .select('schedule_id')
+          .eq('child_id', childId)
+          .in('schedule_id', scheduleIds)
+
+        const childScheduleIds = new Set((childDetails ?? []).map((d) => d.schedule_id))
+        for (const schedule of schedules) {
+          if (!childScheduleIds.has(schedule.id)) continue
+          const newDeparture =
+            schedule.direction === 'pickup' ? (pickupDeparture || null)
+            : schedule.direction === 'dropoff' ? (dropoffDeparture || null)
+            : null
+          if (newDeparture !== undefined) {
+            await supabase
+              .from('transport_schedules')
+              .update({ departure_time: newDeparture })
+              .eq('id', schedule.id)
+          }
+        }
+      }
+    }
+
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
