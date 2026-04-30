@@ -23,6 +23,7 @@ type Plan = {
   dropoff_time: string | null
   transport_type: string
   pickup_location_type: string
+  dropoff_location_type: string
   units: { name: string } | null
 }
 type DaySetting = {
@@ -31,6 +32,7 @@ type DaySetting = {
   day_of_week: number
   transport_type: string
   pickup_location_type: string
+  dropoff_location_type: string
   pickup_time: string | null
   dropoff_time: string | null
 }
@@ -41,6 +43,7 @@ type DateOverride = {
   date: string
   transport_type: string
   pickup_location_type: string
+  dropoff_location_type: string
   pickup_time: string | null
   dropoff_time: string | null
 }
@@ -114,11 +117,13 @@ interface EditState {
   dropoff_time: string
   transport_type: string
   pickup_location_type: string
+  dropoff_location_type: string
 }
 
 interface DayEditState {
   transport_type: string
   pickup_location_type: string
+  dropoff_location_type: string
   pickup_time: string
   dropoff_time: string
 }
@@ -126,9 +131,14 @@ interface DayEditState {
 interface DateOverrideEditState {
   transport_type: string
   pickup_location_type: string
+  dropoff_location_type: string
   pickup_time: string
   dropoff_time: string
 }
+
+const PLAN_SELECT = 'id, name, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, dropoff_location_type, units(name)'
+const DAY_SELECT = 'id, plan_id, day_of_week, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time'
+const OVERRIDE_SELECT = 'id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time'
 
 interface Props {
   childId: string
@@ -141,12 +151,13 @@ interface Props {
   initialDateOverrides: DateOverride[]
   defaultTransportType: string
   defaultPickupLocationType: string
+  defaultDropoffLocationType: string
 }
 
 export function ChildSchedulePlanner({
   childId, units, initialPlans, initialDaySettings, initialDateOverrides,
   childAddress, schoolName,
-  defaultTransportType, defaultPickupLocationType,
+  defaultTransportType, defaultPickupLocationType, defaultDropoffLocationType,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -156,9 +167,7 @@ export function ChildSchedulePlanner({
   const [daySettings, setDaySettings] = useState<DaySetting[]>(initialDaySettings)
   const [dateOverrides, setDateOverrides] = useState<DateOverride[]>(initialDateOverrides)
 
-  // 特定日上書き: どの計画の追加フォームを開いているか
   const [openDateOverridePlanId, setOpenDateOverridePlanId] = useState<string | null>(null)
-  // 編集中の上書きID（null = 新規）
   const [editingDateOverrideId, setEditingDateOverrideId] = useState<string | null>(null)
   const [dateOverrideDate, setDateOverrideDate] = useState('')
   const [dateOverrideEditState, setDateOverrideEditState] = useState<DateOverrideEditState | null>(null)
@@ -171,8 +180,7 @@ export function ChildSchedulePlanner({
   const [editState, setEditState] = useState<EditState | null>(null)
   const [editSaving, setEditSaving] = useState(false)
 
-  // 曜日別編集: どの計画のどの曜日を開いているか
-  const [openDayKey, setOpenDayKey] = useState<string | null>(null) // `${planId}-${dow}`
+  const [openDayKey, setOpenDayKey] = useState<string | null>(null)
   const [dayEditState, setDayEditState] = useState<DayEditState | null>(null)
   const [daySaving, setDaySaving] = useState(false)
 
@@ -189,6 +197,7 @@ export function ChildSchedulePlanner({
   const [dropoffTime, setDropoffTime] = useState('')
   const [transportType, setTransportType] = useState(defaultTransportType)
   const [pickupLocationType, setPickupLocationType] = useState(defaultPickupLocationType)
+  const [dropoffLocationType, setDropoffLocationType] = useState(defaultDropoffLocationType)
 
   const toggleDay = (d: number) =>
     setSelectedDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort())
@@ -203,11 +212,9 @@ export function ChildSchedulePlanner({
     })
   }
 
-  // 曜日別設定を取得（なければnull）
   const getDaySetting = (planId: string, dow: number): DaySetting | null =>
     daySettings.find((ds) => ds.plan_id === planId && ds.day_of_week === dow) ?? null
 
-  // 曜日別設定パネルを開く
   const openDayEdit = (plan: Plan, dow: number) => {
     const key = `${plan.id}-${dow}`
     if (openDayKey === key) {
@@ -220,28 +227,30 @@ export function ChildSchedulePlanner({
     setDayEditState({
       transport_type: existing?.transport_type ?? plan.transport_type,
       pickup_location_type: existing?.pickup_location_type ?? plan.pickup_location_type,
+      dropoff_location_type: existing?.dropoff_location_type ?? plan.dropoff_location_type,
       pickup_time: formatTime(existing?.pickup_time ?? plan.pickup_time),
       dropoff_time: formatTime(existing?.dropoff_time ?? plan.dropoff_time),
     })
   }
 
-  // 曜日別設定を保存（upsert）
   const handleSaveDaySetting = async (plan: Plan, dow: number) => {
     if (!dayEditState) return
     setDaySaving(true)
     const existing = getDaySetting(plan.id, dow)
+    const payload = {
+      transport_type: dayEditState.transport_type,
+      pickup_location_type: dayEditState.pickup_location_type,
+      dropoff_location_type: dayEditState.dropoff_location_type,
+      pickup_time: dayEditState.pickup_time || null,
+      dropoff_time: dayEditState.dropoff_time || null,
+    }
 
     if (existing) {
       const { data, error } = await supabase
         .from('usage_plan_day_settings')
-        .update({
-          transport_type: dayEditState.transport_type,
-          pickup_location_type: dayEditState.pickup_location_type,
-          pickup_time: dayEditState.pickup_time || null,
-          dropoff_time: dayEditState.dropoff_time || null,
-        })
+        .update(payload)
         .eq('id', existing.id)
-        .select('id, plan_id, day_of_week, transport_type, pickup_location_type, pickup_time, dropoff_time')
+        .select(DAY_SELECT)
         .single()
       setDaySaving(false)
       if (!error && data) {
@@ -252,15 +261,8 @@ export function ChildSchedulePlanner({
     } else {
       const { data, error } = await supabase
         .from('usage_plan_day_settings')
-        .insert({
-          plan_id: plan.id,
-          day_of_week: dow,
-          transport_type: dayEditState.transport_type,
-          pickup_location_type: dayEditState.pickup_location_type,
-          pickup_time: dayEditState.pickup_time || null,
-          dropoff_time: dayEditState.dropoff_time || null,
-        })
-        .select('id, plan_id, day_of_week, transport_type, pickup_location_type, pickup_time, dropoff_time')
+        .insert({ plan_id: plan.id, day_of_week: dow, ...payload })
+        .select(DAY_SELECT)
         .single()
       setDaySaving(false)
       if (!error && data) {
@@ -271,7 +273,6 @@ export function ChildSchedulePlanner({
     }
   }
 
-  // 曜日別設定をリセット（デフォルトに戻す）
   const handleResetDaySetting = async (plan: Plan, dow: number) => {
     const existing = getDaySetting(plan.id, dow)
     if (!existing) return
@@ -281,7 +282,6 @@ export function ChildSchedulePlanner({
     setDayEditState(null)
   }
 
-  // 特定日上書き: 追加/編集フォームを開く
   const openDateOverrideForm = (plan: Plan, override?: DateOverride) => {
     if (openDateOverridePlanId === plan.id && editingDateOverrideId === (override?.id ?? null)) {
       setOpenDateOverridePlanId(null)
@@ -295,10 +295,10 @@ export function ChildSchedulePlanner({
     setDateOverrideEditState({
       transport_type: override?.transport_type ?? plan.transport_type,
       pickup_location_type: override?.pickup_location_type ?? plan.pickup_location_type,
+      dropoff_location_type: override?.dropoff_location_type ?? plan.dropoff_location_type,
       pickup_time: formatTime(override?.pickup_time ?? plan.pickup_time),
       dropoff_time: formatTime(override?.dropoff_time ?? plan.dropoff_time),
     })
-    // 曜日別パネルは閉じる
     setOpenDayKey(null)
     setDayEditState(null)
   }
@@ -313,19 +313,21 @@ export function ChildSchedulePlanner({
   const handleSaveDateOverride = async (planId: string) => {
     if (!dateOverrideEditState || !dateOverrideDate) return
     setDateOverrideSaving(true)
+    const payload = {
+      date: dateOverrideDate,
+      transport_type: dateOverrideEditState.transport_type,
+      pickup_location_type: dateOverrideEditState.pickup_location_type,
+      dropoff_location_type: dateOverrideEditState.dropoff_location_type,
+      pickup_time: dateOverrideEditState.pickup_time || null,
+      dropoff_time: dateOverrideEditState.dropoff_time || null,
+    }
 
     if (editingDateOverrideId) {
       const { data, error } = await supabase
         .from('usage_plan_date_overrides')
-        .update({
-          date: dateOverrideDate,
-          transport_type: dateOverrideEditState.transport_type,
-          pickup_location_type: dateOverrideEditState.pickup_location_type,
-          pickup_time: dateOverrideEditState.pickup_time || null,
-          dropoff_time: dateOverrideEditState.dropoff_time || null,
-        })
+        .update(payload)
         .eq('id', editingDateOverrideId)
-        .select('id, plan_id, date, transport_type, pickup_location_type, pickup_time, dropoff_time')
+        .select(OVERRIDE_SELECT)
         .single()
       setDateOverrideSaving(false)
       if (!error && data) {
@@ -335,15 +337,8 @@ export function ChildSchedulePlanner({
     } else {
       const { data, error } = await supabase
         .from('usage_plan_date_overrides')
-        .insert({
-          plan_id: planId,
-          date: dateOverrideDate,
-          transport_type: dateOverrideEditState.transport_type,
-          pickup_location_type: dateOverrideEditState.pickup_location_type,
-          pickup_time: dateOverrideEditState.pickup_time || null,
-          dropoff_time: dateOverrideEditState.dropoff_time || null,
-        })
-        .select('id, plan_id, date, transport_type, pickup_location_type, pickup_time, dropoff_time')
+        .insert({ plan_id: planId, ...payload })
+        .select(OVERRIDE_SELECT)
         .single()
       setDateOverrideSaving(false)
       if (!error && data) {
@@ -375,6 +370,7 @@ export function ChildSchedulePlanner({
       dropoff_time: formatTime(plan.dropoff_time),
       transport_type: plan.transport_type,
       pickup_location_type: plan.pickup_location_type,
+      dropoff_location_type: plan.dropoff_location_type,
     })
     setOpenDayKey(null)
     setDayEditState(null)
@@ -399,9 +395,10 @@ export function ChildSchedulePlanner({
         dropoff_time: editState.dropoff_time || null,
         transport_type: editState.transport_type,
         pickup_location_type: editState.pickup_location_type,
+        dropoff_location_type: editState.dropoff_location_type,
       })
       .eq('id', planId)
-      .select('id, name, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
+      .select(PLAN_SELECT)
       .single()
     setEditSaving(false)
     if (error) return
@@ -449,8 +446,9 @@ export function ChildSchedulePlanner({
         dropoff_time: dropoffTime || null,
         transport_type: transportType,
         pickup_location_type: pickupLocationType,
+        dropoff_location_type: dropoffLocationType,
       })
-      .select('id, name, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
+      .select(PLAN_SELECT)
       .single()
     if (error) { setSaving(false); setSaveError(error.message); return }
     if (data) {
@@ -466,12 +464,12 @@ export function ChildSchedulePlanner({
       setPickupTime(''); setDropoffTime('')
       setTransportType(defaultTransportType)
       setPickupLocationType(defaultPickupLocationType)
+      setDropoffLocationType(defaultDropoffLocationType)
       startTransition(() => router.refresh())
     }
   }
 
   const handleToggleActive = async (plan: Plan) => {
-    // プランを無効化する場合、今日以降の予約をキャンセルして送迎スケジュールに反映されないようにする
     if (plan.is_active) {
       const today = new Date().toISOString().slice(0, 10)
       await supabase
@@ -493,10 +491,46 @@ export function ChildSchedulePlanner({
     setDaySettings((prev) => prev.filter((ds) => ds.plan_id !== planId))
   }
 
-  /** 送迎区分・お迎え場所の選択UI */
+  /** 場所選択ボタン共通 */
+  const LocationButtons = ({
+    label, value, onChange, childAddress, schoolName,
+  }: {
+    label: string
+    value: string
+    onChange: (v: string) => void
+    childAddress: string | null
+    schoolName: string | null
+  }) => (
+    <div>
+      <label className="text-xs font-medium text-gray-700 mb-2 block">{label}</label>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => onChange('home')}
+          className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-colors ${
+            value === 'home'
+              ? 'bg-indigo-600 text-white border-indigo-600'
+              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+          }`}>
+          自宅{childAddress ? `（${childAddress.slice(0, 10)}…）` : ''}
+        </button>
+        {schoolName && (
+          <button type="button" onClick={() => onChange('school')}
+            className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-colors ${
+              value === 'school'
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+            }`}>
+            学校（{schoolName}）
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
+  /** 送迎区分・お迎え場所・送る場所の選択UI */
   const transportInputs = (
     tt: string, setTt: (v: string) => void,
-    plt: string, setPlt: (v: string) => void
+    plt: string, setPlt: (v: string) => void,
+    dlt: string, setDlt: (v: string) => void,
   ) => (
     <div className="space-y-3">
       <div>
@@ -515,31 +549,22 @@ export function ChildSchedulePlanner({
         </div>
       </div>
       {(tt === 'pickup_only' || tt === 'both') && (
-        <div>
-          <label className="text-xs font-medium text-gray-700 mb-2 block">
-            お迎え場所
-          </label>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setPlt('home')}
-              className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-colors ${
-                plt === 'home'
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-              }`}>
-              自宅{childAddress ? `（${childAddress.slice(0, 10)}…）` : ''}
-            </button>
-            {schoolName && (
-              <button type="button" onClick={() => setPlt('school')}
-                className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-colors ${
-                  plt === 'school'
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                }`}>
-                学校（{schoolName}）
-              </button>
-            )}
-          </div>
-        </div>
+        <LocationButtons
+          label="お迎え場所"
+          value={plt}
+          onChange={setPlt}
+          childAddress={childAddress}
+          schoolName={schoolName}
+        />
+      )}
+      {(tt === 'dropoff_only' || tt === 'both') && (
+        <LocationButtons
+          label="送る場所"
+          value={dlt}
+          onChange={setDlt}
+          childAddress={childAddress}
+          schoolName={schoolName}
+        />
       )}
     </div>
   )
@@ -571,6 +596,8 @@ export function ChildSchedulePlanner({
     </div>
   )
 
+  const locationLabel = (type: string) => type === 'school' ? '学校' : '自宅'
+
   return (
     <div className="space-y-4">
       {/* 既存プラン一覧 */}
@@ -589,7 +616,6 @@ export function ChildSchedulePlanner({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* 名前 */}
                   <div>
                     <label className="text-xs font-medium text-gray-700 mb-1 block">スケジュール名</label>
                     <input type="text" value={editState.name}
@@ -598,7 +624,6 @@ export function ChildSchedulePlanner({
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
                   </div>
 
-                  {/* ユニット */}
                   <div>
                     <label className="text-xs font-medium text-gray-700 mb-1 block">ユニット</label>
                     <select value={editState.unit_id}
@@ -608,7 +633,6 @@ export function ChildSchedulePlanner({
                     </select>
                   </div>
 
-                  {/* モード切替 */}
                   <div className="flex gap-2">
                     {([['repeat', '繰り返し', Repeat], ['once', '日付指定', CalendarDays]] as const).map(([m, label, Icon]) => (
                       <button key={m} type="button"
@@ -676,6 +700,8 @@ export function ChildSchedulePlanner({
                     (v) => setEditState((p) => p ? { ...p, transport_type: v } : p),
                     editState.pickup_location_type,
                     (v) => setEditState((p) => p ? { ...p, pickup_location_type: v } : p),
+                    editState.dropoff_location_type,
+                    (v) => setEditState((p) => p ? { ...p, dropoff_location_type: v } : p),
                   )}
 
                   {timeInputs(
@@ -750,12 +776,17 @@ export function ChildSchedulePlanner({
                         <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${transportLabel(plan.transport_type).color}`}>
                           <Car className="h-3 w-3" />
                           {transportLabel(plan.transport_type).label}
-                          {(plan.transport_type === 'pickup_only' || plan.transport_type === 'both') && (
-                            <span className="ml-0.5 opacity-75">
-                              （{plan.pickup_location_type === 'school' ? '学校' : '自宅'}から）
-                            </span>
-                          )}
                         </span>
+                        {(plan.transport_type === 'pickup_only' || plan.transport_type === 'both') && (
+                          <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                            お迎え: {locationLabel(plan.pickup_location_type)}
+                          </span>
+                        )}
+                        {(plan.transport_type === 'dropoff_only' || plan.transport_type === 'both') && (
+                          <span className="text-xs text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
+                            送り: {locationLabel(plan.dropoff_location_type)}
+                          </span>
+                        )}
                         {plan.pickup_time && (
                           <span className="flex items-center gap-1 text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
                             <Clock className="h-3 w-3" />開始 {formatTime(plan.pickup_time)}
@@ -824,6 +855,8 @@ export function ChildSchedulePlanner({
                               (v) => setDayEditState((p) => p ? { ...p, transport_type: v } : p),
                               dayEditState.pickup_location_type,
                               (v) => setDayEditState((p) => p ? { ...p, pickup_location_type: v } : p),
+                              dayEditState.dropoff_location_type,
+                              (v) => setDayEditState((p) => p ? { ...p, dropoff_location_type: v } : p),
                             )}
                             {timeInputs(
                               dayEditState.pickup_time,
@@ -851,7 +884,7 @@ export function ChildSchedulePlanner({
                     )
                   })}
 
-                  {/* 曜日別設定の概要（上書きがある曜日の一覧） */}
+                  {/* 曜日別設定の概要 */}
                   {!isOneTime(plan) && daySettings.some((ds) => ds.plan_id === plan.id) && (
                     <div className="pt-1 border-t border-gray-100">
                       <p className="text-xs text-gray-400 mb-1.5">曜日別の個別設定</p>
@@ -887,7 +920,6 @@ export function ChildSchedulePlanner({
                         </button>
                       </div>
 
-                      {/* 既存の特定日上書き一覧 */}
                       {dateOverrides.filter((o) => o.plan_id === plan.id).length > 0 && (
                         <div className="flex flex-wrap gap-2 mb-2">
                           {dateOverrides
@@ -906,7 +938,6 @@ export function ChildSchedulePlanner({
                         </div>
                       )}
 
-                      {/* 追加/編集フォーム */}
                       {openDateOverridePlanId === plan.id && dateOverrideEditState && (
                         <div className="border border-purple-200 rounded-xl bg-purple-50 p-4 space-y-3">
                           <div className="flex items-center justify-between">
@@ -931,6 +962,8 @@ export function ChildSchedulePlanner({
                             (v) => setDateOverrideEditState((p) => p ? { ...p, transport_type: v } : p),
                             dateOverrideEditState.pickup_location_type,
                             (v) => setDateOverrideEditState((p) => p ? { ...p, pickup_location_type: v } : p),
+                            dateOverrideEditState.dropoff_location_type,
+                            (v) => setDateOverrideEditState((p) => p ? { ...p, dropoff_location_type: v } : p),
                           )}
                           {timeInputs(
                             dateOverrideEditState.pickup_time,
@@ -978,7 +1011,6 @@ export function ChildSchedulePlanner({
             <CardTitle className="text-base">新しいスケジュールを追加</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* 名前 */}
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">スケジュール名</label>
               <input type="text" value={planName} onChange={(e) => setPlanName(e.target.value)}
@@ -986,7 +1018,6 @@ export function ChildSchedulePlanner({
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
             </div>
 
-            {/* ユニット */}
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">ユニット</label>
               <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)}
@@ -995,7 +1026,6 @@ export function ChildSchedulePlanner({
               </select>
             </div>
 
-            {/* モード切替 */}
             <div>
               <label className="text-xs font-medium text-gray-700 mb-2 block">追加方法</label>
               <div className="flex gap-2">
@@ -1055,7 +1085,7 @@ export function ChildSchedulePlanner({
               </>
             )}
 
-            {transportInputs(transportType, setTransportType, pickupLocationType, setPickupLocationType)}
+            {transportInputs(transportType, setTransportType, pickupLocationType, setPickupLocationType, dropoffLocationType, setDropoffLocationType)}
             {timeInputs(pickupTime, setPickupTime, dropoffTime, setDropoffTime)}
 
             {saveError && (

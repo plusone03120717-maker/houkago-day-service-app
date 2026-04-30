@@ -46,7 +46,7 @@ export default async function ChildSchedulePage({
   // 既存の利用計画
   const { data: plansRaw } = await supabase
     .from('usage_plans')
-    .select('id, name, child_id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, units(name)')
+    .select('id, name, child_id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, dropoff_location_type, units(name)')
     .eq('child_id', childId)
     .order('start_date', { ascending: false })
 
@@ -63,6 +63,7 @@ export default async function ChildSchedulePage({
     dropoff_time: string | null
     transport_type: string
     pickup_location_type: string
+    dropoff_location_type: string
     units: { name: string } | null
   }
   const plans = (plansRaw ?? []) as unknown as Plan[]
@@ -70,7 +71,7 @@ export default async function ChildSchedulePage({
   // 既存の送迎設定（新規追加時のデフォルト用）
   const { data: transportSettingRaw } = await supabase
     .from('child_transport_settings')
-    .select('transport_type, pickup_location_type')
+    .select('transport_type, pickup_location_type, dropoff_location_type')
     .eq('child_id', childId)
     .maybeSingle()
   const defaultTransportType = (transportSettingRaw?.transport_type as string | null)
@@ -79,13 +80,16 @@ export default async function ChildSchedulePage({
   const defaultPickupLocationType = (transportSettingRaw?.pickup_location_type as string | null)
     ?? plans[0]?.pickup_location_type
     ?? 'home'
+  const defaultDropoffLocationType = (transportSettingRaw?.dropoff_location_type as string | null)
+    ?? plans[0]?.dropoff_location_type
+    ?? 'home'
 
   // 曜日別設定を取得
   const planIds = plans.map((p) => p.id)
   const { data: daySettingsRaw } = planIds.length > 0
     ? await supabase
         .from('usage_plan_day_settings')
-        .select('id, plan_id, day_of_week, transport_type, pickup_location_type, pickup_time, dropoff_time')
+        .select('id, plan_id, day_of_week, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time')
         .in('plan_id', planIds)
     : { data: [] }
 
@@ -95,6 +99,7 @@ export default async function ChildSchedulePage({
     day_of_week: number
     transport_type: string
     pickup_location_type: string
+    dropoff_location_type: string
     pickup_time: string | null
     dropoff_time: string | null
   }
@@ -104,7 +109,7 @@ export default async function ChildSchedulePage({
   const { data: dateOverridesRaw } = planIds.length > 0
     ? await supabase
         .from('usage_plan_date_overrides')
-        .select('id, plan_id, date, transport_type, pickup_location_type, pickup_time, dropoff_time')
+        .select('id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time')
         .in('plan_id', planIds)
         .order('date', { ascending: true })
     : { data: [] }
@@ -115,6 +120,7 @@ export default async function ChildSchedulePage({
     date: string
     transport_type: string
     pickup_location_type: string
+    dropoff_location_type: string
     pickup_time: string | null
     dropoff_time: string | null
   }
@@ -182,6 +188,7 @@ export default async function ChildSchedulePage({
         initialDateOverrides={dateOverrides}
         defaultTransportType={defaultTransportType}
         defaultPickupLocationType={defaultPickupLocationType}
+        defaultDropoffLocationType={defaultDropoffLocationType}
       />
 
       {/* 出席カレンダー */}
