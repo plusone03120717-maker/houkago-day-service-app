@@ -33,6 +33,7 @@ interface Props {
   childId: string
   attendances: AttendanceRecord[]
   units?: Array<{ id: string; name: string }>
+  plannedDates?: string[]
   basePath?: string
 }
 
@@ -64,7 +65,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], basePath }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], basePath }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -88,6 +89,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
   const [daytimeSupportEnd, setDaytimeSupportEnd] = useState('')
 
   const attendanceMap = Object.fromEntries(attendances.map((a) => [a.date, a]))
+  const plannedSet = new Set(plannedDates)
   const selected = selectedDate ? (attendanceMap[selectedDate] ?? null) : null
 
   // 日付が変わったら編集フィールドを初期化
@@ -287,6 +289,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
             const isAttended = att?.status === 'attended'
             const isAbsent = att?.status === 'absent'
             const isScheduled = att?.status === 'scheduled'
+            const isPlanned = plannedSet.has(date) && !att
 
             return (
               <button
@@ -314,6 +317,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
                 {isAttended && <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-0.5" />}
                 {isAbsent && <div className="w-1.5 h-1.5 rounded-full bg-red-300 mt-0.5" />}
                 {isScheduled && <div className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-0.5" />}
+                {isPlanned && <div className="w-1.5 h-1.5 rounded-full bg-indigo-300 mt-0.5" />}
               </button>
             )
           })}
@@ -330,6 +334,9 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-full bg-blue-400" />利用予定
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-full bg-indigo-300" />スケジュール
         </div>
       </div>
 

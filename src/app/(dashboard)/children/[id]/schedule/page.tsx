@@ -120,9 +120,25 @@ export default async function ChildSchedulePage({
   }
   const dateOverrides = (dateOverridesRaw ?? []) as unknown as DateOverride[]
 
-  // 当月の出席記録を取得
+  // 当月の計画日を計算（利用スケジュールの曜日設定から展開）
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`
   const endDate = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
+  const lastDayNum = new Date(year, month, 0).getDate()
+  const plannedDates = new Set<string>()
+  for (const plan of plans) {
+    if (!plan.is_active) continue
+    const planStart = plan.start_date
+    const planEnd = plan.end_date ?? '9999-12-31'
+    for (let d = 1; d <= lastDayNum; d++) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      if (dateStr < planStart || dateStr > planEnd) continue
+      const dow = new Date(dateStr + 'T00:00:00').getDay()
+      if ((plan.day_of_week as number[]).includes(dow)) plannedDates.add(dateStr)
+    }
+  }
+  for (const ov of dateOverrides) {
+    if (ov.date >= startDate && ov.date <= endDate) plannedDates.add(ov.date)
+  }
   const { data: attendancesRaw } = await supabase
     .from('daily_attendance')
     .select(`
@@ -183,6 +199,7 @@ export default async function ChildSchedulePage({
             childId={childId}
             attendances={attendances}
             units={units.map((u) => ({ id: u.id, name: u.name }))}
+            plannedDates={Array.from(plannedDates)}
           />
         </CardContent>
       </Card>
