@@ -34,8 +34,8 @@ interface Props {
   attendances: AttendanceRecord[]
   units?: Array<{ id: string; name: string }>
   plannedDates?: string[]
-  planReservations?: Record<string, string>
   plannedDateUnitId?: Record<string, string>
+  plannedDatePlanId?: Record<string, string>
   basePath?: string
 }
 
@@ -67,7 +67,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], planReservations = {}, plannedDateUnitId = {}, basePath }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, basePath }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -232,13 +232,25 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
 
   const handleCancelPlan = async () => {
     if (!selectedDate) return
+    const planId = plannedDatePlanId[selectedDate]
+    if (!planId) return
     setCancellingPlan(true)
-    const reservationId = planReservations[selectedDate]
-    if (reservationId) {
+    // 既存のdate_overrideがあれば is_cancelled=true に更新、なければ新規挿入
+    const { data: existing } = await supabase
+      .from('usage_plan_date_overrides')
+      .select('id')
+      .eq('plan_id', planId)
+      .eq('date', selectedDate)
+      .maybeSingle()
+    if (existing) {
       await supabase
-        .from('usage_reservations')
-        .update({ status: 'cancelled' })
-        .eq('id', reservationId)
+        .from('usage_plan_date_overrides')
+        .update({ is_cancelled: true })
+        .eq('id', existing.id)
+    } else {
+      await supabase
+        .from('usage_plan_date_overrides')
+        .insert({ plan_id: planId, date: selectedDate, is_cancelled: true, transport_type: 'none', pickup_location_type: 'home', dropoff_location_type: 'home' })
     }
     setCancellingPlan(false)
     setConfirmCancelPlan(false)
@@ -504,7 +516,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
           )}
 
           {/* 予定削除ボタン（スケジュールドットの日、既存レコードなし） */}
-          {!selected && selectedDate && planReservations[selectedDate] && (
+          {!selected && selectedDate && plannedDatePlanId[selectedDate] && (
             confirmCancelPlan ? (
               <div className="flex gap-2">
                 <Button

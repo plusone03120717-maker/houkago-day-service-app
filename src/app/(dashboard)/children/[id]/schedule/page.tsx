@@ -109,7 +109,7 @@ export default async function ChildSchedulePage({
   const { data: dateOverridesRaw } = planIds.length > 0
     ? await supabase
         .from('usage_plan_date_overrides')
-        .select('id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time')
+        .select('id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, is_cancelled')
         .in('plan_id', planIds)
         .order('date', { ascending: true })
     : { data: [] }
@@ -123,6 +123,7 @@ export default async function ChildSchedulePage({
     dropoff_location_type: string
     pickup_time: string | null
     dropoff_time: string | null
+    is_cancelled: boolean
   }
   const dateOverrides = (dateOverridesRaw ?? []) as unknown as DateOverride[]
 
@@ -131,8 +132,9 @@ export default async function ChildSchedulePage({
   const endDate = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
   const lastDayNum = new Date(year, month, 0).getDate()
   const plannedDates = new Set<string>()
-  // 計画日ごとのユニットID（新規記録時の自動選択用）
+  // 計画日ごとのユニットID・プランID（新規記録・特定日キャンセル用）
   const plannedDateUnitId: Record<string, string> = {}
+  const plannedDatePlanId: Record<string, string> = {}
   for (const plan of plans) {
     if (!plan.is_active) continue
     const planStart = plan.start_date
@@ -141,36 +143,30 @@ export default async function ChildSchedulePage({
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
       if (dateStr < planStart || dateStr > planEnd) continue
       const dow = new Date(dateStr + 'T00:00:00').getDay()
-      if ((plan.day_of_week as number[]).includes(dow)) {
+      if ((plan.day_of_week ?? []).includes(dow)) {
         plannedDates.add(dateStr)
-        if (!plannedDateUnitId[dateStr]) plannedDateUnitId[dateStr] = plan.unit_id
+        if (!plannedDateUnitId[dateStr]) {
+          plannedDateUnitId[dateStr] = plan.unit_id
+          plannedDatePlanId[dateStr] = plan.id
+        }
       }
     }
   }
+  // 特定日オーバーライド: is_cancelled=trueなら除外、それ以外は追加
   for (const ov of dateOverrides) {
     if (ov.date >= startDate && ov.date <= endDate) {
-      plannedDates.add(ov.date)
-      if (!plannedDateUnitId[ov.date]) {
-        const plan = plans.find((p) => p.id === ov.plan_id)
-        if (plan) plannedDateUnitId[ov.date] = plan.unit_id
+      if (ov.is_cancelled) {
+        plannedDates.delete(ov.date)
+      } else {
+        plannedDates.add(ov.date)
+        if (!plannedDateUnitId[ov.date]) {
+          const plan = plans.find((p) => p.id === ov.plan_id)
+          if (plan) {
+            plannedDateUnitId[ov.date] = plan.unit_id
+            plannedDatePlanId[ov.date] = plan.id
+          }
+        }
       }
-    }
-  }
-
-  // 当月の予約を取得（スケジュールドットの削除用）
-  const { data: reservationsRaw } = await supabase
-    .from('usage_reservations')
-    .select('id, date, status')
-    .eq('child_id', childId)
-    .gte('date', startDate)
-    .lte('date', endDate)
-  const planReservations: Record<string, string> = {}
-  for (const r of (reservationsRaw ?? []) as { id: string; date: string; status: string }[]) {
-    if (r.status === 'cancelled') {
-      // キャンセル済みの日はスケジュールドットから除外
-      plannedDates.delete(r.date)
-    } else {
-      planReservations[r.date] = r.id
     }
   }
   const { data: attendancesRaw } = await supabase
@@ -213,7 +209,7 @@ export default async function ChildSchedulePage({
         units={units}
         initialPlans={plans}
         initialDaySettings={daySettings}
-        initialDateOverrides={dateOverrides}
+        initialDateOverrides={dateOverrides.filter((o) => !o.is_cancelled)}
         defaultTransportType={defaultTransportType}
         defaultPickupLocationType={defaultPickupLocationType}
         defaultDropoffLocationType={defaultDropoffLocationType}
@@ -235,8 +231,8 @@ export default async function ChildSchedulePage({
             attendances={attendances}
             units={units.map((u) => ({ id: u.id, name: u.name }))}
             plannedDates={Array.from(plannedDates)}
-            planReservations={planReservations}
             plannedDateUnitId={plannedDateUnitId}
+            plannedDatePlanId={plannedDatePlanId}
           />
         </CardContent>
       </Card>

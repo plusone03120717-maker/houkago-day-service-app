@@ -46,6 +46,7 @@ type DateOverride = {
   dropoff_location_type: string
   pickup_time: string | null
   dropoff_time: string | null
+  is_cancelled: boolean
 }
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -125,7 +126,7 @@ interface DateOverrideEditState {
 
 const PLAN_SELECT = 'id, name, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, dropoff_location_type, units(name)'
 const DAY_SELECT = 'id, plan_id, day_of_week, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time'
-const OVERRIDE_SELECT = 'id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time'
+const OVERRIDE_SELECT = 'id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, is_cancelled'
 
 interface Props {
   childId: string
@@ -307,6 +308,7 @@ export function ChildSchedulePlanner({
       dropoff_location_type: dateOverrideEditState.dropoff_location_type,
       pickup_time: dateOverrideEditState.pickup_time || null,
       dropoff_time: dateOverrideEditState.dropoff_time || null,
+      is_cancelled: false,
     }
 
     if (editingDateOverrideId) {
@@ -892,10 +894,10 @@ export function ChildSchedulePlanner({
                         </button>
                       </div>
 
-                      {dateOverrides.filter((o) => o.plan_id === plan.id).length > 0 && (
+                      {dateOverrides.filter((o) => o.plan_id === plan.id && !o.is_cancelled).length > 0 && (
                         <div className="flex flex-wrap gap-2 mb-2">
                           {dateOverrides
-                            .filter((o) => o.plan_id === plan.id)
+                            .filter((o) => o.plan_id === plan.id && !o.is_cancelled)
                             .sort((a, b) => a.date.localeCompare(b.date))
                             .map((override) => (
                               <button key={override.id} type="button"
