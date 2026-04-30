@@ -71,6 +71,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [newUnitId, setNewUnitId] = useState('')
 
   // 編集フィールドの状態
@@ -163,12 +164,19 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
 
     let unitId: string
 
+    setSaveError(null)
+
     if (selected) {
       // 既存レコードを更新
-      await supabase
+      const { error } = await supabase
         .from('daily_attendance')
         .update(timeFields)
         .eq('id', selected.id)
+      if (error) {
+        setSaveError(error.message)
+        setSaving(false)
+        return
+      }
       unitId = selected.unit_id
     } else {
       // 新規レコードを追加
@@ -177,13 +185,18 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         setSaving(false)
         return
       }
-      await supabase.from('daily_attendance').insert({
+      const { error } = await supabase.from('daily_attendance').insert({
         child_id: childId,
         unit_id: resolvedUnitId,
         date: selectedDate,
         status: 'scheduled',
         ...timeFields,
       })
+      if (error) {
+        setSaveError(error.message)
+        setSaving(false)
+        return
+      }
       unitId = resolvedUnitId
     }
 
@@ -410,6 +423,9 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
               <><Save className="h-4 w-4" />{saving ? '保存中...' : selected ? '変更を保存' : '利用予定として記録'}</>
             )}
           </Button>
+          {saveError && (
+            <p className="text-xs text-red-500 text-center">{saveError}</p>
+          )}
         </div>
       )}
     </div>
