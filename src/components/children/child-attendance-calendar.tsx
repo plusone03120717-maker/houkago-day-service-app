@@ -181,7 +181,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         child_id: childId,
         unit_id: resolvedUnitId,
         date: selectedDate,
-        status: 'attended',
+        status: 'scheduled',
         ...timeFields,
       })
       unitId = resolvedUnitId
@@ -261,6 +261,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
             const dow = new Date(date).getDay()
             const isAttended = att?.status === 'attended'
             const isAbsent = att?.status === 'absent'
+            const isScheduled = att?.status === 'scheduled'
 
             return (
               <button
@@ -287,6 +288,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
                 </div>
                 {isAttended && <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-0.5" />}
                 {isAbsent && <div className="w-1.5 h-1.5 rounded-full bg-red-300 mt-0.5" />}
+                {isScheduled && <div className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-0.5" />}
               </button>
             )
           })}
@@ -300,6 +302,9 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-full bg-red-300" />欠席
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-full bg-blue-400" />利用予定
         </div>
       </div>
 
@@ -315,8 +320,8 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
               })}
             </h3>
             {selected ? (
-              <Badge variant={selected.status === 'attended' ? 'success' : 'secondary'}>
-                {selected.status === 'attended' ? '出席' : '欠席'}
+              <Badge variant={selected.status === 'attended' ? 'success' : selected.status === 'scheduled' ? 'default' : 'secondary'}>
+                {selected.status === 'attended' ? '出席' : selected.status === 'scheduled' ? '利用予定' : '欠席'}
               </Badge>
             ) : (
               <span className="text-xs text-gray-400">記録なし（新規追加）</span>
