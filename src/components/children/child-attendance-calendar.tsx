@@ -407,7 +407,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
             {saved ? (
               <><CheckCircle className="h-4 w-4" />保存しました</>
             ) : (
-              <><Save className="h-4 w-4" />{saving ? '保存中...' : selected ? '変更を保存' : '出席として記録'}</>
+              <><Save className="h-4 w-4" />{saving ? '保存中...' : selected ? '変更を保存' : '利用予定として記録'}</>
             )}
           </Button>
         </div>
