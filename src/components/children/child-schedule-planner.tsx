@@ -75,27 +75,14 @@ function transportLabel(type: string) {
   return TRANSPORT_OPTIONS.find((o) => o.value === type) ?? TRANSPORT_OPTIONS[3]
 }
 
-/** 9:00〜18:00 を30分刻みで生成 */
-const TIME_OPTIONS: { value: string; label: string }[] = (() => {
-  const opts = []
-  for (let h = 9; h <= 18; h++) {
-    for (const m of [0, 30]) {
-      if (h === 18 && m === 30) break
-      const hh = String(h).padStart(2, '0')
-      const mm = String(m).padStart(2, '0')
-      opts.push({ value: `${hh}:${mm}`, label: `${hh}:${mm}` })
-    }
-  }
-  return opts
-})()
-
-function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function TimeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}
-      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
-      <option value="">未設定</option>
-      {TIME_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <input
+      type="time"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+    />
   )
 }
 
@@ -564,7 +551,7 @@ export function ChildSchedulePlanner({
               お迎え時間
               <span className="ml-1 text-gray-400">（1時間単位でお迎え便が自動的に分かれます）</span>
             </label>
-            <TimeSelect value={pt} onChange={setPt} />
+            <TimeInput value={pt} onChange={setPt} />
           </div>
         </div>
       )}
@@ -579,7 +566,7 @@ export function ChildSchedulePlanner({
           />
           <div>
             <label className="text-xs text-gray-500 mb-1 block">送り時間</label>
-            <TimeSelect value={dt} onChange={setDt} />
+            <TimeInput value={dt} onChange={setDt} />
           </div>
         </div>
       )}
