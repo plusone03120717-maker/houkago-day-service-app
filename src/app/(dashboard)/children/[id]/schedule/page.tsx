@@ -153,10 +153,14 @@ export default async function ChildSchedulePage({
     .eq('child_id', childId)
     .gte('date', startDate)
     .lte('date', endDate)
-    .in('status', ['confirmed', 'reserved'])
   const planReservations: Record<string, string> = {}
   for (const r of (reservationsRaw ?? []) as { id: string; date: string; status: string }[]) {
-    planReservations[r.date] = r.id
+    if (r.status === 'cancelled') {
+      // キャンセル済みの日はスケジュールドットから除外
+      plannedDates.delete(r.date)
+    } else {
+      planReservations[r.date] = r.id
+    }
   }
   const { data: attendancesRaw } = await supabase
     .from('daily_attendance')
