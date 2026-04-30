@@ -34,6 +34,7 @@ interface Props {
   attendances: AttendanceRecord[]
   units?: Array<{ id: string; name: string }>
   plannedDates?: string[]
+  planReservations?: Record<string, string>
   basePath?: string
 }
 
@@ -65,7 +66,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], basePath }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], planReservations = {}, basePath }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -76,6 +77,8 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
   const [newUnitId, setNewUnitId] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirmCancelPlan, setConfirmCancelPlan] = useState(false)
+  const [cancellingPlan, setCancellingPlan] = useState(false)
 
   // 編集フィールドの状態
   const [pickupDeparture, setPickupDeparture] = useState('')
@@ -221,6 +224,22 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     await supabase.from('daily_attendance').delete().eq('id', selected.id)
     setDeleting(false)
     setConfirmDelete(false)
+    setSelectedDate(null)
+    startTransition(() => router.refresh())
+  }
+
+  const handleCancelPlan = async () => {
+    if (!selectedDate) return
+    setCancellingPlan(true)
+    const reservationId = planReservations[selectedDate]
+    if (reservationId) {
+      await supabase
+        .from('usage_reservations')
+        .update({ status: 'cancelled' })
+        .eq('id', reservationId)
+    }
+    setCancellingPlan(false)
+    setConfirmCancelPlan(false)
     setSelectedDate(null)
     startTransition(() => router.refresh())
   }
@@ -478,6 +497,42 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
               >
                 <Trash2 className="h-4 w-4" />
                 この記録を削除
+              </Button>
+            )
+          )}
+
+          {/* 予定削除ボタン（スケジュールドットの日、既存レコードなし） */}
+          {!selected && selectedDate && planReservations[selectedDate] && (
+            confirmCancelPlan ? (
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleCancelPlan}
+                  disabled={cancellingPlan}
+                  size="sm"
+                  variant="destructive"
+                  className="flex-1"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {cancellingPlan ? '削除中...' : '本当に削除する'}
+                </Button>
+                <Button
+                  onClick={() => setConfirmCancelPlan(false)}
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                >
+                  キャンセル
+                </Button>
+              </div>
+            ) : (
+              <Button
+                onClick={() => setConfirmCancelPlan(true)}
+                size="sm"
+                variant="outline"
+                className="w-full text-red-500 border-red-200 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                この日の予定を削除
               </Button>
             )
           )}

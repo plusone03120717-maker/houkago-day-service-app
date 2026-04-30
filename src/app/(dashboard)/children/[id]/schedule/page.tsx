@@ -145,6 +145,19 @@ export default async function ChildSchedulePage({
   for (const ov of dateOverrides) {
     if (ov.date >= startDate && ov.date <= endDate) plannedDates.add(ov.date)
   }
+
+  // 当月の予約を取得（スケジュールドットの削除用）
+  const { data: reservationsRaw } = await supabase
+    .from('usage_reservations')
+    .select('id, date, status')
+    .eq('child_id', childId)
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .in('status', ['confirmed', 'reserved'])
+  const planReservations: Record<string, string> = {}
+  for (const r of (reservationsRaw ?? []) as { id: string; date: string; status: string }[]) {
+    planReservations[r.date] = r.id
+  }
   const { data: attendancesRaw } = await supabase
     .from('daily_attendance')
     .select(`
@@ -207,6 +220,7 @@ export default async function ChildSchedulePage({
             attendances={attendances}
             units={units.map((u) => ({ id: u.id, name: u.name }))}
             plannedDates={Array.from(plannedDates)}
+            planReservations={planReservations}
           />
         </CardContent>
       </Card>
