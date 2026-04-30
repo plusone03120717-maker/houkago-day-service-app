@@ -35,6 +35,7 @@ interface Props {
   units?: Array<{ id: string; name: string }>
   plannedDates?: string[]
   planReservations?: Record<string, string>
+  plannedDateUnitId?: Record<string, string>
   basePath?: string
 }
 
@@ -66,7 +67,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], planReservations = {}, basePath }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], planReservations = {}, plannedDateUnitId = {}, basePath }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -117,7 +118,8 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
       setDaytimeSupport(false)
       setDaytimeSupportStart('')
       setDaytimeSupportEnd('')
-      setNewUnitId(units.length === 1 ? units[0].id : '')
+      const plannedUnitId = selectedDate ? (plannedDateUnitId[selectedDate] ?? '') : ''
+      setNewUnitId(plannedUnitId || (units.length === 1 ? units[0].id : ''))
     }
   }, [selectedDate]) // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -131,6 +131,8 @@ export default async function ChildSchedulePage({
   const endDate = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
   const lastDayNum = new Date(year, month, 0).getDate()
   const plannedDates = new Set<string>()
+  // 計画日ごとのユニットID（新規記録時の自動選択用）
+  const plannedDateUnitId: Record<string, string> = {}
   for (const plan of plans) {
     if (!plan.is_active) continue
     const planStart = plan.start_date
@@ -139,11 +141,20 @@ export default async function ChildSchedulePage({
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
       if (dateStr < planStart || dateStr > planEnd) continue
       const dow = new Date(dateStr + 'T00:00:00').getDay()
-      if ((plan.day_of_week as number[]).includes(dow)) plannedDates.add(dateStr)
+      if ((plan.day_of_week as number[]).includes(dow)) {
+        plannedDates.add(dateStr)
+        if (!plannedDateUnitId[dateStr]) plannedDateUnitId[dateStr] = plan.unit_id
+      }
     }
   }
   for (const ov of dateOverrides) {
-    if (ov.date >= startDate && ov.date <= endDate) plannedDates.add(ov.date)
+    if (ov.date >= startDate && ov.date <= endDate) {
+      plannedDates.add(ov.date)
+      if (!plannedDateUnitId[ov.date]) {
+        const plan = plans.find((p) => p.id === ov.plan_id)
+        if (plan) plannedDateUnitId[ov.date] = plan.unit_id
+      }
+    }
   }
 
   // 当月の予約を取得（スケジュールドットの削除用）
@@ -225,6 +236,7 @@ export default async function ChildSchedulePage({
             units={units.map((u) => ({ id: u.id, name: u.name }))}
             plannedDates={Array.from(plannedDates)}
             planReservations={planReservations}
+            plannedDateUnitId={plannedDateUnitId}
           />
         </CardContent>
       </Card>
