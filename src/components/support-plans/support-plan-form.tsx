@@ -21,6 +21,42 @@ interface Props {
   readOnly?: boolean
 }
 
+const FIVE_AREAS = [
+  {
+    key: 'support_health_life',
+    stateKey: 'healthLife',
+    label: '① 健康・生活',
+    placeholder: '手洗い・うがい・靴の脱ぎ履き・片付け・スケジュールの確認や見通しをもつことへの支援など',
+  },
+  {
+    key: 'support_movement_sensory',
+    stateKey: 'movementSensory',
+    label: '② 運動・感覚',
+    placeholder: '指先運動（ハサミ・ボタン掛け・ジップ・お箸）・全身運動（お散歩・かけっこ・縄跳び・自転車）への支援など',
+  },
+  {
+    key: 'support_cognition_behavior',
+    stateKey: 'cognitionBehavior',
+    label: '③ 認知・行動',
+    placeholder: '物の名前や色・相手の顔や動作・支援者からの指示・昨日や今日など時間の理解への支援など',
+  },
+  {
+    key: 'support_language_communication',
+    stateKey: 'languageCommunication',
+    label: '④ 言語・コミュニケーション',
+    placeholder: '挨拶・ちょうだい・嫌だ等の意思表示（非言語も含む）・相手の目・指差し・質問への回答への支援など',
+  },
+  {
+    key: 'support_social_relationships',
+    stateKey: 'socialRelationships',
+    label: '⑤ 人間関係・社会性',
+    placeholder: '友だちの認識と理解・身だしなみ・順番・時間やイベントの急遽の変更への対応への支援など',
+  },
+] as const
+
+type AreaKey = typeof FIVE_AREAS[number]['stateKey']
+type AreaValues = Record<AreaKey, string>
+
 export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, readOnly }: Props) {
   if (readOnly) return null
   const router = useRouter()
@@ -37,11 +73,20 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
   const [shortTermGoals, setShortTermGoals] = useState('')
   const [longTermGoalRating, setLongTermGoalRating] = useState<number | null>(null)
   const [shortTermGoalRating, setShortTermGoalRating] = useState<number | null>(null)
-  const [supportContent, setSupportContent] = useState('')
+  const [areaValues, setAreaValues] = useState<AreaValues>({
+    healthLife: '',
+    movementSensory: '',
+    cognitionBehavior: '',
+    languageCommunication: '',
+    socialRelationships: '',
+  })
   const [monitoringNotes, setMonitoringNotes] = useState('')
   const [generating, setGenerating] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  const setArea = (stateKey: AreaKey, value: string) =>
+    setAreaValues((prev) => ({ ...prev, [stateKey]: value }))
 
   const refineField = async (fieldType: string, value: string, setter: (v: string) => void) => {
     if (!value.trim()) return
@@ -75,7 +120,11 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
       const json = await res.json()
       if (json.longTermGoals) setLongTermGoals(json.longTermGoals)
       if (json.shortTermGoals) setShortTermGoals(json.shortTermGoals)
-      if (json.supportContent) setSupportContent(json.supportContent)
+      if (json.supportHealthLife) setArea('healthLife', json.supportHealthLife)
+      if (json.supportMovementSensory) setArea('movementSensory', json.supportMovementSensory)
+      if (json.supportCognitionBehavior) setArea('cognitionBehavior', json.supportCognitionBehavior)
+      if (json.supportLanguageCommunication) setArea('languageCommunication', json.supportLanguageCommunication)
+      if (json.supportSocialRelationships) setArea('socialRelationships', json.supportSocialRelationships)
     }
     setGenerating(false)
   }
@@ -89,7 +138,11 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
       status,
       long_term_goals: longTermGoals || null,
       short_term_goals: shortTermGoals || null,
-      support_content: supportContent || null,
+      support_health_life: areaValues.healthLife || null,
+      support_movement_sensory: areaValues.movementSensory || null,
+      support_cognition_behavior: areaValues.cognitionBehavior || null,
+      support_language_communication: areaValues.languageCommunication || null,
+      support_social_relationships: areaValues.socialRelationships || null,
       monitoring_notes: monitoringNotes || null,
       long_term_goal_rating: longTermGoalRating || null,
       short_term_goal_rating: shortTermGoalRating || null,
@@ -98,7 +151,7 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
     setOpen(false)
     setLongTermGoals('')
     setShortTermGoals('')
-    setSupportContent('')
+    setAreaValues({ healthLife: '', movementSensory: '', cognitionBehavior: '', languageCommunication: '', socialRelationships: '' })
     setMonitoringNotes('')
     setLongTermGoalRating(null)
     setShortTermGoalRating(null)
@@ -209,35 +262,56 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
             </div>
           </div>
 
-          {/* 支援内容・モニタリング */}
-          {(
-            [
-              { key: 'support_content', label: '支援内容・方法', value: supportContent, setter: setSupportContent, rows: 4, placeholder: '具体的な支援方法、活動内容、配慮事項など' },
-              { key: 'monitoring_notes', label: 'モニタリング記録', value: monitoringNotes, setter: setMonitoringNotes, rows: 3, placeholder: '目標の達成状況・今後の課題など' },
-            ] as const
-          ).map(({ key, label, value, setter, rows, placeholder }) => (
-            <div key={key}>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-gray-700">{label}</label>
-                <button
-                  type="button"
-                  onClick={() => refineField(key, value, setter as (v: string) => void)}
-                  disabled={refining === key || !value.trim()}
-                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Wand2 className="h-3 w-3" />
-                  {refining === key ? '整えています...' : '文章を整える'}
-                </button>
+          {/* 法定5領域の支援内容 */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-gray-600 border-b border-gray-100 pb-1">支援内容・方法（5領域）</p>
+            {FIVE_AREAS.map((area) => (
+              <div key={area.key} className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-gray-700">{area.label}</label>
+                  <button
+                    type="button"
+                    onClick={() => refineField(area.key, areaValues[area.stateKey], (v) => setArea(area.stateKey, v))}
+                    disabled={refining === area.key || !areaValues[area.stateKey].trim()}
+                    className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Wand2 className="h-3 w-3" />
+                    {refining === area.key ? '整えています...' : '文章を整える'}
+                  </button>
+                </div>
+                <textarea
+                  value={areaValues[area.stateKey]}
+                  onChange={(e) => setArea(area.stateKey, e.target.value)}
+                  rows={2}
+                  placeholder={area.placeholder}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none bg-white"
+                />
               </div>
-              <textarea
-                value={value}
-                onChange={(e) => (setter as (v: string) => void)(e.target.value)}
-                rows={rows}
-                placeholder={placeholder}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
-              />
+            ))}
+          </div>
+
+          {/* モニタリング記録 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-700">モニタリング記録</label>
+              <button
+                type="button"
+                onClick={() => refineField('monitoring_notes', monitoringNotes, setMonitoringNotes)}
+                disabled={refining === 'monitoring_notes' || !monitoringNotes.trim()}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Wand2 className="h-3 w-3" />
+                {refining === 'monitoring_notes' ? '整えています...' : '文章を整える'}
+              </button>
             </div>
-          ))}
+            <textarea
+              value={monitoringNotes}
+              onChange={(e) => setMonitoringNotes(e.target.value)}
+              rows={3}
+              placeholder="目標の達成状況・今後の課題など"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            />
+          </div>
 
           <div className="flex gap-2 pt-2">
             <Button

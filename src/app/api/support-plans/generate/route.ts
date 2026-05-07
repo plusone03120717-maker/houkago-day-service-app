@@ -27,19 +27,23 @@ ${recordsSummary || '記録なし'}
 ${existing?.longTermGoals ? `【現在の長期目標】${existing.longTermGoals}` : ''}
 ${existing?.shortTermGoals ? `【現在の短期目標】${existing.shortTermGoals}` : ''}
 
-以下の3項目をJSON形式で出力してください。各項目は200〜400文字程度で、具体的で測定可能な内容にしてください。
+以下の7項目をJSON形式で出力してください。各項目は100〜250文字程度で、具体的で実践的な内容にしてください。
 
 {
   "longTermGoals": "長期目標（6ヶ月〜1年で達成を目指す目標）",
   "shortTermGoals": "短期目標（3〜6ヶ月で達成を目指す具体的な目標）",
-  "supportContent": "支援内容・方法（具体的な活動や配慮事項）"
+  "supportHealthLife": "①健康・生活領域の支援内容（手洗い・片付け・スケジュール管理など生活習慣への支援）",
+  "supportMovementSensory": "②運動・感覚領域の支援内容（指先運動・全身運動・感覚統合への支援）",
+  "supportCognitionBehavior": "③認知・行動領域の支援内容（物の理解・指示への対応・時間概念への支援）",
+  "supportLanguageCommunication": "④言語・コミュニケーション領域の支援内容（言葉・非言語コミュニケーション・対話への支援）",
+  "supportSocialRelationships": "⑤人間関係・社会性領域の支援内容（友だちとの関わり・社会ルール・集団参加への支援）"
 }
 
 JSONのみを出力し、説明文は不要です。`
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 1500,
+    max_tokens: 2000,
     messages: [{ role: 'user', content: prompt }],
   })
 
