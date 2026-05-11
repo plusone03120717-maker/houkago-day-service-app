@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Pencil, Wand2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Pencil, Wand2, ChevronUp } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { StarRating } from '@/components/ui/star-rating'
 
@@ -23,6 +23,8 @@ type SupportPlan = {
   support_cognition_behavior: string | null
   support_language_communication: string | null
   support_social_relationships: string | null
+  support_transition: string | null
+  support_family: string | null
   monitoring_notes: string | null
   long_term_goal_rating: number | null
   short_term_goal_rating: number | null
@@ -41,16 +43,18 @@ const statusVariant: Record<string, 'secondary' | 'success' | 'warning' | 'defau
   archived: 'secondary',
 }
 
-const FIVE_AREAS = [
+const AREAS = [
   { key: 'support_health_life' as const, label: '① 健康・生活' },
   { key: 'support_movement_sensory' as const, label: '② 運動・感覚' },
   { key: 'support_cognition_behavior' as const, label: '③ 認知・行動' },
   { key: 'support_language_communication' as const, label: '④ 言語・コミュニケーション' },
   { key: 'support_social_relationships' as const, label: '⑤ 人間関係・社会性' },
+  { key: 'support_transition' as const, label: '⑥ 移行支援' },
+  { key: 'support_family' as const, label: '⑦ 家族支援' },
 ] as const
 
-type FiveAreaKey = typeof FIVE_AREAS[number]['key']
-type FiveAreaValues = Record<FiveAreaKey, string>
+type AreaKey = typeof AREAS[number]['key']
+type AreaValues = Record<AreaKey, string>
 
 interface Props {
   plan: SupportPlan
@@ -69,18 +73,20 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
   const [shortTermGoals, setShortTermGoals] = useState(plan.short_term_goals ?? '')
   const [longTermGoalRating, setLongTermGoalRating] = useState<number | null>(plan.long_term_goal_rating ?? null)
   const [shortTermGoalRating, setShortTermGoalRating] = useState<number | null>(plan.short_term_goal_rating ?? null)
-  const [areaValues, setAreaValues] = useState<FiveAreaValues>({
+  const [areaValues, setAreaValues] = useState<AreaValues>({
     support_health_life: plan.support_health_life ?? '',
     support_movement_sensory: plan.support_movement_sensory ?? '',
     support_cognition_behavior: plan.support_cognition_behavior ?? '',
     support_language_communication: plan.support_language_communication ?? '',
     support_social_relationships: plan.support_social_relationships ?? '',
+    support_transition: plan.support_transition ?? '',
+    support_family: plan.support_family ?? '',
   })
   const [monitoringNotes, setMonitoringNotes] = useState(plan.monitoring_notes ?? '')
   const [saving, setSaving] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
 
-  const setArea = (key: FiveAreaKey, value: string) =>
+  const setArea = (key: AreaKey, value: string) =>
     setAreaValues((prev) => ({ ...prev, [key]: value }))
 
   const refineField = async (fieldType: string, value: string, setter: (v: string) => void) => {
@@ -112,6 +118,8 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
       support_cognition_behavior: areaValues.support_cognition_behavior || null,
       support_language_communication: areaValues.support_language_communication || null,
       support_social_relationships: areaValues.support_social_relationships || null,
+      support_transition: areaValues.support_transition || null,
+      support_family: areaValues.support_family || null,
       monitoring_notes: monitoringNotes || null,
       long_term_goal_rating: longTermGoalRating || null,
       short_term_goal_rating: shortTermGoalRating || null,
@@ -121,7 +129,7 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
     startTransition(() => router.refresh())
   }
 
-  const hasFiveAreaContent = FIVE_AREAS.some((a) => plan[a.key])
+  const hasAreaContent = AREAS.some((a) => plan[a.key])
 
   return (
     <Card>
@@ -176,12 +184,12 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
                 )}
               </div>
             )}
-            {/* 5領域の支援内容 */}
-            {hasFiveAreaContent && (
+            {/* 7領域の支援内容 */}
+            {hasAreaContent && (
               <div>
-                <p className="text-xs font-semibold text-gray-500 mb-2">支援内容・方法（5領域）</p>
+                <p className="text-xs font-semibold text-gray-500 mb-2">支援内容・方法（7領域）</p>
                 <div className="space-y-2">
-                  {FIVE_AREAS.map((area) => plan[area.key] && (
+                  {AREAS.map((area) => plan[area.key] && (
                     <div key={area.key} className="bg-gray-50 rounded-lg px-3 py-2">
                       <p className="text-xs font-medium text-gray-600 mb-0.5">{area.label}</p>
                       <p className="text-gray-700 whitespace-pre-wrap text-sm">{plan[area.key]}</p>
@@ -191,7 +199,7 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
               </div>
             )}
             {/* 旧 support_content の互換表示 */}
-            {!hasFiveAreaContent && plan.support_content && (
+            {!hasAreaContent && plan.support_content && (
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1">支援内容</p>
                 <p className="text-gray-700 whitespace-pre-wrap">{plan.support_content}</p>
@@ -294,10 +302,10 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
               </div>
             </div>
 
-            {/* 法定5領域の支援内容 */}
+            {/* 支援内容（7領域） */}
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-gray-600 border-b border-gray-100 pb-1">支援内容・方法（5領域）</p>
-              {FIVE_AREAS.map((area) => (
+              <p className="text-xs font-semibold text-gray-600 border-b border-gray-100 pb-1">支援内容・方法（7領域）</p>
+              {AREAS.map((area) => (
                 <div key={area.key} className="bg-gray-50 rounded-lg p-3 space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-medium text-gray-700">{area.label}</label>

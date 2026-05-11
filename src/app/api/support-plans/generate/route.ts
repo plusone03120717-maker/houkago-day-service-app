@@ -27,7 +27,7 @@ ${recordsSummary || '記録なし'}
 ${existing?.longTermGoals ? `【現在の長期目標】${existing.longTermGoals}` : ''}
 ${existing?.shortTermGoals ? `【現在の短期目標】${existing.shortTermGoals}` : ''}
 
-以下の7項目をJSON形式で出力してください。各項目は100〜250文字程度で、具体的で実践的な内容にしてください。
+以下の9項目をJSON形式で出力してください。各項目は100〜250文字程度で、具体的で実践的な内容にしてください。
 
 {
   "longTermGoals": "長期目標（6ヶ月〜1年で達成を目指す目標）",
@@ -36,14 +36,16 @@ ${existing?.shortTermGoals ? `【現在の短期目標】${existing.shortTermGoa
   "supportMovementSensory": "②運動・感覚領域の支援内容（指先運動・全身運動・感覚統合への支援）",
   "supportCognitionBehavior": "③認知・行動領域の支援内容（物の理解・指示への対応・時間概念への支援）",
   "supportLanguageCommunication": "④言語・コミュニケーション領域の支援内容（言葉・非言語コミュニケーション・対話への支援）",
-  "supportSocialRelationships": "⑤人間関係・社会性領域の支援内容（友だちとの関わり・社会ルール・集団参加への支援）"
+  "supportSocialRelationships": "⑤人間関係・社会性領域の支援内容（友だちとの関わり・社会ルール・集団参加への支援）",
+  "supportTransition": "⑥移行支援の内容（就学・進級・施設移行に向けた準備・関係機関連携・不安軽減への支援）",
+  "supportFamily": "⑦家族支援の内容（保護者への情報提供・育児相談・家庭での対応方法の共有への支援）"
 }
 
 JSONのみを出力し、説明文は不要です。`
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 2000,
+    max_tokens: 2500,
     messages: [{ role: 'user', content: prompt }],
   })
 

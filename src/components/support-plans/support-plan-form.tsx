@@ -21,7 +21,7 @@ interface Props {
   readOnly?: boolean
 }
 
-const FIVE_AREAS = [
+const AREAS = [
   {
     key: 'support_health_life',
     stateKey: 'healthLife',
@@ -52,9 +52,21 @@ const FIVE_AREAS = [
     label: '⑤ 人間関係・社会性',
     placeholder: '友だちの認識と理解・身だしなみ・順番・時間やイベントの急遽の変更への対応への支援など',
   },
+  {
+    key: 'support_transition',
+    stateKey: 'transition',
+    label: '⑥ 移行支援',
+    placeholder: '就学・進級・施設移行に向けた準備・関係機関との連携・本人の不安軽減への支援など',
+  },
+  {
+    key: 'support_family',
+    stateKey: 'family',
+    label: '⑦ 家族支援',
+    placeholder: '保護者への情報提供・育児相談・家庭での対応方法の共有・家族全体のウェルビーイング支援など',
+  },
 ] as const
 
-type AreaKey = typeof FIVE_AREAS[number]['stateKey']
+type AreaKey = typeof AREAS[number]['stateKey']
 type AreaValues = Record<AreaKey, string>
 
 export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, readOnly }: Props) {
@@ -79,6 +91,8 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
     cognitionBehavior: '',
     languageCommunication: '',
     socialRelationships: '',
+    transition: '',
+    family: '',
   })
   const [monitoringNotes, setMonitoringNotes] = useState('')
   const [generating, setGenerating] = useState(false)
@@ -125,6 +139,8 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
       if (json.supportCognitionBehavior) setArea('cognitionBehavior', json.supportCognitionBehavior)
       if (json.supportLanguageCommunication) setArea('languageCommunication', json.supportLanguageCommunication)
       if (json.supportSocialRelationships) setArea('socialRelationships', json.supportSocialRelationships)
+      if (json.supportTransition) setArea('transition', json.supportTransition)
+      if (json.supportFamily) setArea('family', json.supportFamily)
     }
     setGenerating(false)
   }
@@ -143,6 +159,8 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
       support_cognition_behavior: areaValues.cognitionBehavior || null,
       support_language_communication: areaValues.languageCommunication || null,
       support_social_relationships: areaValues.socialRelationships || null,
+      support_transition: areaValues.transition || null,
+      support_family: areaValues.family || null,
       monitoring_notes: monitoringNotes || null,
       long_term_goal_rating: longTermGoalRating || null,
       short_term_goal_rating: shortTermGoalRating || null,
@@ -151,7 +169,7 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
     setOpen(false)
     setLongTermGoals('')
     setShortTermGoals('')
-    setAreaValues({ healthLife: '', movementSensory: '', cognitionBehavior: '', languageCommunication: '', socialRelationships: '' })
+    setAreaValues({ healthLife: '', movementSensory: '', cognitionBehavior: '', languageCommunication: '', socialRelationships: '', transition: '', family: '' })
     setMonitoringNotes('')
     setLongTermGoalRating(null)
     setShortTermGoalRating(null)
@@ -262,10 +280,10 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
             </div>
           </div>
 
-          {/* 法定5領域の支援内容 */}
+          {/* 支援内容（7領域） */}
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-gray-600 border-b border-gray-100 pb-1">支援内容・方法（5領域）</p>
-            {FIVE_AREAS.map((area) => (
+            <p className="text-xs font-semibold text-gray-600 border-b border-gray-100 pb-1">支援内容・方法（7領域）</p>
+            {AREAS.map((area) => (
               <div key={area.key} className="bg-gray-50 rounded-lg p-3 space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-medium text-gray-700">{area.label}</label>
