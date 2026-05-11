@@ -81,6 +81,8 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
     d.setMonth(d.getMonth() + 6)
     return d.toISOString().slice(0, 10)
   })
+  const [familyWishes, setFamilyWishes] = useState('')
+  const [supportPolicy, setSupportPolicy] = useState('')
   const [longTermGoals, setLongTermGoals] = useState('')
   const [shortTermGoals, setShortTermGoals] = useState('')
   const [longTermGoalRating, setLongTermGoalRating] = useState<number | null>(null)
@@ -161,6 +163,8 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
       support_social_relationships: areaValues.socialRelationships || null,
       support_transition: areaValues.transition || null,
       support_family: areaValues.family || null,
+      family_wishes: familyWishes || null,
+      support_policy: supportPolicy || null,
       monitoring_notes: monitoringNotes || null,
       long_term_goal_rating: longTermGoalRating || null,
       short_term_goal_rating: shortTermGoalRating || null,
@@ -170,6 +174,8 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
     setLongTermGoals('')
     setShortTermGoals('')
     setAreaValues({ healthLife: '', movementSensory: '', cognitionBehavior: '', languageCommunication: '', socialRelationships: '', transition: '', family: '' })
+    setFamilyWishes('')
+    setSupportPolicy('')
     setMonitoringNotes('')
     setLongTermGoalRating(null)
     setShortTermGoalRating(null)
@@ -225,6 +231,52 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
             <Sparkles className="h-4 w-4" />
             {generating ? 'AI生成中...' : 'AIで下書きを生成'}
           </Button>
+
+          {/* 家族の意向 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-700">家族の意向</label>
+              <button
+                type="button"
+                onClick={() => refineField('family_wishes', familyWishes, setFamilyWishes)}
+                disabled={refining === 'family_wishes' || !familyWishes.trim()}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Wand2 className="h-3 w-3" />
+                {refining === 'family_wishes' ? '整えています...' : '文章を整える'}
+              </button>
+            </div>
+            <textarea
+              value={familyWishes}
+              onChange={(e) => setFamilyWishes(e.target.value)}
+              rows={3}
+              placeholder="例：集団の中でも自分らしく過ごせるようになってほしい"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            />
+          </div>
+
+          {/* 支援の方針 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-700">支援の方針</label>
+              <button
+                type="button"
+                onClick={() => refineField('support_policy', supportPolicy, setSupportPolicy)}
+                disabled={refining === 'support_policy' || !supportPolicy.trim()}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Wand2 className="h-3 w-3" />
+                {refining === 'support_policy' ? '整えています...' : '文章を整える'}
+              </button>
+            </div>
+            <textarea
+              value={supportPolicy}
+              onChange={(e) => setSupportPolicy(e.target.value)}
+              rows={3}
+              placeholder="例：本人のペースを尊重し、安心できる環境の中で主体的な活動参加を促す"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            />
+          </div>
 
           {/* 長期目標 */}
           <div>

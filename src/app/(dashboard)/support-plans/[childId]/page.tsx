@@ -21,6 +21,8 @@ type SupportPlan = {
   support_social_relationships: string | null
   support_transition: string | null
   support_family: string | null
+  family_wishes: string | null
+  support_policy: string | null
   monitoring_notes: string | null
   long_term_goal_rating: number | null
   short_term_goal_rating: number | null
@@ -56,7 +58,7 @@ export default async function SupportPlanDetailPage({
 
   const { data: plansRaw } = await supabase
     .from('support_plans')
-    .select('id, plan_date, review_date, status, long_term_goals, short_term_goals, support_content, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, monitoring_notes, long_term_goal_rating, short_term_goal_rating, created_at')
+    .select('id, plan_date, review_date, status, long_term_goals, short_term_goals, support_content, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, family_wishes, support_policy, monitoring_notes, long_term_goal_rating, short_term_goal_rating, created_at')
     .eq('child_id', childId)
     .order('plan_date', { ascending: false })
   const plans = (plansRaw ?? []) as unknown as SupportPlan[]

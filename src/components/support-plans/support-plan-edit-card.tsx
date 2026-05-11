@@ -25,6 +25,8 @@ type SupportPlan = {
   support_social_relationships: string | null
   support_transition: string | null
   support_family: string | null
+  family_wishes: string | null
+  support_policy: string | null
   monitoring_notes: string | null
   long_term_goal_rating: number | null
   short_term_goal_rating: number | null
@@ -69,6 +71,8 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
   const [planDate, setPlanDate] = useState(plan.plan_date)
   const [reviewDate, setReviewDate] = useState(plan.review_date ?? '')
   const [status, setStatus] = useState(plan.status)
+  const [familyWishes, setFamilyWishes] = useState(plan.family_wishes ?? '')
+  const [supportPolicy, setSupportPolicy] = useState(plan.support_policy ?? '')
   const [longTermGoals, setLongTermGoals] = useState(plan.long_term_goals ?? '')
   const [shortTermGoals, setShortTermGoals] = useState(plan.short_term_goals ?? '')
   const [longTermGoalRating, setLongTermGoalRating] = useState<number | null>(plan.long_term_goal_rating ?? null)
@@ -111,6 +115,8 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
       plan_date: planDate,
       review_date: reviewDate || null,
       status,
+      family_wishes: familyWishes || null,
+      support_policy: supportPolicy || null,
       long_term_goals: longTermGoals || null,
       short_term_goals: shortTermGoals || null,
       support_health_life: areaValues.support_health_life || null,
@@ -130,6 +136,21 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
   }
 
   const hasAreaContent = AREAS.some((a) => plan[a.key])
+
+  const RefineButton = ({ fieldType, disabled }: { fieldType: string; disabled: boolean }) => (
+    <button
+      type="button"
+      onClick={() => {
+        if (fieldType === 'family_wishes') refineField('family_wishes', familyWishes, setFamilyWishes)
+        else if (fieldType === 'support_policy') refineField('support_policy', supportPolicy, setSupportPolicy)
+      }}
+      disabled={disabled}
+      className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+      <Wand2 className="h-3 w-3" />
+      {refining === fieldType ? '整えています...' : '文章を整える'}
+    </button>
+  )
 
   return (
     <Card>
@@ -160,6 +181,18 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
         {!editing ? (
           // 表示モード
           <>
+            {plan.family_wishes && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-1">家族の意向</p>
+                <p className="text-gray-700 whitespace-pre-wrap">{plan.family_wishes}</p>
+              </div>
+            )}
+            {plan.support_policy && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-1">支援の方針</p>
+                <p className="text-gray-700 whitespace-pre-wrap">{plan.support_policy}</p>
+              </div>
+            )}
             {plan.long_term_goals && (
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1">長期目標</p>
@@ -248,6 +281,34 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
                 <option value="reviewed">見直し済</option>
                 <option value="archived">保存</option>
               </select>
+            </div>
+
+            {/* 家族の意向 */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700">家族の意向</label>
+                <RefineButton fieldType="family_wishes" disabled={refining === 'family_wishes' || !familyWishes.trim()} />
+              </div>
+              <textarea
+                value={familyWishes}
+                onChange={(e) => setFamilyWishes(e.target.value)}
+                rows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              />
+            </div>
+
+            {/* 支援の方針 */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700">支援の方針</label>
+                <RefineButton fieldType="support_policy" disabled={refining === 'support_policy' || !supportPolicy.trim()} />
+              </div>
+              <textarea
+                value={supportPolicy}
+                onChange={(e) => setSupportPolicy(e.target.value)}
+                rows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              />
             </div>
 
             {/* 長期目標 */}
