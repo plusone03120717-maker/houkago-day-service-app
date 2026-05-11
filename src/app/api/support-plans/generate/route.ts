@@ -10,109 +10,111 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { childId, childName, diagnosis, existing } = await request.json()
+  if (!childId) return NextResponse.json({ error: 'childId is required' }, { status: 400 })
 
-  // 最新のアセスメント情報を取得
-  const { data: assessment } = await supabase
-    .from('child_assessments')
-    .select('child_situation, current_issues, family_situation, child_wishes, parent_wishes, usage_goals')
-    .eq('child_id', childId)
-    .order('assessment_date', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  try {
+    // 最新のアセスメント情報
+    const { data: assessment } = await supabase
+      .from('child_assessments')
+      .select('child_situation, current_issues, family_situation, child_wishes, parent_wishes, usage_goals')
+      .eq('child_id', childId)
+      .order('assessment_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-  // 直近の出席日を取得（最大20件）
-  const { data: attendancesRaw } = await supabase
-    .from('daily_attendance')
-    .select('id, date, health_condition')
-    .eq('child_id', childId)
-    .eq('status', 'attended')
-    .order('date', { ascending: false })
-    .limit(20)
+    // 直近の出席日（最大20件）
+    const { data: attendancesRaw } = await supabase
+      .from('daily_attendance')
+      .select('id, date')
+      .eq('child_id', childId)
+      .eq('status', 'attended')
+      .order('date', { ascending: false })
+      .limit(20)
 
-  const attendances = (attendancesRaw ?? []) as { id: string; date: string; health_condition: string | null }[]
-  const attendanceIds = attendances.map((a) => a.id)
+    const attendances = (attendancesRaw ?? []) as { id: string; date: string }[]
+    const attendanceIds = attendances.map((a) => a.id)
+    // attendance_id → date のマップ（joinなしで日付を解決するため）
+    const dateMap: Record<string, string> = {}
+    for (const a of attendances) dateMap[a.id] = a.date
 
-  // 日々の記録テキスト（daily_records）
-  const { data: dailyRecordsRaw } = attendanceIds.length > 0
-    ? await supabase
-        .from('daily_records')
-        .select('content, record_type, daily_attendance!inner(date)')
-        .in('attendance_id', attendanceIds)
-        .order('created_at', { ascending: false })
-    : { data: [] }
+    // 日々の記録（joinなし・attendance_idで日付を解決）
+    const { data: dailyRecordsRaw } = attendanceIds.length > 0
+      ? await supabase
+          .from('daily_records')
+          .select('content, record_type, attendance_id')
+          .in('attendance_id', attendanceIds)
+      : { data: [] }
 
-  type DailyRecordRow = {
-    content: string
-    record_type: string
-    daily_attendance: { date: string }
-  }
-  const dailyRecords = (dailyRecordsRaw ?? []) as unknown as DailyRecordRow[]
+    type DailyRecordRow = { content: string; record_type: string; attendance_id: string }
+    const dailyRecords = (dailyRecordsRaw ?? []) as DailyRecordRow[]
 
-  // 活動記録（プログラム名 + 評価コメント）
-  const { data: dailyActivitiesRaw } = attendanceIds.length > 0
-    ? await supabase
-        .from('daily_activities')
-        .select('evaluation_notes, achievement_level, daily_attendance!inner(date), activity_programs(name)')
-        .in('attendance_id', attendanceIds)
-        .eq('participated', true)
-        .not('program_id', 'is', null)
-    : { data: [] }
+    // 活動記録（joinなし・attendance_idで日付を解決）
+    const { data: dailyActivitiesRaw } = attendanceIds.length > 0
+      ? await supabase
+          .from('daily_activities')
+          .select('evaluation_notes, achievement_level, attendance_id, activity_programs(name)')
+          .in('attendance_id', attendanceIds)
+          .eq('participated', true)
+          .not('program_id', 'is', null)
+      : { data: [] }
 
-  type DailyActivityRow = {
-    evaluation_notes: string | null
-    achievement_level: number | null
-    daily_attendance: { date: string }
-    activity_programs: { name: string } | null
-  }
-  const dailyActivities = (dailyActivitiesRaw ?? []) as unknown as DailyActivityRow[]
-
-  // 連絡帳（最近のもの、内容あり）
-  const { data: contactNotesRaw } = await supabase
-    .from('contact_notes')
-    .select('date, content, parent_comment')
-    .eq('child_id', childId)
-    .not('content', 'eq', '')
-    .order('date', { ascending: false })
-    .limit(10)
-
-  type ContactNoteRow = { date: string; content: string; parent_comment: string | null }
-  const contactNotes = (contactNotesRaw ?? []) as ContactNoteRow[]
-
-  // 日々の記録を日付ごとにまとめる
-  const recordsByDate: Record<string, string[]> = {}
-  for (const rec of dailyRecords) {
-    const date = (rec.daily_attendance as { date: string })?.date ?? ''
-    if (!recordsByDate[date]) recordsByDate[date] = []
-    const prefix = rec.record_type === 'notable' ? '【特記】' : ''
-    if (rec.content?.trim()) recordsByDate[date].push(`${prefix}${rec.content.trim()}`)
-  }
-  for (const act of dailyActivities) {
-    const date = (act.daily_attendance as { date: string })?.date ?? ''
-    if (!recordsByDate[date]) recordsByDate[date] = []
-    const name = act.activity_programs?.name
-    if (name) {
-      const note = act.evaluation_notes?.trim()
-      const level = act.achievement_level != null ? `達成度${act.achievement_level}/5` : ''
-      const detail = [note, level].filter(Boolean).join('・')
-      recordsByDate[date].push(detail ? `【活動】${name}（${detail}）` : `【活動】${name}`)
+    type DailyActivityRow = {
+      evaluation_notes: string | null
+      achievement_level: number | null
+      attendance_id: string
+      activity_programs: { name: string } | null
     }
-  }
+    const dailyActivities = (dailyActivitiesRaw ?? []) as unknown as DailyActivityRow[]
 
-  const dailyRecordsText = Object.entries(recordsByDate)
-    .sort(([a], [b]) => b.localeCompare(a))
-    .slice(0, 15)
-    .map(([date, contents]) => `${date}：${contents.join(' / ')}`)
-    .join('\n') || '記録なし'
+    // 連絡帳（最近のもの）
+    const { data: contactNotesRaw } = await supabase
+      .from('contact_notes')
+      .select('date, content, parent_comment')
+      .eq('child_id', childId)
+      .neq('content', '')
+      .order('date', { ascending: false })
+      .limit(10)
 
-  const contactNotesText = contactNotes
-    .map((n) => {
-      const parts = [`${n.date}（連絡帳）：${n.content.trim()}`]
-      if (n.parent_comment?.trim()) parts.push(`→保護者コメント：${n.parent_comment.trim()}`)
-      return parts.join('\n')
-    })
-    .join('\n') || 'なし'
+    type ContactNoteRow = { date: string; content: string; parent_comment: string | null }
+    const contactNotes = (contactNotesRaw ?? []) as ContactNoteRow[]
 
-  const prompt = `あなたは放課後等デイサービスの専門家です。以下の情報をもとに、個別支援計画の下書きを作成してください。
+    // 日々の記録を日付ごとにまとめる
+    const recordsByDate: Record<string, string[]> = {}
+    for (const rec of dailyRecords) {
+      const date = dateMap[rec.attendance_id] ?? ''
+      if (!date) continue
+      if (!recordsByDate[date]) recordsByDate[date] = []
+      const prefix = rec.record_type === 'notable' ? '【特記】' : ''
+      if (rec.content?.trim()) recordsByDate[date].push(`${prefix}${rec.content.trim()}`)
+    }
+    for (const act of dailyActivities) {
+      const date = dateMap[act.attendance_id] ?? ''
+      if (!date) continue
+      if (!recordsByDate[date]) recordsByDate[date] = []
+      const name = act.activity_programs?.name
+      if (name) {
+        const note = act.evaluation_notes?.trim()
+        const level = act.achievement_level != null ? `達成度${act.achievement_level}/5` : ''
+        const detail = [note, level].filter(Boolean).join('・')
+        recordsByDate[date].push(detail ? `【活動】${name}（${detail}）` : `【活動】${name}`)
+      }
+    }
+
+    const dailyRecordsText = Object.entries(recordsByDate)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .slice(0, 15)
+      .map(([date, contents]) => `${date}：${contents.join(' / ')}`)
+      .join('\n') || '記録なし'
+
+    const contactNotesText = contactNotes
+      .map((n) => {
+        const parts = [`${n.date}（連絡帳）：${n.content.trim()}`]
+        if (n.parent_comment?.trim()) parts.push(`→保護者コメント：${n.parent_comment.trim()}`)
+        return parts.join('\n')
+      })
+      .join('\n') || 'なし'
+
+    const prompt = `あなたは放課後等デイサービスの専門家です。以下の情報をもとに、個別支援計画の下書きを作成してください。
 
 【対象児童】${childName}
 【診断・障害特性】${diagnosis ?? '記載なし'}
@@ -154,23 +156,29 @@ ${contactNotesText}
 
 JSONのみを出力し、説明文は不要です。`
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 3000,
-    messages: [{ role: 'user', content: prompt }],
-  })
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 3000,
+      messages: [{ role: 'user', content: prompt }],
+    })
 
-  const content = message.content[0]
-  if (content.type !== 'text') {
-    return NextResponse.json({ error: 'AI generation failed' }, { status: 500 })
-  }
+    const content = message.content[0]
+    if (content.type !== 'text') {
+      return NextResponse.json({ error: 'AI generation failed' }, { status: 500 })
+    }
 
-  try {
     const jsonMatch = content.text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('No JSON found')
+    if (!jsonMatch) {
+      return NextResponse.json({ error: 'AI response could not be parsed' }, { status: 500 })
+    }
     const parsed = JSON.parse(jsonMatch[0])
     return NextResponse.json(parsed)
-  } catch {
-    return NextResponse.json({ error: 'Failed to parse AI response' }, { status: 500 })
+
+  } catch (error) {
+    console.error('Support plan generate error:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'AI処理に失敗しました' },
+      { status: 500 }
+    )
   }
 }

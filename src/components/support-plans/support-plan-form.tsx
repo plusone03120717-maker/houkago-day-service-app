@@ -116,18 +116,22 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
 
   const handleGenerateAI = async () => {
     setGenerating(true)
-    const res = await fetch('/api/support-plans/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        childId,
-        childName,
-        diagnosis,
-        existing: { longTermGoals, shortTermGoals },
-      }),
-    })
-    if (res.ok) {
+    try {
+      const res = await fetch('/api/support-plans/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          childId,
+          childName,
+          diagnosis,
+          existing: { longTermGoals, shortTermGoals },
+        }),
+      })
       const json = await res.json()
+      if (!res.ok) {
+        alert(`AI生成に失敗しました: ${json.error ?? res.status}`)
+        return
+      }
       if (json.familyWishes) setFamilyWishes(json.familyWishes)
       if (json.supportPolicy) setSupportPolicy(json.supportPolicy)
       if (json.longTermGoals) setLongTermGoals(json.longTermGoals)
@@ -139,8 +143,12 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
       if (json.supportSocialRelationships) setArea('socialRelationships', json.supportSocialRelationships)
       if (json.supportTransition) setArea('transition', json.supportTransition)
       if (json.supportFamily) setArea('family', json.supportFamily)
+    } catch (e) {
+      alert('AI生成中にエラーが発生しました')
+      console.error(e)
+    } finally {
+      setGenerating(false)
     }
-    setGenerating(false)
   }
 
   const handleSave = async (status: 'draft' | 'active') => {
