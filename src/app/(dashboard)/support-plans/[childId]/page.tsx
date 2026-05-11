@@ -63,19 +63,6 @@ export default async function SupportPlanDetailPage({
     .order('plan_date', { ascending: false })
   const plans = (plansRaw ?? []) as unknown as SupportPlan[]
 
-  const { data: recentRecordsRaw } = await supabase
-    .from('daily_records')
-    .select('date, activities, notable_events, contact_note')
-    .eq('child_id', childId)
-    .order('date', { ascending: false })
-    .limit(10)
-  const recentRecords = (recentRecordsRaw ?? []) as unknown as Array<{
-    date: string
-    activities: unknown[]
-    notable_events: string | null
-    contact_note: string | null
-  }>
-
   // 直近3ヶ月の特記事項
   const threeMonthsAgo = new Date()
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
@@ -132,7 +119,6 @@ export default async function SupportPlanDetailPage({
         childId={childId}
         childName={child.name}
         diagnosis={child.diagnosis}
-        recentRecords={recentRecords}
         readOnly={isReadOnly}
       />
 

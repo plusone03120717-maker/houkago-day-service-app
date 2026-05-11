@@ -9,43 +9,154 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { childName, diagnosis, recentRecords, existing } = await request.json()
+  const { childId, childName, diagnosis, existing } = await request.json()
 
-  const recordsSummary = (recentRecords ?? [])
-    .map((r: { date: string; notable_events?: string; contact_note?: string }) =>
-      `${r.date}: ${r.notable_events ?? ''} ${r.contact_note ?? ''}`.trim()
-    )
-    .filter(Boolean)
-    .join('\n')
+  // 最新のアセスメント情報を取得
+  const { data: assessment } = await supabase
+    .from('child_assessments')
+    .select('child_situation, current_issues, family_situation, child_wishes, parent_wishes, usage_goals')
+    .eq('child_id', childId)
+    .order('assessment_date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  // 直近の出席日を取得（最大20件）
+  const { data: attendancesRaw } = await supabase
+    .from('daily_attendance')
+    .select('id, date, health_condition')
+    .eq('child_id', childId)
+    .eq('status', 'attended')
+    .order('date', { ascending: false })
+    .limit(20)
+
+  const attendances = (attendancesRaw ?? []) as { id: string; date: string; health_condition: string | null }[]
+  const attendanceIds = attendances.map((a) => a.id)
+
+  // 日々の記録テキスト（daily_records）
+  const { data: dailyRecordsRaw } = attendanceIds.length > 0
+    ? await supabase
+        .from('daily_records')
+        .select('content, record_type, daily_attendance!inner(date)')
+        .in('attendance_id', attendanceIds)
+        .order('created_at', { ascending: false })
+    : { data: [] }
+
+  type DailyRecordRow = {
+    content: string
+    record_type: string
+    daily_attendance: { date: string }
+  }
+  const dailyRecords = (dailyRecordsRaw ?? []) as unknown as DailyRecordRow[]
+
+  // 活動記録（プログラム名 + 評価コメント）
+  const { data: dailyActivitiesRaw } = attendanceIds.length > 0
+    ? await supabase
+        .from('daily_activities')
+        .select('evaluation_notes, achievement_level, daily_attendance!inner(date), activity_programs(name)')
+        .in('attendance_id', attendanceIds)
+        .eq('participated', true)
+        .not('program_id', 'is', null)
+    : { data: [] }
+
+  type DailyActivityRow = {
+    evaluation_notes: string | null
+    achievement_level: number | null
+    daily_attendance: { date: string }
+    activity_programs: { name: string } | null
+  }
+  const dailyActivities = (dailyActivitiesRaw ?? []) as unknown as DailyActivityRow[]
+
+  // 連絡帳（最近のもの、内容あり）
+  const { data: contactNotesRaw } = await supabase
+    .from('contact_notes')
+    .select('date, content, parent_comment')
+    .eq('child_id', childId)
+    .not('content', 'eq', '')
+    .order('date', { ascending: false })
+    .limit(10)
+
+  type ContactNoteRow = { date: string; content: string; parent_comment: string | null }
+  const contactNotes = (contactNotesRaw ?? []) as ContactNoteRow[]
+
+  // 日々の記録を日付ごとにまとめる
+  const recordsByDate: Record<string, string[]> = {}
+  for (const rec of dailyRecords) {
+    const date = (rec.daily_attendance as { date: string })?.date ?? ''
+    if (!recordsByDate[date]) recordsByDate[date] = []
+    const prefix = rec.record_type === 'notable' ? '【特記】' : ''
+    if (rec.content?.trim()) recordsByDate[date].push(`${prefix}${rec.content.trim()}`)
+  }
+  for (const act of dailyActivities) {
+    const date = (act.daily_attendance as { date: string })?.date ?? ''
+    if (!recordsByDate[date]) recordsByDate[date] = []
+    const name = act.activity_programs?.name
+    if (name) {
+      const note = act.evaluation_notes?.trim()
+      const level = act.achievement_level != null ? `達成度${act.achievement_level}/5` : ''
+      const detail = [note, level].filter(Boolean).join('・')
+      recordsByDate[date].push(detail ? `【活動】${name}（${detail}）` : `【活動】${name}`)
+    }
+  }
+
+  const dailyRecordsText = Object.entries(recordsByDate)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .slice(0, 15)
+    .map(([date, contents]) => `${date}：${contents.join(' / ')}`)
+    .join('\n') || '記録なし'
+
+  const contactNotesText = contactNotes
+    .map((n) => {
+      const parts = [`${n.date}（連絡帳）：${n.content.trim()}`]
+      if (n.parent_comment?.trim()) parts.push(`→保護者コメント：${n.parent_comment.trim()}`)
+      return parts.join('\n')
+    })
+    .join('\n') || 'なし'
 
   const prompt = `あなたは放課後等デイサービスの専門家です。以下の情報をもとに、個別支援計画の下書きを作成してください。
 
 【対象児童】${childName}
 【診断・障害特性】${diagnosis ?? '記載なし'}
-【最近の支援記録（直近5回）】
-${recordsSummary || '記録なし'}
 ${existing?.longTermGoals ? `【現在の長期目標】${existing.longTermGoals}` : ''}
 ${existing?.shortTermGoals ? `【現在の短期目標】${existing.shortTermGoals}` : ''}
 
-以下の9項目をJSON形式で出力してください。各項目は100〜250文字程度で、具体的で実践的な内容にしてください。
+${assessment ? `【アセスメント情報】
+・本人の様子・強み：${assessment.child_situation ?? '未記載'}
+・現在の課題・困り事：${assessment.current_issues ?? '未記載'}
+・本人の希望：${assessment.child_wishes ?? '未記載'}
+・保護者の希望：${assessment.parent_wishes ?? '未記載'}
+・放デイ利用の目標：${assessment.usage_goals ?? '未記載'}
+・家族の状況：${assessment.family_situation ?? '未記載'}
+` : '【アセスメント情報】未記録\n'}
+【直近の日々の記録・活動記録】
+${dailyRecordsText}
+
+【連絡帳の記録】
+${contactNotesText}
+
+上記の情報を最大限に活用し、以下の11項目をJSON形式で出力してください。
+アセスメントの「保護者の希望」はfamilyWishesに、「利用目標」はsupportPolicyに反映してください。
+日々の記録・活動記録から読み取れる現状を各支援領域の内容に具体的に反映してください。
+各項目は100〜250文字程度で具体的かつ実践的な内容にしてください。
 
 {
+  "familyWishes": "家族の意向（保護者の希望・期待・心配していること）",
+  "supportPolicy": "支援の方針（事業所としての基本的な支援アプローチ）",
   "longTermGoals": "長期目標（6ヶ月〜1年で達成を目指す目標）",
   "shortTermGoals": "短期目標（3〜6ヶ月で達成を目指す具体的な目標）",
-  "supportHealthLife": "①健康・生活領域の支援内容（手洗い・片付け・スケジュール管理など生活習慣への支援）",
+  "supportHealthLife": "①健康・生活領域の支援内容（手洗い・片付け・スケジュール管理など）",
   "supportMovementSensory": "②運動・感覚領域の支援内容（指先運動・全身運動・感覚統合への支援）",
   "supportCognitionBehavior": "③認知・行動領域の支援内容（物の理解・指示への対応・時間概念への支援）",
-  "supportLanguageCommunication": "④言語・コミュニケーション領域の支援内容（言葉・非言語コミュニケーション・対話への支援）",
-  "supportSocialRelationships": "⑤人間関係・社会性領域の支援内容（友だちとの関わり・社会ルール・集団参加への支援）",
-  "supportTransition": "⑥移行支援の内容（就学・進級・施設移行に向けた準備・関係機関連携・不安軽減への支援）",
-  "supportFamily": "⑦家族支援の内容（保護者への情報提供・育児相談・家庭での対応方法の共有への支援）"
+  "supportLanguageCommunication": "④言語・コミュニケーション領域の支援内容（言葉・非言語・対話への支援）",
+  "supportSocialRelationships": "⑤人間関係・社会性領域の支援内容（友だちとの関わり・集団参加への支援）",
+  "supportTransition": "⑥移行支援の内容（就学・進級・施設移行に向けた準備・関係機関連携）",
+  "supportFamily": "⑦家族支援の内容（保護者への情報提供・育児相談・家庭での対応共有）"
 }
 
 JSONのみを出力し、説明文は不要です。`
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 2500,
+    max_tokens: 3000,
     messages: [{ role: 'user', content: prompt }],
   })
 

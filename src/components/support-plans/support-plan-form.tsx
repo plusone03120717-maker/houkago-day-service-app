@@ -12,12 +12,6 @@ interface Props {
   childId: string
   childName: string
   diagnosis: string | null
-  recentRecords: Array<{
-    date: string
-    activities: unknown[]
-    notable_events: string | null
-    contact_note: string | null
-  }>
   readOnly?: boolean
 }
 
@@ -69,7 +63,7 @@ const AREAS = [
 type AreaKey = typeof AREAS[number]['stateKey']
 type AreaValues = Record<AreaKey, string>
 
-export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, readOnly }: Props) {
+export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Props) {
   if (readOnly) return null
   const router = useRouter()
   const supabase = createClient()
@@ -126,14 +120,16 @@ export function SupportPlanForm({ childId, childName, diagnosis, recentRecords, 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        childId,
         childName,
         diagnosis,
-        recentRecords: recentRecords.slice(0, 5),
         existing: { longTermGoals, shortTermGoals },
       }),
     })
     if (res.ok) {
       const json = await res.json()
+      if (json.familyWishes) setFamilyWishes(json.familyWishes)
+      if (json.supportPolicy) setSupportPolicy(json.supportPolicy)
       if (json.longTermGoals) setLongTermGoals(json.longTermGoals)
       if (json.shortTermGoals) setShortTermGoals(json.shortTermGoals)
       if (json.supportHealthLife) setArea('healthLife', json.supportHealthLife)
