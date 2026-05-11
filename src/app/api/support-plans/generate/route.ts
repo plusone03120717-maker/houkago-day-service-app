@@ -4,6 +4,9 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic()
 
+// Vercel Pro: up to 60s / Hobby: up to 10s (this hint is respected on Pro)
+export const maxDuration = 60
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -13,82 +16,81 @@ export async function POST(request: NextRequest) {
   if (!childId) return NextResponse.json({ error: 'childId is required' }, { status: 400 })
 
   try {
-    // 最新のアセスメント情報
-    const { data: assessment } = await supabase
-      .from('child_assessments')
-      .select('child_situation, current_issues, family_situation, child_wishes, parent_wishes, usage_goals')
-      .eq('child_id', childId)
-      .order('assessment_date', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    // 直近の出席日（最大20件）
-    const { data: attendancesRaw } = await supabase
-      .from('daily_attendance')
-      .select('id, date')
-      .eq('child_id', childId)
-      .eq('status', 'attended')
-      .order('date', { ascending: false })
-      .limit(20)
+    // 独立したクエリを並列実行
+    const [
+      { data: assessment },
+      { data: attendancesRaw },
+      { data: contactNotesRaw },
+    ] = await Promise.all([
+      supabase
+        .from('child_assessments')
+        .select('child_situation, current_issues, family_situation, child_wishes, parent_wishes, usage_goals')
+        .eq('child_id', childId)
+        .order('assessment_date', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('daily_attendance')
+        .select('id, date')
+        .eq('child_id', childId)
+        .eq('status', 'attended')
+        .order('date', { ascending: false })
+        .limit(20),
+      supabase
+        .from('contact_notes')
+        .select('date, content, parent_comment')
+        .eq('child_id', childId)
+        .neq('content', '')
+        .order('date', { ascending: false })
+        .limit(10),
+    ])
 
     const attendances = (attendancesRaw ?? []) as { id: string; date: string }[]
     const attendanceIds = attendances.map((a) => a.id)
-    // attendance_id → date のマップ（joinなしで日付を解決するため）
     const dateMap: Record<string, string> = {}
     for (const a of attendances) dateMap[a.id] = a.date
 
-    // 日々の記録（joinなし・attendance_idで日付を解決）
-    const { data: dailyRecordsRaw } = attendanceIds.length > 0
-      ? await supabase
-          .from('daily_records')
-          .select('content, record_type, attendance_id')
-          .in('attendance_id', attendanceIds)
-      : { data: [] }
+    // attendance依存のクエリを並列実行
+    const [{ data: dailyRecordsRaw }, { data: dailyActivitiesRaw }] =
+      attendanceIds.length > 0
+        ? await Promise.all([
+            supabase
+              .from('daily_records')
+              .select('content, record_type, attendance_id')
+              .in('attendance_id', attendanceIds),
+            supabase
+              .from('daily_activities')
+              .select('evaluation_notes, achievement_level, attendance_id, activity_programs(name)')
+              .in('attendance_id', attendanceIds)
+              .eq('participated', true)
+              .not('program_id', 'is', null),
+          ])
+        : [{ data: [] }, { data: [] }]
 
     type DailyRecordRow = { content: string; record_type: string; attendance_id: string }
-    const dailyRecords = (dailyRecordsRaw ?? []) as DailyRecordRow[]
-
-    // 活動記録（joinなし・attendance_idで日付を解決）
-    const { data: dailyActivitiesRaw } = attendanceIds.length > 0
-      ? await supabase
-          .from('daily_activities')
-          .select('evaluation_notes, achievement_level, attendance_id, activity_programs(name)')
-          .in('attendance_id', attendanceIds)
-          .eq('participated', true)
-          .not('program_id', 'is', null)
-      : { data: [] }
-
     type DailyActivityRow = {
       evaluation_notes: string | null
       achievement_level: number | null
       attendance_id: string
       activity_programs: { name: string } | null
     }
-    const dailyActivities = (dailyActivitiesRaw ?? []) as unknown as DailyActivityRow[]
-
-    // 連絡帳（最近のもの）
-    const { data: contactNotesRaw } = await supabase
-      .from('contact_notes')
-      .select('date, content, parent_comment')
-      .eq('child_id', childId)
-      .neq('content', '')
-      .order('date', { ascending: false })
-      .limit(10)
-
     type ContactNoteRow = { date: string; content: string; parent_comment: string | null }
+
+    const dailyRecords = (dailyRecordsRaw ?? []) as DailyRecordRow[]
+    const dailyActivities = (dailyActivitiesRaw ?? []) as unknown as DailyActivityRow[]
     const contactNotes = (contactNotesRaw ?? []) as ContactNoteRow[]
 
-    // 日々の記録を日付ごとにまとめる
+    // 日付ごとに記録をまとめる
     const recordsByDate: Record<string, string[]> = {}
     for (const rec of dailyRecords) {
-      const date = dateMap[rec.attendance_id] ?? ''
+      const date = dateMap[rec.attendance_id]
       if (!date) continue
       if (!recordsByDate[date]) recordsByDate[date] = []
       const prefix = rec.record_type === 'notable' ? '【特記】' : ''
       if (rec.content?.trim()) recordsByDate[date].push(`${prefix}${rec.content.trim()}`)
     }
     for (const act of dailyActivities) {
-      const date = dateMap[act.attendance_id] ?? ''
+      const date = dateMap[act.attendance_id]
       if (!date) continue
       if (!recordsByDate[date]) recordsByDate[date] = []
       const name = act.activity_programs?.name
@@ -138,27 +140,27 @@ ${contactNotesText}
 上記の情報を最大限に活用し、以下の11項目をJSON形式で出力してください。
 アセスメントの「保護者の希望」はfamilyWishesに、「利用目標」はsupportPolicyに反映してください。
 日々の記録・活動記録から読み取れる現状を各支援領域の内容に具体的に反映してください。
-各項目は100〜250文字程度で具体的かつ実践的な内容にしてください。
+各項目は80〜200文字程度で具体的かつ実践的な内容にしてください。
 
 {
   "familyWishes": "家族の意向（保護者の希望・期待・心配していること）",
   "supportPolicy": "支援の方針（事業所としての基本的な支援アプローチ）",
   "longTermGoals": "長期目標（6ヶ月〜1年で達成を目指す目標）",
   "shortTermGoals": "短期目標（3〜6ヶ月で達成を目指す具体的な目標）",
-  "supportHealthLife": "①健康・生活領域の支援内容（手洗い・片付け・スケジュール管理など）",
-  "supportMovementSensory": "②運動・感覚領域の支援内容（指先運動・全身運動・感覚統合への支援）",
-  "supportCognitionBehavior": "③認知・行動領域の支援内容（物の理解・指示への対応・時間概念への支援）",
-  "supportLanguageCommunication": "④言語・コミュニケーション領域の支援内容（言葉・非言語・対話への支援）",
-  "supportSocialRelationships": "⑤人間関係・社会性領域の支援内容（友だちとの関わり・集団参加への支援）",
-  "supportTransition": "⑥移行支援の内容（就学・進級・施設移行に向けた準備・関係機関連携）",
-  "supportFamily": "⑦家族支援の内容（保護者への情報提供・育児相談・家庭での対応共有）"
+  "supportHealthLife": "①健康・生活領域の支援内容",
+  "supportMovementSensory": "②運動・感覚領域の支援内容",
+  "supportCognitionBehavior": "③認知・行動領域の支援内容",
+  "supportLanguageCommunication": "④言語・コミュニケーション領域の支援内容",
+  "supportSocialRelationships": "⑤人間関係・社会性領域の支援内容",
+  "supportTransition": "⑥移行支援の内容",
+  "supportFamily": "⑦家族支援の内容"
 }
 
 JSONのみを出力し、説明文は不要です。`
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 3000,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
     })
 

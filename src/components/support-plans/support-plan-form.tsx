@@ -127,11 +127,13 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
           existing: { longTermGoals, shortTermGoals },
         }),
       })
-      const json = await res.json()
       if (!res.ok) {
-        alert(`AI生成に失敗しました: ${json.error ?? res.status}`)
+        let errorMsg = `HTTP ${res.status}`
+        try { const j = await res.json(); errorMsg = j.error ?? errorMsg } catch { /* ignore */ }
+        alert(`AI生成に失敗しました: ${errorMsg}`)
         return
       }
+      const json = await res.json()
       if (json.familyWishes) setFamilyWishes(json.familyWishes)
       if (json.supportPolicy) setSupportPolicy(json.supportPolicy)
       if (json.longTermGoals) setLongTermGoals(json.longTermGoals)
