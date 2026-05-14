@@ -89,21 +89,56 @@ export default async function ChildAttendanceHistoryPage({
 
   // 記録・連絡帳・活動記録の有無
   const attendanceIds = attendances.map((a) => a.id)
+  type DailyRecordRow = { attendance_id: string; content: string; record_type: string }
+  type ContactNoteRow = { date: string; content: string }
+  type ActivityRow = { attendance_id: string; evaluation_notes: string | null; activity_programs: { name: string } | null }
+
   const [
-    { data: recordsExist },
-    { data: notesExist },
-    { data: activitiesExist },
+    { data: recordsRaw },
+    { data: notesRaw },
+    { data: activitiesRaw },
   ] = attendanceIds.length > 0
     ? await Promise.all([
-        supabase.from('daily_records').select('attendance_id').in('attendance_id', attendanceIds),
-        supabase.from('contact_notes').select('date').eq('child_id', childId).gte('date', start).lte('date', end),
-        supabase.from('daily_activities').select('attendance_id').in('attendance_id', attendanceIds),
+        supabase.from('daily_records').select('attendance_id, content, record_type').in('attendance_id', attendanceIds),
+        supabase.from('contact_notes').select('date, content').eq('child_id', childId).gte('date', start).lte('date', end),
+        supabase
+          .from('daily_activities')
+          .select('attendance_id, evaluation_notes, activity_programs(name)')
+          .in('attendance_id', attendanceIds)
+          .eq('participated', true)
+          .not('program_id', 'is', null),
       ])
     : [{ data: [] }, { data: [] }, { data: [] }]
 
-  const attendanceIdsWithRecords = new Set((recordsExist ?? []).map((r: { attendance_id: string }) => r.attendance_id))
-  const datesWithNotes = new Set((notesExist ?? []).map((n: { date: string }) => n.date))
-  const attendanceIdsWithActivities = new Set((activitiesExist ?? []).map((a: { attendance_id: string }) => a.attendance_id))
+  const dailyRecords = (recordsRaw ?? []) as DailyRecordRow[]
+  const contactNotes = (notesRaw ?? []) as ContactNoteRow[]
+  const activities = (activitiesRaw ?? []) as unknown as ActivityRow[]
+
+  // attendance_id → record lines
+  const recordsMap: Record<string, string[]> = {}
+  for (const r of dailyRecords) {
+    if (!r.content?.trim()) continue
+    if (!recordsMap[r.attendance_id]) recordsMap[r.attendance_id] = []
+    const prefix = r.record_type === 'notable' ? '【特記】' : '【記録】'
+    recordsMap[r.attendance_id].push(`${prefix}${r.content.trim()}`)
+  }
+  for (const a of activities) {
+    const name = a.activity_programs?.name
+    if (!name) continue
+    if (!recordsMap[a.attendance_id]) recordsMap[a.attendance_id] = []
+    const note = a.evaluation_notes?.trim()
+    recordsMap[a.attendance_id].push(note ? `【活動】${name}（${note}）` : `【活動】${name}`)
+  }
+
+  // date → contact note content
+  const notesMap: Record<string, string> = {}
+  for (const n of contactNotes) {
+    if (n.content?.trim()) notesMap[n.date] = n.content.trim()
+  }
+
+  const attendanceIdsWithRecords = new Set(Object.keys(recordsMap))
+  const datesWithNotes = new Set(Object.keys(notesMap))
+  const attendanceIdsWithActivities = new Set(activities.map((a) => a.attendance_id))
 
   // 最古の記録月を求めて「前月」ボタンの制限に使う
   const firstDate = firstAttRaw?.[0]?.date ?? start
@@ -197,47 +232,63 @@ export default async function ChildAttendanceHistoryPage({
                 const schoolHolidayLabel = isSchoolHoliday(att.date)
                 const rowBg = isNational ? 'bg-red-50' : schoolHolidayLabel ? 'bg-blue-50' : ''
 
+                const rowRecords = recordsMap[att.id] ?? []
+                const noteContent = notesMap[att.date]
+                const hasContent = rowRecords.length > 0 || !!noteContent
+
                 return (
-                  <div key={att.id} className={`flex items-center justify-between px-4 py-3 ${rowBg}`}>
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <Link
-                          href={`/attendance/child/${childId}/${att.date}`}
-                          className="text-sm font-medium text-gray-900 hover:text-indigo-600 hover:underline"
-                        >
-                          {formatDate(att.date)}
-                        </Link>
-                        <p className="text-xs text-gray-400">{att.units?.name}</p>
+                  <div key={att.id} className={`px-4 py-3 ${rowBg}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <Link
+                            href={`/attendance/child/${childId}/${att.date}`}
+                            className="text-sm font-medium text-gray-900 hover:text-indigo-600 hover:underline"
+                          >
+                            {formatDate(att.date)}
+                          </Link>
+                          <p className="text-xs text-gray-400">{att.units?.name}</p>
+                        </div>
+                        <div className="flex gap-1 flex-wrap items-center">
+                          {isNational && (
+                            <Badge variant="secondary" className="text-xs bg-red-50 text-red-600 border-red-200">祝日</Badge>
+                          )}
+                          {schoolHolidayLabel && (
+                            <Badge variant="secondary" className="text-xs bg-blue-50 text-blue-600 border-blue-200">{schoolHolidayLabel}</Badge>
+                          )}
+                          {attendanceIdsWithRecords.has(att.id) && (
+                            <span title="日々の記録あり"><ClipboardList className="h-3.5 w-3.5 text-indigo-400" /></span>
+                          )}
+                          {datesWithNotes.has(att.date) && (
+                            <span title="連絡帳あり"><BookOpen className="h-3.5 w-3.5 text-blue-400" /></span>
+                          )}
+                          {attendanceIdsWithActivities.has(att.id) && (
+                            <span title="活動記録あり"><CheckSquare className="h-3.5 w-3.5 text-green-400" /></span>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex gap-1 flex-wrap items-center">
-                        {isNational && (
-                          <Badge variant="secondary" className="text-xs bg-red-50 text-red-600 border-red-200">祝日</Badge>
+                      <div className="flex items-center gap-3">
+                        {att.check_in_time && att.check_out_time && (
+                          <span className="text-xs text-gray-500">
+                            {att.check_in_time.slice(0, 5)} 〜 {att.check_out_time.slice(0, 5)}
+                          </span>
                         )}
-                        {schoolHolidayLabel && (
-                          <Badge variant="secondary" className="text-xs bg-blue-50 text-blue-600 border-blue-200">{schoolHolidayLabel}</Badge>
-                        )}
-                        {attendanceIdsWithRecords.has(att.id) && (
-                          <span title="日々の記録あり"><ClipboardList className="h-3.5 w-3.5 text-indigo-400" /></span>
-                        )}
-                        {datesWithNotes.has(att.date) && (
-                          <span title="連絡帳あり"><BookOpen className="h-3.5 w-3.5 text-blue-400" /></span>
-                        )}
-                        {attendanceIdsWithActivities.has(att.id) && (
-                          <span title="活動記録あり"><CheckSquare className="h-3.5 w-3.5 text-green-400" /></span>
-                        )}
+                        <AttendanceStatusToggle
+                          attendanceId={att.id}
+                          currentStatus={att.status}
+                        />
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      {att.check_in_time && att.check_out_time && (
-                        <span className="text-xs text-gray-500">
-                          {att.check_in_time.slice(0, 5)} 〜 {att.check_out_time.slice(0, 5)}
-                        </span>
-                      )}
-                      <AttendanceStatusToggle
-                        attendanceId={att.id}
-                        currentStatus={att.status}
-                      />
-                    </div>
+                    {hasContent && (
+                      <div className="mt-2 space-y-1 pl-1">
+                        {rowRecords.map((line, i) => (
+                          <p key={i} className="text-xs text-gray-600 leading-relaxed">{line}</p>
+                        ))}
+                        {noteContent && (
+                          <p className="text-xs text-blue-600 leading-relaxed">【連絡帳】{noteContent}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
