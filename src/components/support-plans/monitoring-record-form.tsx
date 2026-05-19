@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Plus, ChevronDown, ChevronUp, Wand2, Bot } from 'lucide-react'
+import { Plus, ChevronDown, ChevronUp, Wand2, Bot, Trash2 } from 'lucide-react'
 
 const STATUS_OPTIONS = [
   { value: 'ongoing', label: '継続中', color: 'text-blue-700' },
@@ -12,6 +12,8 @@ const STATUS_OPTIONS = [
   { value: 'revised', label: '計画見直し', color: 'text-amber-700' },
   { value: 'needs_review', label: '要検討', color: 'text-red-700' },
 ] as const
+
+type AgencyNote = { name: string; content: string }
 
 type AiResult = {
   long_term_progress?: string
@@ -40,6 +42,8 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
   const [issues, setIssues] = useState('')
   const [nextActions, setNextActions] = useState('')
   const [overallStatus, setOverallStatus] = useState<'ongoing' | 'achieved' | 'revised' | 'needs_review'>('ongoing')
+  const [familyWishes, setFamilyWishes] = useState('')
+  const [agencyNotes, setAgencyNotes] = useState<AgencyNote[]>([])
   const [saving, setSaving] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
   const [generating, setGenerating] = useState<string | null>(null)
@@ -87,6 +91,12 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
     }
   }
 
+  const addAgencyNote = () => setAgencyNotes((prev) => [...prev, { name: '', content: '' }])
+  const updateAgencyNote = (i: number, field: keyof AgencyNote, value: string) => {
+    setAgencyNotes((prev) => prev.map((n, idx) => idx === i ? { ...n, [field]: value } : n))
+  }
+  const removeAgencyNote = (i: number) => setAgencyNotes((prev) => prev.filter((_, idx) => idx !== i))
+
   const handleSave = async () => {
     if (!recordDate) return
     setSaving(true)
@@ -99,6 +109,8 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
       issues: issues || null,
       next_actions: nextActions || null,
       overall_status: overallStatus,
+      family_wishes: familyWishes || null,
+      agency_notes: agencyNotes.filter((n) => n.name.trim() || n.content.trim()),
     })
     setSaving(false)
     setOpen(false)
@@ -107,6 +119,8 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
     setIssues('')
     setNextActions('')
     setOverallStatus('ongoing')
+    setFamilyWishes('')
+    setAgencyNotes([])
     startTransition(() => router.refresh())
   }
 
@@ -193,6 +207,76 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
               />
             </div>
           ))}
+
+          {/* 家族の要望 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-700">家族の要望</label>
+              <button
+                type="button"
+                onClick={() => refineField('family_wishes', familyWishes, setFamilyWishes)}
+                disabled={refining === 'family_wishes' || !familyWishes.trim()}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Wand2 className="h-3 w-3" />
+                {refining === 'family_wishes' ? '整えています...' : '文章を整える'}
+              </button>
+            </div>
+            <textarea
+              value={familyWishes}
+              onChange={(e) => setFamilyWishes(e.target.value)}
+              rows={2}
+              placeholder="保護者・家族からの要望や意見"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            />
+          </div>
+
+          {/* 事業所ごとのメモ */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-gray-700">関係事業所の記録</label>
+              <button
+                type="button"
+                onClick={addAgencyNote}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800"
+              >
+                <Plus className="h-3 w-3" />
+                事業所を追加
+              </button>
+            </div>
+            {agencyNotes.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-2">「事業所を追加」で記録できます</p>
+            )}
+            <div className="space-y-2">
+              {agencyNotes.map((note, i) => (
+                <div key={i} className="border border-gray-200 rounded-lg p-2 space-y-2 bg-gray-50">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={note.name}
+                      onChange={(e) => updateAgencyNote(i, 'name', e.target.value)}
+                      placeholder="事業所名（例：○○小学校、△△クリニック）"
+                      className="flex-1 border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeAgencyNote(i)}
+                      className="text-gray-400 hover:text-red-500 flex-shrink-0"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <textarea
+                    value={note.content}
+                    onChange={(e) => updateAgencyNote(i, 'content', e.target.value)}
+                    rows={2}
+                    placeholder="この事業所との連携内容・情報共有事項"
+                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none bg-white"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div className="flex gap-2 pt-1">
             <Button onClick={handleSave} disabled={saving || !recordDate} size="sm">

@@ -16,6 +16,8 @@ type SupportPlan = {
   short_term_goals: string | null
 }
 
+type AgencyNote = { name: string; content: string }
+
 type MonitoringRecord = {
   id: string
   support_plan_id: string | null
@@ -25,6 +27,8 @@ type MonitoringRecord = {
   issues: string | null
   next_actions: string | null
   overall_status: string
+  family_wishes: string | null
+  agency_notes: AgencyNote[]
   created_at: string
 }
 
@@ -65,7 +69,7 @@ export default async function MonitoringPage({
   // 全モニタリング記録を取得（支援計画の有無に関わらず）
   const { data: recordsRaw } = await supabase
     .from('monitoring_records')
-    .select('id, support_plan_id, record_date, long_term_progress, short_term_progress, issues, next_actions, overall_status, created_at')
+    .select('id, support_plan_id, record_date, long_term_progress, short_term_progress, issues, next_actions, overall_status, family_wishes, agency_notes, created_at')
     .eq('child_id', childId)
     .order('record_date', { ascending: false })
   const records = (recordsRaw ?? []) as unknown as MonitoringRecord[]

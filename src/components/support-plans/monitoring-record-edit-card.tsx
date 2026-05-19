@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Pencil, Wand2, ChevronUp, Bot } from 'lucide-react'
+import { Pencil, Wand2, ChevronUp, Bot, Plus, Trash2 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+
+type AgencyNote = { name: string; content: string }
 
 type MonitoringRecord = {
   id: string
@@ -16,6 +18,8 @@ type MonitoringRecord = {
   issues: string | null
   next_actions: string | null
   overall_status: string
+  family_wishes: string | null
+  agency_notes: AgencyNote[]
 }
 
 type AiResult = {
@@ -51,6 +55,8 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
   const [shortTermProgress, setShortTermProgress] = useState(record.short_term_progress ?? '')
   const [issues, setIssues] = useState(record.issues ?? '')
   const [nextActions, setNextActions] = useState(record.next_actions ?? '')
+  const [familyWishes, setFamilyWishes] = useState(record.family_wishes ?? '')
+  const [agencyNotes, setAgencyNotes] = useState<AgencyNote[]>(record.agency_notes ?? [])
   const [saving, setSaving] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
   const [generating, setGenerating] = useState<string | null>(null)
@@ -98,6 +104,12 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
     }
   }
 
+  const addAgencyNote = () => setAgencyNotes((prev) => [...prev, { name: '', content: '' }])
+  const updateAgencyNote = (i: number, field: keyof AgencyNote, value: string) => {
+    setAgencyNotes((prev) => prev.map((n, idx) => idx === i ? { ...n, [field]: value } : n))
+  }
+  const removeAgencyNote = (i: number) => setAgencyNotes((prev) => prev.filter((_, idx) => idx !== i))
+
   const handleSave = async () => {
     setSaving(true)
     await supabase.from('monitoring_records').update({
@@ -107,6 +119,8 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
       short_term_progress: shortTermProgress || null,
       issues: issues || null,
       next_actions: nextActions || null,
+      family_wishes: familyWishes || null,
+      agency_notes: agencyNotes.filter((n) => n.name.trim() || n.content.trim()),
     }).eq('id', record.id)
     setSaving(false)
     setEditing(false)
@@ -164,6 +178,25 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
             <div>
               <p className="text-xs text-gray-400 mb-0.5">今後の対応</p>
               <p className="text-sm text-gray-700 whitespace-pre-wrap">{record.next_actions}</p>
+            </div>
+          )}
+          {record.family_wishes && (
+            <div>
+              <p className="text-xs text-gray-400 mb-0.5">家族の要望</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{record.family_wishes}</p>
+            </div>
+          )}
+          {record.agency_notes && record.agency_notes.length > 0 && (
+            <div>
+              <p className="text-xs text-gray-400 mb-1">関係事業所の記録</p>
+              <div className="space-y-1.5">
+                {record.agency_notes.map((note, i) => (
+                  <div key={i} className="bg-gray-50 rounded-lg px-3 py-2">
+                    {note.name && <p className="text-xs font-medium text-gray-600 mb-0.5">{note.name}</p>}
+                    {note.content && <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </>
@@ -227,6 +260,76 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
               />
             </div>
           ))}
+
+          {/* 家族の要望 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-700">家族の要望</label>
+              <button
+                type="button"
+                onClick={() => refineField('family_wishes', familyWishes, setFamilyWishes)}
+                disabled={refining === 'family_wishes' || !familyWishes.trim()}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Wand2 className="h-3 w-3" />
+                {refining === 'family_wishes' ? '整えています...' : '文章を整える'}
+              </button>
+            </div>
+            <textarea
+              value={familyWishes}
+              onChange={(e) => setFamilyWishes(e.target.value)}
+              rows={3}
+              placeholder="保護者・家族からの要望や意見"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            />
+          </div>
+
+          {/* 事業所ごとのメモ */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-gray-700">関係事業所の記録</label>
+              <button
+                type="button"
+                onClick={addAgencyNote}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800"
+              >
+                <Plus className="h-3 w-3" />
+                事業所を追加
+              </button>
+            </div>
+            {agencyNotes.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-2">「事業所を追加」で記録できます</p>
+            )}
+            <div className="space-y-2">
+              {agencyNotes.map((note, i) => (
+                <div key={i} className="border border-gray-200 rounded-lg p-2 space-y-2 bg-gray-50">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={note.name}
+                      onChange={(e) => updateAgencyNote(i, 'name', e.target.value)}
+                      placeholder="事業所名（例：○○小学校、△△クリニック）"
+                      className="flex-1 border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeAgencyNote(i)}
+                      className="text-gray-400 hover:text-red-500 flex-shrink-0"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <textarea
+                    value={note.content}
+                    onChange={(e) => updateAgencyNote(i, 'content', e.target.value)}
+                    rows={2}
+                    placeholder="この事業所との連携内容・情報共有事項"
+                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none bg-white"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => setEditing(false)}>キャンセル</Button>
