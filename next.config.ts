@@ -5,6 +5,7 @@ const withPWA = require('next-pwa')({
   dest: 'public',
   register: true,
   skipWaiting: true,
+  cleanupOutdatedCaches: true,
   disable: process.env.NODE_ENV === 'development',
   fallbacks: {
     document: '/offline',
@@ -33,16 +34,31 @@ const withPWA = require('next-pwa')({
       urlPattern: ({ url }: { url: URL }) => url.hostname.includes('supabase.co'),
       handler: 'NetworkOnly',
     },
-    // 静的アセット（JS/CSS）はStaleWhileRevalidate
+    // Next.jsのコンテンツハッシュ付き静的ファイル（_next/static/）はCacheFirst（URL変化で自動無効化）
+    {
+      urlPattern: ({ url }: { url: URL }) =>
+        url.pathname.startsWith('/_next/static/') &&
+        (url.pathname.includes('.') ),
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'next-static-immutable',
+        expiration: {
+          maxEntries: 200,
+          maxAgeSeconds: 365 * 24 * 60 * 60, // 1年（ハッシュ付きで不変）
+        },
+      },
+    },
+    // その他のJS/CSS（ハッシュなし可能性あり）はNetworkFirst — 常に最新を取得
     {
       urlPattern: ({ request }: { request: Request }) =>
         ['style', 'script', 'worker'].includes(request.destination),
-      handler: 'StaleWhileRevalidate',
+      handler: 'NetworkFirst',
       options: {
-        cacheName: 'static-resources',
+        cacheName: 'scripts-networkfirst',
+        networkTimeoutSeconds: 5,
         expiration: {
-          maxEntries: 100,
-          maxAgeSeconds: 7 * 24 * 60 * 60, // 7日
+          maxEntries: 60,
+          maxAgeSeconds: 24 * 60 * 60, // 1日（オフライン用フォールバックのみ）
         },
       },
     },
