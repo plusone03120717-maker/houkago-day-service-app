@@ -311,11 +311,38 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
         .select('id')
         .single()
 
-      if (schedErr) {
-        if (schedErr.code === '23505') continue
+      if (schedErr || !schedule) {
+        if (schedErr?.code === '23505') {
+          // 既存スケジュールに未追加の児童を補完する
+          const { data: existingSched } = await supabase
+            .from('transport_schedules')
+            .select('id, transport_details(child_id)')
+            .eq('unit_id', unitId)
+            .eq('date', date)
+            .eq('direction', direction)
+            .eq('departure_time', slot)
+            .maybeSingle()
+          if (existingSched?.id) {
+            const existingIds = new Set(
+              (existingSched.transport_details as { child_id: string }[]).map((d) => d.child_id)
+            )
+            const missing = orderedChildren.filter((c) => !existingIds.has(c.child_id))
+            if (missing.length > 0) {
+              const nextOrder = (existingSched.transport_details as unknown[]).length
+              await supabase.from('transport_details').insert(
+                missing.map((c, idx) => ({
+                  schedule_id: existingSched.id,
+                  child_id: c.child_id,
+                  pickup_location: getPickupLocation(c, direction),
+                  status: 'scheduled',
+                  sort_order: nextOrder + idx,
+                }))
+              )
+            }
+          }
+        }
         continue
       }
-      if (!schedule) continue
 
       if (orderedChildren.length > 0) {
         await supabase.from('transport_details').insert(
