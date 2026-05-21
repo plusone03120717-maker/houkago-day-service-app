@@ -38,6 +38,8 @@ interface Props {
   plannedDatePlanId?: Record<string, string>
   plannedDatePickupTime?: Record<string, string | null>
   plannedDateDropoffTime?: Record<string, string | null>
+  plannedDateServiceStartTime?: Record<string, string | null>
+  plannedDateServiceEndTime?: Record<string, string | null>
   basePath?: string
 }
 
@@ -69,7 +71,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, basePath }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, basePath }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -120,13 +122,13 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         setDaytimeSupportStart(fmt(att.daytime_support_start_time))
         setDaytimeSupportEnd(fmt(att.daytime_support_end_time))
       } else {
-        // 利用スケジュールのお迎え・お送り時間を初期値として設定
+        // 利用スケジュールのお迎え・お送り・利用時間を初期値として設定
         setPickupDeparture(fmt(plannedDatePickupTime[selectedDate]))
         setPickupArrival('')
         setDropoffDeparture(fmt(plannedDateDropoffTime[selectedDate]))
         setDropoffArrival('')
-        setServiceStart('')
-        setServiceEnd('')
+        setServiceStart(fmt(plannedDateServiceStartTime[selectedDate]))
+        setServiceEnd(fmt(plannedDateServiceEndTime[selectedDate]))
         setDaytimeSupport(false)
         setDaytimeSupportStart('')
         setDaytimeSupportEnd('')

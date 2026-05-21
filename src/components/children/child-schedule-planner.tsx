@@ -21,6 +21,8 @@ type Plan = {
   is_active: boolean
   pickup_time: string | null
   dropoff_time: string | null
+  service_start_time: string | null
+  service_end_time: string | null
   transport_type: string
   pickup_location_type: string
   dropoff_location_type: string
@@ -35,6 +37,8 @@ type DaySetting = {
   dropoff_location_type: string
   pickup_time: string | null
   dropoff_time: string | null
+  service_start_time: string | null
+  service_end_time: string | null
 }
 
 type DateOverride = {
@@ -46,6 +50,8 @@ type DateOverride = {
   dropoff_location_type: string
   pickup_time: string | null
   dropoff_time: string | null
+  service_start_time: string | null
+  service_end_time: string | null
   is_cancelled: boolean
 }
 
@@ -103,6 +109,8 @@ interface EditState {
   no_end_date: boolean
   pickup_time: string
   dropoff_time: string
+  service_start_time: string
+  service_end_time: string
   transport_type: string
   pickup_location_type: string
   dropoff_location_type: string
@@ -114,6 +122,8 @@ interface DayEditState {
   dropoff_location_type: string
   pickup_time: string
   dropoff_time: string
+  service_start_time: string
+  service_end_time: string
 }
 
 interface DateOverrideEditState {
@@ -122,11 +132,13 @@ interface DateOverrideEditState {
   dropoff_location_type: string
   pickup_time: string
   dropoff_time: string
+  service_start_time: string
+  service_end_time: string
 }
 
-const PLAN_SELECT = 'id, name, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, dropoff_location_type, units(name)'
-const DAY_SELECT = 'id, plan_id, day_of_week, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time'
-const OVERRIDE_SELECT = 'id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, is_cancelled'
+const PLAN_SELECT = 'id, name, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, service_start_time, service_end_time, transport_type, pickup_location_type, dropoff_location_type, units(name)'
+const DAY_SELECT = 'id, plan_id, day_of_week, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time'
+const OVERRIDE_SELECT = 'id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time, is_cancelled'
 
 interface Props {
   childId: string
@@ -183,6 +195,8 @@ export function ChildSchedulePlanner({
   const [noEndDate, setNoEndDate] = useState(true)
   const [pickupTime, setPickupTime] = useState('')
   const [dropoffTime, setDropoffTime] = useState('')
+  const [serviceStartTime, setServiceStartTime] = useState('')
+  const [serviceEndTime, setServiceEndTime] = useState('')
   const [transportType, setTransportType] = useState(defaultTransportType)
   const [pickupLocationType, setPickupLocationType] = useState(defaultPickupLocationType)
   const [dropoffLocationType, setDropoffLocationType] = useState(defaultDropoffLocationType)
@@ -218,6 +232,8 @@ export function ChildSchedulePlanner({
       dropoff_location_type: existing?.dropoff_location_type ?? plan.dropoff_location_type,
       pickup_time: formatTime(existing?.pickup_time ?? plan.pickup_time),
       dropoff_time: formatTime(existing?.dropoff_time ?? plan.dropoff_time),
+      service_start_time: formatTime(existing?.service_start_time ?? plan.service_start_time),
+      service_end_time: formatTime(existing?.service_end_time ?? plan.service_end_time),
     })
   }
 
@@ -231,6 +247,8 @@ export function ChildSchedulePlanner({
       dropoff_location_type: dayEditState.dropoff_location_type,
       pickup_time: dayEditState.pickup_time || null,
       dropoff_time: dayEditState.dropoff_time || null,
+      service_start_time: dayEditState.service_start_time || null,
+      service_end_time: dayEditState.service_end_time || null,
     }
 
     if (existing) {
@@ -286,6 +304,8 @@ export function ChildSchedulePlanner({
       dropoff_location_type: override?.dropoff_location_type ?? plan.dropoff_location_type,
       pickup_time: formatTime(override?.pickup_time ?? plan.pickup_time),
       dropoff_time: formatTime(override?.dropoff_time ?? plan.dropoff_time),
+      service_start_time: formatTime(override?.service_start_time ?? plan.service_start_time),
+      service_end_time: formatTime(override?.service_end_time ?? plan.service_end_time),
     })
     setOpenDayKey(null)
     setDayEditState(null)
@@ -308,6 +328,8 @@ export function ChildSchedulePlanner({
       dropoff_location_type: dateOverrideEditState.dropoff_location_type,
       pickup_time: dateOverrideEditState.pickup_time || null,
       dropoff_time: dateOverrideEditState.dropoff_time || null,
+      service_start_time: dateOverrideEditState.service_start_time || null,
+      service_end_time: dateOverrideEditState.service_end_time || null,
       is_cancelled: false,
     }
 
@@ -357,6 +379,8 @@ export function ChildSchedulePlanner({
       no_end_date: !plan.end_date,
       pickup_time: formatTime(plan.pickup_time),
       dropoff_time: formatTime(plan.dropoff_time),
+      service_start_time: formatTime(plan.service_start_time),
+      service_end_time: formatTime(plan.service_end_time),
       transport_type: plan.transport_type,
       pickup_location_type: plan.pickup_location_type,
       dropoff_location_type: plan.dropoff_location_type,
@@ -382,6 +406,8 @@ export function ChildSchedulePlanner({
         end_date: isOnce ? editState.once_date : (editState.no_end_date ? null : (editState.end_date || null)),
         pickup_time: editState.pickup_time || null,
         dropoff_time: editState.dropoff_time || null,
+        service_start_time: editState.service_start_time || null,
+        service_end_time: editState.service_end_time || null,
         transport_type: editState.transport_type,
         pickup_location_type: editState.pickup_location_type,
         dropoff_location_type: editState.dropoff_location_type,
@@ -433,6 +459,8 @@ export function ChildSchedulePlanner({
         is_active: true,
         pickup_time: pickupTime || null,
         dropoff_time: dropoffTime || null,
+        service_start_time: serviceStartTime || null,
+        service_end_time: serviceEndTime || null,
         transport_type: transportType,
         pickup_location_type: pickupLocationType,
         dropoff_location_type: dropoffLocationType,
@@ -451,6 +479,7 @@ export function ChildSchedulePlanner({
       setStartDate(new Date().toISOString().slice(0, 10))
       setEndDate(''); setNoEndDate(true)
       setPickupTime(''); setDropoffTime('')
+      setServiceStartTime(''); setServiceEndTime('')
       setTransportType(defaultTransportType)
       setPickupLocationType(defaultPickupLocationType)
       setDropoffLocationType(defaultDropoffLocationType)
@@ -515,7 +544,7 @@ export function ChildSchedulePlanner({
     </div>
   )
 
-  /** 送迎区分・お迎え場所・お迎え時間・送る場所・送り時間の選択UI */
+  /** 送迎区分・場所・時間 UI */
   const transportInputs = (
     tt: string, setTt: (v: string) => void,
     plt: string, setPlt: (v: string) => void,
@@ -572,6 +601,29 @@ export function ChildSchedulePlanner({
           </div>
         </div>
       )}
+    </div>
+  )
+
+  /** 利用時間（開始・終了） UI */
+  const serviceTimeInputs = (
+    ss: string, setSs: (v: string) => void,
+    se: string, setSe: (v: string) => void,
+  ) => (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5">
+        <Clock className="h-3.5 w-3.5 text-indigo-500" />
+        <label className="text-xs font-medium text-gray-700">利用時間</label>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">開始時間</label>
+          <TimeInput value={ss} onChange={setSs} />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">終了時間</label>
+          <TimeInput value={se} onChange={setSe} />
+        </div>
+      </div>
     </div>
   )
 
@@ -687,6 +739,13 @@ export function ChildSchedulePlanner({
                     (v: string) => setEditState((p) => p ? { ...p, dropoff_time: v } : p),
                   )}
 
+                  {serviceTimeInputs(
+                    editState.service_start_time,
+                    (v) => setEditState((p) => p ? { ...p, service_start_time: v } : p),
+                    editState.service_end_time,
+                    (v) => setEditState((p) => p ? { ...p, service_end_time: v } : p),
+                  )}
+
                   <div className="flex gap-2 pt-1">
                     <Button variant="outline" size="sm" onClick={cancelEdit}>キャンセル</Button>
                     <Button size="sm" onClick={() => handleSaveEdit(plan.id)}
@@ -773,6 +832,11 @@ export function ChildSchedulePlanner({
                             <Clock className="h-3 w-3" />終了 {formatTime(plan.dropoff_time)}
                           </span>
                         )}
+                        {plan.service_start_time && (
+                          <span className="flex items-center gap-1 text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
+                            <Clock className="h-3 w-3" />利用 {formatTime(plan.service_start_time)}{plan.service_end_time ? `〜${formatTime(plan.service_end_time)}` : '〜'}
+                          </span>
+                        )}
                       </div>
 
                       {!isOneTime(plan) && (
@@ -838,6 +902,12 @@ export function ChildSchedulePlanner({
                               dayEditState.dropoff_time,
                               (v: string) => setDayEditState((p) => p ? { ...p, dropoff_time: v } : p),
                             )}
+                            {serviceTimeInputs(
+                              dayEditState.service_start_time,
+                              (v) => setDayEditState((p) => p ? { ...p, service_start_time: v } : p),
+                              dayEditState.service_end_time,
+                              (v) => setDayEditState((p) => p ? { ...p, service_end_time: v } : p),
+                            )}
                             <div className="flex gap-2 pt-1">
                               {existing && (
                                 <Button variant="outline" size="sm"
@@ -875,6 +945,7 @@ export function ChildSchedulePlanner({
                               </span>
                               <span className="text-orange-700">{transportLabel(ds.transport_type).label}</span>
                               {ds.pickup_time && <span className="text-gray-500">{formatTime(ds.pickup_time)}</span>}
+                              {ds.service_start_time && <span className="text-purple-600">{formatTime(ds.service_start_time)}〜</span>}
                               <ChevronDown className="h-3 w-3 text-gray-400" />
                             </button>
                           ))}
@@ -942,6 +1013,13 @@ export function ChildSchedulePlanner({
                             (v: string) => setDateOverrideEditState((p) => p ? { ...p, pickup_time: v } : p),
                             dateOverrideEditState.dropoff_time,
                             (v: string) => setDateOverrideEditState((p) => p ? { ...p, dropoff_time: v } : p),
+                          )}
+
+                          {serviceTimeInputs(
+                            dateOverrideEditState.service_start_time,
+                            (v) => setDateOverrideEditState((p) => p ? { ...p, service_start_time: v } : p),
+                            dateOverrideEditState.service_end_time,
+                            (v) => setDateOverrideEditState((p) => p ? { ...p, service_end_time: v } : p),
                           )}
 
                           <div className="flex gap-2 pt-1">
@@ -1058,6 +1136,8 @@ export function ChildSchedulePlanner({
             )}
 
             {transportInputs(transportType, setTransportType, pickupLocationType, setPickupLocationType, dropoffLocationType, setDropoffLocationType, pickupTime, setPickupTime, dropoffTime, setDropoffTime)}
+
+            {serviceTimeInputs(serviceStartTime, setServiceStartTime, serviceEndTime, setServiceEndTime)}
 
             {saveError && (
               <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

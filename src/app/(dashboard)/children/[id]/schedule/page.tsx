@@ -46,7 +46,7 @@ export default async function ChildSchedulePage({
   // 既存の利用計画
   const { data: plansRaw } = await supabase
     .from('usage_plans')
-    .select('id, name, child_id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, transport_type, pickup_location_type, dropoff_location_type, units(name)')
+    .select('id, name, child_id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, service_start_time, service_end_time, transport_type, pickup_location_type, dropoff_location_type, units(name)')
     .eq('child_id', childId)
     .order('start_date', { ascending: false })
 
@@ -61,6 +61,8 @@ export default async function ChildSchedulePage({
     is_active: boolean
     pickup_time: string | null
     dropoff_time: string | null
+    service_start_time: string | null
+    service_end_time: string | null
     transport_type: string
     pickup_location_type: string
     dropoff_location_type: string
@@ -89,7 +91,7 @@ export default async function ChildSchedulePage({
   const { data: daySettingsRaw } = planIds.length > 0
     ? await supabase
         .from('usage_plan_day_settings')
-        .select('id, plan_id, day_of_week, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time')
+        .select('id, plan_id, day_of_week, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time')
         .in('plan_id', planIds)
     : { data: [] }
 
@@ -102,6 +104,8 @@ export default async function ChildSchedulePage({
     dropoff_location_type: string
     pickup_time: string | null
     dropoff_time: string | null
+    service_start_time: string | null
+    service_end_time: string | null
   }
   const daySettings = (daySettingsRaw ?? []) as unknown as DaySetting[]
 
@@ -109,7 +113,7 @@ export default async function ChildSchedulePage({
   const { data: dateOverridesRaw } = planIds.length > 0
     ? await supabase
         .from('usage_plan_date_overrides')
-        .select('id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, is_cancelled')
+        .select('id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time, is_cancelled')
         .in('plan_id', planIds)
         .order('date', { ascending: true })
     : { data: [] }
@@ -123,6 +127,8 @@ export default async function ChildSchedulePage({
     dropoff_location_type: string
     pickup_time: string | null
     dropoff_time: string | null
+    service_start_time: string | null
+    service_end_time: string | null
     is_cancelled: boolean
   }
   const dateOverrides = (dateOverridesRaw ?? []) as unknown as DateOverride[]
@@ -137,6 +143,8 @@ export default async function ChildSchedulePage({
   const plannedDatePlanId: Record<string, string> = {}
   const plannedDatePickupTime: Record<string, string | null> = {}
   const plannedDateDropoffTime: Record<string, string | null> = {}
+  const plannedDateServiceStartTime: Record<string, string | null> = {}
+  const plannedDateServiceEndTime: Record<string, string | null> = {}
   for (const plan of plans) {
     if (!plan.is_active) continue
     const planStart = plan.start_date
@@ -156,6 +164,8 @@ export default async function ChildSchedulePage({
           const eff = dateOv ?? daySetting
           plannedDatePickupTime[dateStr] = eff?.pickup_time ?? plan.pickup_time ?? null
           plannedDateDropoffTime[dateStr] = eff?.dropoff_time ?? plan.dropoff_time ?? null
+          plannedDateServiceStartTime[dateStr] = eff?.service_start_time ?? plan.service_start_time ?? null
+          plannedDateServiceEndTime[dateStr] = eff?.service_end_time ?? plan.service_end_time ?? null
         }
       }
     }
@@ -174,6 +184,8 @@ export default async function ChildSchedulePage({
             plannedDatePlanId[ov.date] = plan.id
             plannedDatePickupTime[ov.date] = ov.pickup_time ?? plan.pickup_time ?? null
             plannedDateDropoffTime[ov.date] = ov.dropoff_time ?? plan.dropoff_time ?? null
+            plannedDateServiceStartTime[ov.date] = ov.service_start_time ?? plan.service_start_time ?? null
+            plannedDateServiceEndTime[ov.date] = ov.service_end_time ?? plan.service_end_time ?? null
           }
         }
       }
@@ -245,6 +257,8 @@ export default async function ChildSchedulePage({
             plannedDatePlanId={plannedDatePlanId}
             plannedDatePickupTime={plannedDatePickupTime}
             plannedDateDropoffTime={plannedDateDropoffTime}
+            plannedDateServiceStartTime={plannedDateServiceStartTime}
+            plannedDateServiceEndTime={plannedDateServiceEndTime}
           />
         </CardContent>
       </Card>
