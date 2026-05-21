@@ -80,6 +80,8 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
   const [deleting, setDeleting] = useState(false)
   const [confirmCancelPlan, setConfirmCancelPlan] = useState(false)
   const [cancellingPlan, setCancellingPlan] = useState(false)
+  const [confirmBulkCancelPlan, setConfirmBulkCancelPlan] = useState(false)
+  const [bulkCancellingPlan, setBulkCancellingPlan] = useState(false)
 
   // 編集フィールドの状態
   const [pickupDeparture, setPickupDeparture] = useState('')
@@ -345,6 +347,29 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     startTransition(() => router.refresh())
   }
 
+  const handleBulkCancelPlan = async () => {
+    setBulkCancellingPlan(true)
+    for (const date of selectedDates) {
+      const planId = plannedDatePlanId[date]
+      if (!planId || attendanceMap[date]) continue
+      const { data: existing } = await supabase
+        .from('usage_plan_date_overrides')
+        .select('id')
+        .eq('plan_id', planId)
+        .eq('date', date)
+        .maybeSingle()
+      if (existing) {
+        await supabase.from('usage_plan_date_overrides').update({ is_cancelled: true }).eq('id', existing.id)
+      } else {
+        await supabase.from('usage_plan_date_overrides').insert({ plan_id: planId, date, is_cancelled: true, transport_type: 'none', pickup_location_type: 'home', dropoff_location_type: 'home' })
+      }
+    }
+    setBulkCancellingPlan(false)
+    setConfirmBulkCancelPlan(false)
+    setSelectedDates(new Set())
+    startTransition(() => router.refresh())
+  }
+
   const changeMonth = (delta: number) => {
     const d = new Date(year, month - 1 + delta, 1)
     const path = basePath ?? `/children/${childId}/schedule`
@@ -545,6 +570,44 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
           {saveError && (
             <p className="text-xs text-red-500 text-center">{saveError}</p>
           )}
+
+          {/* 一括予定削除（スケジュールドットがあり出席記録のない日のみ対象） */}
+          {(() => {
+            const cancellable = [...selectedDates].filter(d => plannedDatePlanId[d] && !attendanceMap[d])
+            if (cancellable.length === 0) return null
+            return confirmBulkCancelPlan ? (
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleBulkCancelPlan}
+                  disabled={bulkCancellingPlan}
+                  size="sm"
+                  variant="destructive"
+                  className="flex-1"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {bulkCancellingPlan ? '削除中...' : `${cancellable.length}日の予定を削除する`}
+                </Button>
+                <Button
+                  onClick={() => setConfirmBulkCancelPlan(false)}
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                >
+                  キャンセル
+                </Button>
+              </div>
+            ) : (
+              <Button
+                onClick={() => setConfirmBulkCancelPlan(true)}
+                size="sm"
+                variant="outline"
+                className="w-full text-red-500 border-red-200 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                {cancellable.length}日の予定を一括削除
+              </Button>
+            )
+          })()}
         </div>
       )}
 
