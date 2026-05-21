@@ -71,7 +71,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -94,21 +94,42 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
 
   const attendanceMap = Object.fromEntries(attendances.map((a) => [a.date, a]))
   const plannedSet = new Set(plannedDates)
-  const selected = selectedDate ? (attendanceMap[selectedDate] ?? null) : null
 
-  // 日付が変わったら編集フィールドを初期化
+  // 単一選択時のみ有効な派生値
+  const selectedDate = selectedDates.size === 1 ? [...selectedDates][0] : null
+  const selected = selectedDate ? (attendanceMap[selectedDate] ?? null) : null
+  const isMultiSelect = selectedDates.size > 1
+
+  // 日付選択が変わったら編集フィールドを初期化
   useEffect(() => {
-    if (selected) {
-      setPickupDeparture(fmt(selected.pickup_departure_time))
-      setPickupArrival(fmt(selected.pickup_arrival_time))
-      setDropoffDeparture(fmt(selected.dropoff_departure_time))
-      setDropoffArrival(fmt(selected.dropoff_arrival_time))
-      setServiceStart(fmt(selected.service_start_time))
-      setServiceEnd(fmt(selected.service_end_time))
-      setDaytimeSupport(selected.daytime_support)
-      setDaytimeSupportStart(fmt(selected.daytime_support_start_time))
-      setDaytimeSupportEnd(fmt(selected.daytime_support_end_time))
+    if (selectedDate) {
+      // 単一選択: 既存レコードがあればその値をロード
+      const att = attendanceMap[selectedDate]
+      if (att) {
+        setPickupDeparture(fmt(att.pickup_departure_time))
+        setPickupArrival(fmt(att.pickup_arrival_time))
+        setDropoffDeparture(fmt(att.dropoff_departure_time))
+        setDropoffArrival(fmt(att.dropoff_arrival_time))
+        setServiceStart(fmt(att.service_start_time))
+        setServiceEnd(fmt(att.service_end_time))
+        setDaytimeSupport(att.daytime_support)
+        setDaytimeSupportStart(fmt(att.daytime_support_start_time))
+        setDaytimeSupportEnd(fmt(att.daytime_support_end_time))
+      } else {
+        setPickupDeparture('')
+        setPickupArrival('')
+        setDropoffDeparture('')
+        setDropoffArrival('')
+        setServiceStart('')
+        setServiceEnd('')
+        setDaytimeSupport(false)
+        setDaytimeSupportStart('')
+        setDaytimeSupportEnd('')
+        const plannedUnitId = plannedDateUnitId[selectedDate] ?? ''
+        setNewUnitId(plannedUnitId || (units.length === 1 ? units[0].id : ''))
+      }
     } else {
+      // 複数選択 or 選択なし: 空にリセット
       setPickupDeparture('')
       setPickupArrival('')
       setDropoffDeparture('')
@@ -118,10 +139,29 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
       setDaytimeSupport(false)
       setDaytimeSupportStart('')
       setDaytimeSupportEnd('')
-      const plannedUnitId = selectedDate ? (plannedDateUnitId[selectedDate] ?? '') : ''
-      setNewUnitId(plannedUnitId || (units.length === 1 ? units[0].id : ''))
     }
   }, [selectedDate]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleDateClick = (date: string, ctrlKey: boolean) => {
+    setSaved(false)
+    setConfirmDelete(false)
+    setConfirmCancelPlan(false)
+    if (ctrlKey) {
+      // Ctrl+クリック: 複数選択トグル
+      setSelectedDates((prev) => {
+        const next = new Set(prev)
+        if (next.has(date)) next.delete(date)
+        else next.add(date)
+        return next
+      })
+    } else {
+      // 通常クリック: 単一選択（同じ日なら解除）
+      setSelectedDates((prev) => {
+        if (prev.size === 1 && prev.has(date)) return new Set()
+        return new Set([date])
+      })
+    }
+  }
 
   const syncTransportSchedules = async (unitId: string, date: string) => {
     const { data: schedules } = await supabase
@@ -176,7 +216,6 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     setSaveError(null)
 
     if (selected) {
-      // 既存レコードを更新
       const { error } = await supabase
         .from('daily_attendance')
         .update(timeFields)
@@ -188,7 +227,6 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
       }
       unitId = selected.unit_id
     } else {
-      // 新規レコードを追加
       const resolvedUnitId = newUnitId || (units.length === 1 ? units[0].id : '')
       if (!resolvedUnitId) {
         setSaving(false)
@@ -209,9 +247,59 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
       unitId = resolvedUnitId
     }
 
-    // 送迎スケジュールの出発時間を同期
     if (unitId) {
       await syncTransportSchedules(unitId, selectedDate)
+    }
+
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+    startTransition(() => router.refresh())
+  }
+
+  const handleBulkSave = async () => {
+    if (selectedDates.size === 0) return
+    setSaving(true)
+    setSaveError(null)
+
+    const timeFields = {
+      pickup_departure_time: pickupDeparture || null,
+      pickup_arrival_time: pickupArrival || null,
+      dropoff_departure_time: dropoffDeparture || null,
+      dropoff_arrival_time: dropoffArrival || null,
+      service_start_time: serviceStart || null,
+      service_end_time: serviceEnd || null,
+      daytime_support: daytimeSupport,
+      daytime_support_start_time: daytimeSupport ? (daytimeSupportStart || null) : null,
+      daytime_support_end_time: daytimeSupport ? (daytimeSupportEnd || null) : null,
+    }
+
+    for (const date of selectedDates) {
+      const att = attendanceMap[date]
+      if (att) {
+        const { error } = await supabase.from('daily_attendance').update(timeFields).eq('id', att.id)
+        if (error) {
+          setSaveError(error.message)
+          setSaving(false)
+          return
+        }
+      } else {
+        const unitId = plannedDateUnitId[date] || (units.length === 1 ? units[0].id : '')
+        if (unitId) {
+          const { error } = await supabase.from('daily_attendance').insert({
+            child_id: childId,
+            unit_id: unitId,
+            date,
+            status: 'scheduled',
+            ...timeFields,
+          })
+          if (error) {
+            setSaveError(error.message)
+            setSaving(false)
+            return
+          }
+        }
+      }
     }
 
     setSaving(false)
@@ -226,7 +314,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     await supabase.from('daily_attendance').delete().eq('id', selected.id)
     setDeleting(false)
     setConfirmDelete(false)
-    setSelectedDate(null)
+    setSelectedDates(new Set())
     startTransition(() => router.refresh())
   }
 
@@ -235,7 +323,6 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     const planId = plannedDatePlanId[selectedDate]
     if (!planId) return
     setCancellingPlan(true)
-    // 既存のdate_overrideがあれば is_cancelled=true に更新、なければ新規挿入
     const { data: existing } = await supabase
       .from('usage_plan_date_overrides')
       .select('id')
@@ -254,7 +341,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     }
     setCancellingPlan(false)
     setConfirmCancelPlan(false)
-    setSelectedDate(null)
+    setSelectedDates(new Set())
     startTransition(() => router.refresh())
   }
 
@@ -262,7 +349,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     const d = new Date(year, month - 1 + delta, 1)
     const path = basePath ?? `/children/${childId}/schedule`
     router.push(`${path}?year=${d.getFullYear()}&month=${d.getMonth() + 1}`)
-    setSelectedDate(null)
+    setSelectedDates(new Set())
   }
 
   const firstDay = new Date(year, month - 1, 1)
@@ -297,6 +384,19 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         </div>
       </div>
 
+      {/* 複数選択中のバッジ */}
+      {isMultiSelect && (
+        <div className="flex items-center justify-between bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
+          <span className="text-xs text-indigo-700 font-medium">{selectedDates.size}日を選択中（Ctrl+クリックで追加/解除）</span>
+          <button
+            onClick={() => setSelectedDates(new Set())}
+            className="text-xs text-indigo-500 hover:text-indigo-700 underline"
+          >
+            選択を解除
+          </button>
+        </div>
+      )}
+
       {/* カレンダーグリッド */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-100">
@@ -317,7 +417,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
             if (!date) return <div key={idx} className="h-12 border-b border-r border-gray-50" />
             const att = attendanceMap[date]
             const isToday = date === today
-            const isSelected = date === selectedDate
+            const isSelected = selectedDates.has(date)
             const dow = new Date(date).getDay()
             const isAttended = att?.status === 'attended'
             const isAbsent = att?.status === 'absent'
@@ -327,7 +427,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
             return (
               <button
                 key={date}
-                onClick={() => setSelectedDate(date === selectedDate ? null : date)}
+                onClick={(e) => handleDateClick(date, e.ctrlKey || e.metaKey)}
                 className={cn(
                   'h-12 border-b border-r border-gray-50 p-1 flex flex-col items-center transition-colors hover:bg-indigo-50',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
@@ -358,7 +458,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
       </div>
 
       {/* 凡例 */}
-      <div className="flex gap-4 text-xs text-gray-500">
+      <div className="flex gap-4 text-xs text-gray-500 flex-wrap">
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-full bg-green-500" />出席
         </div>
@@ -371,10 +471,85 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-full bg-indigo-300" />スケジュール
         </div>
+        <div className="flex items-center gap-1.5 text-gray-400">
+          Ctrl+クリックで複数選択
+        </div>
       </div>
 
-      {/* 日付詳細・編集パネル */}
-      {selectedDate && (
+      {/* 一括編集パネル（複数選択時） */}
+      {isMultiSelect && (
+        <div className="bg-white rounded-xl border border-indigo-200 p-4 space-y-4">
+          <h3 className="font-semibold text-sm text-indigo-700">
+            {selectedDates.size}日を一括編集
+          </h3>
+          <p className="text-xs text-gray-400">入力した時間が選択中の全日程に適用されます。空欄の項目は変更されません。</p>
+
+          {/* 送迎時間 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Car className="h-3.5 w-3.5 text-teal-500" />
+              <span className="text-xs font-semibold text-gray-600">送迎時間</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <TimeField label="お迎え出発" value={pickupDeparture} onChange={setPickupDeparture} />
+              <TimeField label="事務所到着" value={pickupArrival} onChange={setPickupArrival} />
+              <TimeField label="事務所出発" value={dropoffDeparture} onChange={setDropoffDeparture} />
+              <TimeField label="自宅到着" value={dropoffArrival} onChange={setDropoffArrival} />
+            </div>
+          </div>
+
+          {/* 提供時間 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-indigo-500" />
+              <span className="text-xs font-semibold text-gray-600">提供時間</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <TimeField label="開始時間" value={serviceStart} onChange={setServiceStart} />
+              <TimeField label="終了時間" value={serviceEnd} onChange={setServiceEnd} />
+            </div>
+          </div>
+
+          {/* 日中一時利用 */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={daytimeSupport}
+                onChange={(e) => setDaytimeSupport(e.target.checked)}
+                className="w-4 h-4 accent-orange-500"
+              />
+              <Clock className="h-3.5 w-3.5 text-orange-500" />
+              <span className="text-xs font-semibold text-gray-600">日中一時利用</span>
+            </label>
+            {daytimeSupport && (
+              <div className="grid grid-cols-2 gap-2 pl-6">
+                <TimeField label="開始時間" value={daytimeSupportStart} onChange={setDaytimeSupportStart} />
+                <TimeField label="終了時間" value={daytimeSupportEnd} onChange={setDaytimeSupportEnd} />
+              </div>
+            )}
+          </div>
+
+          <Button
+            onClick={handleBulkSave}
+            disabled={saving}
+            size="sm"
+            className="w-full"
+          >
+            {saved ? (
+              <><CheckCircle className="h-4 w-4" />保存しました</>
+            ) : (
+              <><Save className="h-4 w-4" />{saving ? '保存中...' : `${selectedDates.size}日分を一括保存`}</>
+            )}
+          </Button>
+          {saveError && (
+            <p className="text-xs text-red-500 text-center">{saveError}</p>
+          )}
+        </div>
+      )}
+
+      {/* 日付詳細・編集パネル（単一選択時） */}
+      {selectedDate && !isMultiSelect && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-sm text-gray-900">
