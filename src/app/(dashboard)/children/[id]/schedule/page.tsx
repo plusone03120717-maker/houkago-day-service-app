@@ -132,9 +132,11 @@ export default async function ChildSchedulePage({
   const endDate = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
   const lastDayNum = new Date(year, month, 0).getDate()
   const plannedDates = new Set<string>()
-  // 計画日ごとのユニットID・プランID（新規記録・特定日キャンセル用）
+  // 計画日ごとのユニットID・プランID・送迎時間（新規記録の初期値に使用）
   const plannedDateUnitId: Record<string, string> = {}
   const plannedDatePlanId: Record<string, string> = {}
+  const plannedDatePickupTime: Record<string, string | null> = {}
+  const plannedDateDropoffTime: Record<string, string | null> = {}
   for (const plan of plans) {
     if (!plan.is_active) continue
     const planStart = plan.start_date
@@ -148,6 +150,12 @@ export default async function ChildSchedulePage({
         if (!plannedDateUnitId[dateStr]) {
           plannedDateUnitId[dateStr] = plan.unit_id
           plannedDatePlanId[dateStr] = plan.id
+          // 優先順位: 特定日上書き > 曜日別設定 > プランのデフォルト
+          const dateOv = dateOverrides.find((o) => o.plan_id === plan.id && o.date === dateStr && !o.is_cancelled)
+          const daySetting = !dateOv ? daySettings.find((ds) => ds.plan_id === plan.id && ds.day_of_week === dow) : null
+          const eff = dateOv ?? daySetting
+          plannedDatePickupTime[dateStr] = eff?.pickup_time ?? plan.pickup_time ?? null
+          plannedDateDropoffTime[dateStr] = eff?.dropoff_time ?? plan.dropoff_time ?? null
         }
       }
     }
@@ -164,6 +172,8 @@ export default async function ChildSchedulePage({
           if (plan) {
             plannedDateUnitId[ov.date] = plan.unit_id
             plannedDatePlanId[ov.date] = plan.id
+            plannedDatePickupTime[ov.date] = ov.pickup_time ?? plan.pickup_time ?? null
+            plannedDateDropoffTime[ov.date] = ov.dropoff_time ?? plan.dropoff_time ?? null
           }
         }
       }
@@ -233,6 +243,8 @@ export default async function ChildSchedulePage({
             plannedDates={Array.from(plannedDates)}
             plannedDateUnitId={plannedDateUnitId}
             plannedDatePlanId={plannedDatePlanId}
+            plannedDatePickupTime={plannedDatePickupTime}
+            plannedDateDropoffTime={plannedDateDropoffTime}
           />
         </CardContent>
       </Card>
