@@ -48,12 +48,25 @@ export default async function AttendancePage({
 
   const reservations = (reservationsRaw ?? []) as unknown as Reservation[]
 
-  // 予約に含まれていない利用計画の児童をマージ
-  const reservedChildIds = new Set(reservations.map((r) => r.child_id))
   type PlanRow = { id: string; child_id: string; children: Reservation['children'] }
   const planRows = (plansRaw ?? []) as unknown as PlanRow[]
+
+  // この日付でキャンセルされた計画IDを取得
+  const planIds = planRows.map((p) => p.id)
+  const { data: cancelledOverridesRaw } = planIds.length > 0
+    ? await supabase
+        .from('usage_plan_date_overrides')
+        .select('plan_id')
+        .in('plan_id', planIds)
+        .eq('date', today)
+        .eq('is_cancelled', true)
+    : { data: [] }
+  const cancelledPlanIds = new Set((cancelledOverridesRaw ?? []).map((o: { plan_id: string }) => o.plan_id))
+
+  // 予約に含まれていない利用計画の児童をマージ（キャンセル済みは除外）
+  const reservedChildIds = new Set(reservations.map((r) => r.child_id))
   const planReservations: Reservation[] = planRows
-    .filter((p) => !reservedChildIds.has(p.child_id))
+    .filter((p) => !reservedChildIds.has(p.child_id) && !cancelledPlanIds.has(p.id))
     .map((p) => ({
       id: p.id,
       child_id: p.child_id,
