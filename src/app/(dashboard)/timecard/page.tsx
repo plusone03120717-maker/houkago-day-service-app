@@ -37,21 +37,23 @@ export default async function TimecardPage({
   const { data: ratesRaw } = memberIds.length > 0
     ? await supabase
         .from('staff_hourly_rates')
-        .select('staff_member_id, hourly_rate, effective_from, effective_to')
+        .select('id, staff_member_id, hourly_rate, effective_from, effective_to')
         .in('staff_member_id', memberIds)
         .lte('effective_from', today)
         .or(`effective_to.is.null,effective_to.gte.${today}`)
     : { data: [] }
 
-  const rateMap = new Map<string, number>()
-  for (const r of (ratesRaw ?? []) as { staff_member_id: string; hourly_rate: number }[]) {
-    rateMap.set(r.staff_member_id, r.hourly_rate)
+  type RateRow = { id: string; staff_member_id: string; hourly_rate: number }
+  const rateMap = new Map<string, { id: string; hourly_rate: number }>()
+  for (const r of (ratesRaw ?? []) as RateRow[]) {
+    rateMap.set(r.staff_member_id, { id: r.id, hourly_rate: r.hourly_rate })
   }
 
   const staffMembers: StaffMember[] = members.map((m) => ({
     id: m.id,
     name: m.name,
-    hourly_rate: rateMap.get(m.id) ?? null,
+    hourly_rate: rateMap.get(m.id)?.hourly_rate ?? null,
+    hourly_rate_id: rateMap.get(m.id)?.id ?? null,
   }))
 
   const selectedStaffId = params.staff ?? staffMembers[0]?.id ?? ''

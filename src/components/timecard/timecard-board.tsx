@@ -4,12 +4,13 @@ import { useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Edit2, Check, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Edit2, Check, X, ChevronLeft, ChevronRight, Plus, Pencil } from 'lucide-react'
 
 export type StaffMember = {
   id: string
   name: string
   hourly_rate: number | null
+  hourly_rate_id: string | null
 }
 
 export type TimeRecord = {
@@ -94,20 +95,31 @@ interface Props {
   staffId: string
 }
 
-export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staffId }: Props) {
+export function TimecardBoard({ staffMembers: initialStaffMembers, initialRecords, initialMonth, staffId }: Props) {
   const supabase = createClient()
   const [, startTransition] = useTransition()
 
-  const [selectedStaffId, setSelectedStaffId] = useState<string>(staffId || (staffMembers[0]?.id ?? ''))
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(initialStaffMembers)
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(staffId || (initialStaffMembers[0]?.id ?? ''))
   const [month, setMonth] = useState(initialMonth)
   const [records, setRecords] = useState<TimeRecord[]>(initialRecords)
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState<EditState | null>(null)
   const [saving, setSaving] = useState(false)
 
+  // 時給編集
+  const [editingRate, setEditingRate] = useState(false)
+  const [rateValue, setRateValue] = useState('')
+  const [savingRate, setSavingRate] = useState(false)
+
+  // 手動追加フォーム
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [addForm, setAddForm] = useState({ date: '', clock_in: '09:00', clock_out: '17:00' })
+  const [savingAdd, setSavingAdd] = useState(false)
+
   const selectedStaff = staffMembers.find((s) => s.id === selectedStaffId)
 
-  async function fetchRecords(staffId: string, ym: string) {
+  async function fetchRecords(sId: string, ym: string) {
     setLoading(true)
     const [y, m] = ym.split('-').map(Number)
     const start = new Date(y, m - 1, 1).toISOString()
@@ -115,7 +127,7 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
     const { data } = await supabase
       .from('time_records')
       .select('id, staff_member_id, type, recorded_at, note, edited_at')
-      .eq('staff_member_id', staffId)
+      .eq('staff_member_id', sId)
       .gte('recorded_at', start)
       .lt('recorded_at', end)
       .order('recorded_at')
@@ -126,41 +138,31 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
   async function handleStaffChange(id: string) {
     setSelectedStaffId(id)
     setEditing(null)
+    setShowAddForm(false)
     await fetchRecords(id, month)
   }
 
   async function handleMonthChange(ym: string) {
     setMonth(ym)
     setEditing(null)
+    setShowAddForm(false)
     await fetchRecords(selectedStaffId, ym)
   }
 
   async function handleSaveEdit() {
     if (!editing) return
     setSaving(true)
-
-    const { date, time } = toJSTDatetime(
+    const { date } = toJSTDatetime(
       records.find((r) => r.id === editing.recordId)?.recorded_at ?? ''
     )
-    const newDateStr = editing.field === 'clock_in' || editing.field === 'clock_out'
-      ? date
-      : date
-
-    // editing.value は "HH:MM" 形式（JST）→ UTCに変換
     const [hh, mm] = editing.value.split(':').map(Number)
     const jstDate = new Date(`${date}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00+09:00`)
-
     await supabase
       .from('time_records')
-      .update({
-        recorded_at: jstDate.toISOString(),
-        edited_at: new Date().toISOString(),
-      })
+      .update({ recorded_at: jstDate.toISOString(), edited_at: new Date().toISOString() })
       .eq('id', editing.recordId)
-
     setEditing(null)
     setSaving(false)
-    void newDateStr
     await fetchRecords(selectedStaffId, month)
   }
 
@@ -181,12 +183,73 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
     await fetchRecords(selectedStaffId, month)
   }
 
+  // 手動で日付ごと追加
+  async function handleManualAdd() {
+    if (!addForm.date) return
+    setSavingAdd(true)
+    const inserts = []
+    if (addForm.clock_in) {
+      const [hh, mm] = addForm.clock_in.split(':').map(Number)
+      inserts.push({
+        staff_member_id: selectedStaffId,
+        type: 'clock_in',
+        recorded_at: new Date(`${addForm.date}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00+09:00`).toISOString(),
+      })
+    }
+    if (addForm.clock_out) {
+      const [hh, mm] = addForm.clock_out.split(':').map(Number)
+      inserts.push({
+        staff_member_id: selectedStaffId,
+        type: 'clock_out',
+        recorded_at: new Date(`${addForm.date}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00+09:00`).toISOString(),
+      })
+    }
+    if (inserts.length > 0) {
+      await supabase.from('time_records').insert(inserts)
+    }
+    setShowAddForm(false)
+    setAddForm({ date: '', clock_in: '09:00', clock_out: '17:00' })
+    setSavingAdd(false)
+    await fetchRecords(selectedStaffId, month)
+  }
+
+  // 時給を保存
+  async function handleSaveRate() {
+    if (!selectedStaff || !rateValue) return
+    const rate = parseInt(rateValue)
+    if (!rate || rate <= 0) return
+    setSavingRate(true)
+    const today = new Date().toISOString().slice(0, 10)
+
+    if (selectedStaff.hourly_rate_id) {
+      // 既存レコードを終了させて新しいレートを追加
+      await supabase
+        .from('staff_hourly_rates')
+        .update({ effective_to: today })
+        .eq('id', selectedStaff.hourly_rate_id)
+    }
+    const { data: newRate } = await supabase
+      .from('staff_hourly_rates')
+      .insert({ staff_member_id: selectedStaffId, hourly_rate: rate, effective_from: today })
+      .select('id')
+      .single()
+
+    setStaffMembers((prev) =>
+      prev.map((s) =>
+        s.id === selectedStaffId
+          ? { ...s, hourly_rate: rate, hourly_rate_id: (newRate as { id: string } | null)?.id ?? null }
+          : s
+      )
+    )
+    setEditingRate(false)
+    setSavingRate(false)
+  }
+
   const dayRecords = buildDayRecords(
     records.filter((r) => r.staff_member_id === selectedStaffId)
   )
-
   const totalHours = dayRecords.reduce((sum, d) => sum + (d.hours ?? 0), 0)
-  const roundedHours = Math.round(totalHours * 10) / 10
+  const roundedHours = Math.round(totalHours * 100) / 100
   const salary = selectedStaff?.hourly_rate != null
     ? Math.floor(roundedHours * selectedStaff.hourly_rate)
     : null
@@ -195,7 +258,6 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
     <div className="space-y-5">
       {/* フィルター */}
       <div className="flex flex-wrap items-center gap-3">
-        {/* スタッフ選択 */}
         <select
           value={selectedStaffId}
           onChange={(e) => { startTransition(() => {}); void handleStaffChange(e.target.value) }}
@@ -206,7 +268,6 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
           ))}
         </select>
 
-        {/* 月選択 */}
         <div className="flex items-center gap-1">
           <button
             onClick={() => void handleMonthChange(prevMonth(month))}
@@ -227,12 +288,41 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
       {/* 月次サマリー */}
       {selectedStaff && (
         <div className="grid grid-cols-3 gap-3">
+          {/* 時給カード（編集可能） */}
           <Card>
             <CardContent className="p-4">
               <p className="text-xs text-gray-500 mb-1">時給</p>
-              <p className="text-lg font-bold text-gray-900">
-                {selectedStaff.hourly_rate != null ? `¥${selectedStaff.hourly_rate.toLocaleString()}` : '未設定'}
-              </p>
+              {editingRate ? (
+                <div className="flex items-center gap-1 mt-1">
+                  <span className="text-sm text-gray-500">¥</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={rateValue}
+                    onChange={(e) => setRateValue(e.target.value)}
+                    className="border border-gray-200 rounded px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    autoFocus
+                  />
+                  <button onClick={() => void handleSaveRate()} disabled={savingRate} className="text-green-600 hover:text-green-700">
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => setEditingRate(false)} className="text-gray-400 hover:text-gray-600">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className="text-lg font-bold text-gray-900">
+                    {selectedStaff.hourly_rate != null ? `¥${selectedStaff.hourly_rate.toLocaleString()}` : '未設定'}
+                  </p>
+                  <button
+                    onClick={() => { setRateValue(String(selectedStaff.hourly_rate ?? '')); setEditingRate(true) }}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
             </CardContent>
           </Card>
           <Card>
@@ -254,10 +344,62 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
 
       {/* 打刻テーブル */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
           <CardTitle className="text-base">打刻履歴</CardTitle>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => { setShowAddForm(true); setAddForm({ date: `${month}-01`, clock_in: '09:00', clock_out: '17:00' }) }}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            手動追加
+          </Button>
         </CardHeader>
         <CardContent className="p-0">
+          {/* 手動追加フォーム */}
+          {showAddForm && (
+            <div className="mx-4 mb-4 border border-indigo-200 rounded-lg p-3 bg-indigo-50/50">
+              <p className="text-xs font-medium text-indigo-700 mb-2">打刻を手動追加</p>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">日付</label>
+                  <input
+                    type="date"
+                    value={addForm.date}
+                    onChange={(e) => setAddForm({ ...addForm, date: e.target.value })}
+                    className="border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">出勤時刻</label>
+                  <input
+                    type="time"
+                    value={addForm.clock_in}
+                    onChange={(e) => setAddForm({ ...addForm, clock_in: e.target.value })}
+                    className="border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">退勤時刻</label>
+                  <input
+                    type="time"
+                    value={addForm.clock_out}
+                    onChange={(e) => setAddForm({ ...addForm, clock_out: e.target.value })}
+                    className="border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => void handleManualAdd()} disabled={savingAdd || !addForm.date}>
+                    {savingAdd ? '保存中...' : '追加'}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowAddForm(false)}>
+                    キャンセル
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {loading ? (
             <div className="p-6 text-center text-sm text-gray-400">読み込み中...</div>
           ) : dayRecords.length === 0 ? (
@@ -267,11 +409,10 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">日付</th>
-                    <th className="text-left px-4 py-2 font-medium text-gray-600 w-32">出勤時刻</th>
-                    <th className="text-left px-4 py-2 font-medium text-gray-600 w-32">退勤時刻</th>
-                    <th className="text-left px-4 py-2 font-medium text-gray-600 w-20">勤務時間</th>
-                    <th className="text-left px-4 py-2 font-medium text-gray-600">操作</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600 w-20">日付</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600 w-40">出勤時刻</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600 w-40">退勤時刻</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600">勤務時間</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -309,19 +450,21 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
                               </button>
                             </div>
                           ) : clockInTime ? (
-                            <div className="flex items-center gap-1 group">
+                            <div className="flex items-center gap-2">
                               <span className="text-green-700">{clockInTime}</span>
                               <button
                                 onClick={() => setEditing({ recordId: day.clock_in!.id, field: 'clock_in', value: clockInTime })}
-                                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600"
+                                className="text-gray-400 hover:text-indigo-600"
+                                title="編集"
                               >
-                                <Edit2 className="h-3 w-3" />
+                                <Edit2 className="h-3.5 w-3.5" />
                               </button>
                               <button
                                 onClick={() => void handleDeleteRecord(day.clock_in!.id)}
-                                className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500"
+                                className="text-gray-300 hover:text-red-500"
+                                title="削除"
                               >
-                                <X className="h-3 w-3" />
+                                <X className="h-3.5 w-3.5" />
                               </button>
                             </div>
                           ) : (
@@ -347,19 +490,21 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
                               </button>
                             </div>
                           ) : clockOutTime ? (
-                            <div className="flex items-center gap-1 group">
+                            <div className="flex items-center gap-2">
                               <span className="text-red-600">{clockOutTime}</span>
                               <button
                                 onClick={() => setEditing({ recordId: day.clock_out!.id, field: 'clock_out', value: clockOutTime })}
-                                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600"
+                                className="text-gray-400 hover:text-indigo-600"
+                                title="編集"
                               >
-                                <Edit2 className="h-3 w-3" />
+                                <Edit2 className="h-3.5 w-3.5" />
                               </button>
                               <button
                                 onClick={() => void handleDeleteRecord(day.clock_out!.id)}
-                                className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500"
+                                className="text-gray-300 hover:text-red-500"
+                                title="削除"
                               >
-                                <X className="h-3 w-3" />
+                                <X className="h-3.5 w-3.5" />
                               </button>
                             </div>
                           ) : (
@@ -371,9 +516,6 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
                         <td className="px-4 py-2 text-gray-700">
                           {day.hours != null ? `${day.hours}h` : '—'}
                         </td>
-
-                        {/* 操作（空欄） */}
-                        <td className="px-4 py-2" />
                       </tr>
                     )
                   })}
@@ -381,9 +523,11 @@ export function TimecardBoard({ staffMembers, initialRecords, initialMonth, staf
                 <tfoot>
                   <tr className="border-t-2 border-gray-200 bg-gray-50">
                     <td colSpan={3} className="px-4 py-2 text-right text-sm font-medium text-gray-600">合計</td>
-                    <td className="px-4 py-2 font-bold text-gray-900">{roundedHours}h</td>
-                    <td className="px-4 py-2 font-bold text-indigo-600">
-                      {salary != null ? `¥${salary.toLocaleString()}` : ''}
+                    <td className="px-4 py-2 font-bold text-gray-900">
+                      {roundedHours}h
+                      {salary != null && (
+                        <span className="ml-3 text-indigo-600">¥{salary.toLocaleString()}</span>
+                      )}
                     </td>
                   </tr>
                 </tfoot>
