@@ -7,12 +7,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { UserPlus, Copy, Check, KeyRound } from 'lucide-react'
 
-// 役職オプション（needsAuth=trueはアプリログイン・メールアドレスが必要）
+// 役職オプション（needsAuth=trueはアプリログイン・電話番号が必要）
 const ROLE_OPTIONS = [
-  { value: 'staff',    label: 'スタッフ',  needsAuth: true },
-  { value: 'admin',    label: '管理者',    needsAuth: true },
-  { value: 'driver',   label: 'ドライバー', needsAuth: false },
-  { value: 'therapist',label: '療育士',    needsAuth: false },
+  { value: 'staff',     label: 'スタッフ',   needsAuth: true },
+  { value: 'admin',     label: '管理者',     needsAuth: true },
+  { value: 'driver',    label: 'ドライバー',  needsAuth: false },
+  { value: 'therapist', label: '療育士',     needsAuth: false },
 ]
 
 function getAuthRole(selected: Set<string>): 'admin' | 'staff' | null {
@@ -21,11 +21,11 @@ function getAuthRole(selected: Set<string>): 'admin' | 'staff' | null {
   return null
 }
 
-type InviteResult = { isExisting: boolean; email: string; tempPassword: string }
+type InviteResult = { isExisting: boolean; phone: string; tempPassword: string }
 
 export function StaffInviteForm() {
   const supabase = createClient()
-  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set(['staff']))
   const [loading, setLoading] = useState(false)
@@ -34,7 +34,7 @@ export function StaffInviteForm() {
   const [copied, setCopied] = useState(false)
 
   const authRole = getAuthRole(selectedRoles)
-  const needsEmail = authRole !== null
+  const needsPhone = authRole !== null
 
   const toggleRole = (value: string) => {
     setSelectedRoles((prev) => {
@@ -62,9 +62,9 @@ export function StaffInviteForm() {
 
     const nonAuthRoles = [...selectedRoles].filter((r) => !['admin', 'staff'].includes(r))
 
-    if (needsEmail) {
-      if (!email.trim()) {
-        setError('メールアドレスを入力してください')
+    if (needsPhone) {
+      if (!phone.trim()) {
+        setError('電話番号を入力してください')
         setLoading(false)
         return
       }
@@ -72,7 +72,7 @@ export function StaffInviteForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: email.trim(),
+          phone: phone.trim(),
           name: name.trim(),
           role: authRole,
           jobTitles: nonAuthRoles,
@@ -84,12 +84,8 @@ export function StaffInviteForm() {
         setError(json.error ?? '登録に失敗しました')
         return
       }
-      if (json.isExisting) {
-        setResult({ isExisting: true, email: email.trim(), tempPassword: json.tempPassword })
-      } else {
-        setResult({ isExisting: false, email: email.trim(), tempPassword: json.tempPassword })
-      }
-      setEmail('')
+      setResult({ isExisting: json.isExisting, phone: json.phone, tempPassword: json.tempPassword })
+      setPhone('')
       setName('')
       setSelectedRoles(new Set(['staff']))
     } else {
@@ -105,7 +101,7 @@ export function StaffInviteForm() {
       if (err) {
         setError('登録に失敗しました: ' + err.message)
       } else {
-        setResult({ isExisting: false, email: '', tempPassword: '' })
+        setResult({ isExisting: false, phone: '', tempPassword: '' })
         setName('')
         setSelectedRoles(new Set(['driver']))
         window.location.reload()
@@ -137,19 +133,19 @@ export function StaffInviteForm() {
             </div>
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">
-                メールアドレス
-                {needsEmail
+                電話番号
+                {needsPhone
                   ? <span className="text-red-500 ml-0.5">*</span>
                   : <span className="ml-1 text-gray-400 font-normal">（ドライバー等ログイン不要）</span>
                 }
               </label>
               <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="staff@example.com"
-                disabled={!needsEmail}
-                required={needsEmail}
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="090-1234-5678"
+                disabled={!needsPhone}
+                required={needsPhone}
               />
             </div>
           </div>
@@ -175,14 +171,14 @@ export function StaffInviteForm() {
                 </button>
               ))}
             </div>
-            {!needsEmail && selectedRoles.size > 0 && (
+            {!needsPhone && selectedRoles.size > 0 && (
               <p className="text-xs text-gray-400 mt-1.5">
                 ログイン不要のスタッフとして登録されます。LINE User IDを設定することで送迎通知を受け取れます。
               </p>
             )}
-            {needsEmail && (
+            {needsPhone && (
               <p className="text-xs text-gray-400 mt-1.5">
-                仮パスワードを発行します。スタッフにメールアドレスと仮パスワードをお伝えください。
+                仮パスワードを発行します。スタッフに電話番号と仮パスワードをお伝えください。
               </p>
             )}
           </div>
@@ -199,14 +195,14 @@ export function StaffInviteForm() {
                 </div>
                 <p className="text-xs text-indigo-600">
                   {result.isExisting
-                    ? '登録済みのメールアドレスです。情報を更新し新しい仮パスワードを発行しました。以下をスタッフにお伝えください。'
+                    ? '登録済みの電話番号です。情報を更新し新しい仮パスワードを発行しました。以下をスタッフにお伝えください。'
                     : '以下のログイン情報をスタッフにお伝えください。初回ログイン後にパスワードの変更が求められます。'
                   }
                 </p>
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 w-28 shrink-0">メールアドレス</span>
-                    <span className="text-sm font-mono text-gray-800 flex-1">{result.email}</span>
+                    <span className="text-xs text-gray-500 w-28 shrink-0">電話番号</span>
+                    <span className="text-sm font-mono text-gray-800 flex-1">{result.phone}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-500 w-28 shrink-0">仮パスワード</span>
@@ -215,7 +211,7 @@ export function StaffInviteForm() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => handleCopy(`メールアドレス: ${result.email}\n仮パスワード: ${result.tempPassword}`)}
+                      onClick={() => handleCopy(`電話番号: ${result.phone}\n仮パスワード: ${result.tempPassword}`)}
                       className="shrink-0 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
                     >
                       {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
@@ -240,7 +236,7 @@ export function StaffInviteForm() {
           )}
 
           <Button type="submit" disabled={loading || !name.trim() || selectedRoles.size === 0} size="sm">
-            {loading ? '処理中...' : needsEmail ? '登録して仮パスワードを発行' : '登録する'}
+            {loading ? '処理中...' : needsPhone ? '登録して仮パスワードを発行' : '登録する'}
           </Button>
         </form>
       </CardContent>

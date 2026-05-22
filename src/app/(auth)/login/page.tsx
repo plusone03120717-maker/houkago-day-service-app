@@ -15,7 +15,7 @@ export default function LoginPage() {
   const supabase = createClient()
   const [mode, setMode] = useState<Mode>('staff')
 
-  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [childName, setChildName] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -26,7 +26,17 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    let loginEmail = email
+    let loginEmail = ''
+
+    if (mode === 'staff') {
+      // 電話番号を疑似メールに変換（既存のメールアドレスはそのまま使用）
+      if (phone.includes('@')) {
+        loginEmail = phone.trim()
+      } else {
+        const digits = phone.replace(/[\s\-\(\)\.]/g, '').replace(/^\+81/, '0')
+        loginEmail = `${digits}@staff.internal`
+      }
+    }
 
     // 保護者モード：児童名から保護者のメールを検索
     if (mode === 'parent') {
@@ -49,7 +59,7 @@ export default function LoginPage() {
     if (error) {
       setError(mode === 'parent'
         ? 'パスワードが正しくありません。管理者に再設定を依頼してください'
-        : 'メールアドレスまたはパスワードが正しくありません'
+        : '電話番号またはパスワードが正しくありません'
       )
       setLoading(false)
       return
@@ -108,7 +118,7 @@ export default function LoginPage() {
             <CardTitle>ログイン</CardTitle>
             <CardDescription>
               {mode === 'staff'
-                ? 'メールアドレスとパスワードを入力してください'
+                ? '電話番号とパスワードを入力してください'
                 : 'お子さんの名前とパスワードを入力してください'}
             </CardDescription>
           </CardHeader>
@@ -116,17 +126,17 @@ export default function LoginPage() {
             <form onSubmit={handleLogin} className="space-y-4">
               {mode === 'staff' ? (
                 <div className="space-y-2">
-                  <label htmlFor="email" className="text-sm font-medium text-gray-700">
-                    メールアドレス
+                  <label htmlFor="phone" className="text-sm font-medium text-gray-700">
+                    電話番号
                   </label>
                   <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="example@mail.com"
+                    id="phone"
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="090-1234-5678"
                     required
-                    autoComplete="email"
+                    autoComplete="tel"
                   />
                 </div>
               ) : (
