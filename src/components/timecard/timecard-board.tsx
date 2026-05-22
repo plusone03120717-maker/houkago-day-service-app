@@ -56,9 +56,9 @@ function buildDayRecords(records: TimeRecord[]): DayRecord[] {
     .map(([date, { clock_in, clock_out }]) => {
       let hours: number | null = null
       if (clock_in && clock_out) {
-        hours = Math.round(
-          ((new Date(clock_out.recorded_at).getTime() - new Date(clock_in.recorded_at).getTime()) / 3600000) * 10
-        ) / 10
+        const diffMinutes = (new Date(clock_out.recorded_at).getTime() - new Date(clock_in.recorded_at).getTime()) / 60000
+        const ceilMinutes = Math.ceil(diffMinutes / 5) * 5
+        hours = Math.round((ceilMinutes / 60) * 100) / 100
       }
       return { date, clock_in, clock_out, hours }
     })
