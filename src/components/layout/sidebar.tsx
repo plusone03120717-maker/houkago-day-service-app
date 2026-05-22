@@ -22,6 +22,7 @@ import {
   ShieldAlert,
   TriangleAlert,
   BarChart2,
+  Clock,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -44,6 +45,7 @@ const adminNav = [
       { href: '/transport', label: '送迎管理', icon: Car },
       { href: '/shifts', label: 'シフト管理', icon: CalendarDays },
       { href: '/shifts/summary', label: '勤務時間集計', icon: BarChart2 },
+      { href: '/timecard', label: 'タイムカード', icon: Clock },
       { href: '/billing', label: '国保連請求', icon: CreditCard },
     ],
   },

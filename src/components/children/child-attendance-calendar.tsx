@@ -346,6 +346,17 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         .from('usage_plan_date_overrides')
         .insert({ plan_id: planId, date: selectedDate, is_cancelled: true, transport_type: 'none', pickup_location_type: 'home', dropoff_location_type: 'home' })
     }
+    // usage_reservationsも同時にキャンセル
+    const unitId = plannedDateUnitId[selectedDate]
+    if (unitId) {
+      await supabase
+        .from('usage_reservations')
+        .update({ status: 'cancelled' })
+        .eq('child_id', childId)
+        .eq('unit_id', unitId)
+        .eq('date', selectedDate)
+        .in('status', ['confirmed', 'reserved', 'cancel_waiting'])
+    }
     setCancellingPlan(false)
     setConfirmCancelPlan(false)
     setSelectedDates(new Set())
@@ -367,6 +378,17 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         await supabase.from('usage_plan_date_overrides').update({ is_cancelled: true }).eq('id', existing.id)
       } else {
         await supabase.from('usage_plan_date_overrides').insert({ plan_id: planId, date, is_cancelled: true, transport_type: 'none', pickup_location_type: 'home', dropoff_location_type: 'home' })
+      }
+      // usage_reservationsも同時にキャンセル
+      const unitId = plannedDateUnitId[date]
+      if (unitId) {
+        await supabase
+          .from('usage_reservations')
+          .update({ status: 'cancelled' })
+          .eq('child_id', childId)
+          .eq('unit_id', unitId)
+          .eq('date', date)
+          .in('status', ['confirmed', 'reserved', 'cancel_waiting'])
       }
     }
     setBulkCancellingPlan(false)

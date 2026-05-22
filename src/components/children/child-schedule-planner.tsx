@@ -396,14 +396,19 @@ export function ChildSchedulePlanner({
     if (editState.mode === 'repeat' && editState.day_of_week.length === 0) return
     setEditSaving(true)
     const isOnce = editState.mode === 'once'
+    const oldPlan = plans.find((p) => p.id === planId)
+    const newUnitId = editState.unit_id
+    const newDays = isOnce ? [0, 1, 2, 3, 4, 5, 6] : editState.day_of_week
+    const newEndDate = isOnce ? editState.once_date : (editState.no_end_date ? null : (editState.end_date || null))
+
     const { data, error } = await supabase
       .from('usage_plans')
       .update({
         name: editState.name || null,
-        unit_id: editState.unit_id,
-        day_of_week: isOnce ? [0, 1, 2, 3, 4, 5, 6] : editState.day_of_week,
+        unit_id: newUnitId,
+        day_of_week: newDays,
         start_date: isOnce ? editState.once_date : editState.start_date,
-        end_date: isOnce ? editState.once_date : (editState.no_end_date ? null : (editState.end_date || null)),
+        end_date: newEndDate,
         pickup_time: editState.pickup_time || null,
         dropoff_time: editState.dropoff_time || null,
         service_start_time: editState.service_start_time || null,
@@ -415,6 +420,53 @@ export function ChildSchedulePlanner({
       .eq('id', planId)
       .select(PLAN_SELECT)
       .single()
+
+    // ユニット変更・曜日縮小・終了日繰り上げ時に古い予約をキャンセル
+    if (oldPlan && !error) {
+      const today = new Date().toISOString().slice(0, 10)
+      const unitChanged = oldPlan.unit_id !== newUnitId
+      const daysRemoved = (oldPlan.day_of_week ?? []).filter((d) => !newDays.includes(d))
+      const endDateEarlier = newEndDate != null && (oldPlan.end_date == null || newEndDate < oldPlan.end_date)
+
+      if (unitChanged) {
+        // ユニット変更: 旧ユニットの将来予約をキャンセル
+        await supabase
+          .from('usage_reservations')
+          .update({ status: 'cancelled' })
+          .eq('child_id', childId)
+          .eq('unit_id', oldPlan.unit_id)
+          .gte('date', today)
+          .in('status', ['confirmed', 'reserved', 'cancel_waiting'])
+      } else if (daysRemoved.length > 0) {
+        // 曜日が削除された: 削除された曜日に該当する将来予約のみキャンセル
+        const { data: futureRes } = await supabase
+          .from('usage_reservations')
+          .select('id, date')
+          .eq('child_id', childId)
+          .eq('unit_id', oldPlan.unit_id)
+          .gte('date', today)
+          .in('status', ['confirmed', 'reserved'])
+        const staleIds = (futureRes ?? [])
+          .filter((r) => daysRemoved.includes(new Date(r.date + 'T00:00:00').getDay()))
+          .map((r) => r.id)
+        if (staleIds.length > 0) {
+          await supabase
+            .from('usage_reservations')
+            .update({ status: 'cancelled' })
+            .in('id', staleIds)
+        }
+      } else if (endDateEarlier) {
+        // 終了日が前倒し: 新終了日より後の予約をキャンセル
+        await supabase
+          .from('usage_reservations')
+          .update({ status: 'cancelled' })
+          .eq('child_id', childId)
+          .eq('unit_id', oldPlan.unit_id)
+          .gt('date', newEndDate)
+          .in('status', ['confirmed', 'reserved'])
+      }
+    }
+
     setEditSaving(false)
     if (error) return
     if (data) {
@@ -504,6 +556,17 @@ export function ChildSchedulePlanner({
 
   const handleDelete = async (planId: string) => {
     if (!confirm('このスケジュールを削除しますか？')) return
+    const plan = plans.find((p) => p.id === planId)
+    if (plan) {
+      const today = new Date().toISOString().slice(0, 10)
+      await supabase
+        .from('usage_reservations')
+        .update({ status: 'cancelled' })
+        .eq('child_id', childId)
+        .eq('unit_id', plan.unit_id)
+        .gte('date', today)
+        .in('status', ['confirmed', 'reserved', 'cancel_waiting'])
+    }
     await supabase.from('usage_plans').delete().eq('id', planId)
     setPlans((prev) => prev.filter((p) => p.id !== planId))
     setDaySettings((prev) => prev.filter((ds) => ds.plan_id !== planId))

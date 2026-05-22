@@ -27,7 +27,7 @@ export default async function AttendancePage({
     selectedUnitId
       ? supabase
           .from('usage_reservations')
-          .select('id, child_id, date, status, children (id, name, name_kana, photo_url, allergy_info, medical_info)')
+          .select('id, child_id, date, status, requested_by, children (id, name, name_kana, photo_url, allergy_info, medical_info)')
           .eq('unit_id', selectedUnitId)
           .eq('date', today)
           .in('status', ['confirmed', 'reserved', 'cancel_waiting'])
@@ -46,8 +46,6 @@ export default async function AttendancePage({
       : { data: [] },
   ])
 
-  const reservations = (reservationsRaw ?? []) as unknown as Reservation[]
-
   type PlanRow = { id: string; child_id: string; children: Reservation['children'] }
   const planRows = (plansRaw ?? []) as unknown as PlanRow[]
 
@@ -62,6 +60,24 @@ export default async function AttendancePage({
         .eq('is_cancelled', true)
     : { data: [] }
   const cancelledPlanIds = new Set((cancelledOverridesRaw ?? []).map((o: { plan_id: string }) => o.plan_id))
+
+  // 計画があるが全てキャンセルされている児童を特定
+  const childHasPlan = new Set<string>(planRows.map((p) => p.child_id))
+  const childHasValidPlan = new Set<string>(
+    planRows.filter((p) => !cancelledPlanIds.has(p.id)).map((p) => p.child_id)
+  )
+
+  // 予約フィルタリング:
+  // - 有効な計画あり → 常に表示
+  // - 計画あるが全日付キャンセル → 除外
+  // - 計画なし（削除・曜日変更・終了日変更済み）→ 保護者ポータルからの手動予約（requested_by!=null）のみ表示
+  //   ※自動生成予約（requested_by=null）は計画がなければ除外することで同期ズレを防ぐ
+  type ReservationWithMeta = Reservation & { requested_by: string | null }
+  const reservations = ((reservationsRaw ?? []) as unknown as ReservationWithMeta[]).filter((r) => {
+    if (childHasValidPlan.has(r.child_id)) return true
+    if (childHasPlan.has(r.child_id)) return false
+    return r.requested_by != null
+  }) as unknown as Reservation[]
 
   // 予約に含まれていない利用計画の児童をマージ（キャンセル済みは除外）
   const reservedChildIds = new Set(reservations.map((r) => r.child_id))

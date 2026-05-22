@@ -212,6 +212,7 @@
       </ul>
     </li>
     <li><a href="#ch11">シフト管理・勤務時間集計</a></li>
+    <li><a href="#ch11b">タイムカード（LINE打刻）</a></li>
     <li><a href="#ch12">国保連請求</a></li>
     <li><a href="#ch13">帳票出力</a></li>
     <li><a href="#ch14">設定</a>
@@ -648,6 +649,67 @@
 
   <h3>出勤実績の入力</h3>
   <p>シフト管理画面から実際の出退勤時刻（actual_start_time / actual_end_time）を入力し、「出勤確認済み」にチェックを入れると実績が確定します。</p>
+</div>
+
+<!-- Chapter 11b -->
+<div class="chapter" id="ch11b">
+  <div class="chapter-header">
+    <div class="num">Chapter 11b</div>
+    <h2>タイムカード（LINE打刻）</h2>
+    <p>LINEリッチメニューによる出退勤打刻と月次給与計算</p>
+  </div>
+
+  <h3>概要</h3>
+  <p>スタッフがLINE公式アカウントのリッチメニュー（画面下部のボタン）をタップするだけで出勤・退勤を記録できます。管理者は管理アプリで打刻履歴の確認・修正・月次給与計算を行えます。</p>
+
+  <h3>初期セットアップ（管理者）</h3>
+  <h4>1. 環境変数の設定</h4>
+  <p>以下の環境変数を <code>.env.local</code> に追加してください。</p>
+  <table>
+    <tr><th>変数名</th><th>内容</th></tr>
+    <tr><td><code>LINE_CHANNEL_SECRET</code></td><td>LINE Developersコンソールのチャネルシークレット</td></tr>
+    <tr><td><code>LINE_CHANNEL_ACCESS_TOKEN</code></td><td>LINE Developersコンソールの長期アクセストークン</td></tr>
+  </table>
+
+  <h4>2. LINE DevelopersでWebhook URLを設定</h4>
+  <div class="step"><span class="step-num">1</span> LINE Developersコンソール → チャネル → Messaging API設定を開く</div>
+  <div class="step"><span class="step-num">2</span> Webhook URL に <code>https://&lt;あなたのドメイン&gt;/api/line-webhook</code> を設定</div>
+  <div class="step"><span class="step-num">3</span> 「Webhookの利用」をONにする</div>
+
+  <h4>3. リッチメニューの設定</h4>
+  <p>LINE Developersコンソール または LINE Official Account Managerでリッチメニューを作成します。ボタンのアクションは以下の通りに設定してください。</p>
+  <table>
+    <tr><th>ボタン</th><th>アクション種別</th><th>データ</th></tr>
+    <tr><td>出勤</td><td>ポストバック</td><td><code>action=clock_in</code></td></tr>
+    <tr><td>退勤</td><td>ポストバック</td><td><code>action=clock_out</code></td></tr>
+  </table>
+
+  <h3>スタッフのLINE User ID登録</h3>
+  <div class="step"><span class="step-num">1</span> サイドバー「設定」→「スタッフ管理」→ 対象スタッフを選択</div>
+  <div class="step"><span class="step-num">2</span> 「LINE User ID」欄に <code>U</code> から始まるIDを入力して保存</div>
+  <p class="note">LINE User IDの確認方法：スタッフがLINE公式アカウントにメッセージを送信すると、webhookのログで確認できます。または LINE Official Account Manager の「友だち管理」から確認できます。</p>
+
+  <h3>時給の設定</h3>
+  <div class="step"><span class="step-num">1</span> スタッフ詳細ページ下部「時給設定」セクションの「追加」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 時給（円）・開始日を入力して「追加」を押す</div>
+  <p>時給改定の際は旧設定に終了日を設定し、新しい時給を追加することで期間ごとの管理ができます。</p>
+
+  <h3>タイムカードの確認・修正</h3>
+  <div class="step"><span class="step-num">1</span> サイドバー「タイムカード」をクリック</div>
+  <div class="step"><span class="step-num">2</span> スタッフと月を選択して打刻履歴を表示</div>
+  <div class="step"><span class="step-num">3</span> 各行の出勤・退勤時刻にカーソルを合わせると編集アイコンが表示される</div>
+  <div class="step"><span class="step-num">4</span> 鉛筆アイコンをクリック → 時刻を修正 → チェックマークで保存</div>
+  <p>管理者が修正した記録には <strong>*</strong> マークが表示されます。</p>
+
+  <h3>月次給与計算</h3>
+  <p>タイムカード画面の上部に当月の集計が表示されます。</p>
+  <table>
+    <tr><th>項目</th><th>内容</th></tr>
+    <tr><td>時給</td><td>スタッフ設定ページで登録した時給</td></tr>
+    <tr><td>月間勤務時間</td><td>出勤〜退勤の時間を日単位で合算</td></tr>
+    <tr><td>月間給与（概算）</td><td>月間勤務時間 × 時給（端数切り捨て）</td></tr>
+  </table>
+  <p class="note">勤務時間は出勤打刻と退勤打刻の差分から計算します。休憩時間は現時点では自動控除されません。</p>
 </div>
 
 <!-- Chapter 12 -->
