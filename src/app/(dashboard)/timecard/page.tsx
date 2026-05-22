@@ -20,8 +20,10 @@ export default async function TimecardPage({
 
   const month = params.month ?? currentMonth()
   const [y, m] = month.split('-').map(Number)
-  const monthStart = new Date(y, m - 1, 1).toISOString()
-  const monthEnd = new Date(y, m, 1).toISOString()
+  const recordsStart = new Date(y, m - 1, 1).toISOString()
+  const recordsEnd = new Date(y, m, 1).toISOString()
+  const rateMonthStart = `${month}-01`
+  const rateMonthEnd = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
 
   // スタッフ一覧と時給を取得
   const { data: membersRaw } = await supabase
@@ -32,15 +34,15 @@ export default async function TimecardPage({
   const members = (membersRaw ?? []) as { id: string; name: string }[]
   const memberIds = members.map((m) => m.id)
 
-  // 現在有効な時給を取得
-  const today = new Date().toISOString().slice(0, 10)
+  // 選択月に有効な時給を取得
   const { data: ratesRaw } = memberIds.length > 0
     ? await supabase
         .from('staff_hourly_rates')
         .select('id, staff_member_id, hourly_rate, effective_from, effective_to')
         .in('staff_member_id', memberIds)
-        .lte('effective_from', today)
-        .or(`effective_to.is.null,effective_to.gte.${today}`)
+        .lte('effective_from', rateMonthEnd)
+        .or(`effective_to.is.null,effective_to.gte.${rateMonthStart}`)
+        .order('effective_from', { ascending: true })
     : { data: [] }
 
   type RateRow = { id: string; staff_member_id: string; hourly_rate: number }
@@ -64,8 +66,8 @@ export default async function TimecardPage({
         .from('time_records')
         .select('id, staff_member_id, type, recorded_at, note, edited_at')
         .eq('staff_member_id', selectedStaffId)
-        .gte('recorded_at', monthStart)
-        .lt('recorded_at', monthEnd)
+        .gte('recorded_at', recordsStart)
+        .lt('recorded_at', recordsEnd)
         .order('recorded_at')
     : { data: [] }
 

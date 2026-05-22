@@ -82,6 +82,24 @@ function nextMonth(ym: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+function getLastDayOfMonth(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  return `${ym}-${String(lastDay).padStart(2, '0')}`
+}
+
+function getLastDayOfPrevMonth(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  const d = new Date(y, m - 1, 0)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function getFirstDayOfNextMonth(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  const d = new Date(y, m, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+}
+
 type EditState = {
   recordId: string
   field: 'clock_in' | 'clock_out'
@@ -135,18 +153,42 @@ export function TimecardBoard({ staffMembers: initialStaffMembers, initialRecord
     setLoading(false)
   }
 
+  async function fetchRateForMonth(sId: string, ym: string) {
+    const monthStart = `${ym}-01`
+    const monthEnd = getLastDayOfMonth(ym)
+    const { data } = await supabase
+      .from('staff_hourly_rates')
+      .select('id, hourly_rate')
+      .eq('staff_member_id', sId)
+      .lte('effective_from', monthEnd)
+      .or(`effective_to.is.null,effective_to.gte.${monthStart}`)
+      .order('effective_from', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const rate = data as { id: string; hourly_rate: number } | null
+    setStaffMembers((prev) =>
+      prev.map((s) =>
+        s.id === sId
+          ? { ...s, hourly_rate: rate?.hourly_rate ?? null, hourly_rate_id: rate?.id ?? null }
+          : s
+      )
+    )
+  }
+
   async function handleStaffChange(id: string) {
     setSelectedStaffId(id)
     setEditing(null)
     setShowAddForm(false)
-    await fetchRecords(id, month)
+    setEditingRate(false)
+    await Promise.all([fetchRecords(id, month), fetchRateForMonth(id, month)])
   }
 
   async function handleMonthChange(ym: string) {
     setMonth(ym)
     setEditing(null)
     setShowAddForm(false)
-    await fetchRecords(selectedStaffId, ym)
+    setEditingRate(false)
+    await Promise.all([fetchRecords(selectedStaffId, ym), fetchRateForMonth(selectedStaffId, ym)])
   }
 
   async function handleSaveEdit() {
@@ -213,35 +255,80 @@ export function TimecardBoard({ staffMembers: initialStaffMembers, initialRecord
     await fetchRecords(selectedStaffId, month)
   }
 
-  // 時給を保存
-  async function handleSaveRate() {
-    if (!selectedStaff || !rateValue) return
+  // 時給を保存（scope: 'month'=この月のみ, 'future'=この月以降すべて）
+  async function handleSaveRate(scope: 'month' | 'future') {
     const rate = parseInt(rateValue)
     if (!rate || rate <= 0) return
     setSavingRate(true)
-    const today = new Date().toISOString().slice(0, 10)
 
-    if (selectedStaff.hourly_rate_id) {
-      // 既存レコードを終了させて新しいレートを追加
-      await supabase
-        .from('staff_hourly_rates')
-        .update({ effective_to: today })
-        .eq('id', selectedStaff.hourly_rate_id)
-    }
-    const { data: newRate } = await supabase
+    const monthStart = `${month}-01`
+    const monthEnd = getLastDayOfMonth(month)
+    const prevMonthEnd = getLastDayOfPrevMonth(month)
+    const nextMonthStart = getFirstDayOfNextMonth(month)
+
+    // この月と重なる既存レートを取得
+    type RateRow = { id: string; hourly_rate: number; effective_from: string; effective_to: string | null }
+    const { data: existingRaw } = await supabase
       .from('staff_hourly_rates')
-      .insert({ staff_member_id: selectedStaffId, hourly_rate: rate, effective_from: today })
-      .select('id')
-      .single()
+      .select('id, hourly_rate, effective_from, effective_to')
+      .eq('staff_member_id', selectedStaffId)
+      .lte('effective_from', monthEnd)
+      .or(`effective_to.is.null,effective_to.gte.${monthStart}`)
+      .order('effective_from', { ascending: false })
+    const existing = ((existingRaw ?? []) as RateRow[])[0] ?? null
 
-    setStaffMembers((prev) =>
-      prev.map((s) =>
-        s.id === selectedStaffId
-          ? { ...s, hourly_rate: rate, hourly_rate_id: (newRate as { id: string } | null)?.id ?? null }
-          : s
+    if (scope === 'future') {
+      if (existing) {
+        if (existing.effective_from < monthStart) {
+          await supabase.from('staff_hourly_rates').update({ effective_to: prevMonthEnd }).eq('id', existing.id)
+        } else {
+          await supabase.from('staff_hourly_rates').delete().eq('id', existing.id)
+        }
+      }
+      const { data: newRate } = await supabase
+        .from('staff_hourly_rates')
+        .insert({ staff_member_id: selectedStaffId, hourly_rate: rate, effective_from: monthStart, effective_to: null })
+        .select('id').single()
+      setStaffMembers((prev) =>
+        prev.map((s) => s.id === selectedStaffId ? { ...s, hourly_rate: rate, hourly_rate_id: (newRate as { id: string } | null)?.id ?? null } : s)
       )
-    )
+    } else {
+      // この月のみ
+      if (existing) {
+        const originalTo = existing.effective_to
+        if (existing.effective_from < monthStart) {
+          await supabase.from('staff_hourly_rates').update({ effective_to: prevMonthEnd }).eq('id', existing.id)
+          if (originalTo === null || originalTo > monthEnd) {
+            await supabase.from('staff_hourly_rates').insert({
+              staff_member_id: selectedStaffId,
+              hourly_rate: existing.hourly_rate,
+              effective_from: nextMonthStart,
+              effective_to: originalTo,
+            })
+          }
+        } else {
+          if (originalTo === null || originalTo > monthEnd) {
+            await supabase.from('staff_hourly_rates').insert({
+              staff_member_id: selectedStaffId,
+              hourly_rate: existing.hourly_rate,
+              effective_from: nextMonthStart,
+              effective_to: originalTo,
+            })
+          }
+          await supabase.from('staff_hourly_rates').delete().eq('id', existing.id)
+        }
+      }
+      const { data: newRate } = await supabase
+        .from('staff_hourly_rates')
+        .insert({ staff_member_id: selectedStaffId, hourly_rate: rate, effective_from: monthStart, effective_to: monthEnd })
+        .select('id').single()
+      setStaffMembers((prev) =>
+        prev.map((s) => s.id === selectedStaffId ? { ...s, hourly_rate: rate, hourly_rate_id: (newRate as { id: string } | null)?.id ?? null } : s)
+      )
+    }
+
     setEditingRate(false)
+    setRateValue('')
     setSavingRate(false)
   }
 
@@ -317,22 +404,37 @@ export function TimecardBoard({ staffMembers: initialStaffMembers, initialRecord
             <CardContent className="p-4">
               <p className="text-xs text-gray-500 mb-1">時給</p>
               {editingRate ? (
-                <div className="flex items-center gap-1 mt-1">
-                  <span className="text-sm text-gray-500">¥</span>
-                  <input
-                    type="number"
-                    min="1"
-                    value={rateValue}
-                    onChange={(e) => setRateValue(e.target.value)}
-                    className="border border-gray-200 rounded px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    autoFocus
-                  />
-                  <button onClick={() => void handleSaveRate()} disabled={savingRate} className="text-green-600 hover:text-green-700">
-                    <Check className="h-4 w-4" />
-                  </button>
-                  <button onClick={() => setEditingRate(false)} className="text-gray-400 hover:text-gray-600">
-                    <X className="h-4 w-4" />
-                  </button>
+                <div className="mt-1 space-y-2">
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm text-gray-500">¥</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={rateValue}
+                      onChange={(e) => setRateValue(e.target.value)}
+                      className="border border-gray-200 rounded px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      autoFocus
+                    />
+                    <button onClick={() => setEditingRate(false)} className="text-gray-400 hover:text-gray-600 ml-1">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    <button
+                      onClick={() => void handleSaveRate('month')}
+                      disabled={savingRate || !rateValue}
+                      className="text-xs px-2 py-1 rounded border border-indigo-300 text-indigo-700 hover:bg-indigo-50 disabled:opacity-40"
+                    >
+                      この月のみ
+                    </button>
+                    <button
+                      onClick={() => void handleSaveRate('future')}
+                      disabled={savingRate || !rateValue}
+                      className="text-xs px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40"
+                    >
+                      この月以降すべて
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">

@@ -31,14 +31,6 @@ export default async function StaffMemberPage({
 
   if (!member) return <div className="p-4 text-gray-500">スタッフが見つかりません</div>
 
-  const { data: hourlyRatesRaw } = await supabase
-    .from('staff_hourly_rates')
-    .select('id, hourly_rate, effective_from, effective_to')
-    .eq('staff_member_id', memberId)
-    .order('effective_from', { ascending: false })
-  type HourlyRate = { id: string; hourly_rate: number; effective_from: string; effective_to: string | null }
-  const hourlyRates = (hourlyRatesRaw ?? []) as HourlyRate[]
-
   const memberRoles = member.roles?.length ? member.roles : [member.role]
 
   return (
@@ -82,7 +74,6 @@ export default async function StaffMemberPage({
             initialName={member.name}
             initialRoles={memberRoles}
             initialLineUserId={member.line_user_id ?? ''}
-            initialHourlyRates={hourlyRates}
           />
         </CardContent>
       </Card>
