@@ -249,6 +249,7 @@ export function TimecardBoard({ staffMembers: initialStaffMembers, initialRecord
     records.filter((r) => r.staff_member_id === selectedStaffId)
   )
   const missingClockOutCount = dayRecords.filter((d) => d.clock_in !== null && d.clock_out === null).length
+  const missingClockInCount = dayRecords.filter((d) => d.clock_out !== null && d.clock_in === null).length
   const totalHours = dayRecords.reduce((sum, d) => sum + (d.hours ?? 0), 0)
   const roundedHours = Math.round(totalHours * 100) / 100
   const salary = selectedStaff?.hourly_rate != null
@@ -286,13 +287,25 @@ export function TimecardBoard({ staffMembers: initialStaffMembers, initialRecord
         </div>
       </div>
 
-      {/* 退勤未記録アラート */}
-      {missingClockOutCount > 0 && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
-          <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
-          <p className="text-sm text-red-700 font-medium">
-            退勤が記録されていない日が{missingClockOutCount}件あります。確認・修正してください。
-          </p>
+      {/* アラートバナー */}
+      {(missingClockOutCount > 0 || missingClockInCount > 0) && (
+        <div className="space-y-2">
+          {missingClockOutCount > 0 && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
+              <p className="text-sm text-red-700 font-medium">
+                退勤が記録されていない日が{missingClockOutCount}件あります。確認・修正してください。
+              </p>
+            </div>
+          )}
+          {missingClockInCount > 0 && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+              <p className="text-sm text-amber-700 font-medium">
+                出勤が記録されていない日が{missingClockInCount}件あります。確認・修正してください。
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -433,16 +446,24 @@ export function TimecardBoard({ staffMembers: initialStaffMembers, initialRecord
                     const isEditingIn = editing !== null && editing.recordId === day.clock_in?.id && editing.field === 'clock_in'
                     const isEditingOut = editing !== null && editing.recordId === day.clock_out?.id && editing.field === 'clock_out'
                     const missingClockOut = day.clock_in !== null && day.clock_out === null
+                    const missingClockIn = day.clock_out !== null && day.clock_in === null
 
                     return (
-                      <tr key={day.date} className={`border-b hover:bg-opacity-80 ${missingClockOut ? 'bg-red-50 border-red-100' : 'border-gray-50 hover:bg-gray-50/50'}`}>
+                      <tr key={day.date} className={`border-b hover:bg-opacity-80 ${
+                        missingClockOut ? 'bg-red-50 border-red-100' :
+                        missingClockIn ? 'bg-amber-50 border-amber-100' :
+                        'border-gray-50 hover:bg-gray-50/50'
+                      }`}>
                         {/* 日付 */}
                         <td className="px-4 py-2 font-medium">
                           <div className="flex items-center gap-1">
                             {missingClockOut && (
                               <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
                             )}
-                            <span className={missingClockOut ? 'text-red-700' : 'text-gray-700'}>
+                            {missingClockIn && (
+                              <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+                            )}
+                            <span className={missingClockOut ? 'text-red-700' : missingClockIn ? 'text-amber-700' : 'text-gray-700'}>
                               {day.date.slice(5).replace('-', '/')}
                             </span>
                             {day.clock_in?.edited_at || day.clock_out?.edited_at ? (

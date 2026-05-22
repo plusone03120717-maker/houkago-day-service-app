@@ -42,6 +42,25 @@ function todayJST(): string {
 
 type AdminClient = ReturnType<typeof createClient>
 
+/** 今日（JST）の出勤記録があるか確認する */
+async function checkTodayClockIn(adminClient: AdminClient, staffId: string): Promise<boolean> {
+  const today = todayJST()
+  const todayStart = new Date(`${today}T00:00:00+09:00`).toISOString()
+  const todayEnd = new Date(`${today}T23:59:59+09:00`).toISOString()
+
+  const { data } = await adminClient
+    .from('time_records')
+    .select('id')
+    .eq('staff_member_id', staffId)
+    .eq('type', 'clock_in')
+    .gte('recorded_at', todayStart)
+    .lte('recorded_at', todayEnd)
+    .limit(1)
+    .maybeSingle()
+
+  return data !== null
+}
+
 /** 前回出勤時に退勤が記録されていないか確認し、未記録の日付を返す */
 async function findMissingClockOut(adminClient: AdminClient, staffId: string): Promise<string | null> {
   const { data: lastClockInRaw } = await adminClient
@@ -140,16 +159,34 @@ export async function POST(request: NextRequest) {
         const missingDate = await findMissingClockOut(adminClient as AdminClient, staff.id)
         if (missingDate) {
           const [y, m, d] = missingDate.split('-').map(Number)
-          await replyMessage(
-            replyToken,
-            `⚠️ ${y}年${m}月${d}日の退勤が記録されていません。\n\n管理者にご連絡ください。\n\n出勤は引き続き記録されました。\n⏰ ${nowJST()}`,
-            channelToken
-          )
           await adminClient.from('time_records').insert({
             staff_member_id: staff.id,
             type: 'clock_in',
             recorded_at: new Date().toISOString(),
           })
+          await replyMessage(
+            replyToken,
+            `⚠️ ${y}年${m}月${d}日の退勤が記録されていません。\n\n管理者にご連絡ください。\n\n出勤は引き続き記録されました。\n⏰ ${nowJST()}`,
+            channelToken
+          )
+          continue
+        }
+      }
+
+      // 退勤時：今日の出勤未記録チェック
+      if (action === 'clock_out') {
+        const hasTodayClockIn = await checkTodayClockIn(adminClient as AdminClient, staff.id)
+        if (!hasTodayClockIn) {
+          await adminClient.from('time_records').insert({
+            staff_member_id: staff.id,
+            type: 'clock_out',
+            recorded_at: new Date().toISOString(),
+          })
+          await replyMessage(
+            replyToken,
+            `⚠️ 本日の出勤が記録されていません。\n\n出勤時間を管理者にご連絡ください。\n\n退勤は引き続き記録されました。\n⏰ ${nowJST()}`,
+            channelToken
+          )
           continue
         }
       }
