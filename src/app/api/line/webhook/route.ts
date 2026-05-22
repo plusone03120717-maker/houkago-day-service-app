@@ -31,6 +31,52 @@ function nowJST(): string {
   return `${h}:${m}`
 }
 
+function toJSTDate(isoStr: string): string {
+  const jst = new Date(new Date(isoStr).getTime() + 9 * 60 * 60 * 1000)
+  return jst.toISOString().slice(0, 10)
+}
+
+function todayJST(): string {
+  return toJSTDate(new Date().toISOString())
+}
+
+type AdminClient = ReturnType<typeof createClient>
+
+/** 前回出勤時に退勤が記録されていないか確認し、未記録の日付を返す */
+async function findMissingClockOut(adminClient: AdminClient, staffId: string): Promise<string | null> {
+  const { data: lastClockInRaw } = await adminClient
+    .from('time_records')
+    .select('id, recorded_at')
+    .eq('staff_member_id', staffId)
+    .eq('type', 'clock_in')
+    .order('recorded_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const lastClockIn = lastClockInRaw as { id: string; recorded_at: string } | null
+  if (!lastClockIn) return null
+
+  const lastClockInDate = toJSTDate(lastClockIn.recorded_at)
+  if (lastClockInDate === todayJST()) return null
+
+  const { data: lastClockOutRaw } = await adminClient
+    .from('time_records')
+    .select('id, recorded_at')
+    .eq('staff_member_id', staffId)
+    .eq('type', 'clock_out')
+    .order('recorded_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const lastClockOut = lastClockOutRaw as { id: string; recorded_at: string } | null
+
+  if (!lastClockOut || lastClockOut.recorded_at < lastClockIn.recorded_at) {
+    return lastClockInDate
+  }
+
+  return null
+}
+
 export async function POST(request: NextRequest) {
   const channelSecret = process.env.LINE_CHANNEL_SECRET
   const channelToken = process.env.LINE_CHANNEL_ACCESS_TOKEN
@@ -60,7 +106,6 @@ export async function POST(request: NextRequest) {
     if (!userId || !replyToken) continue
 
     if (event.type === 'follow') {
-      // 友だち追加時はLINE User IDを案内
       await replyMessage(
         replyToken,
         `あなたのLINE User IDは以下です。\n\n${userId}\n\nこのIDを管理アプリの「設定」→「スタッフ管理」→ご自身の名前→「LINE User ID」欄に貼り付けてください。`,
@@ -72,8 +117,6 @@ export async function POST(request: NextRequest) {
     if (event.type !== 'message' || event.message?.type !== 'text') continue
 
     const text = (event.message?.text ?? '').trim()
-
-    // 出勤・退勤の打刻処理
     const action = text === '出勤' ? 'clock_in' : text === '退勤' ? 'clock_out' : null
 
     if (action) {
@@ -84,13 +127,31 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
 
       if (!staff) {
-        // 未登録の場合はLINE User IDを案内
         await replyMessage(
           replyToken,
           `タイムカードの登録がまだ完了していません。\n\nあなたのLINE User IDは以下です。\n\n${userId}\n\nこのIDを管理者に伝えて「LINE User ID」欄に登録してもらってください。`,
           channelToken
         )
         continue
+      }
+
+      // 出勤時：前回の退勤未記録チェック
+      if (action === 'clock_in') {
+        const missingDate = await findMissingClockOut(adminClient as AdminClient, staff.id)
+        if (missingDate) {
+          const [y, m, d] = missingDate.split('-').map(Number)
+          await replyMessage(
+            replyToken,
+            `⚠️ ${y}年${m}月${d}日の退勤が記録されていません。\n\n管理者にご連絡ください。\n\n出勤は引き続き記録されました。\n⏰ ${nowJST()}`,
+            channelToken
+          )
+          await adminClient.from('time_records').insert({
+            staff_member_id: staff.id,
+            type: 'clock_in',
+            recorded_at: new Date().toISOString(),
+          })
+          continue
+        }
       }
 
       await adminClient.from('time_records').insert({
