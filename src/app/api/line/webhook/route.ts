@@ -139,11 +139,40 @@ export async function POST(request: NextRequest) {
     const action = text === '出勤' ? 'clock_in' : text === '退勤' ? 'clock_out' : null
 
     if (action) {
-      const { data: staff } = await adminClient
+      // まず staff_members.line_user_id で検索
+      let { data: staffRaw } = await adminClient
         .from('staff_members')
         .select('id, name')
         .eq('line_user_id', userId)
         .maybeSingle()
+
+      // 見つからない場合は users.line_user_id → staff_members.user_id で検索（ログインありスタッフ）
+      if (!staffRaw) {
+        const { data: linkedUser } = await adminClient
+          .from('users')
+          .select('id')
+          .eq('line_user_id', userId)
+          .maybeSingle()
+
+        if (linkedUser) {
+          const { data: linkedMember } = await adminClient
+            .from('staff_members')
+            .select('id, name')
+            .eq('user_id', (linkedUser as { id: string }).id)
+            .maybeSingle()
+
+          if (linkedMember) {
+            // staff_members.line_user_id を同期して次回から直接検索できるようにする
+            await adminClient
+              .from('staff_members')
+              .update({ line_user_id: userId })
+              .eq('id', (linkedMember as { id: string; name: string }).id)
+            staffRaw = linkedMember
+          }
+        }
+      }
+
+      const staff = staffRaw as { id: string; name: string } | null
 
       if (!staff) {
         await replyMessage(
