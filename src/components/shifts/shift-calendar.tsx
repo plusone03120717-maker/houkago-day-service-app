@@ -65,7 +65,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
   const [unitId, setUnitId]         = useState(units[0]?.id ?? '')
   const [saving, setSaving]         = useState(false)
 
-  // 事前残業申請フォーム
+  // 残業申請フォーム（事前・事後共用）
   const [showOTForm, setShowOTForm] = useState(false)
   const [otForm, setOtForm] = useState({ date: '', overtime_minutes: '30', note: '' })
   const [savingOT, setSavingOT] = useState(false)
@@ -237,7 +237,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
             className="text-orange-700 border-orange-300 hover:bg-orange-50"
           >
             <CalendarClock className="h-3.5 w-3.5 mr-1" />
-            事前残業申請
+            残業申請
           </Button>
           <button onClick={() => changeMonth(-1)} className="p-2 rounded-lg hover:bg-gray-100">
             <ChevronLeft className="h-4 w-4" />
@@ -251,13 +251,13 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
         </div>
       </div>
 
-      {/* 事前残業申請フォーム */}
+      {/* 残業申請フォーム */}
       {showOTForm && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-orange-800 flex items-center gap-1.5">
               <CalendarClock className="h-4 w-4" />
-              事前残業申請 — {staffList.find((s) => s.id === selectedStaff)?.name}
+              残業申請 — {staffList.find((s) => s.id === selectedStaff)?.name}
             </p>
             <button onClick={() => setShowOTForm(false)} className="p-1 rounded hover:bg-orange-100 text-gray-400">
               <X className="h-4 w-4" />

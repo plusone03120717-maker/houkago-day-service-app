@@ -191,7 +191,7 @@ export function TimecardBoard({
   const [addForm, setAddForm] = useState({ date: '', clock_in: '09:00', clock_out: '17:00' })
   const [savingAdd, setSavingAdd] = useState(false)
 
-  // 事前残業申請フォーム
+  // 残業申請フォーム（事前・事後共用）
   const [showPreOTForm, setShowPreOTForm] = useState(false)
   const [preOTForm, setPreOTForm] = useState({ date: '', overtime_minutes: '30', note: '' })
   const [savingPreOT, setSavingPreOT] = useState(false)
@@ -383,7 +383,7 @@ export function TimecardBoard({
 
   // ─── 残業承認 ─────────────────────────────────────────────────────────────
 
-  // ─── 事前残業申請 ─────────────────────────────────────────────────────────
+  // ─── 残業申請 ──────────────────────────────────────────────────────────────
 
   async function handlePreOTSubmit() {
     const userId = selectedStaff?.user_id
@@ -541,7 +541,7 @@ export function TimecardBoard({
             {hasShifts && (
               <Button size="sm" variant="outline" onClick={() => { setShowPreOTForm(true); setPreOTForm({ date: `${month}-01`, overtime_minutes: '30', note: '' }) }}>
                 <CalendarClock className="h-3.5 w-3.5 mr-1" />
-                事前残業申請
+                残業申請
               </Button>
             )}
             <Button size="sm" variant="outline" onClick={() => { setShowAddForm(true); setAddForm({ date: `${month}-01`, clock_in: '09:00', clock_out: '17:00' }) }}>
@@ -554,7 +554,7 @@ export function TimecardBoard({
           {/* 事前残業申請フォーム */}
           {showPreOTForm && (
             <div className="mx-4 mb-4 border border-orange-200 rounded-lg p-3 bg-orange-50/50">
-              <p className="text-xs font-medium text-orange-700 mb-2">事前残業申請</p>
+              <p className="text-xs font-medium text-orange-700 mb-2">残業申請</p>
               <div className="flex flex-wrap items-end gap-3">
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">日付</label>
@@ -723,7 +723,7 @@ export function TimecardBoard({
                           ) : '—'}
                         </td>
 
-                        {/* 残業（事前申請のみ） */}
+                        {/* 残業 */}
                         {hasShifts && (
                           <td className="px-4 py-2">
                             {preOT && (
