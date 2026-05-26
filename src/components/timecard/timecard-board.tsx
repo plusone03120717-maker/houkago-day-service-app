@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Edit2, Check, X, ChevronLeft, ChevronRight, Plus, Pencil, AlertTriangle, Clock, CheckCircle, XCircle, CalendarClock } from 'lucide-react'
+import { Edit2, Check, X, ChevronLeft, ChevronRight, Plus, Pencil, AlertTriangle, CheckCircle, CalendarClock } from 'lucide-react'
 
 // ─── exported types ────────────────────────────────────────────────────────────
 
@@ -83,11 +83,6 @@ function roundOutDown30(isoStr: string): { minutes: number; time: string } {
   return { minutes: m, time: epochMinutesToHHMM(m) }
 }
 
-/** "HH:MM" or "HH:MM:SS" → minutes of day */
-function timeStrToMinutes(t: string): number {
-  const [h, min] = t.split(':').map(Number)
-  return h * 60 + min
-}
 
 function formatMonth(ym: string): string {
   const [y, m] = ym.split('-')
@@ -200,9 +195,6 @@ export function TimecardBoard({
   const [showPreOTForm, setShowPreOTForm] = useState(false)
   const [preOTForm, setPreOTForm] = useState({ date: '', overtime_minutes: '30', note: '' })
   const [savingPreOT, setSavingPreOT] = useState(false)
-
-  // 残業承認処理中
-  const [approvingDate, setApprovingDate] = useState<string | null>(null)
 
   const selectedStaff = staffMembers.find((s) => s.id === selectedStaffId)
 
@@ -390,27 +382,6 @@ export function TimecardBoard({
   }
 
   // ─── 残業承認 ─────────────────────────────────────────────────────────────
-
-  async function handleOvertimeAction(
-    date: string,
-    overtime_minutes: number,
-    scheduled_end_time: string | null,
-    actual_end_time: string | null,
-    status: 'approved' | 'rejected',
-  ) {
-    const userId = selectedStaff?.user_id
-    if (!userId) return
-    setApprovingDate(date)
-    await fetch('/api/staff/overtime', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ staff_id: userId, date, scheduled_end_time, actual_end_time, overtime_minutes, request_type: 'auto', status }),
-    })
-    // refresh overtime requests
-    const member = staffMembers.find((s) => s.id === selectedStaffId)!
-    await fetchShiftsAndOvertime(member, month)
-    setApprovingDate(null)
-  }
 
   // ─── 事前残業申請 ─────────────────────────────────────────────────────────
 
@@ -668,22 +639,13 @@ export function TimecardBoard({
                     const missingClockOut = day.clock_in !== null && day.clock_out === null
                     const missingClockIn = day.clock_out !== null && day.clock_in === null
 
-                    // 残業計算
                     const shift = shiftsMap.get(day.date)
-                    const scheduledEndMinutes = shift?.end_time ? timeStrToMinutes(shift.end_time) : null
-                    const actualRoundedOutMinutes = day.clock_out ? roundOutDown30(day.clock_out.recorded_at).minutes % 1440 : null
-                    const overtimeMinutes = (scheduledEndMinutes !== null && actualRoundedOutMinutes !== null)
-                      ? Math.max(0, actualRoundedOutMinutes - scheduledEndMinutes)
-                      : 0
-                    const dayOTRequests = overtimeMap.get(day.date) ?? []
-                    const autoOT = dayOTRequests.find((o) => o.request_type === 'auto')
-                    const preOT = dayOTRequests.find((o) => o.request_type === 'pre')
+                    const preOT = (overtimeMap.get(day.date) ?? []).find((o) => o.request_type === 'pre')
 
                     return (
                       <tr key={day.date} className={`border-b hover:bg-opacity-80 ${
                         missingClockOut ? 'bg-red-50 border-red-100' :
                         missingClockIn ? 'bg-amber-50 border-amber-100' :
-                        overtimeMinutes > 0 ? 'bg-orange-50/50 border-orange-100' :
                         'border-gray-50 hover:bg-gray-50/50'
                       }`}>
                         {/* 日付 */}
@@ -691,7 +653,6 @@ export function TimecardBoard({
                           <div className="flex items-center gap-1">
                             {missingClockOut && <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />}
                             {missingClockIn && <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />}
-                            {!missingClockOut && !missingClockIn && overtimeMinutes > 0 && <Clock className="h-3.5 w-3.5 text-orange-400 flex-shrink-0" />}
                             <span className={missingClockOut ? 'text-red-700' : missingClockIn ? 'text-amber-700' : 'text-gray-700'}>
                               {day.date.slice(5).replace('-', '/')}
                             </span>
@@ -762,55 +723,15 @@ export function TimecardBoard({
                           ) : '—'}
                         </td>
 
-                        {/* 残業 */}
+                        {/* 残業（事前申請のみ） */}
                         {hasShifts && (
                           <td className="px-4 py-2">
                             {preOT && (
-                              <div className="flex items-center gap-1 mb-0.5">
+                              <div className="flex items-center gap-1">
                                 <span className="text-xs text-orange-600 font-medium">
-                                  事前 {preOT.overtime_minutes}分
+                                  {preOT.overtime_minutes}分
                                 </span>
                                 <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-                              </div>
-                            )}
-                            {overtimeMinutes > 0 && (
-                              <div>
-                                {autoOT ? (
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-xs text-orange-600">{overtimeMinutes}分</span>
-                                    {autoOT.status === 'pending' && (
-                                      <div className="flex gap-1">
-                                        <button
-                                          onClick={() => void handleOvertimeAction(day.date, overtimeMinutes, shift?.end_time ?? null, day.rounded_out, 'approved')}
-                                          disabled={approvingDate === day.date}
-                                          className="p-0.5 rounded text-green-600 hover:bg-green-50" title="承認"
-                                        >
-                                          <CheckCircle className="h-4 w-4" />
-                                        </button>
-                                        <button
-                                          onClick={() => void handleOvertimeAction(day.date, overtimeMinutes, shift?.end_time ?? null, day.rounded_out, 'rejected')}
-                                          disabled={approvingDate === day.date}
-                                          className="p-0.5 rounded text-red-400 hover:bg-red-50" title="却下"
-                                        >
-                                          <XCircle className="h-4 w-4" />
-                                        </button>
-                                      </div>
-                                    )}
-                                    {autoOT.status === 'approved' && <CheckCircle className="h-3.5 w-3.5 text-green-500" />}
-                                    {autoOT.status === 'rejected' && <XCircle className="h-3.5 w-3.5 text-gray-400" />}
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-xs text-orange-500">{overtimeMinutes}分</span>
-                                    <button
-                                      onClick={() => void handleOvertimeAction(day.date, overtimeMinutes, shift?.end_time ?? null, day.rounded_out, 'approved')}
-                                      disabled={approvingDate === day.date}
-                                      className="text-xs px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 hover:bg-orange-200"
-                                    >
-                                      承認
-                                    </button>
-                                  </div>
-                                )}
                               </div>
                             )}
                           </td>
