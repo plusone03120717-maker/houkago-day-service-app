@@ -29,12 +29,21 @@ type Unit = {
   name: string
 }
 
+type OvertimeRequest = {
+  id: string
+  staff_id: string
+  date: string
+  overtime_minutes: number
+  status: string
+}
+
 interface Props {
   year: number
   month: number
   staffList: Staff[]
   shifts: ShiftEntry[]
   units: Unit[]
+  overtimeRequests?: OvertimeRequest[]
 }
 
 const SHIFT_TYPES = [
@@ -51,7 +60,7 @@ function formatDateLabel(date: string) {
   return new Date(date).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })
 }
 
-export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) {
+export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeRequests = [] }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -108,6 +117,14 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
     shiftMap[s.staff_id][s.date] = s
   })
   const currentStaffShifts = shiftMap[selectedStaff] ?? {}
+
+  // 残業マップ（staff_id -> date -> minutes）
+  const overtimeMap: Record<string, Record<string, number>> = {}
+  overtimeRequests.forEach((o) => {
+    if (!overtimeMap[o.staff_id]) overtimeMap[o.staff_id] = {}
+    overtimeMap[o.staff_id][o.date] = (overtimeMap[o.staff_id][o.date] ?? 0) + o.overtime_minutes
+  })
+  const currentStaffOvertime = overtimeMap[selectedStaff] ?? {}
 
   // 日単位の出勤人数
   const dailyCount: Record<string, number> = {}
@@ -417,6 +434,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
             const isSelected = selectedDates.has(date)
             const shiftInfo = shift ? SHIFT_TYPES.find((t) => t.value === shift.shift_type) : null
             const count = dailyCount[date] ?? 0
+            const overtimeMinutes = currentStaffOvertime[date] ?? 0
 
             return (
               <button
@@ -440,6 +458,13 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
                 {shiftInfo && (
                   <div className={cn('text-xs px-1 rounded truncate', shiftInfo.color)}>
                     {shiftInfo.label}
+                  </div>
+                )}
+                {overtimeMinutes > 0 && (
+                  <div className="text-xs px-1 rounded truncate bg-red-500 text-white mt-0.5">
+                    残業{overtimeMinutes >= 60
+                      ? `${Math.floor(overtimeMinutes / 60)}h${overtimeMinutes % 60 > 0 ? `${overtimeMinutes % 60}m` : ''}`
+                      : `${overtimeMinutes}m`}
                   </div>
                 )}
                 {count > 0 && (

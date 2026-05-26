@@ -25,6 +25,14 @@ type Unit = {
   name: string
 }
 
+type OvertimeRequest = {
+  id: string
+  staff_id: string
+  date: string
+  overtime_minutes: number
+  status: string
+}
+
 export default async function ShiftsPage({
   searchParams,
 }: {
@@ -62,6 +70,14 @@ export default async function ShiftsPage({
     .order('name')
   const units = (unitsRaw ?? []) as unknown as Unit[]
 
+  const { data: overtimeRaw } = await supabase
+    .from('overtime_requests')
+    .select('id, staff_id, date, overtime_minutes, status')
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .eq('status', 'approved')
+  const overtimeRequests = (overtimeRaw ?? []) as OvertimeRequest[]
+
   const today = new Date().toISOString().slice(0, 10)
 
   return (
@@ -81,6 +97,7 @@ export default async function ShiftsPage({
         staffList={staffList}
         shifts={shifts}
         units={units}
+        overtimeRequests={overtimeRequests}
       />
     </div>
   )
