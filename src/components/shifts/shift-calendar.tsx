@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, X, Check, Layers } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Check, Layers, CalendarClock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Staff = {
@@ -64,6 +64,12 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
   const [endTime, setEndTime]       = useState('18:00')
   const [unitId, setUnitId]         = useState(units[0]?.id ?? '')
   const [saving, setSaving]         = useState(false)
+
+  // 事前残業申請フォーム
+  const [showOTForm, setShowOTForm] = useState(false)
+  const [otForm, setOtForm] = useState({ date: '', overtime_minutes: '30', note: '' })
+  const [savingOT, setSavingOT] = useState(false)
+  const [otResult, setOtResult] = useState<'ok' | 'error' | null>(null)
 
   // カレンダーグリッド
   const firstDay  = new Date(year, month - 1, 1)
@@ -175,17 +181,64 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
     startTransition(() => router.refresh())
   }
 
+  function openOTForm() {
+    const defaultDate = [...selectedDates].sort()[0]
+      ?? `${year}-${String(month).padStart(2, '0')}-01`
+    setOtForm({ date: defaultDate, overtime_minutes: '30', note: '' })
+    setOtResult(null)
+    setShowOTForm(true)
+  }
+
+  async function handleSubmitOT() {
+    const ot = parseInt(otForm.overtime_minutes)
+    if (!otForm.date || !ot || ot <= 0) return
+    setSavingOT(true)
+    setOtResult(null)
+    const shift = currentStaffShifts[otForm.date]
+    const res = await fetch('/api/staff/overtime', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        staff_id: selectedStaff,
+        date: otForm.date,
+        scheduled_end_time: shift?.end_time ?? null,
+        actual_end_time: null,
+        overtime_minutes: ot,
+        request_type: 'pre',
+        status: 'approved',
+        note: otForm.note || null,
+      }),
+    })
+    setSavingOT(false)
+    if (res.ok) {
+      setOtResult('ok')
+      setOtForm({ date: '', overtime_minutes: '30', note: '' })
+      setTimeout(() => { setShowOTForm(false); setOtResult(null) }, 1500)
+    } else {
+      setOtResult('error')
+    }
+  }
+
   const sortedSelected = [...selectedDates].sort()
   const hasExistingInSelection = sortedSelected.some((d) => !!currentStaffShifts[d])
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">シフト管理</h1>
           <p className="text-sm text-gray-500 mt-0.5">スタッフの勤務シフト</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={openOTForm}
+            className="text-orange-700 border-orange-300 hover:bg-orange-50"
+          >
+            <CalendarClock className="h-3.5 w-3.5 mr-1" />
+            事前残業申請
+          </Button>
           <button onClick={() => changeMonth(-1)} className="p-2 rounded-lg hover:bg-gray-100">
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -197,6 +250,77 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
           </button>
         </div>
       </div>
+
+      {/* 事前残業申請フォーム */}
+      {showOTForm && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-orange-800 flex items-center gap-1.5">
+              <CalendarClock className="h-4 w-4" />
+              事前残業申請 — {staffList.find((s) => s.id === selectedStaff)?.name}
+            </p>
+            <button onClick={() => setShowOTForm(false)} className="p-1 rounded hover:bg-orange-100 text-gray-400">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="text-xs text-gray-600 mb-1 block">日付</label>
+              <input
+                type="date"
+                value={otForm.date}
+                min={`${year}-${String(month).padStart(2, '0')}-01`}
+                max={`${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`}
+                onChange={(e) => setOtForm({ ...otForm, date: e.target.value })}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 mb-1 block">残業時間（分）</label>
+              <input
+                type="number"
+                min="30"
+                step="30"
+                value={otForm.overtime_minutes}
+                onChange={(e) => setOtForm({ ...otForm, overtime_minutes: e.target.value })}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              />
+            </div>
+            <div className="flex-1 min-w-40">
+              <label className="text-xs text-gray-600 mb-1 block">メモ（任意）</label>
+              <input
+                type="text"
+                value={otForm.note}
+                onChange={(e) => setOtForm({ ...otForm, note: e.target.value })}
+                placeholder="理由など"
+                className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => void handleSubmitOT()}
+                disabled={savingOT || !otForm.date || !otForm.overtime_minutes}
+                className="bg-orange-600 hover:bg-orange-700 text-white"
+              >
+                {savingOT ? '保存中...' : '申請する'}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowOTForm(false)}>キャンセル</Button>
+            </div>
+          </div>
+
+          {otResult === 'ok' && (
+            <p className="text-sm text-green-700 flex items-center gap-1">
+              <Check className="h-4 w-4" />
+              残業申請を登録しました
+            </p>
+          )}
+          {otResult === 'error' && (
+            <p className="text-sm text-red-600">保存に失敗しました。もう一度お試しください。</p>
+          )}
+        </div>
+      )}
 
       {/* スタッフ選択 */}
       <div className="flex gap-2 flex-wrap">
