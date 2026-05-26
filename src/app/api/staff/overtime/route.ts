@@ -22,12 +22,15 @@ export async function POST(request: NextRequest) {
 
   const { staff_id, date, scheduled_end_time, actual_end_time, overtime_minutes, request_type, status, note } = body
 
+  // 30分単位に切り捨て（端数は支払対象外）
+  const roundedOvertimeMinutes = Math.floor(overtime_minutes / 30) * 30
+
   const upsertData = {
     staff_id,
     date,
     scheduled_end_time: scheduled_end_time ?? null,
     actual_end_time: actual_end_time ?? null,
-    overtime_minutes,
+    overtime_minutes: roundedOvertimeMinutes,
     request_type,
     status,
     note: note ?? null,

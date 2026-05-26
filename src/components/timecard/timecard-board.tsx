@@ -422,10 +422,10 @@ export function TimecardBoard({
   const roundedHours = Math.round(totalHours * 100) / 100
   const salary = selectedStaff?.hourly_rate != null ? Math.floor(roundedHours * selectedStaff.hourly_rate) : null
 
-  // 残業合計（承認済みのみ）
+  // 残業合計（承認済みのみ・30分単位切り捨て）
   const approvedOvertimeMinutes = overtimeRequests
     .filter((o) => o.status === 'approved')
-    .reduce((sum, o) => sum + o.overtime_minutes, 0)
+    .reduce((sum, o) => sum + Math.floor(o.overtime_minutes / 30) * 30, 0)
 
   const hasShifts = selectedStaff?.user_id != null
 
