@@ -29,6 +29,35 @@ function phoneToPseudoEmail(phone: string): string {
   return `${normalizePhone(phone)}@staff.internal`
 }
 
+async function upsertStaffMember(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  adminClient: any,
+  userId: string,
+  name: string,
+  jobTitles: unknown
+) {
+  const titles = Array.isArray(jobTitles) ? (jobTitles as string[]) : []
+  const { data: existing } = await adminClient
+    .from('staff_members')
+    .select('id')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (existing) {
+    await adminClient
+      .from('staff_members')
+      .update({ name, role: titles[0] ?? 'staff', roles: titles })
+      .eq('id', (existing as { id: string }).id)
+  } else {
+    await adminClient.from('staff_members').insert({
+      user_id: userId,
+      name,
+      role: titles[0] ?? 'staff',
+      roles: titles,
+    })
+  }
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -97,6 +126,7 @@ export async function POST(request: NextRequest) {
       role: role ?? 'staff',
       job_titles: Array.isArray(jobTitles) ? jobTitles : [],
     })
+    await upsertStaffMember(adminClient, existingAuthUser.id, name, jobTitles)
 
     return NextResponse.json({ success: true, isExisting: true, phone: normalizedPhone, tempPassword })
   }
@@ -123,6 +153,7 @@ export async function POST(request: NextRequest) {
       role: role ?? 'staff',
       job_titles: Array.isArray(jobTitles) ? jobTitles : [],
     })
+    await upsertStaffMember(adminClient, createData.user.id, name, jobTitles)
   }
 
   return NextResponse.json({ success: true, isExisting: false, phone: normalizedPhone, tempPassword })

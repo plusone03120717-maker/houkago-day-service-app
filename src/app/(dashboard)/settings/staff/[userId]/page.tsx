@@ -138,6 +138,7 @@ export default async function StaffProfilePage({
         <CardContent>
           <StaffProfileForm
             userId={userId}
+            staffName={user.name}
             profileId={profile?.id ?? null}
             initialEmploymentType={profile?.employment_type ?? 'full_time'}
             initialQualification={profile?.qualification ?? ''}

@@ -35,6 +35,7 @@ const JOB_TITLE_OPTIONS = [
 
 interface Props {
   userId: string
+  staffName: string
   profileId: string | null
   initialEmploymentType: string
   initialQualification: string
@@ -47,6 +48,7 @@ interface Props {
 
 export function StaffProfileForm({
   userId,
+  staffName,
   profileId,
   initialEmploymentType,
   initialQualification,
@@ -145,6 +147,29 @@ export function StaffProfileForm({
       .from('users')
       .update({ line_user_id: lineUserId || null, job_titles: [...jobTitles] })
       .eq('id', userId)
+
+    // staff_members の LINE User ID も同期（タイムカード・LINE打刻用）
+    const { data: existingMember } = await supabase
+      .from('staff_members')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (existingMember) {
+      await supabase
+        .from('staff_members')
+        .update({ line_user_id: lineUserId || null })
+        .eq('id', existingMember.id)
+    } else {
+      const titles = [...jobTitles]
+      await supabase.from('staff_members').insert({
+        user_id: userId,
+        name: staffName,
+        role: titles[0] ?? 'staff',
+        roles: titles,
+        line_user_id: lineUserId || null,
+      })
+    }
 
     setSaving(false)
     setSaved(true)
