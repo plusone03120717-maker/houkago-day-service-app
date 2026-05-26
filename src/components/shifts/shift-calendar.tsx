@@ -4,8 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { ChevronLeft, ChevronRight, X, Check } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Check, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Staff = {
@@ -39,36 +38,37 @@ interface Props {
 }
 
 const SHIFT_TYPES = [
-  { value: 'full', label: '全日', color: 'bg-indigo-500 text-white' },
-  { value: 'morning', label: '午前', color: 'bg-blue-400 text-white' },
-  { value: 'afternoon', label: '午後', color: 'bg-teal-400 text-white' },
-  { value: 'off', label: '休み', color: 'bg-gray-300 text-gray-600' },
-  { value: 'holiday', label: '有休', color: 'bg-orange-400 text-white' },
+  { value: 'full',     label: '全日', color: 'bg-indigo-500 text-white' },
+  { value: 'morning',  label: '午前', color: 'bg-blue-400 text-white' },
+  { value: 'afternoon',label: '午後', color: 'bg-teal-400 text-white' },
+  { value: 'off',      label: '休み', color: 'bg-gray-300 text-gray-600' },
+  { value: 'holiday',  label: '有休', color: 'bg-orange-400 text-white' },
 ]
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
+
+function formatDateLabel(date: string) {
+  return new Date(date).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })
+}
 
 export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
-  const [selectedStaff, setSelectedStaff] = useState<string>(staffList[0]?.id ?? '')
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [shiftType, setShiftType] = useState('full')
-  const [startTime, setStartTime] = useState('09:00')
-  const [endTime, setEndTime] = useState('18:00')
-  const [unitId, setUnitId] = useState(units[0]?.id ?? '')
-  const [saving, setSaving] = useState(false)
 
-  const changeMonth = (delta: number) => {
-    const d = new Date(year, month - 1 + delta, 1)
-    router.push(`/shifts?year=${d.getFullYear()}&month=${d.getMonth() + 1}`)
-  }
+  const [selectedStaff, setSelectedStaff] = useState<string>(staffList[0]?.id ?? '')
+  // 複数日選択: Set<dateString>
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
+  const [shiftType, setShiftType]   = useState('full')
+  const [startTime, setStartTime]   = useState('09:00')
+  const [endTime, setEndTime]       = useState('18:00')
+  const [unitId, setUnitId]         = useState(units[0]?.id ?? '')
+  const [saving, setSaving]         = useState(false)
 
   // カレンダーグリッド
-  const firstDay = new Date(year, month - 1, 1)
-  const lastDay = new Date(year, month, 0)
-  const startPad = firstDay.getDay()
+  const firstDay  = new Date(year, month - 1, 1)
+  const lastDay   = new Date(year, month, 0)
+  const startPad  = firstDay.getDay()
   const totalCells = startPad + lastDay.getDate()
   const cells = Array.from({ length: Math.ceil(totalCells / 7) * 7 }, (_, i) => {
     const dayNum = i - startPad + 1
@@ -76,64 +76,107 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
     return `${year}-${String(month).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
   })
 
-  // シフトマップ: staffId -> date -> shift
+  // シフトマップ
   const shiftMap: Record<string, Record<string, ShiftEntry>> = {}
   shifts.forEach((s) => {
     if (!shiftMap[s.staff_id]) shiftMap[s.staff_id] = {}
     shiftMap[s.staff_id][s.date] = s
   })
-
   const currentStaffShifts = shiftMap[selectedStaff] ?? {}
-  const selectedShift = selectedDate ? currentStaffShifts[selectedDate] : null
 
-  const handleSaveShift = async () => {
-    if (!selectedDate || !selectedStaff) return
-    setSaving(true)
-
-    if (selectedShift) {
-      // 更新
-      await supabase
-        .from('staff_shifts')
-        .update({
-          shift_type: shiftType,
-          start_time: shiftType === 'off' || shiftType === 'holiday' ? null : startTime,
-          end_time: shiftType === 'off' || shiftType === 'holiday' ? null : endTime,
-          unit_id: unitId || null,
-        })
-        .eq('id', selectedShift.id)
-    } else {
-      // 新規
-      await supabase.from('staff_shifts').insert({
-        staff_id: selectedStaff,
-        date: selectedDate,
-        shift_type: shiftType,
-        start_time: shiftType === 'off' || shiftType === 'holiday' ? null : startTime,
-        end_time: shiftType === 'off' || shiftType === 'holiday' ? null : endTime,
-        unit_id: unitId || null,
-      })
-    }
-
-    setSaving(false)
-    setSelectedDate(null)
-    startTransition(() => router.refresh())
-  }
-
-  const handleDeleteShift = async () => {
-    if (!selectedShift) return
-    setSaving(true)
-    await supabase.from('staff_shifts').delete().eq('id', selectedShift.id)
-    setSaving(false)
-    setSelectedDate(null)
-    startTransition(() => router.refresh())
-  }
-
-  // 日ごとの出勤人数
+  // 日単位の出勤人数
   const dailyCount: Record<string, number> = {}
   shifts.forEach((s) => {
     if (s.shift_type !== 'off' && s.shift_type !== 'holiday') {
       dailyCount[s.date] = (dailyCount[s.date] ?? 0) + 1
     }
   })
+
+  function prefillForm(shift: ShiftEntry | undefined) {
+    if (shift) {
+      setShiftType(shift.shift_type)
+      setStartTime(shift.start_time ?? '09:00')
+      setEndTime(shift.end_time ?? '18:00')
+      setUnitId(shift.unit_id ?? units[0]?.id ?? '')
+    } else {
+      setShiftType('full')
+      setStartTime('09:00')
+      setEndTime('18:00')
+      setUnitId(units[0]?.id ?? '')
+    }
+  }
+
+  function handleCellClick(date: string, shift: ShiftEntry | undefined, ctrlKey: boolean) {
+    if (ctrlKey) {
+      // Ctrl+クリック: 日付を追加 or 除去
+      setSelectedDates((prev) => {
+        const next = new Set(prev)
+        if (next.has(date)) {
+          next.delete(date)
+        } else {
+          next.add(date)
+          // 最初に追加されるときだけフォームを初期化
+          if (prev.size === 0) prefillForm(shift)
+        }
+        return next
+      })
+    } else {
+      // 通常クリック: その日だけを選択（既に唯一の選択なら解除）
+      if (selectedDates.size === 1 && selectedDates.has(date)) {
+        setSelectedDates(new Set())
+      } else {
+        setSelectedDates(new Set([date]))
+        prefillForm(shift)
+      }
+    }
+  }
+
+  const changeMonth = (delta: number) => {
+    const d = new Date(year, month - 1 + delta, 1)
+    setSelectedDates(new Set())
+    router.push(`/shifts?year=${d.getFullYear()}&month=${d.getMonth() + 1}`)
+  }
+
+  const handleSaveShift = async () => {
+    if (selectedDates.size === 0 || !selectedStaff) return
+    setSaving(true)
+
+    const isOff = shiftType === 'off' || shiftType === 'holiday'
+    const payload = {
+      shift_type: shiftType,
+      start_time: isOff ? null : startTime,
+      end_time:   isOff ? null : endTime,
+      unit_id:    isOff ? null : (unitId || null),
+    }
+
+    for (const date of selectedDates) {
+      const existing = currentStaffShifts[date]
+      if (existing) {
+        await supabase.from('staff_shifts').update(payload).eq('id', existing.id)
+      } else {
+        await supabase.from('staff_shifts').insert({ staff_id: selectedStaff, date, ...payload })
+      }
+    }
+
+    setSaving(false)
+    setSelectedDates(new Set())
+    startTransition(() => router.refresh())
+  }
+
+  const handleDeleteShift = async () => {
+    const ids = [...selectedDates]
+      .map((d) => currentStaffShifts[d]?.id)
+      .filter(Boolean) as string[]
+    if (ids.length === 0) return
+    setSaving(true)
+    await supabase.from('staff_shifts').delete().in('id', ids)
+    setSaving(false)
+    setSelectedDates(new Set())
+    startTransition(() => router.refresh())
+  }
+
+  const sortedSelected = [...selectedDates].sort()
+  const hasExistingInSelection = sortedSelected.some((d) => !!currentStaffShifts[d])
 
   return (
     <div className="space-y-4">
@@ -160,7 +203,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
         {staffList.map((s) => (
           <button
             key={s.id}
-            onClick={() => { setSelectedStaff(s.id); setSelectedDate(null) }}
+            onClick={() => { setSelectedStaff(s.id); setSelectedDates(new Set()) }}
             className={cn(
               'px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
               selectedStaff === s.id
@@ -196,25 +239,14 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
             }
             const dayOfWeek = new Date(date).getDay()
             const shift = currentStaffShifts[date]
-            const isSelected = date === selectedDate
+            const isSelected = selectedDates.has(date)
             const shiftInfo = shift ? SHIFT_TYPES.find((t) => t.value === shift.shift_type) : null
             const count = dailyCount[date] ?? 0
 
             return (
               <button
                 key={date}
-                onClick={() => {
-                  setSelectedDate(date === selectedDate ? null : date)
-                  if (shift) {
-                    setShiftType(shift.shift_type)
-                    setStartTime(shift.start_time ?? '09:00')
-                    setEndTime(shift.end_time ?? '18:00')
-                  } else {
-                    setShiftType('full')
-                    setStartTime('09:00')
-                    setEndTime('18:00')
-                  }
-                }}
+                onClick={(e) => handleCellClick(date, shift, e.ctrlKey || e.metaKey)}
                 className={cn(
                   'h-16 border-b border-r border-gray-50 p-1 text-left transition-colors hover:bg-indigo-50',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
@@ -244,35 +276,70 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
         </div>
       </div>
 
-      {/* 凡例 */}
-      <div className="flex gap-3 flex-wrap text-xs text-gray-500">
-        {SHIFT_TYPES.map((t) => (
-          <div key={t.value} className="flex items-center gap-1">
-            <div className={cn('w-3 h-3 rounded', t.color.split(' ')[0])} />
-            {t.label}
-          </div>
-        ))}
+      {/* ヒント */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex gap-3 flex-wrap text-xs text-gray-500">
+          {SHIFT_TYPES.map((t) => (
+            <div key={t.value} className="flex items-center gap-1">
+              <div className={cn('w-3 h-3 rounded', t.color.split(' ')[0])} />
+              {t.label}
+            </div>
+          ))}
+        </div>
+        <span className="text-xs text-gray-400 flex items-center gap-1 ml-auto">
+          <Layers className="h-3 w-3" />
+          Ctrl（Mac: ⌘）+クリックで複数日を選択
+        </span>
       </div>
 
       {/* 編集パネル */}
-      {selectedDate && (
+      {selectedDates.size > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">
-              {new Date(selectedDate).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })}
-              {' — '}
-              {staffList.find((s) => s.id === selectedStaff)?.name}
-            </h2>
-            {selectedShift && (
+            <div>
+              {selectedDates.size === 1 ? (
+                <h2 className="font-semibold text-gray-900">
+                  {formatDateLabel(sortedSelected[0])}
+                  {' — '}
+                  {staffList.find((s) => s.id === selectedStaff)?.name}
+                </h2>
+              ) : (
+                <div>
+                  <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-indigo-500" />
+                    {selectedDates.size}日選択中
+                    {' — '}
+                    {staffList.find((s) => s.id === selectedStaff)?.name}
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {sortedSelected.map((d) => {
+                      const [, , day] = d.split('-')
+                      const dow = DAY_LABELS[new Date(d).getDay()]
+                      return `${parseInt(day)}日(${dow})`
+                    }).join('・')}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              {hasExistingInSelection && (
+                <button
+                  onClick={handleDeleteShift}
+                  disabled={saving}
+                  className="p-1 text-red-400 hover:bg-red-50 rounded"
+                  title="シフトを削除"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
               <button
-                onClick={handleDeleteShift}
-                disabled={saving}
-                className="p-1 text-red-400 hover:bg-red-50 rounded"
-                title="シフトを削除"
+                onClick={() => setSelectedDates(new Set())}
+                className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                title="選択を解除"
               >
                 <X className="h-4 w-4" />
               </button>
-            )}
+            </div>
           </div>
 
           <div>
@@ -336,7 +403,11 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
 
           <Button onClick={handleSaveShift} disabled={saving} size="sm">
             <Check className="h-4 w-4" />
-            {saving ? '保存中...' : 'シフトを保存'}
+            {saving
+              ? '保存中...'
+              : selectedDates.size > 1
+                ? `${selectedDates.size}日分を保存`
+                : 'シフトを保存'}
           </Button>
         </div>
       )}
