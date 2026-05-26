@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/require-admin'
 import { TimecardBoard } from '@/components/timecard/timecard-board'
-import type { StaffMember, TimeRecord } from '@/components/timecard/timecard-board'
+import type { StaffMember, TimeRecord, ShiftEntry, OvertimeRequest } from '@/components/timecard/timecard-board'
 
 function currentMonth(): string {
   const now = new Date()
@@ -25,13 +25,13 @@ export default async function TimecardPage({
   const rateMonthStart = `${month}-01`
   const rateMonthEnd = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
 
-  // スタッフ一覧と時給を取得
+  // スタッフ一覧（user_id 含む）
   const { data: membersRaw } = await supabase
     .from('staff_members')
-    .select('id, name')
+    .select('id, name, user_id')
     .order('name')
-
-  const members = (membersRaw ?? []) as { id: string; name: string }[]
+  type MemberRow = { id: string; name: string; user_id: string | null }
+  const members = (membersRaw ?? []) as MemberRow[]
   const memberIds = members.map((m) => m.id)
 
   // 選択月に有効な時給を取得
@@ -54,11 +54,13 @@ export default async function TimecardPage({
   const staffMembers: StaffMember[] = members.map((m) => ({
     id: m.id,
     name: m.name,
+    user_id: m.user_id,
     hourly_rate: rateMap.get(m.id)?.hourly_rate ?? null,
     hourly_rate_id: rateMap.get(m.id)?.id ?? null,
   }))
 
   const selectedStaffId = params.staff ?? staffMembers[0]?.id ?? ''
+  const selectedMember = staffMembers.find((s) => s.id === selectedStaffId)
 
   // 選択スタッフの当月打刻を取得
   const { data: recordsRaw } = selectedStaffId
@@ -70,14 +72,36 @@ export default async function TimecardPage({
         .lt('recorded_at', recordsEnd)
         .order('recorded_at')
     : { data: [] }
-
   const records = (recordsRaw ?? []) as TimeRecord[]
+
+  // 選択スタッフの当月シフト（user_id 経由）
+  const userId = selectedMember?.user_id ?? null
+  const { data: shiftsRaw } = userId
+    ? await supabase
+        .from('staff_shifts')
+        .select('id, date, shift_type, start_time, end_time')
+        .eq('staff_id', userId)
+        .gte('date', rateMonthStart)
+        .lte('date', rateMonthEnd)
+    : { data: [] }
+  const shifts = (shiftsRaw ?? []) as ShiftEntry[]
+
+  // 選択スタッフの当月残業申請
+  const { data: overtimeRaw } = userId
+    ? await supabase
+        .from('overtime_requests')
+        .select('id, date, scheduled_end_time, actual_end_time, overtime_minutes, request_type, status, note')
+        .eq('staff_id', userId)
+        .gte('date', rateMonthStart)
+        .lte('date', rateMonthEnd)
+    : { data: [] }
+  const overtimeRequests = (overtimeRaw ?? []) as OvertimeRequest[]
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">タイムカード</h1>
-        <p className="text-sm text-gray-500 mt-0.5">LINEによる打刻履歴・給与計算</p>
+        <p className="text-sm text-gray-500 mt-0.5">LINEによる打刻履歴・給与計算・残業管理</p>
       </div>
 
       <TimecardBoard
@@ -85,6 +109,8 @@ export default async function TimecardPage({
         initialRecords={records}
         initialMonth={month}
         staffId={selectedStaffId}
+        initialShifts={shifts}
+        initialOvertimeRequests={overtimeRequests}
       />
     </div>
   )

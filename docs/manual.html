@@ -213,6 +213,7 @@
     </li>
     <li><a href="#ch11">シフト管理・勤務時間集計</a></li>
     <li><a href="#ch11b">タイムカード（LINE打刻）</a></li>
+    <li><a href="#ch11c">有給管理</a></li>
     <li><a href="#ch12">国保連請求</a></li>
     <li><a href="#ch13">帳票出力</a></li>
     <li><a href="#ch14">設定</a>
@@ -689,10 +690,21 @@
   <div class="step"><span class="step-num">2</span> 「LINE User ID」欄に <code>U</code> から始まるIDを入力して保存</div>
   <p class="note">LINE User IDの確認方法：スタッフがLINE公式アカウントにメッセージを送信すると、webhookのログで確認できます。または LINE Official Account Manager の「友だち管理」から確認できます。</p>
 
-  <h3>時給の設定</h3>
-  <div class="step"><span class="step-num">1</span> スタッフ詳細ページ下部「時給設定」セクションの「追加」をクリック</div>
-  <div class="step"><span class="step-num">2</span> 時給（円）・開始日を入力して「追加」を押す</div>
-  <p>時給改定の際は旧設定に終了日を設定し、新しい時給を追加することで期間ごとの管理ができます。</p>
+  <h3>時給の設定（タイムカード画面から）</h3>
+  <div class="step"><span class="step-num">1</span> サイドバー「タイムカード」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 対象スタッフ・月を選択</div>
+  <div class="step"><span class="step-num">3</span> 「時給」カードの鉛筆アイコンをクリックして時給を入力</div>
+  <div class="step"><span class="step-num">4</span> 「この月のみ変更」または「この月以降すべて変更」を選択して保存</div>
+  <p class="note">時給はスタッフ管理ではなくタイムカード画面でのみ設定します。月別管理に対応しており、月ごとに異なる時給を設定できます。</p>
+
+  <h3>30分丸め（事業者有利）</h3>
+  <p>勤務時間は30分単位で丸められます。</p>
+  <table>
+    <tr><th>打刻種別</th><th>丸め方向</th><th>例</th></tr>
+    <tr><td>出勤</td><td>30分単位で切り上げ</td><td>9:25 → 9:30</td></tr>
+    <tr><td>退勤</td><td>30分単位で切り捨て</td><td>16:29 → 16:00</td></tr>
+  </table>
+  <p>丸め後の時刻がタイムカード一覧の「時間」列に表示されます。</p>
 
   <h3>タイムカードの確認・修正</h3>
   <div class="step"><span class="step-num">1</span> サイドバー「タイムカード」をクリック</div>
@@ -705,11 +717,57 @@
   <p>タイムカード画面の上部に当月の集計が表示されます。</p>
   <table>
     <tr><th>項目</th><th>内容</th></tr>
-    <tr><td>時給</td><td>スタッフ設定ページで登録した時給</td></tr>
-    <tr><td>月間勤務時間</td><td>出勤〜退勤の時間を日単位で合算</td></tr>
+    <tr><td>時給</td><td>タイムカード画面で月別に設定した時給</td></tr>
+    <tr><td>月間勤務時間</td><td>30分丸め後の出勤〜退勤の時間を日単位で合算</td></tr>
+    <tr><td>残業時間（承認済）</td><td>承認された残業の合計時間</td></tr>
     <tr><td>月間給与（概算）</td><td>月間勤務時間 × 時給（端数切り捨て）</td></tr>
   </table>
-  <p class="note">勤務時間は出勤打刻と退勤打刻の差分から計算します。休憩時間は現時点では自動控除されません。</p>
+  <p class="note">勤務時間は出勤打刻と退勤打刻の差分（30分丸め後）から計算します。休憩時間は現時点では自動控除されません。</p>
+
+  <h3>シフト連携・残業管理</h3>
+  <p>ログインアカウントを持つスタッフはシフトとタイムカードが連携します。</p>
+  <table>
+    <tr><th>列</th><th>説明</th></tr>
+    <tr><td>予定</td><td>シフト管理で登録した予定勤務時間（例: 9:00〜17:00）</td></tr>
+    <tr><td>残業</td><td>退勤時刻がシフト終了時刻を超えた場合に自動検知。残業分数と承認/却下ボタンが表示される</td></tr>
+  </table>
+
+  <h4>残業の承認方法</h4>
+  <div class="step"><span class="step-num">1</span> タイムカード画面の「残業」列に残業分数が表示される（自動検知）</div>
+  <div class="step"><span class="step-num">2</span> 「承認」ボタンをクリックで承認、「却下」で却下</div>
+  <div class="step"><span class="step-num">3</span> 承認済み残業の合計は集計カードに表示される</div>
+
+  <h4>事前残業申請</h4>
+  <div class="step"><span class="step-num">1</span> タイムカード画面右上「事前残業申請」ボタンをクリック</div>
+  <div class="step"><span class="step-num">2</span> 対象日・予定残業時間・備考を入力して申請</div>
+  <div class="step"><span class="step-num">3</span> 申請後は管理者が承認/却下する</div>
+</div>
+
+<!-- Chapter 11c -->
+<div class="chapter" id="ch11c">
+  <div class="chapter-header">
+    <div class="num">Chapter 11c</div>
+    <h2>有給管理</h2>
+    <p>年度別の有給付与・使用記録（管理者専用）</p>
+  </div>
+
+  <h3>概要</h3>
+  <p>ログインアカウントを持つスタッフ（admin / staff ロール）の有給休暇を管理します。年度（4月始まり）ごとに付与日数を設定し、使用記録を追加できます。</p>
+
+  <h3>有給付与日数の設定</h3>
+  <div class="step"><span class="step-num">1</span> サイドバー「有給管理」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 左側のスタッフ一覧から対象スタッフを選択</div>
+  <div class="step"><span class="step-num">3</span> 年度を切り替えて「設定」ボタンをクリック</div>
+  <div class="step"><span class="step-num">4</span> 付与日数（0.5日単位可）と備考を入力して「保存」</div>
+
+  <h3>有給使用記録の追加</h3>
+  <div class="step"><span class="step-num">1</span> 「有給使用履歴」セクションの「追加」ボタンをクリック</div>
+  <div class="step"><span class="step-num">2</span> 日付・日数（1日 or 半日）・備考を入力して「保存」</div>
+  <div class="step"><span class="step-num">3</span> 追加した記録はゴミ箱アイコンで削除可能</div>
+
+  <h3>残日数の確認</h3>
+  <p>画面上部のカードに「付与日数」「使用日数」「残日数」が表示されます。残日数がマイナスの場合は赤字で表示されます。</p>
+  <p class="note">有給管理は管理者のみ操作できます。スタッフ自身は閲覧・申請できません。</p>
 </div>
 
 <!-- Chapter 12 -->
