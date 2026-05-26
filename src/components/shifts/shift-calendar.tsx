@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useEffect, useRef, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -59,6 +59,25 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
   const [selectedStaff, setSelectedStaff] = useState<string>(staffList[0]?.id ?? '')
   // 複数日選択: Set<dateString>
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
+  // 複数選択モード（ボタン or Ctrl/⌘キー）
+  const [multiSelectMode, setMultiSelectMode] = useState(false)
+  const ctrlHeldRef = useRef(false)
+
+  // window レベルで Ctrl/⌘ キーの押下状態を追跡（e.ctrlKey より確実）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') ctrlHeldRef.current = true
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') ctrlHeldRef.current = false
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [])
   const [shiftType, setShiftType]   = useState('full')
   const [startTime, setStartTime]   = useState('09:00')
   const [endTime, setEndTime]       = useState('18:00')
@@ -98,42 +117,42 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
     }
   })
 
-  function prefillForm(shift: ShiftEntry | undefined) {
-    if (shift) {
-      setShiftType(shift.shift_type)
-      setStartTime(shift.start_time ?? '09:00')
-      setEndTime(shift.end_time ?? '18:00')
-      setUnitId(shift.unit_id ?? units[0]?.id ?? '')
-    } else {
-      setShiftType('full')
-      setStartTime('09:00')
-      setEndTime('18:00')
-      setUnitId(units[0]?.id ?? '')
-    }
-  }
+  // 単一選択時のみ有効な派生値（複数選択時は null）
+  const selectedDate = selectedDates.size === 1 ? [...selectedDates][0] : null
 
-  function handleCellClick(date: string, shift: ShiftEntry | undefined, ctrlKey: boolean) {
-    if (ctrlKey) {
-      // Ctrl+クリック: 日付を追加 or 除去
+  // 選択日が変わったらフォームを初期化（child-attendance-calendar と同じパターン）
+  useEffect(() => {
+    if (selectedDate) {
+      const shift = currentStaffShifts[selectedDate]
+      if (shift) {
+        setShiftType(shift.shift_type)
+        setStartTime(shift.start_time ?? '09:00')
+        setEndTime(shift.end_time ?? '18:00')
+        setUnitId(shift.unit_id ?? units[0]?.id ?? '')
+      } else {
+        setShiftType('full')
+        setStartTime('09:00')
+        setEndTime('18:00')
+        setUnitId(units[0]?.id ?? '')
+      }
+    }
+  }, [selectedDate]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // クリックハンドラーは setSelectedDates のみ更新（フォーム初期化は useEffect に委譲）
+  function handleCellClick(date: string) {
+    const isMulti = multiSelectMode || ctrlHeldRef.current
+    if (isMulti) {
       setSelectedDates((prev) => {
         const next = new Set(prev)
-        if (next.has(date)) {
-          next.delete(date)
-        } else {
-          next.add(date)
-          // 最初に追加されるときだけフォームを初期化
-          if (prev.size === 0) prefillForm(shift)
-        }
+        if (next.has(date)) next.delete(date)
+        else next.add(date)
         return next
       })
     } else {
-      // 通常クリック: その日だけを選択（既に唯一の選択なら解除）
-      if (selectedDates.size === 1 && selectedDates.has(date)) {
-        setSelectedDates(new Set())
-      } else {
-        setSelectedDates(new Set([date]))
-        prefillForm(shift)
-      }
+      setSelectedDates((prev) => {
+        if (prev.size === 1 && prev.has(date)) return new Set()
+        return new Set([date])
+      })
     }
   }
 
@@ -230,6 +249,22 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
           <p className="text-sm text-gray-500 mt-0.5">スタッフの勤務シフト</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setMultiSelectMode((m) => !m)
+              setSelectedDates(new Set())
+            }}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+              multiSelectMode
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            )}
+            title="複数の日付をまとめて編集"
+          >
+            <Layers className="h-4 w-4" />
+            複数選択
+          </button>
           <Button
             size="sm"
             variant="outline"
@@ -322,6 +357,22 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
         </div>
       )}
 
+      {/* 複数選択モードバナー */}
+      {multiSelectMode && (
+        <div className="flex items-center justify-between bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
+          <span className="text-xs text-indigo-700 font-medium">
+            <Layers className="h-3.5 w-3.5 inline mr-1" />
+            複数選択モード — 日付をクリックして追加／解除（Ctrl+クリックでも可）
+          </span>
+          <button
+            onClick={() => { setMultiSelectMode(false); setSelectedDates(new Set()) }}
+            className="text-xs text-indigo-500 hover:text-indigo-700 underline ml-4"
+          >
+            解除
+          </button>
+        </div>
+      )}
+
       {/* スタッフ選択 */}
       <div className="flex gap-2 flex-wrap">
         {staffList.map((s) => (
@@ -370,7 +421,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
             return (
               <button
                 key={date}
-                onClick={(e) => handleCellClick(date, shift, e.ctrlKey || e.metaKey)}
+                onClick={() => handleCellClick(date)}
                 className={cn(
                   'h-16 border-b border-r border-gray-50 p-1 text-left transition-colors hover:bg-indigo-50',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
@@ -412,7 +463,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units }: Props) 
         </div>
         <span className="text-xs text-gray-400 flex items-center gap-1 ml-auto">
           <Layers className="h-3 w-3" />
-          Ctrl（Mac: ⌘）+クリックで複数日を選択
+          「複数選択」ボタン または Ctrl（Mac: ⌘）+クリックで複数日を選択
         </span>
       </div>
 
