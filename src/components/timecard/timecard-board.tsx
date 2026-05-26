@@ -26,6 +26,8 @@ type DayRecord = {
   date: string
   clock_in: TimeRecord | null
   clock_out: TimeRecord | null
+  rounded_in: string | null   // 丸め後の出勤時刻 HH:MM
+  rounded_out: string | null  // 丸め後の退勤時刻 HH:MM
   hours: number | null
 }
 
@@ -35,6 +37,29 @@ function toJSTDatetime(isoStr: string): { date: string; time: string } {
   const date = jst.toISOString().slice(0, 10)
   const time = jst.toISOString().slice(11, 16)
   return { date, time }
+}
+
+/** UTC ISO → JST の分（エポック基準）。30分丸めに使う */
+function toJSTEpochMinutes(isoStr: string): number {
+  return Math.floor((new Date(isoStr).getTime() + 9 * 60 * 60 * 1000) / 60000)
+}
+
+/** JST エポック分 → "HH:MM" */
+function epochMinutesToHHMM(m: number): string {
+  const mOfDay = ((m % 1440) + 1440) % 1440
+  return `${String(Math.floor(mOfDay / 60)).padStart(2, '0')}:${String(mOfDay % 60).padStart(2, '0')}`
+}
+
+/** 出勤：30分切り上げ（事業者有利） */
+function roundInUp30(isoStr: string): { minutes: number; time: string } {
+  const m = Math.ceil(toJSTEpochMinutes(isoStr) / 30) * 30
+  return { minutes: m, time: epochMinutesToHHMM(m) }
+}
+
+/** 退勤：30分切り捨て（事業者有利） */
+function roundOutDown30(isoStr: string): { minutes: number; time: string } {
+  const m = Math.floor(toJSTEpochMinutes(isoStr) / 30) * 30
+  return { minutes: m, time: epochMinutesToHHMM(m) }
 }
 
 function buildDayRecords(records: TimeRecord[]): DayRecord[] {
@@ -56,12 +81,22 @@ function buildDayRecords(records: TimeRecord[]): DayRecord[] {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, { clock_in, clock_out }]) => {
       let hours: number | null = null
-      if (clock_in && clock_out) {
-        const diffMinutes = (new Date(clock_out.recorded_at).getTime() - new Date(clock_in.recorded_at).getTime()) / 60000
-        const ceilMinutes = Math.ceil(diffMinutes / 5) * 5
-        hours = Math.round((ceilMinutes / 60) * 100) / 100
+      let rounded_in: string | null = null
+      let rounded_out: string | null = null
+
+      if (clock_in) {
+        rounded_in = roundInUp30(clock_in.recorded_at).time
       }
-      return { date, clock_in, clock_out, hours }
+      if (clock_out) {
+        rounded_out = roundOutDown30(clock_out.recorded_at).time
+      }
+      if (clock_in && clock_out) {
+        const inM = roundInUp30(clock_in.recorded_at).minutes
+        const outM = roundOutDown30(clock_out.recorded_at).minutes
+        const diffMinutes = outM - inM
+        hours = diffMinutes > 0 ? Math.round((diffMinutes / 60) * 100) / 100 : 0
+      }
+      return { date, clock_in, clock_out, rounded_in, rounded_out, hours }
     })
 }
 
@@ -656,7 +691,14 @@ export function TimecardBoard({ staffMembers: initialStaffMembers, initialRecord
 
                         {/* 勤務時間 */}
                         <td className="px-4 py-2 text-gray-700">
-                          {day.hours != null ? `${day.hours}h` : '—'}
+                          {day.hours != null ? (
+                            <span>
+                              {day.hours}h
+                              <span className="ml-1 text-xs text-gray-400">
+                                ({day.rounded_in}〜{day.rounded_out})
+                              </span>
+                            </span>
+                          ) : '—'}
                         </td>
                       </tr>
                     )
