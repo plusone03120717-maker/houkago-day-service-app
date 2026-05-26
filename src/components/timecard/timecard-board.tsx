@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Edit2, Check, X, ChevronLeft, ChevronRight, Plus, Pencil, AlertTriangle, CheckCircle, CalendarClock } from 'lucide-react'
+import { Edit2, Check, X, ChevronLeft, ChevronRight, Plus, Pencil, AlertTriangle, CheckCircle, CalendarClock, Trash2 } from 'lucide-react'
 
 // ─── exported types ────────────────────────────────────────────────────────────
 
@@ -303,6 +303,13 @@ export function TimecardBoard({
   async function handleDeleteRecord(recordId: string) {
     if (!confirm('この打刻記録を削除しますか？')) return
     await supabase.from('time_records').delete().eq('id', recordId)
+    await fetchRecords(selectedStaffId, month)
+  }
+
+  async function handleDeleteDay(day: DayRecord) {
+    if (!confirm(`${day.date.slice(5).replace('-', '/')} の打刻記録をすべて削除しますか？`)) return
+    const ids = [day.clock_in?.id, day.clock_out?.id].filter(Boolean) as string[]
+    if (ids.length > 0) await supabase.from('time_records').delete().in('id', ids)
     await fetchRecords(selectedStaffId, month)
   }
 
@@ -628,6 +635,7 @@ export function TimecardBoard({
                     {hasShifts && <th className="text-left px-4 py-2 font-medium text-gray-600 w-28">予定</th>}
                     <th className="text-left px-4 py-2 font-medium text-gray-600">勤務時間</th>
                     {hasShifts && <th className="text-left px-4 py-2 font-medium text-gray-600 w-36">残業</th>}
+                    <th className="w-8" />
                   </tr>
                 </thead>
                 <tbody>
@@ -736,6 +744,16 @@ export function TimecardBoard({
                             )}
                           </td>
                         )}
+                        {/* 日付削除 */}
+                        <td className="pr-3 py-2 text-right">
+                          <button
+                            onClick={() => void handleDeleteDay(day)}
+                            className="text-gray-300 hover:text-red-500 transition-colors"
+                            title={`${day.date.slice(5).replace('-', '/')} の記録を削除`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
                       </tr>
                     )
                   })}
@@ -752,6 +770,7 @@ export function TimecardBoard({
                         {approvedOvertimeMinutes > 0 && `残業 ${Math.floor(approvedOvertimeMinutes / 60)}h${approvedOvertimeMinutes % 60 > 0 ? `${approvedOvertimeMinutes % 60}m` : ''}`}
                       </td>
                     )}
+                    <td />
                   </tr>
                 </tfoot>
               </table>
