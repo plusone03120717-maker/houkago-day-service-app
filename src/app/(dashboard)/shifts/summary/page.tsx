@@ -12,6 +12,8 @@ type StaffShift = {
   shift_type: string
   start_time: string | null
   end_time: string | null
+  break_start_time: string | null
+  break_end_time: string | null
   actual_start_time: string | null
   actual_end_time: string | null
   is_attendance_confirmed: boolean
@@ -48,10 +50,20 @@ function formatDuration(minutes: number): string {
   return `${h}時間${m}分`
 }
 
-function calcMinutes(start: string | null, end: string | null): number {
+function calcMinutes(
+  start: string | null,
+  end: string | null,
+  breakStart?: string | null,
+  breakEnd?: string | null,
+): number {
   if (!start || !end) return 0
   const diff = toMinutes(end) - toMinutes(start)
-  return diff > 0 ? diff : 0
+  if (diff <= 0) return 0
+  const breakMins =
+    breakStart && breakEnd
+      ? Math.max(0, toMinutes(breakEnd) - toMinutes(breakStart))
+      : 0
+  return Math.max(0, diff - breakMins)
 }
 
 export default async function ShiftSummaryPage({
@@ -79,7 +91,7 @@ export default async function ShiftSummaryPage({
       .order('name'),
     supabase
       .from('staff_shifts')
-      .select('id, staff_id, date, shift_type, start_time, end_time, actual_start_time, actual_end_time, is_attendance_confirmed')
+      .select('id, staff_id, date, shift_type, start_time, end_time, break_start_time, break_end_time, actual_start_time, actual_end_time, is_attendance_confirmed')
       .gte('date', monthStart)
       .lte('date', monthEnd),
   ])
@@ -92,16 +104,22 @@ export default async function ShiftSummaryPage({
     const myShifts = shifts.filter((s) => s.staff_id === user.id)
     const workShifts = myShifts.filter((s) => !['off', 'holiday'].includes(s.shift_type))
 
-    // 計画時間
-    const plannedMinutes = workShifts.reduce((sum, s) => sum + calcMinutes(s.start_time, s.end_time), 0)
-    // 実績時間
-    const actualMinutes = workShifts.reduce((sum, s) => sum + calcMinutes(s.actual_start_time, s.end_time ?? s.actual_end_time), 0)
+    // 計画時間（中抜け分を差し引く）
+    const plannedMinutes = workShifts.reduce(
+      (sum, s) => sum + calcMinutes(s.start_time, s.end_time, s.break_start_time, s.break_end_time),
+      0,
+    )
+    // 実績時間（中抜け分を差し引く）
+    const actualMinutes = workShifts.reduce(
+      (sum, s) => sum + calcMinutes(s.actual_start_time, s.end_time ?? s.actual_end_time, s.break_start_time, s.break_end_time),
+      0,
+    )
     // 実績確定済みシフト
     const confirmedShifts = workShifts.filter((s) => s.is_attendance_confirmed)
     // 残業（実績 - 計画 > 0 のシフトを集計）
     const overtimeMinutes = workShifts.reduce((sum, s) => {
-      const planned = calcMinutes(s.start_time, s.end_time)
-      const actual = calcMinutes(s.actual_start_time, s.end_time ?? s.actual_end_time)
+      const planned = calcMinutes(s.start_time, s.end_time, s.break_start_time, s.break_end_time)
+      const actual = calcMinutes(s.actual_start_time, s.end_time ?? s.actual_end_time, s.break_start_time, s.break_end_time)
       return sum + Math.max(0, actual - planned)
     }, 0)
 
@@ -288,8 +306,8 @@ export default async function ShiftSummaryPage({
                 <div className="divide-y divide-gray-100">
                   {myShifts.map((shift) => {
                     const isWork = !['off', 'holiday'].includes(shift.shift_type)
-                    const plannedMin = calcMinutes(shift.start_time, shift.end_time)
-                    const actualMin = calcMinutes(shift.actual_start_time, shift.end_time ?? shift.actual_end_time)
+                    const plannedMin = calcMinutes(shift.start_time, shift.end_time, shift.break_start_time, shift.break_end_time)
+                    const actualMin = calcMinutes(shift.actual_start_time, shift.end_time ?? shift.actual_end_time, shift.break_start_time, shift.break_end_time)
                     const overtime = Math.max(0, actualMin - plannedMin)
                     const dow = ['日', '月', '火', '水', '木', '金', '土'][new Date(shift.date).getDay()]
 
@@ -309,6 +327,11 @@ export default async function ShiftSummaryPage({
                             <span className="text-gray-500 text-xs">
                               {shift.start_time?.slice(0, 5) ?? '?'}〜{shift.end_time?.slice(0, 5) ?? '?'}
                             </span>
+                            {shift.break_start_time && shift.break_end_time && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                                中抜け {shift.break_start_time.slice(0, 5)}〜{shift.break_end_time.slice(0, 5)}
+                              </span>
+                            )}
                             {shift.actual_start_time && (
                               <span className="text-gray-700 text-xs">
                                 実績: {shift.actual_start_time.slice(0, 5)}〜{(shift.actual_end_time ?? shift.end_time)?.slice(0, 5) ?? '?'}

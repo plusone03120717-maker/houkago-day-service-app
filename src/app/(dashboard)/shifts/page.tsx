@@ -16,6 +16,8 @@ type ShiftEntry = {
   shift_type: string
   start_time: string | null
   end_time: string | null
+  break_start_time: string | null
+  break_end_time: string | null
   unit_id: string | null
   note: string | null
 }
@@ -58,7 +60,7 @@ export default async function ShiftsPage({
   const { data: shiftsRaw } = staffList.length > 0
     ? await supabase
         .from('staff_shifts')
-        .select('id, staff_id, date, shift_type, start_time, end_time, unit_id, note')
+        .select('id, staff_id, date, shift_type, start_time, end_time, break_start_time, break_end_time, unit_id, note')
         .gte('date', startDate)
         .lte('date', endDate)
     : { data: [] }

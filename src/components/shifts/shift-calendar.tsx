@@ -20,6 +20,8 @@ type ShiftEntry = {
   shift_type: string
   start_time: string | null
   end_time: string | null
+  break_start_time: string | null
+  break_end_time: string | null
   unit_id: string | null
   note: string | null
 }
@@ -87,11 +89,14 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
       window.removeEventListener('keyup', onKeyUp)
     }
   }, [])
-  const [shiftType, setShiftType]   = useState('full')
-  const [startTime, setStartTime]   = useState('09:00')
-  const [endTime, setEndTime]       = useState('18:00')
-  const [unitId, setUnitId]         = useState(units[0]?.id ?? '')
-  const [saving, setSaving]         = useState(false)
+  const [shiftType, setShiftType]       = useState('full')
+  const [startTime, setStartTime]       = useState('09:00')
+  const [endTime, setEndTime]           = useState('18:00')
+  const [hasBreak, setHasBreak]         = useState(false)
+  const [breakStartTime, setBreakStart] = useState('12:00')
+  const [breakEndTime, setBreakEnd]     = useState('13:00')
+  const [unitId, setUnitId]             = useState(units[0]?.id ?? '')
+  const [saving, setSaving]             = useState(false)
 
   // 残業申請フォーム（事前・事後共用）
   const [showOTForm, setShowOTForm] = useState(false)
@@ -146,11 +151,18 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
         setStartTime(shift.start_time ?? '09:00')
         setEndTime(shift.end_time ?? '18:00')
         setUnitId(shift.unit_id ?? units[0]?.id ?? '')
+        const hasB = !!(shift.break_start_time && shift.break_end_time)
+        setHasBreak(hasB)
+        setBreakStart(shift.break_start_time?.slice(0, 5) ?? '12:00')
+        setBreakEnd(shift.break_end_time?.slice(0, 5) ?? '13:00')
       } else {
         setShiftType('full')
         setStartTime('09:00')
         setEndTime('18:00')
         setUnitId(units[0]?.id ?? '')
+        setHasBreak(false)
+        setBreakStart('12:00')
+        setBreakEnd('13:00')
       }
     }
   }, [selectedDate]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -185,10 +197,12 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
 
     const isOff = shiftType === 'off' || shiftType === 'holiday'
     const payload = {
-      shift_type: shiftType,
-      start_time: isOff ? null : startTime,
-      end_time:   isOff ? null : endTime,
-      unit_id:    isOff ? null : (unitId || null),
+      shift_type:       shiftType,
+      start_time:       isOff ? null : startTime,
+      end_time:         isOff ? null : endTime,
+      unit_id:          isOff ? null : (unitId || null),
+      break_start_time: (!isOff && hasBreak) ? breakStartTime : null,
+      break_end_time:   (!isOff && hasBreak) ? breakEndTime   : null,
     }
 
     for (const date of selectedDates) {
@@ -460,6 +474,11 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
                     {shiftInfo.label}
                   </div>
                 )}
+                {shift?.break_start_time && shift?.break_end_time && (
+                  <div className="text-xs px-1 rounded truncate bg-gray-400 text-white mt-0.5">
+                    中抜け{shift.break_start_time.slice(0, 5)}〜{shift.break_end_time.slice(0, 5)}
+                  </div>
+                )}
                 {overtimeMinutes > 0 && (
                   <div className="text-xs px-1 rounded truncate bg-red-500 text-white mt-0.5">
                     残業{overtimeMinutes >= 60
@@ -563,26 +582,63 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
           </div>
 
           {shiftType !== 'off' && shiftType !== 'holiday' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-gray-700 mb-1 block">開始時間</label>
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">開始時間</label>
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">終了時間</label>
+                  <input
+                    type="time"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
+
+              {/* 中抜け */}
               <div>
-                <label className="text-xs font-medium text-gray-700 mb-1 block">終了時間</label>
-                <input
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
+                <label className="flex items-center gap-2 cursor-pointer w-fit">
+                  <input
+                    type="checkbox"
+                    checked={hasBreak}
+                    onChange={(e) => setHasBreak(e.target.checked)}
+                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-xs font-medium text-gray-700">中抜けあり</span>
+                </label>
+                {hasBreak && (
+                  <div className="grid grid-cols-2 gap-3 mt-2">
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">中抜け開始</label>
+                      <input
+                        type="time"
+                        value={breakStartTime}
+                        onChange={(e) => setBreakStart(e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">中抜け終了</label>
+                      <input
+                        type="time"
+                        value={breakEndTime}
+                        onChange={(e) => setBreakEnd(e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
+            </>
           )}
 
           {units.length > 0 && shiftType !== 'off' && shiftType !== 'holiday' && (
