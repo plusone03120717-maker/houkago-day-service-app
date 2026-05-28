@@ -24,6 +24,7 @@ import {
   BarChart2,
   Clock,
   Umbrella,
+  CalendarRange,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -33,6 +34,7 @@ const adminNav = [
     group: 'メイン',
     items: [
       { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
+      { href: '/schedule', label: '全体スケジュール', icon: CalendarRange },
       { href: '/attendance', label: '出席管理', icon: ClipboardList },
       { href: '/attendance/monthly', label: '給付量チェック', icon: ShieldAlert },
       { href: '/incidents', label: 'ヒヤリハット', icon: TriangleAlert },
@@ -76,6 +78,7 @@ const staffNav = [
     group: 'メイン',
     items: [
       { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
+      { href: '/schedule', label: '全体スケジュール', icon: CalendarRange },
       { href: '/attendance', label: '出席管理', icon: ClipboardList },
       { href: '/attendance/monthly', label: '給付量チェック', icon: ShieldAlert },
       { href: '/incidents', label: 'ヒヤリハット', icon: TriangleAlert },
