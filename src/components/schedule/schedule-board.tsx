@@ -431,7 +431,12 @@ export function ScheduleBoard({
 
       {/* ビュー本体 */}
       {view === 'day' && (
-        <DayView date={date} events={allEvents.filter((e) => e.date === date)} onDeleteCustom={handleDeleteCustomEvent} />
+        <DayView
+          date={date}
+          events={allEvents.filter((e) => e.date === date)}
+          transportSchedules={transportSchedules.filter((t) => t.date === date)}
+          onDeleteCustom={handleDeleteCustomEvent}
+        />
       )}
       {view === 'week' && (
         <WeekView anchorDate={date} events={allEvents} onDateClick={goToDate} onDeleteCustom={handleDeleteCustomEvent} />
@@ -465,94 +470,206 @@ export function ScheduleBoard({
 
 // ─── 日表示（タイムライン） ────────────────────────────────────────────────────
 
-const HOUR_START = 7
-const HOUR_END   = 21
-const HOUR_HEIGHT = 60 // px per hour
+const HOUR_START  = 7
+const HOUR_END    = 21
+const HOUR_HEIGHT = 64  // px per hour
 
-function DayView({ date, events, onDeleteCustom }: {
+function timeToPx(time: string): number {
+  return Math.max(0, ((toMin(time) - HOUR_START * 60) / 60) * HOUR_HEIGHT)
+}
+
+function durationPx(start: string, end: string | null): number {
+  if (!end) return 28
+  return Math.max(28, ((toMin(end) - toMin(start)) / 60) * HOUR_HEIGHT)
+}
+
+/** 重複イベントを横並びにレイアウトする */
+function layoutEvents(events: CalendarEvent[]): { event: CalendarEvent; leftPct: number; widthPct: number }[] {
+  if (events.length === 0) return []
+  const sorted = [...events].sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))
+  const colEnds: number[] = []
+  const withCol: { event: CalendarEvent; col: number }[] = []
+
+  for (const ev of sorted) {
+    const s = toMin(ev.startTime ?? '00:00')
+    const e = ev.endTime ? toMin(ev.endTime) : s + 30
+    let col = colEnds.findIndex((end) => end <= s)
+    if (col === -1) { col = colEnds.length; colEnds.push(e) }
+    else colEnds[col] = e
+    withCol.push({ event: ev, col })
+  }
+
+  const total = Math.max(1, colEnds.length)
+  return withCol.map(({ event, col }) => ({
+    event,
+    leftPct: (col / total) * 100,
+    widthPct: 100 / total,
+  }))
+}
+
+function DayView({ date, events, transportSchedules, onDeleteCustom }: {
   date: string
   events: CalendarEvent[]
+  transportSchedules: TransportScheduleRaw[]
   onDeleteCustom: (id: string) => void
 }) {
-  const allDayEvents = events.filter((e) => e.allDay || !e.startTime)
-  const timedEvents  = events.filter((e) => !e.allDay && e.startTime)
-
   const totalHeight = (HOUR_END - HOUR_START) * HOUR_HEIGHT
 
-  function topPx(time: string): number {
-    const min = toMin(time)
-    const startMin = HOUR_START * 60
-    return Math.max(0, ((min - startMin) / 60) * HOUR_HEIGHT)
+  // ── 列1: 利用者 ── 送迎データから子どもごとの利用時間を組み立てる
+  const childMap = new Map<string, { name: string; startTime: string | null; endTime: string | null }>()
+  for (const sched of transportSchedules) {
+    for (const detail of sched.transport_details ?? []) {
+      if (!childMap.has(detail.child_id)) {
+        childMap.set(detail.child_id, { name: detail.children?.name ?? '—', startTime: null, endTime: null })
+      }
+      const c = childMap.get(detail.child_id)!
+      const t = detail.pickup_time?.slice(0, 5) ?? sched.departure_time?.slice(0, 5) ?? null
+      if (sched.direction === 'pickup') c.startTime = t
+      else c.endTime = t
+    }
   }
+  const childSchedules = [...childMap.values()].sort(
+    (a, b) => (a.startTime ?? '99:99').localeCompare(b.startTime ?? '99:99')
+  )
+  // 送迎データに乗っていない通所予定の子ども（終日表示に回す）
+  const transportChildIds = new Set(childMap.keys())
+  const attendanceEvent = events.find((e) => e.type === 'attendance')
 
-  function heightPx(start: string, end: string | null): number {
-    if (!end) return 24
-    const diff = toMin(end) - toMin(start)
-    return Math.max(24, (diff / 60) * HOUR_HEIGHT)
-  }
+  // ── 列2: 送迎 ──
+  const transportEvents = events.filter(
+    (e) => (e.type === 'transport_pickup' || e.type === 'transport_dropoff') && e.startTime
+  )
+  // カスタムイベント（会議・外部等）も送迎列に表示
+  const customTimedEvents = events.filter(
+    (e) => !['transport_pickup', 'transport_dropoff', 'shift', 'attendance', 'monitoring'].includes(e.type)
+      && e.startTime && !e.allDay
+  )
+  const col2Events = layoutEvents([...transportEvents, ...customTimedEvents])
+
+  // ── 列3: スタッフシフト ──
+  const shiftEvents = events.filter((e) => e.type === 'shift' && e.startTime)
+  const col3Events  = layoutEvents(shiftEvents)
+
+  // ── 終日エリア: 通所予定・モニタリング記録・カスタム終日 ──
+  const allDayEvents = events.filter(
+    (e) => e.allDay || (!e.startTime && !['shift'].includes(e.type))
+  )
+
+  const hours = Array.from({ length: HOUR_END - HOUR_START }, (_, i) => HOUR_START + i)
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      {/* 終日イベント */}
+      {/* 終日イベント帯 */}
       {allDayEvents.length > 0 && (
-        <div className="border-b border-gray-100 p-3 flex flex-wrap gap-2">
+        <div className="border-b border-gray-100 px-3 py-2 flex flex-wrap gap-1.5 items-center">
+          <span className="text-xs text-gray-400 shrink-0">終日</span>
           {allDayEvents.map((e) => (
             <EventChip key={e.id} event={e} onDelete={e.id.startsWith('custom-') ? onDeleteCustom : undefined} />
           ))}
         </div>
       )}
 
-      {/* タイムライン */}
-      <div className="flex">
+      {/* 3列タイムライン */}
+      <div className="flex overflow-x-auto">
         {/* 時刻軸 */}
-        <div className="w-14 flex-shrink-0 border-r border-gray-100 relative" style={{ height: totalHeight }}>
-          {Array.from({ length: HOUR_END - HOUR_START }, (_, i) => (
-            <div
-              key={i}
-              className="absolute right-2 text-xs text-gray-400 leading-none"
-              style={{ top: i * HOUR_HEIGHT - 6 }}
-            >
-              {String(HOUR_START + i).padStart(2, '0')}:00
-            </div>
-          ))}
+        <div className="w-12 shrink-0 border-r border-gray-100">
+          <div className="h-8 border-b border-gray-100" />
+          <div className="relative" style={{ height: totalHeight }}>
+            {hours.map((h, i) => (
+              <div
+                key={h}
+                className="absolute right-1 text-xs text-gray-400 leading-none select-none"
+                style={{ top: i * HOUR_HEIGHT - 6 }}
+              >
+                {String(h).padStart(2, '0')}
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* イベントエリア */}
-        <div className="flex-1 relative" style={{ height: totalHeight }}>
-          {/* 時刻グリッド */}
-          {Array.from({ length: HOUR_END - HOUR_START }, (_, i) => (
-            <div
-              key={i}
-              className="absolute left-0 right-0 border-t border-gray-50"
-              style={{ top: i * HOUR_HEIGHT }}
-            />
-          ))}
-
-          {/* イベントブロック */}
-          {timedEvents.map((e, idx) => {
-            const top = topPx(e.startTime!)
-            const h   = heightPx(e.startTime!, e.endTime)
+        {/* 列1: 利用者 */}
+        <TimelineColumn label="利用者" headerCls="bg-yellow-50 text-yellow-700 border-yellow-100" totalHeight={totalHeight}>
+          {childSchedules.map((child, idx) => {
+            if (!child.startTime) return null
+            const top = timeToPx(child.startTime)
+            const h   = child.endTime ? durationPx(child.startTime, child.endTime) : 28
             return (
               <div
-                key={e.id}
-                className={cn('absolute left-1 right-1 rounded-md px-2 py-1 text-xs overflow-hidden group', e.color, e.textColor)}
-                style={{ top, height: h, left: `${(idx % 3) * 33}%`, right: `${(2 - idx % 3) * 33}%` }}
+                key={idx}
+                className="absolute left-1 right-1 rounded px-1 py-0.5 bg-yellow-100 border border-yellow-300 overflow-hidden"
+                style={{ top, height: h }}
               >
-                <div className="font-medium truncate">{e.title}</div>
-                {e.subtitle && <div className="opacity-80 truncate">{e.subtitle}</div>}
-                {e.startTime && <div className="opacity-70">{e.startTime}{e.endTime ? `〜${e.endTime}` : ''}</div>}
-                {e.id.startsWith('custom-') && (
-                  <button
-                    onClick={() => onDeleteCustom(e.id)}
-                    className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
+                <div className="text-xs font-semibold text-yellow-800 truncate">{child.name}</div>
+                <div className="text-xs text-yellow-600">
+                  {child.startTime}{child.endTime ? `〜${child.endTime}` : ''}
+                </div>
               </div>
             )
           })}
-        </div>
+          {/* 送迎なしの通所児童を下部に表示 */}
+          {attendanceEvent && !transportChildIds.size && (
+            <div className="absolute bottom-0 left-1 right-1 text-xs text-gray-400 truncate">{attendanceEvent.title}</div>
+          )}
+        </TimelineColumn>
+
+        {/* 列2: 送迎 */}
+        <TimelineColumn label="送迎" headerCls="bg-blue-50 text-blue-700 border-blue-100" totalHeight={totalHeight}>
+          {col2Events.map(({ event: e, leftPct, widthPct }) => (
+            <div
+              key={e.id}
+              className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden group border border-white/30', e.color, e.textColor)}
+              style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
+            >
+              <div className="font-semibold truncate leading-tight">{e.title}</div>
+              {e.subtitle && <div className="opacity-80 truncate text-xs">{e.subtitle}</div>}
+              <div className="opacity-70 text-xs">{e.startTime}</div>
+              {e.id.startsWith('custom-') && (
+                <button onClick={() => onDeleteCustom(e.id)} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          ))}
+        </TimelineColumn>
+
+        {/* 列3: スタッフ */}
+        <TimelineColumn label="スタッフ" headerCls="bg-indigo-50 text-indigo-700 border-indigo-100" totalHeight={totalHeight} isLast>
+          {col3Events.map(({ event: e, leftPct, widthPct }) => (
+            <div
+              key={e.id}
+              className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden border border-white/30', e.color, e.textColor)}
+              style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
+            >
+              <div className="font-semibold truncate leading-tight">{e.title}</div>
+              <div className="opacity-70 text-xs">{e.startTime}〜{e.endTime ?? ''}</div>
+              {e.subtitle && <div className="opacity-80 truncate text-xs">{e.subtitle}</div>}
+            </div>
+          ))}
+        </TimelineColumn>
+      </div>
+    </div>
+  )
+}
+
+// ─── TimelineColumn ────────────────────────────────────────────────────────────
+
+function TimelineColumn({ label, headerCls, totalHeight, children, isLast }: {
+  label: string
+  headerCls: string
+  totalHeight: number
+  children: React.ReactNode
+  isLast?: boolean
+}) {
+  return (
+    <div className={cn('flex-1 min-w-[160px]', !isLast && 'border-r border-gray-100')}>
+      <div className={cn('h-8 border-b px-2 flex items-center text-xs font-semibold', headerCls)}>
+        {label}
+      </div>
+      <div className="relative" style={{ height: totalHeight }}>
+        {Array.from({ length: HOUR_END - HOUR_START }, (_, i) => (
+          <div key={i} className="absolute left-0 right-0 border-t border-gray-50" style={{ top: i * HOUR_HEIGHT }} />
+        ))}
+        {children}
       </div>
     </div>
   )
