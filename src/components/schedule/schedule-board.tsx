@@ -202,6 +202,7 @@ interface Props {
   customEvents: CustomEventRaw[]
   units: { id: string; name: string }[]
   facilityId: string | null
+  children: { id: string; name: string }[]
 }
 
 // ─── メインコンポーネント ─────────────────────────────────────────────────────
@@ -216,6 +217,7 @@ export function ScheduleBoard({
   monitoringRecords,
   customEvents,
   facilityId,
+  children,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -231,6 +233,7 @@ export function ScheduleBoard({
     end_time: '',
     all_day: false,
     note: '',
+    child_id: '',
   })
 
   const allEvents = buildEvents(
@@ -267,10 +270,11 @@ export function ScheduleBoard({
       end_time: addForm.all_day ? null : (addForm.end_time || null),
       all_day: addForm.all_day,
       note: addForm.note || null,
+      child_id: (addForm.event_type === 'monitoring_event' && addForm.child_id) ? addForm.child_id : null,
     })
     setSaving(false)
     setShowAddForm(false)
-    setAddForm({ title: '', event_type: 'other', event_date: date, start_time: '', end_time: '', all_day: false, note: '' })
+    setAddForm({ title: '', event_type: 'other', event_date: date, start_time: '', end_time: '', all_day: false, note: '', child_id: '' })
     startTransition(() => router.refresh())
   }
 
@@ -371,6 +375,21 @@ export function ScheduleBoard({
                 className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
+            {addForm.event_type === 'monitoring_event' && (
+              <div className="col-span-2 sm:col-span-1">
+                <label className="text-xs text-gray-500 mb-1 block">対象児童</label>
+                <select
+                  value={addForm.child_id}
+                  onChange={(e) => setAddForm({ ...addForm, child_id: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="">選択してください</option>
+                  {children.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-4 flex-wrap">
             <label className="flex items-center gap-2 cursor-pointer text-sm">

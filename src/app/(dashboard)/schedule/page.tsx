@@ -88,6 +88,12 @@ export default async function SchedulePage({
     .limit(1)
     .single()
 
+  // ─── 児童一覧（モニタリング予定の子ども選択用） ──────────────────────────
+  const { data: childrenRaw } = await supabase
+    .from('children')
+    .select('id, name')
+    .order('name')
+
   return (
     <ScheduleBoard
       date={date}
@@ -100,6 +106,7 @@ export default async function SchedulePage({
       customEvents={(customEventsRaw ?? []) as unknown as CustomEventRaw[]}
       units={(unitsRaw ?? []) as { id: string; name: string }[]}
       facilityId={facilityRaw?.id ?? null}
+      children={(childrenRaw ?? []) as { id: string; name: string }[]}
     />
   )
 }
