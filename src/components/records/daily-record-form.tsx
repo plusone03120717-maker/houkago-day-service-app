@@ -47,6 +47,10 @@ type Attendance = {
   daytime_support: boolean
   daytime_support_start_time: string | null
   daytime_support_end_time: string | null
+  pickup_driver_member_id: string | null
+  pickup_vehicle_id: string | null
+  dropoff_driver_member_id: string | null
+  dropoff_vehicle_id: string | null
 }
 
 type Program = {
@@ -95,6 +99,17 @@ type MedicationLog = {
   administered_at: string | null
 }
 
+type StaffMember = {
+  id: string
+  name: string
+  role: string
+}
+
+type Vehicle = {
+  id: string
+  name: string
+}
+
 interface Props {
   child: Child
   attendance: Attendance | null
@@ -110,6 +125,9 @@ interface Props {
   isSchoolHoliday: boolean
   defaultServiceEndTime: string
   holidayServiceEndTime: string
+  staffMembers?: StaffMember[]
+  vehicles?: Vehicle[]
+  transportScheduleByDirection?: Record<string, { vehicle_id: string | null; driver_member_id: string | null }>
 }
 
 
@@ -128,6 +146,9 @@ export function DailyRecordForm({
   isSchoolHoliday,
   defaultServiceEndTime,
   holidayServiceEndTime,
+  staffMembers = [],
+  vehicles = [],
+  transportScheduleByDirection = {},
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -203,6 +224,20 @@ export function DailyRecordForm({
   const [pickupArrivalTime, setPickupArrivalTime] = useState(attendance?.pickup_arrival_time?.slice(0, 5) ?? '')
   const [dropoffDepartureTime, setDropoffDepartureTime] = useState(attendance?.dropoff_departure_time?.slice(0, 5) ?? '')
   const [dropoffArrivalTime, setDropoffArrivalTime] = useState(attendance?.dropoff_arrival_time?.slice(0, 5) ?? '')
+
+  // ドライバー・車種（attendance に保存済みの値を優先、なければ送迎管理スケジュールから初期値）
+  const [pickupDriverId, setPickupDriverId] = useState(
+    attendance?.pickup_driver_member_id ?? transportScheduleByDirection['pickup']?.driver_member_id ?? ''
+  )
+  const [pickupVehicleId, setPickupVehicleId] = useState(
+    attendance?.pickup_vehicle_id ?? transportScheduleByDirection['pickup']?.vehicle_id ?? ''
+  )
+  const [dropoffDriverId, setDropoffDriverId] = useState(
+    attendance?.dropoff_driver_member_id ?? transportScheduleByDirection['dropoff']?.driver_member_id ?? ''
+  )
+  const [dropoffVehicleId, setDropoffVehicleId] = useState(
+    attendance?.dropoff_vehicle_id ?? transportScheduleByDirection['dropoff']?.vehicle_id ?? ''
+  )
 
   // 提供時間
   const [serviceStartTime, setServiceStartTime] = useState(attendance?.service_start_time?.slice(0, 5) ?? '')
@@ -378,6 +413,10 @@ export function DailyRecordForm({
         daytime_support: daytimeSupport,
         daytime_support_start_time: daytimeSupport ? (daytimeSupportStartTime || null) : null,
         daytime_support_end_time: daytimeSupport ? (daytimeSupportEndTime || null) : null,
+        pickup_driver_member_id: pickupDriverId || null,
+        pickup_vehicle_id: pickupVehicleId || null,
+        dropoff_driver_member_id: dropoffDriverId || null,
+        dropoff_vehicle_id: dropoffVehicleId || null,
       })
       .eq('id', attendance.id)
 
@@ -484,6 +523,36 @@ export function DailyRecordForm({
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
+              {staffMembers.length > 0 && (
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">ドライバー</label>
+                  <select
+                    value={pickupDriverId}
+                    onChange={(e) => setPickupDriverId(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
+                  >
+                    <option value="">未選択</option>
+                    {staffMembers.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {vehicles.length > 0 && (
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">車種</label>
+                  <select
+                    value={pickupVehicleId}
+                    onChange={(e) => setPickupVehicleId(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
+                  >
+                    <option value="">未選択</option>
+                    {vehicles.map((v) => (
+                      <option key={v.id} value={v.id}>{v.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
             <p className="text-xs text-gray-400 mt-1">※ お迎え時間を入力すると事務所到着時間を10分後で自動入力します</p>
           </div>
@@ -512,6 +581,36 @@ export function DailyRecordForm({
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
+              {staffMembers.length > 0 && (
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">ドライバー</label>
+                  <select
+                    value={dropoffDriverId}
+                    onChange={(e) => setDropoffDriverId(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
+                  >
+                    <option value="">未選択</option>
+                    {staffMembers.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {vehicles.length > 0 && (
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">車種</label>
+                  <select
+                    value={dropoffVehicleId}
+                    onChange={(e) => setDropoffVehicleId(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
+                  >
+                    <option value="">未選択</option>
+                    {vehicles.map((v) => (
+                      <option key={v.id} value={v.id}>{v.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
             <p className="text-xs text-gray-400 mt-1">※ 自宅到着時間を入力すると事務所出発時間を10分前で自動入力します</p>
           </div>

@@ -63,6 +63,38 @@ export default async function RecordPage({
     .eq('unit_id', unit)
     .single()
 
+  // ドライバー・車種一覧
+  const { data: staffMembersRaw } = await supabase
+    .from('staff_members')
+    .select('id, name, role')
+    .order('name')
+  const staffMembers = (staffMembersRaw ?? []) as { id: string; name: string; role: string }[]
+
+  const { data: vehiclesRaw } = await supabase
+    .from('transport_vehicles')
+    .select('id, name')
+    .order('name')
+  const vehicles = (vehiclesRaw ?? []) as { id: string; name: string }[]
+
+  // この子の当日の送迎スケジュール（ドライバー・車種の初期値に使用）
+  const { data: transportDetailsRaw } = await supabase
+    .from('transport_details')
+    .select('id, transport_schedules!inner(direction, vehicle_id, driver_member_id, date)')
+    .eq('child_id', childId)
+    .eq('transport_schedules.date', date)
+  const transportScheduleByDirection: Record<string, { vehicle_id: string | null; driver_member_id: string | null }> = {}
+  type SchedRow = { direction: string; vehicle_id: string | null; driver_member_id: string | null; date: string }
+  for (const td of transportDetailsRaw ?? []) {
+    const raw = td.transport_schedules
+    const sched: SchedRow | null = Array.isArray(raw) ? (raw[0] as SchedRow ?? null) : (raw as unknown as SchedRow | null)
+    if (sched && !transportScheduleByDirection[sched.direction]) {
+      transportScheduleByDirection[sched.direction] = {
+        vehicle_id: sched.vehicle_id,
+        driver_member_id: sched.driver_member_id,
+      }
+    }
+  }
+
   // 服薬情報（有効なもの）
   const { data: medicationsRaw } = await supabase
     .from('child_medications')
@@ -123,6 +155,9 @@ export default async function RecordPage({
       isSchoolHoliday={isSchoolHoliday}
       defaultServiceEndTime={defaultServiceEndTime}
       holidayServiceEndTime={holidayServiceEndTime}
+      staffMembers={staffMembers}
+      vehicles={vehicles}
+      transportScheduleByDirection={transportScheduleByDirection}
     />
   )
 }
