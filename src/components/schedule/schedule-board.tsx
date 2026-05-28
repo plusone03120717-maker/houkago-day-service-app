@@ -164,13 +164,18 @@ function buildEvents(
     const childNames = c.schedule_event_children?.length
       ? c.schedule_event_children.map((ec) => ec.children?.name).filter(Boolean) as string[]
       : c.children?.name ? [c.children.name] : []
+    const staffNames = (c.schedule_event_staff ?? []).map((es) => es.users?.name).filter(Boolean) as string[]
+    const subtitleParts = [
+      childNames.length ? childNames.join('・') : '',
+      staffNames.length ? `担当: ${staffNames.join('・')}` : '',
+    ].filter(Boolean)
     events.push({
       id: `custom-${c.id}`,
       date: c.event_date,
       startTime: c.start_time?.slice(0, 5) ?? null,
       endTime: c.end_time?.slice(0, 5) ?? null,
       title: c.title,
-      subtitle: childNames.join('・') || undefined,
+      subtitle: subtitleParts.join(' / ') || undefined,
       type,
       color: col.bg,
       textColor: col.text,
@@ -238,6 +243,7 @@ export function ScheduleBoard({
     all_day: false,
     note: '',
     child_ids: [] as string[],
+    staff_ids: [] as string[],
   })
 
   const allEvents = buildEvents(
@@ -281,9 +287,14 @@ export function ScheduleBoard({
         addForm.child_ids.map((cid) => ({ event_id: newEvent.id, child_id: cid }))
       )
     }
+    if (newEvent && addForm.staff_ids.length > 0) {
+      await supabase.from('schedule_event_staff').insert(
+        addForm.staff_ids.map((sid) => ({ event_id: newEvent.id, staff_id: sid }))
+      )
+    }
     setSaving(false)
     setShowAddForm(false)
-    setAddForm({ title: '', event_type: 'other', event_date: date, start_time: '', end_time: '', all_day: false, note: '', child_ids: [] })
+    setAddForm({ title: '', event_type: 'other', event_date: date, start_time: '', end_time: '', all_day: false, note: '', child_ids: [], staff_ids: [] })
     startTransition(() => router.refresh())
   }
 
@@ -420,6 +431,44 @@ export function ScheduleBoard({
               <option value="">児童を追加...</option>
               {children.filter((c) => !addForm.child_ids.includes(c.id)).map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          {/* 担当スタッフ（複数選択可） */}
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">担当スタッフ（複数選択可）</label>
+            {addForm.staff_ids.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {addForm.staff_ids.map((sid) => {
+                  const staff = users.find((u) => u.id === sid)
+                  return staff ? (
+                    <span key={sid} className="flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-full text-xs font-medium">
+                      {staff.name}
+                      <button
+                        type="button"
+                        onClick={() => setAddForm({ ...addForm, staff_ids: addForm.staff_ids.filter((id) => id !== sid) })}
+                        className="hover:text-indigo-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ) : null
+                })}
+              </div>
+            )}
+            <select
+              value=""
+              onChange={(e) => {
+                const sid = e.target.value
+                if (sid && !addForm.staff_ids.includes(sid)) {
+                  setAddForm({ ...addForm, staff_ids: [...addForm.staff_ids, sid] })
+                }
+              }}
+              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="">スタッフを追加...</option>
+              {users.filter((u) => !addForm.staff_ids.includes(u.id)).map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
               ))}
             </select>
           </div>
