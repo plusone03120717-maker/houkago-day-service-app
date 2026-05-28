@@ -579,8 +579,33 @@ function timeToPx(time: string): number {
 }
 
 function durationPx(start: string, end: string | null): number {
-  if (!end) return 28
-  return Math.max(28, ((toMin(end) - toMin(start)) / 60) * HOUR_HEIGHT)
+  if (!end) return 44
+  return Math.max(44, ((toMin(end) - toMin(start)) / 60) * HOUR_HEIGHT)
+}
+
+type ChildEntry = { name: string; startTime: string | null; endTime: string | null }
+
+/** 利用者ブロックの衝突検出レイアウト */
+function layoutChildSchedules(items: ChildEntry[]): { item: ChildEntry; leftPct: number; widthPct: number }[] {
+  const withTime = items.filter((c) => c.startTime)
+  if (withTime.length === 0) return []
+  const sorted = [...withTime].sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))
+  const colEnds: number[] = []
+  const result: { item: ChildEntry; col: number }[] = []
+  for (const item of sorted) {
+    const s = toMin(item.startTime!)
+    const e = item.endTime ? toMin(item.endTime) : s + 60
+    let col = colEnds.findIndex((end) => end <= s)
+    if (col === -1) { col = colEnds.length; colEnds.push(e) }
+    else colEnds[col] = e
+    result.push({ item, col })
+  }
+  const total = Math.max(1, colEnds.length)
+  return result.map(({ item, col }) => ({
+    item,
+    leftPct: (col / total) * 100,
+    widthPct: 100 / total,
+  }))
 }
 
 /** 重複イベントを横並びにレイアウトする */
@@ -691,18 +716,17 @@ function DayView({ date, events, transportSchedules, onDeleteCustom }: {
 
         {/* 列1: 利用者 */}
         <TimelineColumn label="利用者" headerCls="bg-yellow-50 text-yellow-700 border-yellow-100" totalHeight={totalHeight}>
-          {childSchedules.map((child, idx) => {
-            if (!child.startTime) return null
-            const top = timeToPx(child.startTime)
-            const h   = child.endTime ? durationPx(child.startTime, child.endTime) : 28
+          {layoutChildSchedules(childSchedules).map(({ item: child, leftPct, widthPct }, idx) => {
+            const top = timeToPx(child.startTime!)
+            const h   = child.endTime ? durationPx(child.startTime!, child.endTime) : 44
             return (
               <div
                 key={idx}
-                className="absolute left-1 right-1 rounded px-1 py-0.5 bg-yellow-100 border border-yellow-300 overflow-hidden"
-                style={{ top, height: h }}
+                className="absolute rounded px-1 py-0.5 bg-yellow-100 border border-yellow-300 overflow-hidden"
+                style={{ top, height: h, left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
               >
-                <div className="text-xs font-semibold text-yellow-800 truncate">{child.name}</div>
-                <div className="text-xs text-yellow-600">
+                <div className="text-xs font-semibold text-yellow-800 break-words leading-tight">{child.name}</div>
+                <div className="text-xs text-yellow-600 leading-tight">
                   {child.startTime}{child.endTime ? `〜${child.endTime}` : ''}
                 </div>
               </div>
@@ -710,7 +734,7 @@ function DayView({ date, events, transportSchedules, onDeleteCustom }: {
           })}
           {/* 送迎なしの通所児童を下部に表示 */}
           {attendanceEvent && !transportChildIds.size && (
-            <div className="absolute bottom-0 left-1 right-1 text-xs text-gray-400 truncate">{attendanceEvent.title}</div>
+            <div className="absolute bottom-0 left-1 right-1 text-xs text-gray-400">{attendanceEvent.title}</div>
           )}
         </TimelineColumn>
 
@@ -722,8 +746,8 @@ function DayView({ date, events, transportSchedules, onDeleteCustom }: {
               className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden group border border-white/30', e.color, e.textColor)}
               style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
             >
-              <div className="font-semibold truncate leading-tight">{e.title}</div>
-              {e.subtitle && <div className="opacity-80 truncate text-xs">{e.subtitle}</div>}
+              <div className="font-semibold break-words leading-tight">{e.title}</div>
+              {e.subtitle && <div className="opacity-80 break-words text-xs leading-tight">{e.subtitle}</div>}
               <div className="opacity-70 text-xs">{e.startTime}</div>
             </div>
           ))}
@@ -740,8 +764,8 @@ function DayView({ date, events, transportSchedules, onDeleteCustom }: {
               className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden group border border-white/30', e.color, e.textColor)}
               style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
             >
-              <div className="font-semibold truncate leading-tight">{e.title}</div>
-              {e.subtitle && <div className="opacity-80 truncate text-xs">{e.subtitle}</div>}
+              <div className="font-semibold break-words leading-tight">{e.title}</div>
+              {e.subtitle && <div className="opacity-80 break-words text-xs leading-tight">{e.subtitle}</div>}
               <div className="opacity-70 text-xs">{e.startTime}{e.endTime ? `〜${e.endTime}` : ''}</div>
               {e.id.startsWith('custom-') && (
                 <button onClick={() => onDeleteCustom(e.id)} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -763,9 +787,9 @@ function DayView({ date, events, transportSchedules, onDeleteCustom }: {
               className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden border border-white/30', e.color, e.textColor)}
               style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
             >
-              <div className="font-semibold truncate leading-tight">{e.title}</div>
+              <div className="font-semibold break-words leading-tight">{e.title}</div>
               <div className="opacity-70 text-xs">{e.startTime}〜{e.endTime ?? ''}</div>
-              {e.subtitle && <div className="opacity-80 truncate text-xs">{e.subtitle}</div>}
+              {e.subtitle && <div className="opacity-80 break-words text-xs leading-tight">{e.subtitle}</div>}
             </div>
           ))}
         </TimelineColumn>
