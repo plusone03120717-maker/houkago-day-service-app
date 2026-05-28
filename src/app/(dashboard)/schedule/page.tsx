@@ -69,7 +69,7 @@ export default async function SchedulePage({
   // ─── カスタムイベント ────────────────────────────────────────────────────
   const { data: customEventsRaw } = await supabase
     .from('schedule_events')
-    .select('id, title, event_type, event_date, start_time, end_time, all_day, note, child_id, children(id, name)')
+    .select('id, title, event_type, event_date, start_time, end_time, all_day, note, child_id, children(id, name), schedule_event_children(child_id, children(id, name))')
     .gte('event_date', monthStart)
     .lte('event_date', monthEnd)
     .order('event_date')
@@ -169,4 +169,5 @@ export type CustomEventRaw = {
   note: string | null
   child_id: string | null
   children: { id: string; name: string } | null
+  schedule_event_children: { child_id: string; children: { id: string; name: string } | null }[]
 }

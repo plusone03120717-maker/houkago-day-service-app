@@ -160,13 +160,17 @@ function buildEvents(
   for (const c of custom) {
     const type = c.event_type === 'monitoring' ? 'monitoring_event' : (c.event_type as CalendarEvent['type'])
     const col = EVENT_COLORS[type] ?? EVENT_COLORS.other
+    // ジャンクションテーブルの子ども名を優先、なければ child_id の名前
+    const childNames = c.schedule_event_children?.length
+      ? c.schedule_event_children.map((ec) => ec.children?.name).filter(Boolean) as string[]
+      : c.children?.name ? [c.children.name] : []
     events.push({
       id: `custom-${c.id}`,
       date: c.event_date,
       startTime: c.start_time?.slice(0, 5) ?? null,
       endTime: c.end_time?.slice(0, 5) ?? null,
       title: c.title,
-      subtitle: c.children?.name,
+      subtitle: childNames.join('・') || undefined,
       type,
       color: col.bg,
       textColor: col.text,
@@ -233,7 +237,7 @@ export function ScheduleBoard({
     end_time: '',
     all_day: false,
     note: '',
-    child_id: '',
+    child_ids: [] as string[],
   })
 
   const allEvents = buildEvents(
@@ -261,7 +265,7 @@ export function ScheduleBoard({
   async function handleSaveEvent() {
     if (!addForm.title || !addForm.event_date) return
     setSaving(true)
-    await supabase.from('schedule_events').insert({
+    const { data: newEvent } = await supabase.from('schedule_events').insert({
       facility_id: facilityId,
       title: addForm.title,
       event_type: addForm.event_type === 'monitoring_event' ? 'monitoring' : addForm.event_type,
@@ -270,11 +274,16 @@ export function ScheduleBoard({
       end_time: addForm.all_day ? null : (addForm.end_time || null),
       all_day: addForm.all_day,
       note: addForm.note || null,
-      child_id: (addForm.event_type === 'monitoring_event' && addForm.child_id) ? addForm.child_id : null,
-    })
+      child_id: addForm.child_ids[0] ?? null,
+    }).select('id').single()
+    if (newEvent && addForm.child_ids.length > 0) {
+      await supabase.from('schedule_event_children').insert(
+        addForm.child_ids.map((cid) => ({ event_id: newEvent.id, child_id: cid }))
+      )
+    }
     setSaving(false)
     setShowAddForm(false)
-    setAddForm({ title: '', event_type: 'other', event_date: date, start_time: '', end_time: '', all_day: false, note: '', child_id: '' })
+    setAddForm({ title: '', event_type: 'other', event_date: date, start_time: '', end_time: '', all_day: false, note: '', child_ids: [] })
     startTransition(() => router.refresh())
   }
 
@@ -375,21 +384,44 @@ export function ScheduleBoard({
                 className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
-            {addForm.event_type === 'monitoring_event' && (
-              <div className="col-span-2 sm:col-span-1">
-                <label className="text-xs text-gray-500 mb-1 block">対象児童</label>
-                <select
-                  value={addForm.child_id}
-                  onChange={(e) => setAddForm({ ...addForm, child_id: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="">選択してください</option>
-                  {children.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+          </div>
+          {/* 対象児童（全種別・複数選択可） */}
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">対象児童（複数選択可）</label>
+            {addForm.child_ids.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {addForm.child_ids.map((cid) => {
+                  const child = children.find((c) => c.id === cid)
+                  return child ? (
+                    <span key={cid} className="flex items-center gap-1 px-2 py-0.5 bg-teal-100 text-teal-800 rounded-full text-xs font-medium">
+                      {child.name}
+                      <button
+                        type="button"
+                        onClick={() => setAddForm({ ...addForm, child_ids: addForm.child_ids.filter((id) => id !== cid) })}
+                        className="hover:text-teal-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ) : null
+                })}
               </div>
             )}
+            <select
+              value=""
+              onChange={(e) => {
+                const cid = e.target.value
+                if (cid && !addForm.child_ids.includes(cid)) {
+                  setAddForm({ ...addForm, child_ids: [...addForm.child_ids, cid] })
+                }
+              }}
+              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="">児童を追加...</option>
+              {children.filter((c) => !addForm.child_ids.includes(c.id)).map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
           </div>
           <div className="flex items-center gap-4 flex-wrap">
             <label className="flex items-center gap-2 cursor-pointer text-sm">
