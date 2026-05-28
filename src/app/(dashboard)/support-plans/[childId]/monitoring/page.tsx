@@ -8,6 +8,7 @@ import { ArrowLeft, TrendingUp } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { MonitoringRecordForm } from '@/components/support-plans/monitoring-record-form'
 import { MonitoringRecordEditCard } from '@/components/support-plans/monitoring-record-edit-card'
+import { MonitoringScheduleSection, type MonitoringSchedule } from '@/components/support-plans/monitoring-schedule-section'
 
 type SupportPlan = {
   id: string
@@ -68,6 +69,22 @@ export default async function MonitoringPage({
     .order('plan_date', { ascending: false })
   const plans = (plansRaw ?? []) as unknown as SupportPlan[]
 
+  // モニタリング予定（schedule_events から）
+  const { data: schedulesRaw } = await supabase
+    .from('schedule_events')
+    .select('id, event_date, start_time, end_time, note')
+    .eq('child_id', childId)
+    .eq('event_type', 'monitoring')
+    .order('event_date')
+  const monitoringSchedules = (schedulesRaw ?? []) as MonitoringSchedule[]
+
+  // 施設ID（予定追加時に使用）
+  const { data: facilityRaw } = await supabase
+    .from('facilities')
+    .select('id')
+    .limit(1)
+    .single()
+
   // 全モニタリング記録を取得（支援計画の有無に関わらず）
   const { data: recordsRaw } = await supabase
     .from('monitoring_records')
@@ -100,6 +117,18 @@ export default async function MonitoringPage({
           <p className="text-sm text-gray-500 mt-0.5">{child.name}</p>
         </div>
       </div>
+
+      {/* モニタリング予定 */}
+      <Card>
+        <CardContent className="pt-4 pb-4">
+          <MonitoringScheduleSection
+            childId={childId}
+            facilityId={facilityRaw?.id ?? null}
+            schedules={monitoringSchedules}
+            readOnly={isReadOnly}
+          />
+        </CardContent>
+      </Card>
 
       {/* 進捗タイムライン */}
       {records.length > 0 && (
