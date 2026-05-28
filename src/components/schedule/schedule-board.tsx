@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Clock, Plus, X, Check } from 'lucide-react'
@@ -231,6 +231,7 @@ export function ScheduleBoard({
   const router = useRouter()
   const [, startTransition] = useTransition()
   const supabase = createClient()
+  const addFormRef = useRef<HTMLDivElement>(null)
 
   const [showAddForm, setShowAddForm] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -305,6 +306,12 @@ export function ScheduleBoard({
     startTransition(() => router.refresh())
   }
 
+  function handleTimeClick(startTime: string) {
+    setAddForm((f) => ({ ...f, start_time: startTime, all_day: false, event_date: date }))
+    setShowAddForm(true)
+    setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50)
+  }
+
   const headerLabel = view === 'day'
     ? `${y}年${m}月${d}日`
     : view === 'week'
@@ -358,7 +365,7 @@ export function ScheduleBoard({
 
       {/* イベント追加フォーム */}
       {showAddForm && (
-        <div className="bg-white border border-indigo-200 rounded-xl p-4 space-y-3 shadow-sm">
+        <div ref={addFormRef} className="bg-white border border-indigo-200 rounded-xl p-4 space-y-3 shadow-sm">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-indigo-800">イベントを追加</p>
             <button onClick={() => setShowAddForm(false)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
@@ -536,6 +543,7 @@ export function ScheduleBoard({
           events={allEvents.filter((e) => e.date === date)}
           transportSchedules={transportSchedules.filter((t) => t.date === date)}
           onDeleteCustom={handleDeleteCustomEvent}
+          onTimeClick={handleTimeClick}
         />
       )}
       {view === 'week' && (
@@ -632,13 +640,36 @@ function layoutEvents(events: CalendarEvent[]): { event: CalendarEvent; leftPct:
   }))
 }
 
-function DayView({ date, events, transportSchedules, onDeleteCustom }: {
+function DayView({ date, events, transportSchedules, onDeleteCustom, onTimeClick }: {
   date: string
   events: CalendarEvent[]
   transportSchedules: TransportScheduleRaw[]
   onDeleteCustom: (id: string) => void
+  onTimeClick: (startTime: string) => void
 }) {
+  const [hoverY, setHoverY] = useState<number | null>(null)
   const totalHeight = (HOUR_END - HOUR_START) * HOUR_HEIGHT
+
+  function yToTime(y: number): string {
+    const clamped = Math.max(0, Math.min(y, totalHeight - 1))
+    const totalMins = HOUR_START * 60 + (clamped / HOUR_HEIGHT) * 60
+    const snapped = Math.round(totalMins / 30) * 30
+    const h = Math.min(HOUR_END - 1, Math.floor(snapped / 60))
+    const m = snapped % 60
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  }
+
+  function handleColMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    setHoverY(e.clientY - rect.top - 32)  // 32 = column header height
+  }
+
+  function handleColClick(e: React.MouseEvent<HTMLDivElement>) {
+    if ((e.target as HTMLElement).closest('[data-event]')) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const y = e.clientY - rect.top - 32
+    if (y >= 0) onTimeClick(yToTime(y))
+  }
 
   // ── 列1: 利用者 ── 送迎データから子どもごとの利用時間を組み立てる
   const childMap = new Map<string, { name: string; startTime: string | null; endTime: string | null }>()
@@ -696,7 +727,7 @@ function DayView({ date, events, transportSchedules, onDeleteCustom }: {
         </div>
       )}
 
-      {/* 3列タイムライン */}
+      {/* タイムライン */}
       <div className="flex overflow-x-auto">
         {/* 時刻軸 */}
         <div className="w-12 shrink-0 border-r border-gray-100">
@@ -714,85 +745,109 @@ function DayView({ date, events, transportSchedules, onDeleteCustom }: {
           </div>
         </div>
 
-        {/* 列1: 利用者 */}
-        <TimelineColumn label="利用者" headerCls="bg-yellow-50 text-yellow-700 border-yellow-100" totalHeight={totalHeight}>
-          {layoutChildSchedules(childSchedules).map(({ item: child, leftPct, widthPct }, idx) => {
-            const top = timeToPx(child.startTime!)
-            const h   = child.endTime ? durationPx(child.startTime!, child.endTime) : 44
-            return (
-              <div
-                key={idx}
-                className="absolute rounded px-1 py-0.5 bg-yellow-100 border border-yellow-300 overflow-hidden"
-                style={{ top, height: h, left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
-              >
-                <div className="text-xs font-semibold text-yellow-800 break-words leading-tight">{child.name}</div>
-                <div className="text-xs text-yellow-600 leading-tight">
-                  {child.startTime}{child.endTime ? `〜${child.endTime}` : ''}
+        {/* 全列ラッパー（ホバーライン・クリック） */}
+        <div
+          className="flex flex-1 relative cursor-pointer"
+          onMouseMove={handleColMouseMove}
+          onMouseLeave={() => setHoverY(null)}
+          onClick={handleColClick}
+        >
+          {/* ホバーライン */}
+          {hoverY !== null && hoverY >= 0 && hoverY <= totalHeight && (
+            <div
+              className="absolute left-0 right-0 pointer-events-none z-20 flex items-center"
+              style={{ top: hoverY + 32 }}
+            >
+              <div className="flex-1 border-t-2 border-indigo-400/70" />
+              <span className="shrink-0 ml-1 text-[10px] bg-indigo-500 text-white px-1.5 py-0.5 rounded leading-4 select-none">
+                {yToTime(hoverY)}
+              </span>
+            </div>
+          )}
+
+          {/* 列1: 利用者 */}
+          <TimelineColumn label="利用者" headerCls="bg-yellow-50 text-yellow-700 border-yellow-100" totalHeight={totalHeight}>
+            {layoutChildSchedules(childSchedules).map(({ item: child, leftPct, widthPct }, idx) => {
+              const top = timeToPx(child.startTime!)
+              const h   = child.endTime ? durationPx(child.startTime!, child.endTime) : 44
+              return (
+                <div
+                  key={idx}
+                  data-event="1"
+                  className="absolute rounded px-1 py-0.5 bg-yellow-100 border border-yellow-300 overflow-hidden"
+                  style={{ top, height: h, left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
+                >
+                  <div className="text-xs font-semibold text-yellow-800 break-words leading-tight">{child.name}</div>
+                  <div className="text-xs text-yellow-600 leading-tight">
+                    {child.startTime}{child.endTime ? `〜${child.endTime}` : ''}
+                  </div>
                 </div>
+              )
+            })}
+            {attendanceEvent && !transportChildIds.size && (
+              <div className="absolute bottom-0 left-1 right-1 text-xs text-gray-400">{attendanceEvent.title}</div>
+            )}
+          </TimelineColumn>
+
+          {/* 列2: 送迎 */}
+          <TimelineColumn label="送迎" headerCls="bg-blue-50 text-blue-700 border-blue-100" totalHeight={totalHeight}>
+            {col2Events.map(({ event: e, leftPct, widthPct }) => (
+              <div
+                key={e.id}
+                data-event="1"
+                className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden group border border-white/30', e.color, e.textColor)}
+                style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
+              >
+                <div className="font-semibold break-words leading-tight">{e.title}</div>
+                {e.subtitle && <div className="opacity-80 break-words text-xs leading-tight">{e.subtitle}</div>}
+                <div className="opacity-70 text-xs">{e.startTime}</div>
               </div>
-            )
-          })}
-          {/* 送迎なしの通所児童を下部に表示 */}
-          {attendanceEvent && !transportChildIds.size && (
-            <div className="absolute bottom-0 left-1 right-1 text-xs text-gray-400">{attendanceEvent.title}</div>
-          )}
-        </TimelineColumn>
+            ))}
+            {col2Events.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-300 pointer-events-none">送迎なし</div>
+            )}
+          </TimelineColumn>
 
-        {/* 列2: 送迎 */}
-        <TimelineColumn label="送迎" headerCls="bg-blue-50 text-blue-700 border-blue-100" totalHeight={totalHeight}>
-          {col2Events.map(({ event: e, leftPct, widthPct }) => (
-            <div
-              key={e.id}
-              className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden group border border-white/30', e.color, e.textColor)}
-              style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
-            >
-              <div className="font-semibold break-words leading-tight">{e.title}</div>
-              {e.subtitle && <div className="opacity-80 break-words text-xs leading-tight">{e.subtitle}</div>}
-              <div className="opacity-70 text-xs">{e.startTime}</div>
-            </div>
-          ))}
-          {col2Events.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-300">送迎なし</div>
-          )}
-        </TimelineColumn>
+          {/* 列3: 予定・行事 */}
+          <TimelineColumn label="予定・行事" headerCls="bg-teal-50 text-teal-700 border-teal-100" totalHeight={totalHeight}>
+            {col3Events.map(({ event: e, leftPct, widthPct }) => (
+              <div
+                key={e.id}
+                data-event="1"
+                className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden group border border-white/30', e.color, e.textColor)}
+                style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
+              >
+                <div className="font-semibold break-words leading-tight">{e.title}</div>
+                {e.subtitle && <div className="opacity-80 break-words text-xs leading-tight">{e.subtitle}</div>}
+                <div className="opacity-70 text-xs">{e.startTime}{e.endTime ? `〜${e.endTime}` : ''}</div>
+                {e.id.startsWith('custom-') && (
+                  <button onClick={(ev) => { ev.stopPropagation(); onDeleteCustom(e.id) }} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            ))}
+            {col3Events.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-300 pointer-events-none">予定なし</div>
+            )}
+          </TimelineColumn>
 
-        {/* 列3: 予定・行事（モニタリング・会議・外部等） */}
-        <TimelineColumn label="予定・行事" headerCls="bg-teal-50 text-teal-700 border-teal-100" totalHeight={totalHeight}>
-          {col3Events.map(({ event: e, leftPct, widthPct }) => (
-            <div
-              key={e.id}
-              className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden group border border-white/30', e.color, e.textColor)}
-              style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
-            >
-              <div className="font-semibold break-words leading-tight">{e.title}</div>
-              {e.subtitle && <div className="opacity-80 break-words text-xs leading-tight">{e.subtitle}</div>}
-              <div className="opacity-70 text-xs">{e.startTime}{e.endTime ? `〜${e.endTime}` : ''}</div>
-              {e.id.startsWith('custom-') && (
-                <button onClick={() => onDeleteCustom(e.id)} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          ))}
-          {col3Events.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-300">予定なし</div>
-          )}
-        </TimelineColumn>
-
-        {/* 列4: スタッフ */}
-        <TimelineColumn label="スタッフ" headerCls="bg-indigo-50 text-indigo-700 border-indigo-100" totalHeight={totalHeight} isLast>
-          {col4Events.map(({ event: e, leftPct, widthPct }) => (
-            <div
-              key={e.id}
-              className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden border border-white/30', e.color, e.textColor)}
-              style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
-            >
-              <div className="font-semibold break-words leading-tight">{e.title}</div>
-              <div className="opacity-70 text-xs">{e.startTime}〜{e.endTime ?? ''}</div>
-              {e.subtitle && <div className="opacity-80 break-words text-xs leading-tight">{e.subtitle}</div>}
-            </div>
-          ))}
-        </TimelineColumn>
+          {/* 列4: スタッフ */}
+          <TimelineColumn label="スタッフ" headerCls="bg-indigo-50 text-indigo-700 border-indigo-100" totalHeight={totalHeight} isLast>
+            {col4Events.map(({ event: e, leftPct, widthPct }) => (
+              <div
+                key={e.id}
+                data-event="1"
+                className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden border border-white/30', e.color, e.textColor)}
+                style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
+              >
+                <div className="font-semibold break-words leading-tight">{e.title}</div>
+                <div className="opacity-70 text-xs">{e.startTime}〜{e.endTime ?? ''}</div>
+                {e.subtitle && <div className="opacity-80 break-words text-xs leading-tight">{e.subtitle}</div>}
+              </div>
+            ))}
+          </TimelineColumn>
+        </div>
       </div>
     </div>
   )
@@ -813,8 +868,15 @@ function TimelineColumn({ label, headerCls, totalHeight, children, isLast }: {
         {label}
       </div>
       <div className="relative" style={{ height: totalHeight }}>
-        {Array.from({ length: HOUR_END - HOUR_START }, (_, i) => (
-          <div key={i} className="absolute left-0 right-0 border-t border-gray-50" style={{ top: i * HOUR_HEIGHT }} />
+        {Array.from({ length: (HOUR_END - HOUR_START) * 2 }, (_, i) => (
+          <div
+            key={i}
+            className={cn(
+              'absolute left-0 right-0',
+              i % 2 === 0 ? 'border-t border-gray-100' : 'border-t border-gray-50'
+            )}
+            style={{ top: i * (HOUR_HEIGHT / 2) }}
+          />
         ))}
         {children}
       </div>
