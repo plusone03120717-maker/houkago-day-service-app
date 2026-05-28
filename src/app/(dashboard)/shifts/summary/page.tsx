@@ -64,8 +64,8 @@ function calcMinutes(
       ? Math.max(0, toMinutes(breakEnd) - toMinutes(breakStart))
       : 0
   const afterBreak = Math.max(0, diff - breakMins)
-  // 中抜け控除後に5時間超なら休憩1時間を自動控除
-  const lunchDeduction = afterBreak > 300 ? 60 : 0
+  // 中抜け控除後に5時間以上なら休憩1時間を自動控除
+  const lunchDeduction = afterBreak >= 300 ? 60 : 0
   return Math.max(0, afterBreak - lunchDeduction)
 }
 

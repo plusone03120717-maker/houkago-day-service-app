@@ -158,9 +158,9 @@ function buildDayRecords(records: TimeRecord[], shiftsMap: Map<string, ShiftEntr
           break_minutes = Math.max(0, (beH * 60 + beM) - (bsH * 60 + bsM))
         }
 
-        // 中抜け控除後に5時間超なら休憩1時間を自動控除
+        // 中抜け控除後に5時間以上なら休憩1時間を自動控除
         const afterBreak = Math.max(0, diff - break_minutes)
-        lunch_deduction = afterBreak > 300 ? 60 : 0
+        lunch_deduction = afterBreak >= 300 ? 60 : 0
         const netDiff = Math.max(0, afterBreak - lunch_deduction)
         hours = diff > 0 ? Math.round((netDiff / 60) * 100) / 100 : 0
       }
