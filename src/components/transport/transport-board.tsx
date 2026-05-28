@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   Car,
   ChevronLeft,
@@ -427,6 +426,7 @@ function ScheduleCard({
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [driverSaving, setDriverSaving] = useState(false)
+  const [vehicleSaving, setVehicleSaving] = useState(false)
   const [showCreator, setShowCreator] = useState(false)
   const [showAddPanel, setShowAddPanel] = useState(false)
 
@@ -465,6 +465,17 @@ function ScheduleCard({
       .update({ driver_member_id: driverId || null })
       .eq('id', schedule.id)
     setDriverSaving(false)
+    startTransition(() => router.refresh())
+  }
+
+  const handleVehicleChange = async (vehicleId: string) => {
+    if (!schedule) return
+    setVehicleSaving(true)
+    await supabase
+      .from('transport_schedules')
+      .update({ vehicle_id: vehicleId || null })
+      .eq('id', schedule.id)
+    setVehicleSaving(false)
     startTransition(() => router.refresh())
   }
 
@@ -513,11 +524,6 @@ function ScheduleCard({
               {schedule.transport_details.length}名
             </span>
           )}
-          {schedule?.transport_vehicles && (
-            <Badge variant="secondary" className="text-xs">
-              {schedule.transport_vehicles.name}
-            </Badge>
-          )}
           {/* 児童追加・便削除ボタン（スケジュールがある場合のみ表示） */}
           {schedule && (
             <>
@@ -559,20 +565,36 @@ function ScheduleCard({
               />
             )}
 
-            {/* ドライバー選択 */}
-            <div className="flex items-center gap-2">
-              <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-              <select
-                value={schedule.driver_member_id ?? ''}
-                onChange={(e) => handleDriverChange(e.target.value)}
-                disabled={driverSaving}
-                className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
-              >
-                <option value="">ドライバー未設定</option>
-                {drivers.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
+            {/* ドライバー・車種選択 */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                <select
+                  value={schedule.driver_member_id ?? ''}
+                  onChange={(e) => handleDriverChange(e.target.value)}
+                  disabled={driverSaving}
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                >
+                  <option value="">ドライバー未設定</option>
+                  {drivers.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Car className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                <select
+                  value={schedule.transport_vehicles?.id ?? ''}
+                  onChange={(e) => handleVehicleChange(e.target.value)}
+                  disabled={vehicleSaving}
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                >
+                  <option value="">車種未設定</option>
+                  {vehicles.map((v) => (
+                    <option key={v.id} value={v.id}>{v.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* ルートヘッダー */}
