@@ -31,6 +31,8 @@ export type ShiftEntry = {
   shift_type: string
   start_time: string | null
   end_time: string | null
+  break_start_time: string | null
+  break_end_time: string | null
 }
 
 export type OvertimeRequest = {
@@ -53,6 +55,7 @@ type DayRecord = {
   rounded_in: string | null
   rounded_out: string | null
   hours: number | null
+  break_minutes: number
 }
 
 type EditState = { recordId: string; field: 'clock_in' | 'clock_out'; value: string }
@@ -120,7 +123,7 @@ function getFirstDayOfNextMonth(ym: string): string {
 
 // ─── build day records ────────────────────────────────────────────────────────
 
-function buildDayRecords(records: TimeRecord[]): DayRecord[] {
+function buildDayRecords(records: TimeRecord[], shiftsMap: Map<string, ShiftEntry> = new Map()): DayRecord[] {
   const byDate = new Map<string, { clock_in: TimeRecord | null; clock_out: TimeRecord | null }>()
 
   for (const r of records) {
@@ -137,15 +140,26 @@ function buildDayRecords(records: TimeRecord[]): DayRecord[] {
       let hours: number | null = null
       let rounded_in: string | null = null
       let rounded_out: string | null = null
+      let break_minutes = 0
       if (clock_in) rounded_in = roundInUp30(clock_in.recorded_at).time
       if (clock_out) rounded_out = roundOutDown30(clock_out.recorded_at).time
       if (clock_in && clock_out) {
         const inM = roundInUp30(clock_in.recorded_at).minutes
         const outM = roundOutDown30(clock_out.recorded_at).minutes
         const diff = outM - inM
-        hours = diff > 0 ? Math.round((diff / 60) * 100) / 100 : 0
+
+        // シフトに中抜けが設定されていれば差し引く
+        const shift = shiftsMap.get(date)
+        if (shift?.break_start_time && shift?.break_end_time) {
+          const [bsH, bsM] = shift.break_start_time.slice(0, 5).split(':').map(Number)
+          const [beH, beM] = shift.break_end_time.slice(0, 5).split(':').map(Number)
+          break_minutes = Math.max(0, (beH * 60 + beM) - (bsH * 60 + bsM))
+        }
+
+        const netDiff = Math.max(0, diff - break_minutes)
+        hours = diff > 0 ? Math.round((netDiff / 60) * 100) / 100 : 0
       }
-      return { date, clock_in, clock_out, rounded_in, rounded_out, hours }
+      return { date, clock_in, clock_out, rounded_in, rounded_out, hours, break_minutes }
     })
 }
 
@@ -231,7 +245,7 @@ export function TimecardBoard({
     if (!userId) { setShifts([]); setOvertimeRequests([]); return }
 
     const [{ data: sData }, { data: oData }] = await Promise.all([
-      supabase.from('staff_shifts').select('id, date, shift_type, start_time, end_time')
+      supabase.from('staff_shifts').select('id, date, shift_type, start_time, end_time, break_start_time, break_end_time')
         .eq('staff_id', userId).gte('date', monthStart).lte('date', monthEnd),
       supabase.from('overtime_requests')
         .select('id, date, scheduled_end_time, actual_end_time, overtime_minutes, request_type, status, note')
@@ -422,7 +436,7 @@ export function TimecardBoard({
 
   // ─── derived values ────────────────────────────────────────────────────────
 
-  const dayRecords = buildDayRecords(records.filter((r) => r.staff_member_id === selectedStaffId))
+  const dayRecords = buildDayRecords(records.filter((r) => r.staff_member_id === selectedStaffId), shiftsMap)
   const missingClockOutCount = dayRecords.filter((d) => d.clock_in !== null && d.clock_out === null).length
   const missingClockInCount = dayRecords.filter((d) => d.clock_out !== null && d.clock_in === null).length
   const totalHours = dayRecords.reduce((sum, d) => sum + (d.hours ?? 0), 0)
@@ -727,6 +741,13 @@ export function TimecardBoard({
                             <span>
                               {day.hours}h
                               <span className="ml-1 text-xs text-gray-400">({day.rounded_in}〜{day.rounded_out})</span>
+                              {day.break_minutes > 0 && (
+                                <span className="ml-1 text-xs text-gray-400">
+                                  中抜け{day.break_minutes >= 60
+                                    ? `${Math.floor(day.break_minutes / 60)}h${day.break_minutes % 60 > 0 ? `${day.break_minutes % 60}m` : ''}`
+                                    : `${day.break_minutes}m`}控除
+                                </span>
+                              )}
                             </span>
                           ) : '—'}
                         </td>
