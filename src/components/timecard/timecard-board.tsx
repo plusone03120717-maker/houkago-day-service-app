@@ -56,6 +56,7 @@ type DayRecord = {
   rounded_out: string | null
   hours: number | null
   break_minutes: number
+  lunch_deduction: number
 }
 
 type EditState = { recordId: string; field: 'clock_in' | 'clock_out'; value: string }
@@ -141,6 +142,7 @@ function buildDayRecords(records: TimeRecord[], shiftsMap: Map<string, ShiftEntr
       let rounded_in: string | null = null
       let rounded_out: string | null = null
       let break_minutes = 0
+      let lunch_deduction = 0
       if (clock_in) rounded_in = roundInUp30(clock_in.recorded_at).time
       if (clock_out) rounded_out = roundOutDown30(clock_out.recorded_at).time
       if (clock_in && clock_out) {
@@ -156,10 +158,13 @@ function buildDayRecords(records: TimeRecord[], shiftsMap: Map<string, ShiftEntr
           break_minutes = Math.max(0, (beH * 60 + beM) - (bsH * 60 + bsM))
         }
 
-        const netDiff = Math.max(0, diff - break_minutes)
+        // 中抜け控除後に5時間超なら休憩1時間を自動控除
+        const afterBreak = Math.max(0, diff - break_minutes)
+        lunch_deduction = afterBreak > 300 ? 60 : 0
+        const netDiff = Math.max(0, afterBreak - lunch_deduction)
         hours = diff > 0 ? Math.round((netDiff / 60) * 100) / 100 : 0
       }
-      return { date, clock_in, clock_out, rounded_in, rounded_out, hours, break_minutes }
+      return { date, clock_in, clock_out, rounded_in, rounded_out, hours, break_minutes, lunch_deduction }
     })
 }
 
@@ -747,6 +752,9 @@ export function TimecardBoard({
                                     ? `${Math.floor(day.break_minutes / 60)}h${day.break_minutes % 60 > 0 ? `${day.break_minutes % 60}m` : ''}`
                                     : `${day.break_minutes}m`}控除
                                 </span>
+                              )}
+                              {day.lunch_deduction > 0 && (
+                                <span className="ml-1 text-xs text-gray-400">休憩1h控除</span>
                               )}
                             </span>
                           ) : '—'}
