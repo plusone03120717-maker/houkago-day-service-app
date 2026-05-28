@@ -535,20 +535,22 @@ function DayView({ date, events, transportSchedules, onDeleteCustom }: {
   const transportChildIds = new Set(childMap.keys())
   const attendanceEvent = events.find((e) => e.type === 'attendance')
 
-  // ── 列2: 送迎 ──
+  // ── 列2: 送迎（送迎のみ）──
   const transportEvents = events.filter(
     (e) => (e.type === 'transport_pickup' || e.type === 'transport_dropoff') && e.startTime
   )
-  // カスタムイベント（会議・外部等）も送迎列に表示
-  const customTimedEvents = events.filter(
-    (e) => !['transport_pickup', 'transport_dropoff', 'shift', 'attendance', 'monitoring'].includes(e.type)
+  const col2Events = layoutEvents(transportEvents)
+
+  // ── 列3: 予定・行事（モニタリング予定・会議・外部機関連絡・その他）──
+  const planTimedEvents = events.filter(
+    (e) => ['monitoring_event', 'meeting', 'external', 'other'].includes(e.type)
       && e.startTime && !e.allDay
   )
-  const col2Events = layoutEvents([...transportEvents, ...customTimedEvents])
+  const col3Events = layoutEvents(planTimedEvents)
 
-  // ── 列3: スタッフシフト ──
+  // ── 列4: スタッフシフト ──
   const shiftEvents = events.filter((e) => e.type === 'shift' && e.startTime)
-  const col3Events  = layoutEvents(shiftEvents)
+  const col4Events  = layoutEvents(shiftEvents)
 
   // ── 終日エリア: 通所予定・モニタリング記録・カスタム終日 ──
   const allDayEvents = events.filter(
@@ -623,6 +625,24 @@ function DayView({ date, events, transportSchedules, onDeleteCustom }: {
               <div className="font-semibold truncate leading-tight">{e.title}</div>
               {e.subtitle && <div className="opacity-80 truncate text-xs">{e.subtitle}</div>}
               <div className="opacity-70 text-xs">{e.startTime}</div>
+            </div>
+          ))}
+          {col2Events.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-300">送迎なし</div>
+          )}
+        </TimelineColumn>
+
+        {/* 列3: 予定・行事（モニタリング・会議・外部等） */}
+        <TimelineColumn label="予定・行事" headerCls="bg-teal-50 text-teal-700 border-teal-100" totalHeight={totalHeight}>
+          {col3Events.map(({ event: e, leftPct, widthPct }) => (
+            <div
+              key={e.id}
+              className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden group border border-white/30', e.color, e.textColor)}
+              style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
+            >
+              <div className="font-semibold truncate leading-tight">{e.title}</div>
+              {e.subtitle && <div className="opacity-80 truncate text-xs">{e.subtitle}</div>}
+              <div className="opacity-70 text-xs">{e.startTime}{e.endTime ? `〜${e.endTime}` : ''}</div>
               {e.id.startsWith('custom-') && (
                 <button onClick={() => onDeleteCustom(e.id)} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                   <X className="h-3 w-3" />
@@ -630,11 +650,14 @@ function DayView({ date, events, transportSchedules, onDeleteCustom }: {
               )}
             </div>
           ))}
+          {col3Events.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-300">予定なし</div>
+          )}
         </TimelineColumn>
 
-        {/* 列3: スタッフ */}
+        {/* 列4: スタッフ */}
         <TimelineColumn label="スタッフ" headerCls="bg-indigo-50 text-indigo-700 border-indigo-100" totalHeight={totalHeight} isLast>
-          {col3Events.map(({ event: e, leftPct, widthPct }) => (
+          {col4Events.map(({ event: e, leftPct, widthPct }) => (
             <div
               key={e.id}
               className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden border border-white/30', e.color, e.textColor)}
