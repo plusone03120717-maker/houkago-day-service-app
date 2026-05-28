@@ -184,6 +184,11 @@ function toMin(t: string): number {
   return h * 60 + (m ?? 0)
 }
 
+// タイムゾーン非依存の日付フォーマット（toISOString はUTC変換でJSTと1日ズレる）
+function localDateStr(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -239,8 +244,7 @@ export function ScheduleBoard({
     if (view === 'day')   nd = new Date(y, m - 1, d + delta)
     else if (view === 'week') nd = new Date(y, m - 1, d + delta * 7)
     else                  nd = new Date(y, m - 1 + delta, 1)
-    const newDate = nd.toISOString().slice(0, 10)
-    startTransition(() => router.push(`/schedule?date=${newDate}&view=${view}`))
+    startTransition(() => router.push(`/schedule?date=${localDateStr(nd)}&view=${view}`))
   }
 
   function setView(v: 'day' | 'week' | 'month') {
@@ -314,7 +318,7 @@ export function ScheduleBoard({
           <button onClick={() => navigate(1)} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50"><ChevronRight className="h-4 w-4" /></button>
           {/* 今日 */}
           <button
-            onClick={() => startTransition(() => router.push(`/schedule?date=${new Date().toISOString().slice(0, 10)}&view=${view}`))}
+            onClick={() => startTransition(() => router.push(`/schedule?date=${localDateStr(new Date())}&view=${view}`))}
             className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50"
           >今日</button>
           {/* 追加 */}
@@ -569,10 +573,10 @@ function WeekView({ anchorDate, events, onDateClick, onDeleteCustom }: {
   const weekDates = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(anchor)
     d.setDate(anchor.getDate() - dow + i)
-    return d.toISOString().slice(0, 10)
+    return localDateStr(d)
   })
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateStr(new Date())
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -647,7 +651,7 @@ function MonthView({ year, month, events, onDateClick }: {
     return `${year}-${String(month).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
   })
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateStr(new Date())
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
