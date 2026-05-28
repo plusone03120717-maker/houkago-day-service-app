@@ -306,6 +306,14 @@ export function ScheduleBoard({
     startTransition(() => router.refresh())
   }
 
+  async function handleUpdateEventTime(rawId: string, startTime: string, endTime: string | null) {
+    await supabase.from('schedule_events').update({
+      start_time: startTime,
+      end_time: endTime,
+    }).eq('id', rawId)
+    startTransition(() => router.refresh())
+  }
+
   function handleTimeClick(startTime: string) {
     setAddForm((f) => ({ ...f, start_time: startTime, all_day: false, event_date: date }))
     setShowAddForm(true)
@@ -544,6 +552,7 @@ export function ScheduleBoard({
           transportSchedules={transportSchedules.filter((t) => t.date === date)}
           onDeleteCustom={handleDeleteCustomEvent}
           onTimeClick={handleTimeClick}
+          onUpdateEvent={handleUpdateEventTime}
         />
       )}
       {view === 'week' && (
@@ -640,14 +649,28 @@ function layoutEvents(events: CalendarEvent[]): { event: CalendarEvent; leftPct:
   }))
 }
 
-function DayView({ date, events, transportSchedules, onDeleteCustom, onTimeClick }: {
+type DragState = {
+  eventId: string
+  rawId: string
+  startMouseY: number
+  eventTopPx: number
+  eventHeightPx: number
+  originalStartTime: string
+  originalEndTime: string | null
+  currentTopPx: number
+}
+
+function DayView({ date, events, transportSchedules, onDeleteCustom, onTimeClick, onUpdateEvent }: {
   date: string
   events: CalendarEvent[]
   transportSchedules: TransportScheduleRaw[]
   onDeleteCustom: (id: string) => void
   onTimeClick: (startTime: string) => void
+  onUpdateEvent: (rawId: string, startTime: string, endTime: string | null) => void
 }) {
   const [hoverY, setHoverY] = useState<number | null>(null)
+  const [dragging, setDragging] = useState<DragState | null>(null)
+  const dragMovedRef = useRef(false)
   const totalHeight = (HOUR_END - HOUR_START) * HOUR_HEIGHT
 
   function yToTime(y: number): string {
@@ -659,12 +682,61 @@ function DayView({ date, events, transportSchedules, onDeleteCustom, onTimeClick
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
   }
 
+  function handleEventMouseDown(e: React.MouseEvent, ev: CalendarEvent, topPx: number, heightPx: number) {
+    e.preventDefault()
+    e.stopPropagation()
+    dragMovedRef.current = false
+    setDragging({
+      eventId: ev.id,
+      rawId: ev.id.replace('custom-', ''),
+      startMouseY: e.clientY,
+      eventTopPx: topPx,
+      eventHeightPx: heightPx,
+      originalStartTime: ev.startTime!,
+      originalEndTime: ev.endTime,
+      currentTopPx: topPx,
+    })
+  }
+
+  function commitDrag(d: DragState) {
+    if (!dragMovedRef.current) return
+    const newStartTime = yToTime(d.currentTopPx)
+    let newEndTime: string | null = null
+    if (d.originalEndTime) {
+      const dur = toMin(d.originalEndTime) - toMin(d.originalStartTime)
+      const newStartMins = toMin(newStartTime)
+      const newEndMins = newStartMins + dur
+      if (newEndMins <= HOUR_END * 60) {
+        newEndTime = `${String(Math.floor(newEndMins / 60)).padStart(2, '0')}:${String(newEndMins % 60).padStart(2, '0')}`
+      }
+    }
+    onUpdateEvent(d.rawId, newStartTime, newEndTime)
+  }
+
   function handleColMouseMove(e: React.MouseEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect()
-    setHoverY(e.clientY - rect.top - 32)  // 32 = column header height
+    const y = e.clientY - rect.top - 32
+    if (dragging) {
+      const delta = e.clientY - dragging.startMouseY
+      if (Math.abs(delta) > 3) dragMovedRef.current = true
+      const newTop = Math.max(0, Math.min(dragging.eventTopPx + delta, totalHeight - dragging.eventHeightPx))
+      setDragging((prev) => prev ? { ...prev, currentTopPx: newTop } : null)
+    } else {
+      setHoverY(y)
+    }
+  }
+
+  function handleColMouseUp() {
+    if (dragging) { commitDrag(dragging); setDragging(null); dragMovedRef.current = false }
+  }
+
+  function handleColMouseLeave() {
+    setHoverY(null)
+    if (dragging) { commitDrag(dragging); setDragging(null); dragMovedRef.current = false }
   }
 
   function handleColClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (dragMovedRef.current) return
     if ((e.target as HTMLElement).closest('[data-event]')) return
     const rect = e.currentTarget.getBoundingClientRect()
     const y = e.clientY - rect.top - 32
@@ -745,15 +817,16 @@ function DayView({ date, events, transportSchedules, onDeleteCustom, onTimeClick
           </div>
         </div>
 
-        {/* 全列ラッパー（ホバーライン・クリック） */}
+        {/* 全列ラッパー（ホバーライン・クリック・ドラッグ） */}
         <div
-          className="flex flex-1 relative cursor-pointer"
+          className={cn('flex flex-1 relative', dragging ? 'cursor-grabbing select-none' : 'cursor-pointer')}
           onMouseMove={handleColMouseMove}
-          onMouseLeave={() => setHoverY(null)}
+          onMouseLeave={handleColMouseLeave}
+          onMouseUp={handleColMouseUp}
           onClick={handleColClick}
         >
-          {/* ホバーライン */}
-          {hoverY !== null && hoverY >= 0 && hoverY <= totalHeight && (
+          {/* ホバーライン（ドラッグ中は非表示） */}
+          {!dragging && hoverY !== null && hoverY >= 0 && hoverY <= totalHeight && (
             <div
               className="absolute left-0 right-0 pointer-events-none z-20 flex items-center"
               style={{ top: hoverY + 32 }}
@@ -808,25 +881,38 @@ function DayView({ date, events, transportSchedules, onDeleteCustom, onTimeClick
             )}
           </TimelineColumn>
 
-          {/* 列3: 予定・行事 */}
+          {/* 列3: 予定・行事（ドラッグ可） */}
           <TimelineColumn label="予定・行事" headerCls="bg-teal-50 text-teal-700 border-teal-100" totalHeight={totalHeight}>
-            {col3Events.map(({ event: e, leftPct, widthPct }) => (
-              <div
-                key={e.id}
-                data-event="1"
-                className={cn('absolute rounded px-1 py-0.5 text-xs overflow-hidden group border border-white/30', e.color, e.textColor)}
-                style={{ top: timeToPx(e.startTime!), height: durationPx(e.startTime!, e.endTime), left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
-              >
-                <div className="font-semibold break-words leading-tight">{e.title}</div>
-                {e.subtitle && <div className="opacity-80 break-words text-xs leading-tight">{e.subtitle}</div>}
-                <div className="opacity-70 text-xs">{e.startTime}{e.endTime ? `〜${e.endTime}` : ''}</div>
-                {e.id.startsWith('custom-') && (
-                  <button onClick={(ev) => { ev.stopPropagation(); onDeleteCustom(e.id) }} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            ))}
+            {col3Events.map(({ event: e, leftPct, widthPct }) => {
+              const isDragging = dragging?.eventId === e.id
+              const heightPx = durationPx(e.startTime!, e.endTime)
+              const topPx    = isDragging ? dragging!.currentTopPx : timeToPx(e.startTime!)
+              const dispTime = isDragging
+                ? `${yToTime(dragging!.currentTopPx)}${e.endTime ? `〜${yToTime(dragging!.currentTopPx + heightPx)}` : ''}`
+                : `${e.startTime}${e.endTime ? `〜${e.endTime}` : ''}`
+              return (
+                <div
+                  key={e.id}
+                  data-event="1"
+                  className={cn(
+                    'absolute rounded px-1 py-0.5 text-xs overflow-hidden group border border-white/30',
+                    e.color, e.textColor,
+                    isDragging ? 'shadow-lg z-20 ring-2 ring-white/60 cursor-grabbing' : 'cursor-grab'
+                  )}
+                  style={{ top: topPx, height: heightPx, left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` }}
+                  onMouseDown={(ev) => handleEventMouseDown(ev, e, timeToPx(e.startTime!), heightPx)}
+                >
+                  <div className="font-semibold break-words leading-tight">{e.title}</div>
+                  {e.subtitle && <div className="opacity-80 break-words text-xs leading-tight">{e.subtitle}</div>}
+                  <div className="opacity-70 text-xs">{dispTime}</div>
+                  {e.id.startsWith('custom-') && !isDragging && (
+                    <button onClick={(ev) => { ev.stopPropagation(); onDeleteCustom(e.id) }} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
             {col3Events.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-300 pointer-events-none">予定なし</div>
             )}
