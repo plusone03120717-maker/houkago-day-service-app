@@ -22,6 +22,7 @@ import {
   GripVertical,
   Trash2,
   Check,
+  Split,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { TransportScheduleCreator } from './transport-schedule-creator'
@@ -105,25 +106,6 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
   const [, startTransition] = useTransition()
   const [updating, setUpdating] = useState<string | null>(null)
   const [regenerating, setRegenerating] = useState(false)
-  const [showAddDropoff, setShowAddDropoff] = useState(false)
-  const [addDropoffTime, setAddDropoffTime] = useState('')
-  const [addingDropoff, setAddingDropoff] = useState(false)
-
-  const handleAddDropoffSchedule = async () => {
-    if (!selectedUnitId) return
-    setAddingDropoff(true)
-    await supabase.from('transport_schedules').insert({
-      unit_id: selectedUnitId,
-      date,
-      direction: 'dropoff',
-      departure_time: addDropoffTime || null,
-      route_order: [],
-    })
-    setAddingDropoff(false)
-    setShowAddDropoff(false)
-    setAddDropoffTime('')
-    startTransition(() => router.refresh())
-  }
 
   const changeDate = (delta: number) => {
     const d = new Date(date)
@@ -263,46 +245,6 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
 
         {/* お送り列（複数便対応） */}
         <div className="space-y-4">
-          {/* お送り便を追加ボタン */}
-          {selectedUnitId && dropoffSchedules.length > 0 && (
-            <div>
-              {showAddDropoff ? (
-                <div className="flex items-center gap-2 bg-white border border-indigo-200 rounded-lg px-3 py-2">
-                  <Clock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                  <input
-                    type="time"
-                    value={addDropoffTime}
-                    onChange={(e) => setAddDropoffTime(e.target.value)}
-                    className="text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    placeholder="出発時刻"
-                  />
-                  <button
-                    onClick={() => void handleAddDropoffSchedule()}
-                    disabled={addingDropoff}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    {addingDropoff ? '追加中...' : '追加'}
-                  </button>
-                  <button
-                    onClick={() => { setShowAddDropoff(false); setAddDropoffTime('') }}
-                    className="p-1 text-gray-400 hover:text-gray-600"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setShowAddDropoff(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-dashed border-indigo-300 text-indigo-600 hover:bg-indigo-50 transition-colors w-full justify-center"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  お送り便を追加
-                </button>
-              )}
-            </div>
-          )}
-
           {dropoffSchedules.length > 0 ? (
             dropoffSchedules.map((sched) => (
               <ScheduleCard
@@ -591,6 +533,39 @@ function ScheduleCard({
   const [vehicleSaving, setVehicleSaving] = useState(false)
   const [showCreator, setShowCreator] = useState(false)
   const [showAddPanel, setShowAddPanel] = useState(false)
+  const [showSplit, setShowSplit] = useState(false)
+  const [splitSelected, setSplitSelected] = useState<Set<string>>(new Set())
+  const [splitting, setSplitting] = useState(false)
+
+  const handleSplit = async () => {
+    if (!schedule || splitSelected.size === 0 || splitSelected.size === localDetails.length) return
+    setSplitting(true)
+    // 1. 新しい便を作成（同じ出発時刻）
+    const { data: newSched } = await supabase
+      .from('transport_schedules')
+      .insert({
+        unit_id: unitId,
+        date,
+        direction: 'dropoff',
+        departure_time: schedule.departure_time,
+        route_order: [],
+      })
+      .select('id')
+      .single()
+    if (newSched) {
+      // 2. 選択した生徒を新しい便に移動
+      const ids = [...splitSelected]
+      await Promise.all(
+        ids.map((id, i) =>
+          supabase.from('transport_details').update({ schedule_id: newSched.id, sort_order: i }).eq('id', id)
+        )
+      )
+    }
+    setSplitting(false)
+    setShowSplit(false)
+    setSplitSelected(new Set())
+    startTransition(() => router.refresh())
+  }
 
   // ドラッグ&ドロップ用: sort_order 順にソートしたローカル状態
   const sortedDetails = schedule
@@ -829,6 +804,16 @@ function ScheduleCard({
               >
                 <UserPlus className="h-3.5 w-3.5" />追加
               </button>
+              {localDetails.length >= 2 && (
+                <button
+                  onClick={() => { setShowSplit((v) => !v); setSplitSelected(new Set()) }}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
+                    showSplit ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-orange-600 border-orange-200 hover:bg-orange-50'
+                  }`}
+                >
+                  <Split className="h-3.5 w-3.5" />分割
+                </button>
+              )}
               <button
                 onClick={handleDeleteSchedule}
                 className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border border-red-200 bg-white text-red-500 hover:bg-red-50 transition-colors"
@@ -848,6 +833,59 @@ function ScheduleCard({
                 unitId={unitId} allChildren={allChildren} onClose={() => setShowAddPanel(false)}
               />
             )}
+
+            {/* 分割パネル */}
+            {showSplit && (
+              <div className="border border-orange-200 rounded-lg bg-orange-50/40 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-orange-700 flex items-center gap-1.5">
+                    <Split className="h-3.5 w-3.5" />
+                    新しい便に移す生徒を選択
+                  </p>
+                  <button onClick={() => setShowSplit(false)} className="p-1 text-gray-400 hover:text-gray-600">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="space-y-1.5">
+                  {localDetails.map((detail) => (
+                    <label key={detail.id} className="flex items-center gap-2.5 bg-white rounded px-3 py-2 cursor-pointer hover:bg-orange-50 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={splitSelected.has(detail.id)}
+                        onChange={(e) => {
+                          const next = new Set(splitSelected)
+                          if (e.target.checked) next.add(detail.id)
+                          else next.delete(detail.id)
+                          setSplitSelected(next)
+                        }}
+                        className="rounded border-gray-300 text-orange-500 focus:ring-orange-400"
+                      />
+                      <span className="text-sm text-gray-800">{detail.children?.name ?? '不明'}</span>
+                      <span className="text-xs text-gray-400 truncate">{detail.pickup_location ?? ''}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void handleSplit()}
+                    disabled={splitting || splitSelected.size === 0 || splitSelected.size === localDetails.length}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50 font-medium"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {splitting ? '分割中...' : `${splitSelected.size}名を新しい便へ移動`}
+                  </button>
+                  <button onClick={() => setShowSplit(false)} className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">
+                    キャンセル
+                  </button>
+                </div>
+                {splitSelected.size > 0 && splitSelected.size < localDetails.length && (
+                  <p className="text-xs text-orange-600">
+                    この便: {localDetails.length - splitSelected.size}名 ／ 新しい便: {splitSelected.size}名
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* 共有ドライバー・車種選択 */}
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
