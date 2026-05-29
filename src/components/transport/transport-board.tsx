@@ -21,6 +21,7 @@ import {
   User,
   GripVertical,
   Trash2,
+  Check,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { TransportScheduleCreator } from './transport-schedule-creator'
@@ -104,6 +105,25 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
   const [, startTransition] = useTransition()
   const [updating, setUpdating] = useState<string | null>(null)
   const [regenerating, setRegenerating] = useState(false)
+  const [showAddDropoff, setShowAddDropoff] = useState(false)
+  const [addDropoffTime, setAddDropoffTime] = useState('')
+  const [addingDropoff, setAddingDropoff] = useState(false)
+
+  const handleAddDropoffSchedule = async () => {
+    if (!selectedUnitId) return
+    setAddingDropoff(true)
+    await supabase.from('transport_schedules').insert({
+      unit_id: selectedUnitId,
+      date,
+      direction: 'dropoff',
+      departure_time: addDropoffTime || null,
+      route_order: [],
+    })
+    setAddingDropoff(false)
+    setShowAddDropoff(false)
+    setAddDropoffTime('')
+    startTransition(() => router.refresh())
+  }
 
   const changeDate = (delta: number) => {
     const d = new Date(date)
@@ -243,6 +263,46 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
 
         {/* お送り列（複数便対応） */}
         <div className="space-y-4">
+          {/* お送り便を追加ボタン */}
+          {selectedUnitId && dropoffSchedules.length > 0 && (
+            <div>
+              {showAddDropoff ? (
+                <div className="flex items-center gap-2 bg-white border border-indigo-200 rounded-lg px-3 py-2">
+                  <Clock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                  <input
+                    type="time"
+                    value={addDropoffTime}
+                    onChange={(e) => setAddDropoffTime(e.target.value)}
+                    className="text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    placeholder="出発時刻"
+                  />
+                  <button
+                    onClick={() => void handleAddDropoffSchedule()}
+                    disabled={addingDropoff}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {addingDropoff ? '追加中...' : '追加'}
+                  </button>
+                  <button
+                    onClick={() => { setShowAddDropoff(false); setAddDropoffTime('') }}
+                    className="p-1 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowAddDropoff(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-dashed border-indigo-300 text-indigo-600 hover:bg-indigo-50 transition-colors w-full justify-center"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  お送り便を追加
+                </button>
+              )}
+            </div>
+          )}
+
           {dropoffSchedules.length > 0 ? (
             dropoffSchedules.map((sched) => (
               <ScheduleCard
