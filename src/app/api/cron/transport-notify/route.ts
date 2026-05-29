@@ -6,7 +6,10 @@ const LINE_API = 'https://api.line.me/v2/bot/message/push'
 type TransportDetail = {
   child_id: string
   pickup_location: string | null
-  children: { name: string } | null
+  children: {
+    name: string
+    child_transport_settings: { pickup_location_label: string | null }[] | null
+  } | null
 }
 
 type Schedule = {
@@ -35,28 +38,43 @@ function formatJapaneseDate(dateStr: string): string {
   return `${y}年${m}月${d}日（${days[dow]}）`
 }
 
+const SCHOOL_PATTERN = /学校|学園|支援学校|小学|中学|高校|幼稚園|保育/
+
 /** 場所名から絵文字アイコンを判定 */
-function locationIcon(location: string): string {
-  if (/学校|学園|支援学校|小学|中学|高校|幼稚園|保育/.test(location)) return '🏫'
-  return '📍'
+function locationIcon(label: string): string {
+  if (SCHOOL_PATTERN.test(label)) return '🏫'
+  return '🏠'
+}
+
+/** 通知に表示する場所ラベルを決定（住所は非表示） */
+function getDisplayLabel(detail: TransportDetail): string {
+  const loc = detail.pickup_location ?? ''
+  // 学校キーワードが含まれていれば学校名をそのまま表示
+  if (SCHOOL_PATTERN.test(loc)) return loc
+  // 自宅系 — カスタム表示名があればそれを使用、なければ「自宅」
+  const settings = detail.children?.child_transport_settings
+  const label = Array.isArray(settings) && settings.length > 0
+    ? settings[0]?.pickup_location_label
+    : null
+  return label ?? '自宅'
 }
 
 /** ルートテキストを組み立てる */
 function buildRouteText(details: TransportDetail[]): string {
-  const stops: { location: string; names: string[] }[] = []
+  const stops: { label: string; names: string[] }[] = []
   for (const d of details) {
-    const loc = d.pickup_location ?? '場所未設定'
+    const label = getDisplayLabel(d)
     const name = d.children?.name ?? '不明'
     const last = stops[stops.length - 1]
-    if (last && last.location === loc) {
+    if (last && last.label === label) {
       last.names.push(name)
     } else {
-      stops.push({ location: loc, names: [name] })
+      stops.push({ label, names: [name] })
     }
   }
   return stops.map((s, i) => {
-    const icon = locationIcon(s.location)
-    const header = `${i + 1} ${icon} ${s.location}（${s.names.length}名）`
+    const icon = locationIcon(s.label)
+    const header = `${i + 1} ${icon} ${s.label}（${s.names.length}名）`
     const names = s.names.map((n) => `   ${n}`).join('\n')
     return `${header}\n${names}`
   }).join('\n\n')
@@ -121,7 +139,10 @@ export async function GET(request: NextRequest) {
       staff_members (name),
       transport_details (
         child_id, pickup_location,
-        children (name)
+        children (
+          name,
+          child_transport_settings (pickup_location_label)
+        )
       )
     `)
     .in('unit_id', units.map((u) => u.id))

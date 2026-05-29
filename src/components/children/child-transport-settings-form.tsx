@@ -13,6 +13,7 @@ type TransportSettings = {
   transport_type: TransportType
   pickup_location_type: LocationType
   dropoff_location_type: LocationType
+  pickup_location_label: string
   notes: string
 }
 
@@ -38,6 +39,7 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
       transport_type: 'both',
       pickup_location_type: 'home',
       dropoff_location_type: 'home',
+      pickup_location_label: '',
       notes: '',
     }
   )
@@ -64,6 +66,7 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
       child_id: childId,
       transport_type: settings.transport_type,
       pickup_location_type: settings.pickup_location_type,
+      pickup_location_label: settings.pickup_location_label || null,
       dropoff_location_type: 'home',
       notes: settings.notes || null,
       updated_at: new Date().toISOString(),
@@ -149,6 +152,24 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
               </div>
               <p className="text-xs text-gray-400 mt-1.5">{locationLabel(settings.pickup_location_type)}</p>
             </div>
+            {settings.pickup_location_type === 'home' && (
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">
+                  場所の表示名
+                  <span className="text-gray-400 font-normal ml-1">（空欄の場合は「自宅」と表示）</span>
+                </label>
+                <input
+                  type="text"
+                  value={settings.pickup_location_label}
+                  onChange={(e) => setSettings((prev) => ({ ...prev, pickup_location_label: e.target.value }))}
+                  placeholder="例：おばあちゃんの家、祖父宅"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  自宅以外の場所（祖父母宅など）をお迎えする場合に入力してください。LINE通知にこの名前が表示されます。
+                </p>
+              </div>
+            )}
           </div>
         </>
       )}

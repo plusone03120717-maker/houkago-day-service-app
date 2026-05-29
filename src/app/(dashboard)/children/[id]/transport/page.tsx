@@ -12,6 +12,7 @@ type TransportSettings = {
   transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
   pickup_location_type: 'home' | 'school'
   dropoff_location_type: 'home' | 'school'
+  pickup_location_label: string | null
   notes: string | null
 }
 
@@ -41,7 +42,7 @@ export default async function ChildTransportPage({
 
   const { data: settingsRaw } = await supabase
     .from('child_transport_settings')
-    .select('id, transport_type, pickup_location_type, dropoff_location_type, notes')
+    .select('id, transport_type, pickup_location_type, dropoff_location_type, pickup_location_label, notes')
     .eq('child_id', id)
     .maybeSingle()
   const settings = settingsRaw as TransportSettings | null
@@ -80,6 +81,7 @@ export default async function ChildTransportPage({
                     transport_type: settings.transport_type,
                     pickup_location_type: settings.pickup_location_type,
                     dropoff_location_type: settings.dropoff_location_type,
+                    pickup_location_label: settings.pickup_location_label ?? '',
                     notes: settings.notes ?? '',
                   }
                 : null

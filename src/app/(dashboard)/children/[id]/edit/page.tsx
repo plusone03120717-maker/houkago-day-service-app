@@ -37,6 +37,7 @@ type TransportSettings = {
   transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
   pickup_location_type: 'home' | 'school'
   dropoff_location_type: 'home' | 'school'
+  pickup_location_label: string | null
   notes: string | null
 }
 
@@ -58,7 +59,7 @@ export default async function EditChildPage({
     supabase.from('schools').select('id, municipality, name, address, facility_type').order('municipality').order('name'),
     supabase
       .from('child_transport_settings')
-      .select('id, transport_type, pickup_location_type, dropoff_location_type, notes')
+      .select('id, transport_type, pickup_location_type, dropoff_location_type, pickup_location_label, notes')
       .eq('child_id', id)
       .maybeSingle(),
     supabase
@@ -149,6 +150,7 @@ export default async function EditChildPage({
                     transport_type: transportSettings.transport_type,
                     pickup_location_type: transportSettings.pickup_location_type,
                     dropoff_location_type: transportSettings.dropoff_location_type,
+                    pickup_location_label: transportSettings.pickup_location_label ?? '',
                     notes: transportSettings.notes ?? '',
                   }
                 : null
