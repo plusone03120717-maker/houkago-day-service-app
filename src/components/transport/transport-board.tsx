@@ -615,6 +615,139 @@ function ScheduleCard({
   }
 
 
+  // ─── お迎え：個別カードレイアウト ──────────────────────────────────────────
+  if (direction === 'pickup') {
+    if (showCreator) {
+      return (
+        <TransportScheduleCreator
+          date={date} unitId={unitId} direction={direction} vehicles={vehicles}
+          onCreated={() => setShowCreator(false)} onCancel={() => setShowCreator(false)}
+        />
+      )
+    }
+    if (!schedule) {
+      return (
+        <div className="py-8 text-center space-y-3 border border-dashed border-gray-200 rounded-xl bg-white">
+          <p className="text-sm text-gray-400">お迎えスケジュールが未設定です</p>
+          <p className="text-xs text-gray-400">対象: {targetChildren.length}名</p>
+          {unitId && (
+            <Button size="sm" variant="outline" onClick={() => setShowCreator(true)}>
+              <Plus className="h-3.5 w-3.5" />スケジュールを作成
+            </Button>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-3">
+        {/* セクションヘッダー（カードなし） */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Car className="h-4 w-4 text-indigo-500 shrink-0" />
+          <span className="text-sm font-semibold text-gray-700">
+            お迎え
+            {schedule.departure_time && (
+              <span className="ml-2 text-xs font-normal text-gray-400">
+                <Clock className="h-3 w-3 inline mr-0.5" />
+                出発 {schedule.departure_time.slice(0, 5)}
+              </span>
+            )}
+          </span>
+          <span className="text-xs text-gray-400">{schedule.transport_details.length}名</span>
+          {reordering && <span className="text-xs text-gray-400 ml-1">保存中…</span>}
+          <div className="ml-auto flex gap-1.5">
+            <button
+              onClick={() => setShowAddPanel((v) => !v)}
+              className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
+                showAddPanel ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'
+              }`}
+            >
+              <UserPlus className="h-3.5 w-3.5" />追加
+            </button>
+            <button
+              onClick={handleDeleteSchedule}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border border-red-200 bg-white text-red-500 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />削除
+            </button>
+          </div>
+        </div>
+
+        {/* 児童追加パネル */}
+        {showAddPanel && (
+          <AddChildPanel
+            schedule={schedule} direction={direction} date={date}
+            unitId={unitId} allChildren={allChildren} onClose={() => setShowAddPanel(false)}
+          />
+        )}
+
+        {/* 子ども個別カード */}
+        {localDetails.map((detail, i) => {
+          const isSchool = !!(detail.pickup_location && /学校|校$/.test(detail.pickup_location))
+          const isDragging = dragIndex === i
+          const isOver = dragOverIndex === i
+          return (
+            <Card
+              key={detail.id}
+              draggable
+              onDragStart={() => handleDragStart(i)}
+              onDragOver={(e) => handleDragOver(e, i)}
+              onDrop={() => handleDrop(i)}
+              onDragEnd={handleDragEnd}
+              className={`transition-all ${isDragging ? 'opacity-40 border-dashed border-indigo-300' : isOver ? 'border-indigo-300 bg-indigo-50/30' : ''}`}
+            >
+              <CardContent className="pt-3 pb-3">
+                <div className="flex items-start gap-2">
+                  <GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing shrink-0 mt-1" />
+                  <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                    {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    {/* 名前・場所 */}
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      {isSchool
+                        ? <SchoolIcon className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                        : <MapPin className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                      }
+                      <p className="font-medium text-gray-800 text-sm">{detail.children?.name ?? '不明'}</p>
+                    </div>
+                    <p className="text-xs text-gray-400 mb-2 pl-5">{detail.pickup_location ?? '場所未設定'}</p>
+                    {/* 個別設定 */}
+                    <div className="flex flex-wrap items-center gap-2 pl-5">
+                      <PickupTimeCell
+                        detailId={detail.id}
+                        pickupTime={detail.pickup_time}
+                        defaultTime={schedule.departure_time}
+                        label="お迎え時刻"
+                      />
+                      <ChildDetailSelect
+                        detailId={detail.id} field="driver_member_id"
+                        value={detail.driver_member_id} options={drivers} placeholder="ドライバー"
+                      />
+                      <ChildDetailSelect
+                        detailId={detail.id} field="vehicle_id"
+                        value={detail.vehicle_id} options={vehicles} placeholder="車種"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onRemove(detail)}
+                    disabled={updating === detail.id}
+                    className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 shrink-0"
+                    title="欠席にして外す"
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
+    )
+  }
+
+  // ─── お送り：既存のカードレイアウト ─────────────────────────────────────────
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -626,27 +759,21 @@ function ScheduleCard({
               {schedule.transport_details.length}名
             </span>
           )}
-          {/* 児童追加・便削除ボタン（スケジュールがある場合のみ表示） */}
           {schedule && (
             <>
               <button
                 onClick={() => setShowAddPanel((v) => !v)}
                 className={`ml-1 flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
-                  showAddPanel
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'
+                  showAddPanel ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'
                 }`}
               >
-                <UserPlus className="h-3.5 w-3.5" />
-                追加
+                <UserPlus className="h-3.5 w-3.5" />追加
               </button>
               <button
                 onClick={handleDeleteSchedule}
                 className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border border-red-200 bg-white text-red-500 hover:bg-red-50 transition-colors"
-                title="この便を削除"
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                削除
+                <Trash2 className="h-3.5 w-3.5" />削除
               </button>
             </>
           )}
@@ -655,52 +782,39 @@ function ScheduleCard({
       <CardContent>
         {schedule ? (
           <div className="space-y-3">
-            {/* 追加パネル */}
             {showAddPanel && (
               <AddChildPanel
-                schedule={schedule}
-                direction={direction}
-                date={date}
-                unitId={unitId}
-                allChildren={allChildren}
-                onClose={() => setShowAddPanel(false)}
+                schedule={schedule} direction={direction} date={date}
+                unitId={unitId} allChildren={allChildren} onClose={() => setShowAddPanel(false)}
               />
             )}
-
-            {/* お送り：共有ドライバー・車種選択 */}
-            {direction === 'dropoff' && (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                  <select
-                    value={schedule.driver_member_id ?? ''}
-                    onChange={(e) => handleDriverChange(e.target.value)}
-                    disabled={driverSaving}
-                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
-                  >
-                    <option value="">ドライバー未設定</option>
-                    {drivers.map((d) => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Car className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                  <select
-                    value={schedule.transport_vehicles?.id ?? ''}
-                    onChange={(e) => handleVehicleChange(e.target.value)}
-                    disabled={vehicleSaving}
-                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
-                  >
-                    <option value="">車種未設定</option>
-                    {vehicles.map((v) => (
-                      <option key={v.id} value={v.id}>{v.name}</option>
-                    ))}
-                  </select>
-                </div>
+            {/* 共有ドライバー・車種選択 */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                <select
+                  value={schedule.driver_member_id ?? ''}
+                  onChange={(e) => handleDriverChange(e.target.value)}
+                  disabled={driverSaving}
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                >
+                  <option value="">ドライバー未設定</option>
+                  {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
               </div>
-            )}
-
+              <div className="flex items-center gap-2">
+                <Car className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                <select
+                  value={schedule.transport_vehicles?.id ?? ''}
+                  onChange={(e) => handleVehicleChange(e.target.value)}
+                  disabled={vehicleSaving}
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                >
+                  <option value="">車種未設定</option>
+                  {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </div>
+            </div>
             {/* ルートヘッダー */}
             <div className="flex items-center gap-1.5">
               <Navigation className="h-3.5 w-3.5 text-indigo-500" />
@@ -715,15 +829,12 @@ function ScheduleCard({
               </p>
               {reordering && <span className="text-xs text-gray-400">保存中…</span>}
             </div>
-
-            {/* 出発 */}
             <div className="flex items-center gap-2 text-xs text-gray-500 pl-1">
               <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">出</span>
               <span>施設（富士河口湖町小立）</span>
             </div>
-
-            {/* ドラッグ可能な児童リスト */}
-            <div className="space-y-1.5">
+            {/* 児童リスト */}
+            <div className="space-y-1">
               {localDetails.map((detail, i) => {
                 const isSchool = !!(detail.pickup_location && /学校|校$/.test(detail.pickup_location))
                 const isDragging = dragIndex === i
@@ -736,69 +847,36 @@ function ScheduleCard({
                     onDragOver={(e) => handleDragOver(e, i)}
                     onDrop={() => handleDrop(i)}
                     onDragEnd={handleDragEnd}
-                    className={`rounded border text-sm transition-colors ${
-                      isDragging
-                        ? 'opacity-40 bg-indigo-50 border-dashed border-indigo-300'
-                        : isOver
-                        ? 'bg-indigo-50 border-indigo-300'
-                        : 'bg-gray-50 border-transparent'
+                    className={`flex items-center gap-2 py-1.5 px-2 rounded text-sm transition-colors ${
+                      isDragging ? 'opacity-40 bg-indigo-50 border border-dashed border-indigo-300'
+                      : isOver ? 'bg-indigo-50 border border-indigo-300'
+                      : 'bg-gray-50 border border-transparent'
                     }`}
                   >
-                    {/* 上段：grip・番号・アイコン・名前・削除 */}
-                    <div className="flex items-center gap-2 py-1.5 px-2">
-                      <GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing flex-shrink-0" />
-                      <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                        {i + 1}
-                      </span>
-                      {isSchool
-                        ? <SchoolIcon className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
-                        : <MapPin className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
-                      }
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-800 truncate">{detail.children?.name ?? '不明'}</p>
-                        <p className="text-xs text-gray-400 truncate">{detail.pickup_location ?? '場所未設定'}</p>
-                      </div>
-                      <button
-                        onClick={() => onRemove(detail)}
-                        disabled={updating === detail.id}
-                        className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
-                        title="欠席にして外す"
-                      >
-                        <XCircle className="h-3.5 w-3.5" />
-                      </button>
+                    <GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing flex-shrink-0" />
+                    <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                      {i + 1}
+                    </span>
+                    {isSchool
+                      ? <SchoolIcon className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
+                      : <MapPin className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                    }
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-800 truncate">{detail.children?.name ?? '不明'}</p>
+                      <p className="text-xs text-gray-400 truncate">{detail.pickup_location ?? '場所未設定'}</p>
                     </div>
-
-                    {/* 下段（お迎えのみ）：個別時刻・ドライバー・車種 */}
-                    {direction === 'pickup' && (
-                      <div className="flex flex-wrap items-center gap-2 px-2 pb-2 pl-10">
-                        <PickupTimeCell
-                          detailId={detail.id}
-                          pickupTime={detail.pickup_time}
-                          defaultTime={schedule.departure_time}
-                          label="お迎え時刻"
-                        />
-                        <ChildDetailSelect
-                          detailId={detail.id}
-                          field="driver_member_id"
-                          value={detail.driver_member_id}
-                          options={drivers}
-                          placeholder="ドライバー"
-                        />
-                        <ChildDetailSelect
-                          detailId={detail.id}
-                          field="vehicle_id"
-                          value={detail.vehicle_id}
-                          options={vehicles}
-                          placeholder="車種"
-                        />
-                      </div>
-                    )}
+                    <button
+                      onClick={() => onRemove(detail)}
+                      disabled={updating === detail.id}
+                      className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
+                      title="欠席にして外す"
+                    >
+                      <XCircle className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 )
               })}
             </div>
-
-            {/* 帰着 */}
             <div className="flex items-center gap-2 text-xs text-gray-500 pl-1">
               <span className="w-5 h-5 rounded-full bg-gray-400 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">着</span>
               <span>施設に帰着</span>
@@ -806,23 +884,16 @@ function ScheduleCard({
           </div>
         ) : showCreator ? (
           <TransportScheduleCreator
-            date={date}
-            unitId={unitId}
-            direction={direction}
-            vehicles={vehicles}
-            onCreated={() => setShowCreator(false)}
-            onCancel={() => setShowCreator(false)}
+            date={date} unitId={unitId} direction={direction} vehicles={vehicles}
+            onCreated={() => setShowCreator(false)} onCancel={() => setShowCreator(false)}
           />
         ) : (
           <div className="py-6 text-center space-y-3">
             <p className="text-sm text-gray-400">スケジュールが未設定です</p>
-            <p className="text-xs text-gray-400">
-              {direction === 'pickup' ? 'お迎え' : 'お送り'}対象: {targetChildren.length}名
-            </p>
+            <p className="text-xs text-gray-400">お送り対象: {targetChildren.length}名</p>
             {unitId && (
               <Button size="sm" variant="outline" onClick={() => setShowCreator(true)} className="mt-1">
-                <Plus className="h-3.5 w-3.5" />
-                スケジュールを作成
+                <Plus className="h-3.5 w-3.5" />スケジュールを作成
               </Button>
             )}
           </div>
