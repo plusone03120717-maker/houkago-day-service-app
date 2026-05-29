@@ -26,6 +26,15 @@ import { formatDate } from '@/lib/utils'
 import { TransportScheduleCreator } from './transport-schedule-creator'
 import { deleteAndRecreateTransportSchedules } from '@/app/actions/transport'
 
+// 10分刻みの時刻オプション（06:00〜20:00）
+const TIME_OPTIONS: string[] = []
+for (let h = 6; h <= 20; h++) {
+  for (let m = 0; m < 60; m += 10) {
+    if (h === 20 && m > 0) break
+    TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+  }
+}
+
 type Unit = { id: string; name: string; service_type: string }
 type Vehicle = { id: string; name: string; capacity: number }
 export type Driver = { id: string; name: string }
@@ -266,6 +275,53 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** 個別お迎え/お送り時刻セル */
+function PickupTimeCell({
+  detailId,
+  pickupTime,
+  defaultTime,
+  label,
+}: {
+  detailId: string
+  pickupTime: string | null
+  defaultTime: string | null
+  label: string
+}) {
+  const supabase = createClient()
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [saving, setSaving] = useState(false)
+
+  const value = pickupTime?.slice(0, 5) ?? defaultTime?.slice(0, 5) ?? ''
+
+  const handleChange = async (newTime: string) => {
+    setSaving(true)
+    await supabase
+      .from('transport_details')
+      .update({ pickup_time: newTime || null })
+      .eq('id', detailId)
+    setSaving(false)
+    startTransition(() => router.refresh())
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+      <span className="text-[10px] text-gray-400 leading-none">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => void handleChange(e.target.value)}
+        disabled={saving}
+        className="text-xs border border-gray-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 bg-white cursor-pointer"
+      >
+        <option value="">未設定</option>
+        {TIME_OPTIONS.map((t) => (
+          <option key={t} value={t}>{t}</option>
+        ))}
+      </select>
     </div>
   )
 }
@@ -652,6 +708,12 @@ function ScheduleCard({
                       <p className="font-medium text-gray-800 truncate">{detail.children?.name ?? '不明'}</p>
                       <p className="text-xs text-gray-400 truncate">{detail.pickup_location ?? '場所未設定'}</p>
                     </div>
+                    <PickupTimeCell
+                      detailId={detail.id}
+                      pickupTime={detail.pickup_time}
+                      defaultTime={schedule.departure_time}
+                      label={direction === 'pickup' ? 'お迎え時刻' : 'お送り時刻'}
+                    />
                     <button
                       onClick={() => onRemove(detail)}
                       disabled={updating === detail.id}
