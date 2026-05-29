@@ -48,6 +48,8 @@ export type TransportDetail = {
   status: string
   parent_notified: boolean
   sort_order: number
+  driver_member_id: string | null
+  vehicle_id: string | null
   children: {
     id: string
     name: string
@@ -323,6 +325,50 @@ function PickupTimeCell({
         ))}
       </select>
     </div>
+  )
+}
+
+/** 子ども個別のドライバー/車種セル */
+function ChildDetailSelect({
+  detailId,
+  field,
+  value,
+  options,
+  placeholder,
+}: {
+  detailId: string
+  field: 'driver_member_id' | 'vehicle_id'
+  value: string | null
+  options: { id: string; name: string }[]
+  placeholder: string
+}) {
+  const supabase = createClient()
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [saving, setSaving] = useState(false)
+
+  const handleChange = async (newVal: string) => {
+    setSaving(true)
+    await supabase
+      .from('transport_details')
+      .update({ [field]: newVal || null })
+      .eq('id', detailId)
+    setSaving(false)
+    startTransition(() => router.refresh())
+  }
+
+  return (
+    <select
+      value={value ?? ''}
+      onChange={(e) => void handleChange(e.target.value)}
+      disabled={saving}
+      className="text-xs border border-gray-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 bg-white cursor-pointer max-w-[96px]"
+    >
+      <option value="">{placeholder}</option>
+      {options.map((o) => (
+        <option key={o.id} value={o.id}>{o.name}</option>
+      ))}
+    </select>
   )
 }
 
@@ -621,37 +667,39 @@ function ScheduleCard({
               />
             )}
 
-            {/* ドライバー・車種選択 */}
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                <select
-                  value={schedule.driver_member_id ?? ''}
-                  onChange={(e) => handleDriverChange(e.target.value)}
-                  disabled={driverSaving}
-                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
-                >
-                  <option value="">ドライバー未設定</option>
-                  {drivers.map((d) => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
+            {/* お送り：共有ドライバー・車種選択 */}
+            {direction === 'dropoff' && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                  <select
+                    value={schedule.driver_member_id ?? ''}
+                    onChange={(e) => handleDriverChange(e.target.value)}
+                    disabled={driverSaving}
+                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                  >
+                    <option value="">ドライバー未設定</option>
+                    {drivers.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Car className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                  <select
+                    value={schedule.transport_vehicles?.id ?? ''}
+                    onChange={(e) => handleVehicleChange(e.target.value)}
+                    disabled={vehicleSaving}
+                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                  >
+                    <option value="">車種未設定</option>
+                    {vehicles.map((v) => (
+                      <option key={v.id} value={v.id}>{v.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Car className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                <select
-                  value={schedule.transport_vehicles?.id ?? ''}
-                  onChange={(e) => handleVehicleChange(e.target.value)}
-                  disabled={vehicleSaving}
-                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
-                >
-                  <option value="">車種未設定</option>
-                  {vehicles.map((v) => (
-                    <option key={v.id} value={v.id}>{v.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            )}
 
             {/* ルートヘッダー */}
             <div className="flex items-center gap-1.5">
@@ -675,7 +723,7 @@ function ScheduleCard({
             </div>
 
             {/* ドラッグ可能な児童リスト */}
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {localDetails.map((detail, i) => {
                 const isSchool = !!(detail.pickup_location && /学校|校$/.test(detail.pickup_location))
                 const isDragging = dragIndex === i
@@ -688,40 +736,63 @@ function ScheduleCard({
                     onDragOver={(e) => handleDragOver(e, i)}
                     onDrop={() => handleDrop(i)}
                     onDragEnd={handleDragEnd}
-                    className={`flex items-center gap-2 py-1.5 px-2 rounded text-sm transition-colors ${
+                    className={`rounded border text-sm transition-colors ${
                       isDragging
-                        ? 'opacity-40 bg-indigo-50 border border-dashed border-indigo-300'
+                        ? 'opacity-40 bg-indigo-50 border-dashed border-indigo-300'
                         : isOver
-                        ? 'bg-indigo-50 border border-indigo-300'
-                        : 'bg-gray-50 border border-transparent'
+                        ? 'bg-indigo-50 border-indigo-300'
+                        : 'bg-gray-50 border-transparent'
                     }`}
                   >
-                    <GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing flex-shrink-0" />
-                    <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                      {i + 1}
-                    </span>
-                    {isSchool
-                      ? <SchoolIcon className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
-                      : <MapPin className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
-                    }
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-800 truncate">{detail.children?.name ?? '不明'}</p>
-                      <p className="text-xs text-gray-400 truncate">{detail.pickup_location ?? '場所未設定'}</p>
+                    {/* 上段：grip・番号・アイコン・名前・削除 */}
+                    <div className="flex items-center gap-2 py-1.5 px-2">
+                      <GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing flex-shrink-0" />
+                      <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                        {i + 1}
+                      </span>
+                      {isSchool
+                        ? <SchoolIcon className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
+                        : <MapPin className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                      }
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-800 truncate">{detail.children?.name ?? '不明'}</p>
+                        <p className="text-xs text-gray-400 truncate">{detail.pickup_location ?? '場所未設定'}</p>
+                      </div>
+                      <button
+                        onClick={() => onRemove(detail)}
+                        disabled={updating === detail.id}
+                        className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
+                        title="欠席にして外す"
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                    <PickupTimeCell
-                      detailId={detail.id}
-                      pickupTime={detail.pickup_time}
-                      defaultTime={schedule.departure_time}
-                      label={direction === 'pickup' ? 'お迎え時刻' : 'お送り時刻'}
-                    />
-                    <button
-                      onClick={() => onRemove(detail)}
-                      disabled={updating === detail.id}
-                      className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
-                      title="欠席にして外す"
-                    >
-                      <XCircle className="h-3.5 w-3.5" />
-                    </button>
+
+                    {/* 下段（お迎えのみ）：個別時刻・ドライバー・車種 */}
+                    {direction === 'pickup' && (
+                      <div className="flex flex-wrap items-center gap-2 px-2 pb-2 pl-10">
+                        <PickupTimeCell
+                          detailId={detail.id}
+                          pickupTime={detail.pickup_time}
+                          defaultTime={schedule.departure_time}
+                          label="お迎え時刻"
+                        />
+                        <ChildDetailSelect
+                          detailId={detail.id}
+                          field="driver_member_id"
+                          value={detail.driver_member_id}
+                          options={drivers}
+                          placeholder="ドライバー"
+                        />
+                        <ChildDetailSelect
+                          detailId={detail.id}
+                          field="vehicle_id"
+                          value={detail.vehicle_id}
+                          options={vehicles}
+                          placeholder="車種"
+                        />
+                      </div>
+                    )}
                   </div>
                 )
               })}

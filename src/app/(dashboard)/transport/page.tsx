@@ -17,6 +17,7 @@ const SCHEDULE_SELECT = `
   staff_members (id, name),
   transport_details (
     id, child_id, pickup_location, pickup_time, actual_pickup_time, status, parent_notified, sort_order,
+    driver_member_id, vehicle_id,
     children (id, name, name_kana, address, school_id, schools(id, name))
   )
 `
