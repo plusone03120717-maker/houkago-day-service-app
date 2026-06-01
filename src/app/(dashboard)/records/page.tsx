@@ -11,6 +11,11 @@ type AttendedChild = {
   child_id: string
   unit_id: string
   status: string
+  service_start_time: string | null
+  service_end_time: string | null
+  daytime_support: boolean
+  daytime_support_start_time: string | null
+  daytime_support_end_time: string | null
   children: { id: string; name: string; name_kana: string | null } | null
   units: { id: string; name: string } | null
 }
@@ -34,7 +39,7 @@ export default async function RecordsPage({
   // 当日の出席記録
   const { data: attendedRaw } = await supabase
     .from('daily_attendance')
-    .select('id, child_id, unit_id, status, children(id, name, name_kana), units(id, name)')
+    .select('id, child_id, unit_id, status, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time, children(id, name, name_kana), units(id, name)')
     .eq('date', targetDate)
     .in('status', ['attended', 'absent'])
     .order('created_at')
@@ -127,6 +132,20 @@ export default async function RecordsPage({
                             <p className="font-medium text-gray-900">{a.children?.name ?? '—'}</p>
                             {a.children?.name_kana && (
                               <p className="text-xs text-gray-400">{a.children.name_kana}</p>
+                            )}
+                            {!isAbsent && (
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                                {(a.service_start_time || a.service_end_time) && (
+                                  <p className="text-xs text-indigo-600">
+                                    利用: {a.service_start_time?.slice(0, 5) ?? '—'}〜{a.service_end_time?.slice(0, 5) ?? '—'}
+                                  </p>
+                                )}
+                                {a.daytime_support && (
+                                  <p className="text-xs text-teal-600">
+                                    日中一時: {a.daytime_support_start_time?.slice(0, 5) ?? '—'}〜{a.daytime_support_end_time?.slice(0, 5) ?? '—'}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
