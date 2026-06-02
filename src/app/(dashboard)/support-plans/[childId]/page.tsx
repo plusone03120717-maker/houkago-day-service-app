@@ -97,7 +97,7 @@ export default async function SupportPlanDetailPage({
           <p className="text-sm text-gray-500 mt-0.5">個別支援計画</p>
         </div>
         <Link
-          href={`/documents/support-plan/${childId}`}
+          href={`/print/support-plan/${childId}`}
           className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
         >
           <FileDown className="h-4 w-4" />
