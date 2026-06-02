@@ -51,7 +51,7 @@ export default async function ChildAttendanceHistoryPage({
     supabase.from('children').select('id, name').eq('id', childId).single(),
     supabase
       .from('daily_attendance')
-      .select('id, date, status, check_in_time, check_out_time, units(name)')
+      .select('id, date, status, check_in_time, check_out_time, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time, units(name)')
       .eq('child_id', childId)
       .gte('date', start)
       .lte('date', end)
@@ -80,6 +80,11 @@ export default async function ChildAttendanceHistoryPage({
     status: string
     check_in_time: string | null
     check_out_time: string | null
+    service_start_time: string | null
+    service_end_time: string | null
+    daytime_support: boolean
+    daytime_support_start_time: string | null
+    daytime_support_end_time: string | null
     units: { name: string } | null
   }
 
@@ -267,16 +272,23 @@ export default async function ChildAttendanceHistoryPage({
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        {att.check_in_time && att.check_out_time && (
-                          <span className="text-xs text-gray-500">
-                            {att.check_in_time.slice(0, 5)} 〜 {att.check_out_time.slice(0, 5)}
-                          </span>
-                        )}
-                        <AttendanceStatusToggle
-                          attendanceId={att.id}
-                          currentStatus={att.status}
-                        />
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-2">
+                          {(att.service_start_time || att.service_end_time) && (
+                            <span className="text-xs text-indigo-600">
+                              利用: {att.service_start_time?.slice(0, 5) ?? '—'}〜{att.service_end_time?.slice(0, 5) ?? '—'}
+                            </span>
+                          )}
+                          {att.daytime_support && (
+                            <span className="text-xs text-teal-600">
+                              日中一時: {att.daytime_support_start_time?.slice(0, 5) ?? '—'}〜{att.daytime_support_end_time?.slice(0, 5) ?? '—'}
+                            </span>
+                          )}
+                          <AttendanceStatusToggle
+                            attendanceId={att.id}
+                            currentStatus={att.status}
+                          />
+                        </div>
                       </div>
                     </div>
                     {hasContent && (
