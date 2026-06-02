@@ -52,3 +52,11 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+node_modules/
+.next/
+dist/
+build/
+*.log
+*.lock
+.cache/
+coverage/

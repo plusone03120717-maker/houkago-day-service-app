@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { PrintOptions } from '@/components/documents/print-options'
-import { ExcelExportButton } from '@/components/documents/excel-export-button'
 import { SupportPlanDocument } from '@/components/documents/support-plan-document'
 import { formatDate } from '@/lib/utils'
 
@@ -58,8 +57,8 @@ export default async function PrintSupportPlanPage({
   ])
 
   if (!childResult.data) notFound()
-  const child     = childResult.data as unknown as Child
-  const plan      = (plansResult.data?.[0] ?? null) as unknown as SupportPlan | null
+  const child = childResult.data as unknown as Child
+  const plan  = (plansResult.data?.[0] ?? null) as unknown as SupportPlan | null
 
   const reviewDate  = plan?.review_date ? formatDate(plan.review_date, 'yyyy年MM月dd日') : ''
   const planDate    = plan ? formatDate(plan.plan_date, 'yyyy年MM月dd日') : ''
@@ -67,18 +66,20 @@ export default async function PrintSupportPlanPage({
   const wishes      = [plan?.child_wishes, plan?.family_wishes].filter(Boolean).join('\n') || ''
 
   const docData = plan ? {
+    planId:        plan.id,
     childName:     child.name,
     planDate,
     reviewDate,
     wishes,
-    supportPolicy: plan.support_policy    || '',
-    longTermGoals: plan.long_term_goals   || '',
+    supportPolicy:  plan.support_policy   || '',
+    longTermGoals:  plan.long_term_goals  || '',
     shortTermGoals: plan.short_term_goals || '',
     managerName,
     areas: SUPPORT_AREAS.map((area) => ({
       label:   area.label,
       content: (plan[area.key] as string) || '',
       kasan:   area.kasan,
+      dbKey:   area.key as string,
     })),
   } : null
 
@@ -90,7 +91,6 @@ export default async function PrintSupportPlanPage({
           @page { size: A4 portrait; margin: 0; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
           .print\\:hidden { display: none !important; }
-          /* 帳票エリアを A4 全体に広げる */
           #doc-wrapper {
             width: 100% !important;
             margin: 0 !important;
@@ -114,12 +114,7 @@ export default async function PrintSupportPlanPage({
             {plan ? `${planDate} 作成の計画` : '有効な支援計画がありません'}
           </p>
         </div>
-        {docData && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <PrintOptions />
-            <ExcelExportButton data={docData} />
-          </div>
-        )}
+        {docData && <PrintOptions />}
       </div>
 
       {!plan && (
@@ -128,7 +123,6 @@ export default async function PrintSupportPlanPage({
         </div>
       )}
 
-      {/* 帳票本体（編集可能クライアントコンポーネント） */}
       {docData && (
         <div id="doc-wrapper" style={{ width: '200mm', margin: '8mm auto', padding: '0 4mm' }}>
           <SupportPlanDocument data={docData} />

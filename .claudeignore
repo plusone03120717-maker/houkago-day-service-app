@@ -1,0 +1,13 @@
+node_modules/
+.next/
+dist/
+build/
+.git/
+*.log
+*.lock
+.env
+.env.local
+__pycache__/
+*.pyc
+.cache/
+coverage/

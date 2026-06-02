@@ -4,7 +4,26 @@
       "Bash(node -e \":*)",
       "Bash(npx supabase:*)",
       "Bash(npx vercel:*)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(xargs grep -l \"record\\\\|attendance\\\\|history\")",
+      "Bash(git commit -m '@ *)",
+      "Bash(mkdir -p \"f:/放課後デイサービス管理アプリ/src/components/timecard\" && echo \"done\")",
+      "PowerShell(Get-Process -Name \"node\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -First 50)",
+      "Bash(Get-ChildItem -Path \"f:\\\\放課後デイサービス管理アプリ\\\\src\\\\app\" -Directory -Recurse -Depth 3)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(grep -E \"\\\\.sql$\")",
+      "Bash(mkdir -p \"f:/放課後デイサービス管理アプリ/src/app/print/support-plan/[childId]\")",
+      "Bash(npm install *)",
+      "PowerShell(cd \"f:\\\\放課後デイサービス管理アプリ\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" } | Select-Object -First 15)"
+    ],
+    "additionalDirectories": [
+      "f:\\放課後デイサービス管理アプリ\\src\\components",
+      "f:\\放課後デイサービス管理アプリ\\src\\app\\print\\support-plan"
     ]
   }
 }

@@ -1,9 +1,18 @@
 'use client'
 
 import { useState } from 'react'
-import { Pencil, Eye, Minus, Plus, AlignJustify } from 'lucide-react'
+import { Pencil, Eye, Minus, Plus, AlignJustify, Save, CheckCircle } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+
+export type AreaData = {
+  label: string
+  content: string
+  kasan: string
+  dbKey: string  // DBカラム名（保存時に使用）
+}
 
 export type SupportPlanDocumentData = {
+  planId: string
   childName: string
   planDate: string
   reviewDate: string
@@ -12,79 +21,117 @@ export type SupportPlanDocumentData = {
   longTermGoals: string
   shortTermGoals: string
   managerName: string
-  areas: { label: string; content: string; kasan: string }[]
+  areas: AreaData[]
+}
+
+type EditedValues = {
+  wishes: string
+  supportPolicy: string
+  longTermGoals: string
+  shortTermGoals: string
+  areaContents: string[]
 }
 
 const FONT_SIZES = [6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
 const ROW_HEIGHTS = {
-  compact: { section: 28, area: 38 },
+  compact: { section: 28, area: 36 },
   normal:  { section: 36, area: 48 },
   large:   { section: 48, area: 64 },
 }
 
-function EditableCell({
-  children,
-  editable,
-  className,
-  style,
-}: {
-  children?: string
-  editable: boolean
-  className?: string
-  style?: React.CSSProperties
-}) {
-  return (
-    <td
-      contentEditable={editable}
-      suppressContentEditableWarning
-      className={className}
-      style={{
-        ...style,
-        outline: editable ? '2px dashed #f59e0b' : undefined,
-        cursor: editable ? 'text' : undefined,
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-all',
-      }}
-    >
-      {children}
-    </td>
-  )
-}
-
 export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData }) {
+  const supabase = createClient()
+
   const [editMode, setEditMode] = useState(false)
-  const [fontIdx, setFontIdx] = useState(2)          // 7.5pt
-  const [rowSize, setRowSize] = useState<'compact' | 'normal' | 'large'>('normal')
+  const [fontIdx, setFontIdx]   = useState(2)   // 7.5pt
+  const [rowSize, setRowSize]   = useState<'compact' | 'normal' | 'large'>('normal')
+  const [saving, setSaving]     = useState(false)
+  const [saved, setSaved]       = useState(false)
 
-  const fontSize   = FONT_SIZES[fontIdx]
-  const heights    = ROW_HEIGHTS[rowSize]
+  const [values, setValues] = useState<EditedValues>({
+    wishes:        data.wishes,
+    supportPolicy: data.supportPolicy,
+    longTermGoals: data.longTermGoals,
+    shortTermGoals: data.shortTermGoals,
+    areaContents:  data.areas.map((a) => a.content),
+  })
 
-  const cellStyle: React.CSSProperties = {
+  const fontSize = FONT_SIZES[fontIdx]
+  const heights  = ROW_HEIGHTS[rowSize]
+
+  const handleSave = async () => {
+    setSaving(true)
+    const payload: Record<string, string> = {
+      family_wishes:  values.wishes,
+      support_policy: values.supportPolicy,
+      long_term_goals:  values.longTermGoals,
+      short_term_goals: values.shortTermGoals,
+    }
+    data.areas.forEach((area, i) => {
+      payload[area.dbKey] = values.areaContents[i] ?? ''
+    })
+    await supabase.from('support_plans').update(payload).eq('id', data.planId)
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 3000)
+  }
+
+  // ── スタイル定義 ─────────────────────────────────────────────────────────
+  const cell: React.CSSProperties = {
     border: '1px solid #111',
     padding: '2px 4px',
     verticalAlign: 'top',
     lineHeight: 1.45,
     fontSize: `${fontSize}pt`,
   }
-  const labelStyle: React.CSSProperties = {
-    ...cellStyle,
+  const lbl: React.CSSProperties = {
+    ...cell,
     backgroundColor: '#eeeeee',
     textAlign: 'center',
     whiteSpace: 'pre-line',
     fontSize: `${Math.max(6, fontSize - 0.5)}pt`,
   }
-  const thStyle: React.CSSProperties = {
-    ...cellStyle,
+  const th: React.CSSProperties = {
+    ...cell,
     backgroundColor: '#e0e0e0',
     textAlign: 'center',
     fontWeight: 'bold',
     fontSize: `${Math.max(6, fontSize - 0.5)}pt`,
   }
+  const taBase: React.CSSProperties = {
+    display: 'block',
+    width: '100%',
+    background: '#fffbeb',
+    border: '1.5px dashed #f59e0b',
+    fontFamily: 'inherit',
+    fontSize: 'inherit',
+    color: 'inherit',
+    lineHeight: 1.45,
+    padding: '1px 3px',
+    resize: 'vertical',
+    boxSizing: 'border-box',
+  }
+
+  // ── ヘルパー ────────────────────────────────────────────────────────────
+  const EditCell = ({
+    value, minHeight, onChange,
+  }: { value: string; minHeight: number; onChange: (v: string) => void }) =>
+    editMode ? (
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ ...taBase, minHeight }}
+      />
+    ) : (
+      <span style={{ whiteSpace: 'pre-wrap', display: 'block' }}>{value}</span>
+    )
 
   return (
     <>
-      {/* ─── 編集ツールバー（印刷時非表示）──────────────────────── */}
+      {/* ─── 編集ツールバー（印刷時非表示）────────────────────── */}
       <div className="print:hidden mb-4 flex flex-wrap items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+
+        {/* 編集モード切替 */}
         <button
           onClick={() => setEditMode((v) => !v)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -97,6 +144,27 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
           {editMode ? '編集を終了する' : '帳票を編集する'}
         </button>
 
+        {/* 保存ボタン（編集モードのとき表示） */}
+        {editMode && (
+          <button
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            <Save className="h-4 w-4" />
+            {saving ? '保存中...' : '変更を保存'}
+          </button>
+        )}
+
+        {/* 保存完了メッセージ */}
+        {saved && (
+          <span className="flex items-center gap-1 text-sm text-green-600 font-medium">
+            <CheckCircle className="h-4 w-4" />
+            保存しました
+          </span>
+        )}
+
+        {/* 文字サイズ */}
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-gray-500 shrink-0">文字サイズ</span>
           <button
@@ -116,6 +184,7 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
           </button>
         </div>
 
+        {/* 行の高さ */}
         <div className="flex items-center gap-1.5">
           <AlignJustify className="h-3.5 w-3.5 text-gray-400 shrink-0" />
           <span className="text-xs text-gray-500 shrink-0">行の高さ</span>
@@ -136,23 +205,19 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
 
         {editMode && (
           <p className="text-xs text-amber-700 w-full mt-0.5">
-            ✏️ 各セルをクリックして直接編集できます。編集後に「印刷する」または「PDFとして保存」を押してください。
+            ✏️ 各テキストエリアを直接編集できます。「変更を保存」で支援計画に反映されます。
           </p>
         )}
       </div>
 
       {/* ─── 帳票本体 ────────────────────────────────────────────── */}
-      <div
-        style={{
-          fontFamily: "var(--font-noto-sans-jp), 'Hiragino Sans', 'Yu Gothic', sans-serif",
-          fontSize: `${fontSize}pt`,
-          color: '#000',
-          width: '190mm',
-          margin: '0 auto',
-        }}
-      >
+      <div style={{
+        fontFamily: "var(--font-noto-sans-jp), 'Hiragino Sans', 'Yu Gothic', sans-serif",
+        fontSize: `${fontSize}pt`,
+        color: '#000',
+      }}>
         {/* タイトル行 */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '3px', fontSize: `${fontSize}pt` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '3px' }}>
           <span>利用時氏名：{data.childName}</span>
           <strong style={{ fontSize: `${fontSize + 3.5}pt`, letterSpacing: '0.15em' }}>個別支援計画書</strong>
           <span>作成年月日　{data.planDate}</span>
@@ -162,16 +227,24 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
         <table style={{ borderCollapse: 'collapse', width: '100%', marginBottom: '2px' }}>
           <tbody>
             <tr>
-              <td style={{ ...labelStyle, width: '72px', verticalAlign: 'middle' }}>利用児及び家族の{'\n'}生活に対する意向</td>
-              <EditableCell editable={editMode} style={{ ...cellStyle, minHeight: `${heights.section}px` }}>
-                {data.wishes}
-              </EditableCell>
+              <td style={{ ...lbl, width: '72px', verticalAlign: 'middle' }}>利用児及び家族の{'\n'}生活に対する意向</td>
+              <td style={{ ...cell, minHeight: heights.section }}>
+                <EditCell
+                  value={values.wishes}
+                  minHeight={heights.section}
+                  onChange={(v) => setValues((p) => ({ ...p, wishes: v }))}
+                />
+              </td>
             </tr>
             <tr>
-              <td style={{ ...labelStyle, verticalAlign: 'middle' }}>総合的な支援の方針</td>
-              <EditableCell editable={editMode} style={{ ...cellStyle, minHeight: `${heights.section}px` }}>
-                {data.supportPolicy}
-              </EditableCell>
+              <td style={{ ...lbl, verticalAlign: 'middle' }}>総合的な支援の方針</td>
+              <td style={{ ...cell, minHeight: heights.section }}>
+                <EditCell
+                  value={values.supportPolicy}
+                  minHeight={heights.section}
+                  onChange={(v) => setValues((p) => ({ ...p, supportPolicy: v }))}
+                />
+              </td>
             </tr>
           </tbody>
         </table>
@@ -180,20 +253,28 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
         <table style={{ borderCollapse: 'collapse', width: '100%', marginBottom: '2px' }}>
           <tbody>
             <tr>
-              <td style={{ ...labelStyle, width: '72px', verticalAlign: 'middle' }}>長期目標{'\n'}（内容・期間等）</td>
-              <EditableCell editable={editMode} style={{ ...cellStyle, minHeight: `${heights.section}px` }}>
-                {data.longTermGoals}
-              </EditableCell>
-              <td style={{ ...labelStyle, width: '88px', fontSize: `${Math.max(6, fontSize - 1)}pt` }} rowSpan={2}>
+              <td style={{ ...lbl, width: '72px', verticalAlign: 'middle' }}>長期目標{'\n'}（内容・期間等）</td>
+              <td style={{ ...cell, minHeight: heights.section }}>
+                <EditCell
+                  value={values.longTermGoals}
+                  minHeight={heights.section}
+                  onChange={(v) => setValues((p) => ({ ...p, longTermGoals: v }))}
+                />
+              </td>
+              <td style={{ ...lbl, width: '88px', fontSize: `${Math.max(6, fontSize - 1)}pt` }} rowSpan={2}>
                 支援の標準的な提供時間等{'\n'}（曜日・頻度・時間）
               </td>
-              <td style={{ ...cellStyle, width: '52px' }} rowSpan={2}></td>
+              <td style={{ ...cell, width: '52px' }} rowSpan={2}></td>
             </tr>
             <tr>
-              <td style={{ ...labelStyle, verticalAlign: 'middle' }}>短期目標{'\n'}（内容・期間等）</td>
-              <EditableCell editable={editMode} style={{ ...cellStyle, minHeight: `${heights.section}px` }}>
-                {data.shortTermGoals}
-              </EditableCell>
+              <td style={{ ...lbl, verticalAlign: 'middle' }}>短期目標{'\n'}（内容・期間等）</td>
+              <td style={{ ...cell, minHeight: heights.section }}>
+                <EditCell
+                  value={values.shortTermGoals}
+                  minHeight={heights.section}
+                  onChange={(v) => setValues((p) => ({ ...p, shortTermGoals: v }))}
+                />
+              </td>
             </tr>
           </tbody>
         </table>
@@ -203,42 +284,50 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
         <table style={{ borderCollapse: 'collapse', width: '100%', marginBottom: '4px' }}>
           <thead>
             <tr>
-              <th style={{ ...thStyle, width: '50px' }}>項　目</th>
-              <th style={{ ...thStyle, width: '88px' }}>支援目標{'\n'}（具体的な到達目標）</th>
-              <th style={{ ...thStyle }}>
+              <th style={{ ...th, width: '50px' }}>項　目</th>
+              <th style={{ ...th, width: '88px' }}>支援目標{'\n'}（具体的な到達目標）</th>
+              <th style={{ ...th }}>
                 支援内容{'\n'}
                 <span style={{ fontWeight: 'normal', fontSize: `${Math.max(5.5, fontSize - 1.5)}pt` }}>
                   （内容・支援の提供上のポイント・5領域（※）との関連性等）
                 </span>
               </th>
-              <th style={{ ...thStyle, width: '36px' }}>達成時期</th>
-              <th style={{ ...thStyle, width: '56px' }}></th>
-              <th style={{ ...thStyle, width: '36px' }}>担当者</th>
-              <th style={{ ...thStyle, width: '26px' }}>優先順位</th>
+              <th style={{ ...th, width: '36px' }}>達成時期</th>
+              <th style={{ ...th, width: '56px' }}></th>
+              <th style={{ ...th, width: '36px' }}>担当者</th>
+              <th style={{ ...th, width: '26px' }}>優先順位</th>
             </tr>
           </thead>
           <tbody>
             {data.areas.map((area, i) => (
               <tr key={i}>
-                <td style={{ ...labelStyle, whiteSpace: 'pre-line', minHeight: `${heights.area}px`, verticalAlign: 'middle' }}>
+                <td style={{ ...lbl, whiteSpace: 'pre-line', minHeight: heights.area, verticalAlign: 'middle' }}>
                   {area.label}
                 </td>
-                <EditableCell editable={editMode} style={{ ...cellStyle, minHeight: `${heights.area}px` }}>
-                  {''}
-                </EditableCell>
-                <EditableCell editable={editMode} style={{ ...cellStyle, minHeight: `${heights.area}px` }}>
-                  {area.content}
-                </EditableCell>
-                <td style={{ ...cellStyle, textAlign: 'center', verticalAlign: 'middle', fontSize: `${Math.max(6, fontSize - 0.5)}pt` }}>
+                {/* 支援目標（現在DBに保存先なし） */}
+                <td style={{ ...cell, minHeight: heights.area }}></td>
+                {/* 支援内容（DB保存対象） */}
+                <td style={{ ...cell, minHeight: heights.area }}>
+                  <EditCell
+                    value={values.areaContents[i] ?? ''}
+                    minHeight={heights.area}
+                    onChange={(v) => setValues((p) => {
+                      const next = [...p.areaContents]
+                      next[i] = v
+                      return { ...p, areaContents: next }
+                    })}
+                  />
+                </td>
+                <td style={{ ...cell, textAlign: 'center', verticalAlign: 'middle', fontSize: `${Math.max(6, fontSize - 0.5)}pt` }}>
                   {data.reviewDate}
                 </td>
-                <td style={{ ...cellStyle, textAlign: 'center', fontSize: `${Math.max(5.5, fontSize - 1)}pt` }}>
+                <td style={{ ...cell, textAlign: 'center', fontSize: `${Math.max(5.5, fontSize - 1)}pt` }}>
                   {area.kasan}
                 </td>
-                <td style={{ ...cellStyle, textAlign: 'center', verticalAlign: 'middle', fontSize: `${Math.max(6, fontSize - 0.5)}pt` }}>
+                <td style={{ ...cell, textAlign: 'center', verticalAlign: 'middle', fontSize: `${Math.max(6, fontSize - 0.5)}pt` }}>
                   {data.managerName}
                 </td>
-                <td style={{ ...cellStyle }}></td>
+                <td style={{ ...cell }}></td>
               </tr>
             ))}
           </tbody>
