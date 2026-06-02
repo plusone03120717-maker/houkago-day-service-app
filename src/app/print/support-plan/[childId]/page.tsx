@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { PrintOptions } from '@/components/documents/print-options'
+import { ExcelExportButton } from '@/components/documents/excel-export-button'
 import { formatDate } from '@/lib/utils'
 
 type Child = {
@@ -80,7 +81,26 @@ export default async function PrintSupportPlanPage({
             {plan ? `${planDate} 作成の計画` : '有効な支援計画がありません'}
           </p>
         </div>
-        {plan && <PrintOptions />}
+        {plan && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <PrintOptions />
+            <ExcelExportButton data={{
+              childName: child.name,
+              planDate,
+              reviewDate,
+              wishes,
+              supportPolicy: plan.support_policy || '',
+              longTermGoals: plan.long_term_goals || '',
+              shortTermGoals: plan.short_term_goals || '',
+              managerName,
+              areas: SUPPORT_AREAS.map((area) => ({
+                label: area.label,
+                content: (plan[area.key] as string) || '',
+                kasan: area.kasan,
+              })),
+            }} />
+          </div>
+        )}
       </div>
 
       {!plan && (
