@@ -122,33 +122,52 @@ export function ExcelExportButton({ data }: { data: SupportPlanExcelData }) {
         { s: { r: footerRow + 3, c: 0 }, e: { r: footerRow + 3, c: 6 } },
       ]
 
-      // ─── 列幅 ────────────────────────────────────────────────────
+      // ─── 列幅（A4に収まる比率に調整）──────────────────────────
       ws['!cols'] = [
-        { wch: 14 },  // A: 項目
-        { wch: 22 },  // B: 支援目標
-        { wch: 52 },  // C: 支援内容
-        { wch: 14 },  // D: 達成時期
-        { wch: 18 },  // E: 加算
-        { wch: 12 },  // F: 担当者
-        { wch: 8 },   // G: 優先順位
+        { wch: 10 },  // A: 項目
+        { wch: 16 },  // B: 支援目標
+        { wch: 36 },  // C: 支援内容
+        { wch: 10 },  // D: 達成時期
+        { wch: 14 },  // E: 加算
+        { wch: 10 },  // F: 担当者
+        { wch: 6 },   // G: 優先順位
       ]
 
-      // ─── 行高さ ──────────────────────────────────────────────────
+      // ─── 行高さ（A4 1枚に収まるよう設定）──────────────────────
       const rowHeights: { hpt: number }[] = [
-        { hpt: 20 },  // 0: タイトル
-        { hpt: 50 },  // 1: 意向
-        { hpt: 50 },  // 2: 方針
-        { hpt: 50 },  // 3: 長期目標
-        { hpt: 50 },  // 4: 短期目標
-        { hpt: 14 },  // 5: 見出し
-        { hpt: 28 },  // 6: テーブルヘッダー
-        ...data.areas.map(() => ({ hpt: 60 })),  // 7〜: 各領域
-        { hpt: 18 },  // フッター1
-        { hpt: 18 },  // フッター2
-        { hpt: 18 },  // フッター3
-        { hpt: 18 },  // フッター4
+        { hpt: 18 },  // 0: タイトル
+        { hpt: 36 },  // 1: 意向
+        { hpt: 36 },  // 2: 方針
+        { hpt: 36 },  // 3: 長期目標
+        { hpt: 36 },  // 4: 短期目標
+        { hpt: 12 },  // 5: 見出し
+        { hpt: 22 },  // 6: テーブルヘッダー
+        ...data.areas.map(() => ({ hpt: 46 })),  // 7〜: 各領域（7行）
+        { hpt: 14 },  // フッター1
+        { hpt: 14 },  // フッター2
+        { hpt: 14 },  // フッター3
+        { hpt: 14 },  // フッター4
       ]
       ws['!rows'] = rowHeights
+
+      // ─── 印刷設定（A4・1ページに収める）───────────────────────
+      ws['!pageSetup'] = {
+        paperSize: 9,          // 9 = A4
+        orientation: 'portrait',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 1,
+      }
+
+      // ─── 余白（インチ換算: 10mm ≈ 0.394inch）──────────────────
+      ws['!pageMargins'] = {
+        left: 0.39,
+        right: 0.39,
+        top: 0.39,
+        bottom: 0.39,
+        header: 0.12,
+        footer: 0.12,
+      }
 
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, '個別支援計画書')
