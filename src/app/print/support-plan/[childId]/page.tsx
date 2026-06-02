@@ -94,8 +94,9 @@ export default async function PrintSupportPlanPage({
           {/* 印刷スタイル */}
           <style>{`
             @media print {
-              @page { size: A4 portrait; margin: 10mm; }
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              /* margin: 0 でブラウザ自動出力のURL・日付・ページ番号を非表示にする */
+              @page { size: A4 portrait; margin: 0; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
             }
             .doc {
               font-family: var(--font-noto-sans-jp), 'Hiragino Sans', 'Yu Gothic', sans-serif;
@@ -106,7 +107,7 @@ export default async function PrintSupportPlanPage({
               padding: 0;
             }
             @media print {
-              .doc { margin: 0; width: 100%; }
+              .doc { margin: 0; width: 100%; padding: 10mm; box-sizing: border-box; }
             }
             table { border-collapse: collapse; width: 100%; }
             td, th { border: 1px solid #111; padding: 2px 4px; vertical-align: top; line-height: 1.45; }
