@@ -290,7 +290,7 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
           <thead>
             <tr>
               <th style={{ ...th, width: '50px' }}>項　目</th>
-              <th style={{ ...th, width: '88px' }}>支援目標{'\n'}（具体的な到達目標）</th>
+              <th style={{ ...th, width: '132px' }}>支援目標{'\n'}（具体的な到達目標）</th>
               <th style={{ ...th }}>
                 支援内容{'\n'}
                 <span style={{ fontWeight: 'normal', fontSize: `${Math.max(5.5, fontSize - 1.5)}pt` }}>
