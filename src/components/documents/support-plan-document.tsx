@@ -10,11 +10,14 @@ export type AreaData = {
   content: string
   assignee: string
   priority: string
+  achievement: string
   kasan: string
   dbKey: string
   goalDbKey: string
   assigneeDbKey: string
   priorityDbKey: string
+  achievementDbKey: string
+  kasanDbKey: string
 }
 
 export type SupportPlanDocumentData = {
@@ -41,6 +44,8 @@ type EditedValues = {
   areaContents: string[]
   areaAssignees: string[]
   areaPriorities: string[]
+  areaAchievements: string[]
+  areaKasans: string[]
 }
 
 const FONT_SIZES = [6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
@@ -67,8 +72,10 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
     shortTermGoals: data.shortTermGoals,
     areaGoals:      data.areas.map((a) => a.goal),
     areaContents:   data.areas.map((a) => a.content),
-    areaAssignees:  data.areas.map((a) => a.assignee),
-    areaPriorities: data.areas.map((a) => a.priority),
+    areaAssignees:    data.areas.map((a) => a.assignee),
+    areaPriorities:   data.areas.map((a) => a.priority),
+    areaAchievements: data.areas.map((a) => a.achievement),
+    areaKasans:       data.areas.map((a) => a.kasan),
   })
 
   const fontSize = FONT_SIZES[fontIdx]
@@ -86,8 +93,10 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
     data.areas.forEach((area, i) => {
       payload[area.dbKey]          = values.areaContents[i]   ?? ''
       payload[area.goalDbKey]      = values.areaGoals[i]      ?? ''
-      payload[area.assigneeDbKey]  = values.areaAssignees[i]  ?? ''
-      payload[area.priorityDbKey]  = values.areaPriorities[i] ?? ''
+      payload[area.assigneeDbKey]    = values.areaAssignees[i]    ?? ''
+      payload[area.priorityDbKey]    = values.areaPriorities[i]   ?? ''
+      payload[area.achievementDbKey] = values.areaAchievements[i] ?? ''
+      payload[area.kasanDbKey]       = values.areaKasans[i]       ?? ''
     })
     await supabase.from('support_plans').update(payload).eq('id', data.planId)
     setSaving(false)
@@ -354,10 +363,24 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
                   />
                 </td>
                 <td style={{ ...cell, textAlign: 'center', verticalAlign: 'middle', fontSize: `${Math.max(6, fontSize - 0.5)}pt` }}>
-                  {data.reviewDate}
+                  <EditCell
+                    value={values.areaAchievements[i] ?? ''}
+                    minHeight={heights.area}
+                    onChange={(v) => setValues((p) => {
+                      const next = [...p.areaAchievements]; next[i] = v
+                      return { ...p, areaAchievements: next }
+                    })}
+                  />
                 </td>
                 <td style={{ ...cell, textAlign: 'center', fontSize: `${Math.max(5.5, fontSize - 1)}pt` }}>
-                  {area.kasan}
+                  <EditCell
+                    value={values.areaKasans[i] ?? ''}
+                    minHeight={heights.area}
+                    onChange={(v) => setValues((p) => {
+                      const next = [...p.areaKasans]; next[i] = v
+                      return { ...p, areaKasans: next }
+                    })}
+                  />
                 </td>
                 <td style={{ ...cell, textAlign: 'center', verticalAlign: 'middle', fontSize: `${Math.max(6, fontSize - 0.5)}pt` }}>
                   <EditCell

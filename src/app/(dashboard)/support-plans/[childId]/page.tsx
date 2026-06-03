@@ -44,6 +44,20 @@ type SupportPlan = {
   support_priority_social_relationships: string | null
   support_priority_transition: string | null
   support_priority_family: string | null
+  support_achievement_health_life: string | null
+  support_achievement_movement_sensory: string | null
+  support_achievement_cognition_behavior: string | null
+  support_achievement_language_communication: string | null
+  support_achievement_social_relationships: string | null
+  support_achievement_transition: string | null
+  support_achievement_family: string | null
+  support_kasan_health_life: string | null
+  support_kasan_movement_sensory: string | null
+  support_kasan_cognition_behavior: string | null
+  support_kasan_language_communication: string | null
+  support_kasan_social_relationships: string | null
+  support_kasan_transition: string | null
+  support_kasan_family: string | null
   manager_name: string | null
   standard_service_time: string | null
   family_wishes: string | null
@@ -83,7 +97,7 @@ export default async function SupportPlanDetailPage({
 
   const { data: plansRaw } = await supabase
     .from('support_plans')
-    .select('id, plan_date, review_date, status, long_term_goals, short_term_goals, support_content, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, support_goal_health_life, support_goal_movement_sensory, support_goal_cognition_behavior, support_goal_language_communication, support_goal_social_relationships, support_goal_transition, support_goal_family, support_assignee_health_life, support_assignee_movement_sensory, support_assignee_cognition_behavior, support_assignee_language_communication, support_assignee_social_relationships, support_assignee_transition, support_assignee_family, support_priority_health_life, support_priority_movement_sensory, support_priority_cognition_behavior, support_priority_language_communication, support_priority_social_relationships, support_priority_transition, support_priority_family, manager_name, standard_service_time, family_wishes, support_policy, monitoring_notes, long_term_goal_rating, short_term_goal_rating, created_at')
+    .select('id, plan_date, review_date, status, long_term_goals, short_term_goals, support_content, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, support_goal_health_life, support_goal_movement_sensory, support_goal_cognition_behavior, support_goal_language_communication, support_goal_social_relationships, support_goal_transition, support_goal_family, support_assignee_health_life, support_assignee_movement_sensory, support_assignee_cognition_behavior, support_assignee_language_communication, support_assignee_social_relationships, support_assignee_transition, support_assignee_family, support_priority_health_life, support_priority_movement_sensory, support_priority_cognition_behavior, support_priority_language_communication, support_priority_social_relationships, support_priority_transition, support_priority_family, support_achievement_health_life, support_achievement_movement_sensory, support_achievement_cognition_behavior, support_achievement_language_communication, support_achievement_social_relationships, support_achievement_transition, support_achievement_family, support_kasan_health_life, support_kasan_movement_sensory, support_kasan_cognition_behavior, support_kasan_language_communication, support_kasan_social_relationships, support_kasan_transition, support_kasan_family, manager_name, standard_service_time, family_wishes, support_policy, monitoring_notes, long_term_goal_rating, short_term_goal_rating, created_at')
     .eq('child_id', childId)
     .order('plan_date', { ascending: false })
   const plans = (plansRaw ?? []) as unknown as SupportPlan[]
