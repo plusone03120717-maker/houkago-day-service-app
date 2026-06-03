@@ -26,6 +26,9 @@ type Plan = {
   transport_type: string
   pickup_location_type: string
   dropoff_location_type: string
+  daytime_support: boolean
+  daytime_support_start_time: string | null
+  daytime_support_end_time: string | null
   units: { name: string } | null
 }
 type DaySetting = {
@@ -114,6 +117,9 @@ interface EditState {
   transport_type: string
   pickup_location_type: string
   dropoff_location_type: string
+  daytime_support: boolean
+  daytime_support_start_time: string
+  daytime_support_end_time: string
 }
 
 interface DayEditState {
@@ -136,7 +142,7 @@ interface DateOverrideEditState {
   service_end_time: string
 }
 
-const PLAN_SELECT = 'id, name, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, service_start_time, service_end_time, transport_type, pickup_location_type, dropoff_location_type, units(name)'
+const PLAN_SELECT = 'id, name, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, service_start_time, service_end_time, transport_type, pickup_location_type, dropoff_location_type, daytime_support, daytime_support_start_time, daytime_support_end_time, units(name)'
 const DAY_SELECT = 'id, plan_id, day_of_week, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time'
 const OVERRIDE_SELECT = 'id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time, is_cancelled'
 
@@ -197,6 +203,9 @@ export function ChildSchedulePlanner({
   const [dropoffTime, setDropoffTime] = useState('')
   const [serviceStartTime, setServiceStartTime] = useState('')
   const [serviceEndTime, setServiceEndTime] = useState('')
+  const [daytimeSupport, setDaytimeSupport] = useState(false)
+  const [daytimeSupportStartTime, setDaytimeSupportStartTime] = useState('')
+  const [daytimeSupportEndTime, setDaytimeSupportEndTime] = useState('')
   const [transportType, setTransportType] = useState(defaultTransportType)
   const [pickupLocationType, setPickupLocationType] = useState(defaultPickupLocationType)
   const [dropoffLocationType, setDropoffLocationType] = useState(defaultDropoffLocationType)
@@ -384,6 +393,9 @@ export function ChildSchedulePlanner({
       transport_type: plan.transport_type,
       pickup_location_type: plan.pickup_location_type,
       dropoff_location_type: plan.dropoff_location_type,
+      daytime_support: plan.daytime_support,
+      daytime_support_start_time: formatTime(plan.daytime_support_start_time),
+      daytime_support_end_time: formatTime(plan.daytime_support_end_time),
     })
     setOpenDayKey(null)
     setDayEditState(null)
@@ -416,6 +428,9 @@ export function ChildSchedulePlanner({
         transport_type: editState.transport_type,
         pickup_location_type: editState.pickup_location_type,
         dropoff_location_type: editState.dropoff_location_type,
+        daytime_support: editState.daytime_support,
+        daytime_support_start_time: editState.daytime_support ? (editState.daytime_support_start_time || null) : null,
+        daytime_support_end_time:   editState.daytime_support ? (editState.daytime_support_end_time   || null) : null,
       })
       .eq('id', planId)
       .select(PLAN_SELECT)
@@ -516,6 +531,9 @@ export function ChildSchedulePlanner({
         transport_type: transportType,
         pickup_location_type: pickupLocationType,
         dropoff_location_type: dropoffLocationType,
+        daytime_support: daytimeSupport,
+        daytime_support_start_time: daytimeSupport ? (daytimeSupportStartTime || null) : null,
+        daytime_support_end_time:   daytimeSupport ? (daytimeSupportEndTime   || null) : null,
       })
       .select(PLAN_SELECT)
       .single()
@@ -532,6 +550,7 @@ export function ChildSchedulePlanner({
       setEndDate(''); setNoEndDate(true)
       setPickupTime(''); setDropoffTime('')
       setServiceStartTime(''); setServiceEndTime('')
+      setDaytimeSupport(false); setDaytimeSupportStartTime(''); setDaytimeSupportEndTime('')
       setTransportType(defaultTransportType)
       setPickupLocationType(defaultPickupLocationType)
       setDropoffLocationType(defaultDropoffLocationType)
@@ -690,6 +709,36 @@ export function ChildSchedulePlanner({
     </div>
   )
 
+  const daytimeInputs = (
+    enabled: boolean, setEnabled: (v: boolean) => void,
+    start: string, setStart: (v: string) => void,
+    end: string,   setEnd:   (v: string) => void,
+  ) => (
+    <div className="space-y-2">
+      <label className="flex items-center gap-2 cursor-pointer text-sm">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+        />
+        <span className="font-medium text-gray-700">日中一時支援を利用</span>
+      </label>
+      {enabled && (
+        <div className="grid grid-cols-2 gap-3 pl-6">
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">開始時間</label>
+            <TimeInput value={start} onChange={setStart} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">終了時間</label>
+            <TimeInput value={end} onChange={setEnd} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
   const locationLabel = (type: string) => type === 'school' ? '学校' : '自宅'
 
   return (
@@ -809,6 +858,15 @@ export function ChildSchedulePlanner({
                     (v) => setEditState((p) => p ? { ...p, service_end_time: v } : p),
                   )}
 
+                  {daytimeInputs(
+                    editState.daytime_support,
+                    (v) => setEditState((p) => p ? { ...p, daytime_support: v } : p),
+                    editState.daytime_support_start_time,
+                    (v) => setEditState((p) => p ? { ...p, daytime_support_start_time: v } : p),
+                    editState.daytime_support_end_time,
+                    (v) => setEditState((p) => p ? { ...p, daytime_support_end_time: v } : p),
+                  )}
+
                   <div className="flex gap-2 pt-1">
                     <Button variant="outline" size="sm" onClick={cancelEdit}>キャンセル</Button>
                     <Button size="sm" onClick={() => handleSaveEdit(plan.id)}
@@ -898,6 +956,11 @@ export function ChildSchedulePlanner({
                         {plan.service_start_time && (
                           <span className="flex items-center gap-1 text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
                             <Clock className="h-3 w-3" />利用 {formatTime(plan.service_start_time)}{plan.service_end_time ? `〜${formatTime(plan.service_end_time)}` : '〜'}
+                          </span>
+                        )}
+                        {plan.daytime_support && (
+                          <span className="flex items-center gap-1 text-xs text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">
+                            <Clock className="h-3 w-3" />日中一時{plan.daytime_support_start_time ? ` ${formatTime(plan.daytime_support_start_time)}〜${formatTime(plan.daytime_support_end_time)}` : ''}
                           </span>
                         )}
                       </div>
@@ -1201,6 +1264,8 @@ export function ChildSchedulePlanner({
             {transportInputs(transportType, setTransportType, pickupLocationType, setPickupLocationType, dropoffLocationType, setDropoffLocationType, pickupTime, setPickupTime, dropoffTime, setDropoffTime)}
 
             {serviceTimeInputs(serviceStartTime, setServiceStartTime, serviceEndTime, setServiceEndTime)}
+
+            {daytimeInputs(daytimeSupport, setDaytimeSupport, daytimeSupportStartTime, setDaytimeSupportStartTime, daytimeSupportEndTime, setDaytimeSupportEndTime)}
 
             {saveError && (
               <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

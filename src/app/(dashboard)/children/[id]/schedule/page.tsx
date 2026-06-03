@@ -46,7 +46,7 @@ export default async function ChildSchedulePage({
   // 既存の利用計画
   const { data: plansRaw } = await supabase
     .from('usage_plans')
-    .select('id, name, child_id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, service_start_time, service_end_time, transport_type, pickup_location_type, dropoff_location_type, units(name)')
+    .select('id, name, child_id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, service_start_time, service_end_time, transport_type, pickup_location_type, dropoff_location_type, daytime_support, daytime_support_start_time, daytime_support_end_time, units(name)')
     .eq('child_id', childId)
     .order('start_date', { ascending: false })
 
@@ -66,6 +66,9 @@ export default async function ChildSchedulePage({
     transport_type: string
     pickup_location_type: string
     dropoff_location_type: string
+    daytime_support: boolean
+    daytime_support_start_time: string | null
+    daytime_support_end_time: string | null
     units: { name: string } | null
   }
   const plans = (plansRaw ?? []) as unknown as Plan[]
