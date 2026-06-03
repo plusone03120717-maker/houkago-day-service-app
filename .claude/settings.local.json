@@ -19,7 +19,8 @@
       "Bash(grep -E \"\\\\.sql$\")",
       "Bash(mkdir -p \"f:/放課後デイサービス管理アプリ/src/app/print/support-plan/[childId]\")",
       "Bash(npm install *)",
-      "PowerShell(cd \"f:\\\\放課後デイサービス管理アプリ\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" } | Select-Object -First 15)"
+      "PowerShell(cd \"f:\\\\放課後デイサービス管理アプリ\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" } | Select-Object -First 15)",
+      "PowerShell(cd \"f:\\\\放課後デイサービス管理アプリ\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" })"
     ],
     "additionalDirectories": [
       "f:\\放課後デイサービス管理アプリ\\src\\components",

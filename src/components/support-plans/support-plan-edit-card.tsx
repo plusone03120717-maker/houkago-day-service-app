@@ -34,6 +34,7 @@ type SupportPlan = {
   support_goal_family: string | null
   family_wishes: string | null
   support_policy: string | null
+  manager_name: string | null
   monitoring_notes: string | null
   long_term_goal_rating: number | null
   short_term_goal_rating: number | null
@@ -104,6 +105,7 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
     support_goal_transition: plan.support_goal_transition ?? '',
     support_goal_family: plan.support_goal_family ?? '',
   })
+  const [managerName, setManagerName] = useState(plan.manager_name ?? '')
   const [monitoringNotes, setMonitoringNotes] = useState(plan.monitoring_notes ?? '')
   const [saving, setSaving] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
@@ -172,6 +174,7 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
       support_goal_social_relationships: goalValues.support_goal_social_relationships || null,
       support_goal_transition: goalValues.support_goal_transition || null,
       support_goal_family: goalValues.support_goal_family || null,
+      manager_name: managerName || null,
       monitoring_notes: monitoringNotes || null,
       long_term_goal_rating: longTermGoalRating || null,
       short_term_goal_rating: shortTermGoalRating || null,
@@ -290,6 +293,12 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1">支援内容</p>
                 <p className="text-gray-700 whitespace-pre-wrap">{plan.support_content}</p>
+              </div>
+            )}
+            {plan.manager_name && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-1">児童発達支援管理責任者</p>
+                <p className="text-gray-700">{plan.manager_name}</p>
               </div>
             )}
             {plan.monitoring_notes && (
@@ -470,6 +479,18 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* 児童発達支援管理責任者 */}
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">児童発達支援管理責任者氏名</label>
+              <input
+                type="text"
+                value={managerName}
+                onChange={(e) => setManagerName(e.target.value)}
+                placeholder="氏名を入力"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
             </div>
 
             {/* モニタリング記録 */}
