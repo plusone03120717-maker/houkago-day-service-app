@@ -21,15 +21,15 @@ export async function POST(request: NextRequest) {
 【ルール】
 ・「〜できるようになる」「〜を身につける」「〜を目指す」などの目標表現を使う
 ・支援内容と対応した具体的な到達目標
-・50〜120字程度
-・目標文のみを出力（説明・見出し不要）
+・50字程度（長くても60字以内）で1文にまとめる
+・目標文のみを出力（説明・見出し・改行不要）
 
 支援内容:
 ${supportContent.trim()}`
 
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 300,
+    max_tokens: 150,
     messages: [{ role: 'user', content: prompt }],
   })
 
