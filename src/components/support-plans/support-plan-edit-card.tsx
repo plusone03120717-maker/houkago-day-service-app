@@ -60,6 +60,13 @@ type SupportPlan = {
   support_kasan_social_relationships: string | null
   support_kasan_transition: string | null
   support_kasan_family: string | null
+  support_evaluation_health_life: string | null
+  support_evaluation_movement_sensory: string | null
+  support_evaluation_cognition_behavior: string | null
+  support_evaluation_language_communication: string | null
+  support_evaluation_social_relationships: string | null
+  support_evaluation_transition: string | null
+  support_evaluation_family: string | null
   family_wishes: string | null
   support_policy: string | null
   manager_name: string | null
@@ -83,13 +90,13 @@ const statusVariant: Record<string, 'secondary' | 'success' | 'warning' | 'defau
 }
 
 const AREAS = [
-  { key: 'support_health_life' as const,            goalKey: 'support_goal_health_life' as const,            assigneeKey: 'support_assignee_health_life' as const,            priorityKey: 'support_priority_health_life' as const,            achievementKey: 'support_achievement_health_life' as const,            kasanKey: 'support_kasan_health_life' as const,            label: '① 健康・生活',              defaultKasan: '医療連携体制加算' },
-  { key: 'support_movement_sensory' as const,       goalKey: 'support_goal_movement_sensory' as const,       assigneeKey: 'support_assignee_movement_sensory' as const,       priorityKey: 'support_priority_movement_sensory' as const,       achievementKey: 'support_achievement_movement_sensory' as const,       kasanKey: 'support_kasan_movement_sensory' as const,       label: '② 運動・感覚',              defaultKasan: '専門的支援実施加算' },
-  { key: 'support_cognition_behavior' as const,     goalKey: 'support_goal_cognition_behavior' as const,     assigneeKey: 'support_assignee_cognition_behavior' as const,     priorityKey: 'support_priority_cognition_behavior' as const,     achievementKey: 'support_achievement_cognition_behavior' as const,     kasanKey: 'support_kasan_cognition_behavior' as const,     label: '③ 認知・行動',              defaultKasan: '' },
-  { key: 'support_language_communication' as const, goalKey: 'support_goal_language_communication' as const, assigneeKey: 'support_assignee_language_communication' as const, priorityKey: 'support_priority_language_communication' as const, achievementKey: 'support_achievement_language_communication' as const, kasanKey: 'support_kasan_language_communication' as const, label: '④ 言語・コミュニケーション', defaultKasan: '' },
-  { key: 'support_social_relationships' as const,   goalKey: 'support_goal_social_relationships' as const,   assigneeKey: 'support_assignee_social_relationships' as const,   priorityKey: 'support_priority_social_relationships' as const,   achievementKey: 'support_achievement_social_relationships' as const,   kasanKey: 'support_kasan_social_relationships' as const,   label: '⑤ 人間関係・社会性',        defaultKasan: '' },
-  { key: 'support_transition' as const,             goalKey: 'support_goal_transition' as const,             assigneeKey: 'support_assignee_transition' as const,             priorityKey: 'support_priority_transition' as const,             achievementKey: 'support_achievement_transition' as const,             kasanKey: 'support_kasan_transition' as const,             label: '⑥ 移行支援',               defaultKasan: '' },
-  { key: 'support_family' as const,                 goalKey: 'support_goal_family' as const,                 assigneeKey: 'support_assignee_family' as const,                 priorityKey: 'support_priority_family' as const,                 achievementKey: 'support_achievement_family' as const,                 kasanKey: 'support_kasan_family' as const,                 label: '⑦ 家族支援',               defaultKasan: '家族支援加算' },
+  { key: 'support_health_life' as const,            goalKey: 'support_goal_health_life' as const,            assigneeKey: 'support_assignee_health_life' as const,            priorityKey: 'support_priority_health_life' as const,            achievementKey: 'support_achievement_health_life' as const,            kasanKey: 'support_kasan_health_life' as const,            evaluationKey: 'support_evaluation_health_life' as const,            label: '① 健康・生活',              defaultKasan: '医療連携体制加算' },
+  { key: 'support_movement_sensory' as const,       goalKey: 'support_goal_movement_sensory' as const,       assigneeKey: 'support_assignee_movement_sensory' as const,       priorityKey: 'support_priority_movement_sensory' as const,       achievementKey: 'support_achievement_movement_sensory' as const,       kasanKey: 'support_kasan_movement_sensory' as const,       evaluationKey: 'support_evaluation_movement_sensory' as const,       label: '② 運動・感覚',              defaultKasan: '専門的支援実施加算' },
+  { key: 'support_cognition_behavior' as const,     goalKey: 'support_goal_cognition_behavior' as const,     assigneeKey: 'support_assignee_cognition_behavior' as const,     priorityKey: 'support_priority_cognition_behavior' as const,     achievementKey: 'support_achievement_cognition_behavior' as const,     kasanKey: 'support_kasan_cognition_behavior' as const,     evaluationKey: 'support_evaluation_cognition_behavior' as const,     label: '③ 認知・行動',              defaultKasan: '' },
+  { key: 'support_language_communication' as const, goalKey: 'support_goal_language_communication' as const, assigneeKey: 'support_assignee_language_communication' as const, priorityKey: 'support_priority_language_communication' as const, achievementKey: 'support_achievement_language_communication' as const, kasanKey: 'support_kasan_language_communication' as const, evaluationKey: 'support_evaluation_language_communication' as const, label: '④ 言語・コミュニケーション', defaultKasan: '' },
+  { key: 'support_social_relationships' as const,   goalKey: 'support_goal_social_relationships' as const,   assigneeKey: 'support_assignee_social_relationships' as const,   priorityKey: 'support_priority_social_relationships' as const,   achievementKey: 'support_achievement_social_relationships' as const,   kasanKey: 'support_kasan_social_relationships' as const,   evaluationKey: 'support_evaluation_social_relationships' as const,   label: '⑤ 人間関係・社会性',        defaultKasan: '' },
+  { key: 'support_transition' as const,             goalKey: 'support_goal_transition' as const,             assigneeKey: 'support_assignee_transition' as const,             priorityKey: 'support_priority_transition' as const,             achievementKey: 'support_achievement_transition' as const,             kasanKey: 'support_kasan_transition' as const,             evaluationKey: 'support_evaluation_transition' as const,             label: '⑥ 移行支援',               defaultKasan: '' },
+  { key: 'support_family' as const,                 goalKey: 'support_goal_family' as const,                 assigneeKey: 'support_assignee_family' as const,                 priorityKey: 'support_priority_family' as const,                 achievementKey: 'support_achievement_family' as const,                 kasanKey: 'support_kasan_family' as const,                 evaluationKey: 'support_evaluation_family' as const,                 label: '⑦ 家族支援',               defaultKasan: '家族支援加算' },
 ] as const
 
 const ACHIEVEMENT_OPTIONS = ['', ...Array.from({ length: 12 }, (_, i) => `${i + 1}ヶ月`)]
@@ -100,12 +107,14 @@ type AssigneeKey     = typeof AREAS[number]['assigneeKey']
 type PriorityKey     = typeof AREAS[number]['priorityKey']
 type AchievementKey  = typeof AREAS[number]['achievementKey']
 type KasanKey        = typeof AREAS[number]['kasanKey']
+type EvaluationKey   = typeof AREAS[number]['evaluationKey']
 type AreaValues      = Record<AreaKey, string>
 type GoalValues      = Record<AreaGoalKey, string>
 type AssigneeValues  = Record<AssigneeKey, string>
 type PriorityValues  = Record<PriorityKey, string>
 type AchievementValues = Record<AchievementKey, string>
-type KasanValues     = Record<KasanKey, string>
+type KasanValues       = Record<KasanKey, string>
+type EvaluationValues  = Record<EvaluationKey, string>
 
 interface Props {
   plan: SupportPlan
@@ -222,11 +231,22 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
     support_kasan_family: plan.support_kasan_family ?? '',
   })
 
+  const [evaluationValues, setEvaluationValues] = useState<EvaluationValues>({
+    support_evaluation_health_life: plan.support_evaluation_health_life ?? '',
+    support_evaluation_movement_sensory: plan.support_evaluation_movement_sensory ?? '',
+    support_evaluation_cognition_behavior: plan.support_evaluation_cognition_behavior ?? '',
+    support_evaluation_language_communication: plan.support_evaluation_language_communication ?? '',
+    support_evaluation_social_relationships: plan.support_evaluation_social_relationships ?? '',
+    support_evaluation_transition: plan.support_evaluation_transition ?? '',
+    support_evaluation_family: plan.support_evaluation_family ?? '',
+  })
+
   const setGoal        = (key: AreaGoalKey,    value: string) => setGoalValues((p)        => ({ ...p, [key]: value }))
   const setAssignee    = (key: AssigneeKey,     value: string) => setAssigneeValues((p)    => ({ ...p, [key]: value }))
   const setPriority    = (key: PriorityKey,     value: string) => setPriorityValues((p)    => ({ ...p, [key]: value }))
   const setAchievement = (key: AchievementKey,  value: string) => setAchievementValues((p) => ({ ...p, [key]: value }))
   const setKasan       = (key: KasanKey,        value: string) => setKasanValues((p)       => ({ ...p, [key]: value }))
+  const setEvaluation  = (key: EvaluationKey,  value: string) => setEvaluationValues((p)  => ({ ...p, [key]: value }))
 
   const generateGoal = async (area: typeof AREAS[number]) => {
     const content = areaValues[area.key]
@@ -316,6 +336,13 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
       support_kasan_social_relationships: kasanValues.support_kasan_social_relationships || null,
       support_kasan_transition: kasanValues.support_kasan_transition || null,
       support_kasan_family: kasanValues.support_kasan_family || null,
+      support_evaluation_health_life: evaluationValues.support_evaluation_health_life || null,
+      support_evaluation_movement_sensory: evaluationValues.support_evaluation_movement_sensory || null,
+      support_evaluation_cognition_behavior: evaluationValues.support_evaluation_cognition_behavior || null,
+      support_evaluation_language_communication: evaluationValues.support_evaluation_language_communication || null,
+      support_evaluation_social_relationships: evaluationValues.support_evaluation_social_relationships || null,
+      support_evaluation_transition: evaluationValues.support_evaluation_transition || null,
+      support_evaluation_family: evaluationValues.support_evaluation_family || null,
       manager_name: managerName || null,
       standard_service_time: standardServiceTime || null,
       monitoring_notes: monitoringNotes || null,
@@ -630,6 +657,18 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
                       onChange={(e) => setArea(area.key, e.target.value)}
                       rows={2}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none bg-white"
+                    />
+                  </div>
+
+                  {/* 評価（2枚目のシート用） */}
+                  <div>
+                    <label className="text-xs font-medium text-orange-700 mb-1 block">評価（2枚目シート）</label>
+                    <textarea
+                      value={evaluationValues[area.evaluationKey]}
+                      onChange={(e) => setEvaluation(area.evaluationKey, e.target.value)}
+                      rows={2}
+                      placeholder="目標達成の評価・振り返りを記入"
+                      className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400 resize-none bg-orange-50/30"
                     />
                   </div>
 

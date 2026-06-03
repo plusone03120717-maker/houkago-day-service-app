@@ -12,12 +12,14 @@ export type AreaData = {
   priority: string
   achievement: string
   kasan: string
+  evaluation: string
   dbKey: string
   goalDbKey: string
   assigneeDbKey: string
   priorityDbKey: string
   achievementDbKey: string
   kasanDbKey: string
+  evaluationDbKey: string
 }
 
 export type SupportPlanDocumentData = {
@@ -46,6 +48,7 @@ type EditedValues = {
   areaPriorities: string[]
   areaAchievements: string[]
   areaKasans: string[]
+  areaEvaluations: string[]
 }
 
 const FONT_SIZES = [6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
@@ -76,6 +79,7 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
     areaPriorities:   data.areas.map((a) => a.priority),
     areaAchievements: data.areas.map((a) => a.achievement),
     areaKasans:       data.areas.map((a) => a.kasan),
+    areaEvaluations:  data.areas.map((a) => a.evaluation),
   })
 
   const fontSize = FONT_SIZES[fontIdx]
@@ -95,8 +99,9 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
       payload[area.goalDbKey]      = values.areaGoals[i]      ?? ''
       payload[area.assigneeDbKey]    = values.areaAssignees[i]    ?? ''
       payload[area.priorityDbKey]    = values.areaPriorities[i]   ?? ''
-      payload[area.achievementDbKey] = values.areaAchievements[i] ?? ''
-      payload[area.kasanDbKey]       = values.areaKasans[i]       ?? ''
+      payload[area.achievementDbKey]  = values.areaAchievements[i]  ?? ''
+      payload[area.kasanDbKey]        = values.areaKasans[i]        ?? ''
+      payload[area.evaluationDbKey]   = values.areaEvaluations[i]   ?? ''
     })
     await supabase.from('support_plans').update(payload).eq('id', data.planId)
     setSaving(false)
@@ -399,6 +404,111 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
                     onChange={(v) => setValues((p) => {
                       const next = [...p.areaPriorities]; next[i] = v
                       return { ...p, areaPriorities: next }
+                    })}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* フッター */}
+        <div style={{ fontSize: `${Math.max(5.5, fontSize - 1.5)}pt`, color: '#333', marginBottom: '4px' }}>
+          ※5領域の視点「健康・生活」「運動・感覚」「認知・行動」「言語・コミュニケーション」「人間関係・社会性」<br />
+          本計画書に基づき支援の説明を受け、内容に同意しました。
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: `${fontSize}pt` }}>
+          <div>
+            提供する支援内容について、本計画書に基づき説明しました。<br />
+            児童発達支援管理責任者氏名：{data.managerName}
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            　　年　　月　　日　　（保護者署名）
+          </div>
+        </div>
+      </div>
+
+      {/* ══════════ 2ページ目（評価シート）══════════ */}
+      <div style={{ pageBreakBefore: 'always', paddingTop: '2px' }}>
+        {/* タイトル行 */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '3px', fontSize: `${fontSize}pt` }}>
+          <span>利用時氏名：{data.childName}</span>
+          <strong style={{ fontSize: `${fontSize + 3.5}pt`, letterSpacing: '0.15em' }}>個別支援計画書</strong>
+          <span>作成年月日　{data.planDate}</span>
+        </div>
+
+        {/* 意向・方針 */}
+        <table style={{ borderCollapse: 'collapse', width: '100%', marginBottom: '2px' }}>
+          <tbody>
+            <tr>
+              <td style={{ ...lbl, width: '72px', verticalAlign: 'middle' }}>利用児及び家族の{'\n'}生活に対する意向</td>
+              <td style={{ ...cell, minHeight: heights.section, whiteSpace: 'pre-wrap' }}>{values.wishes}</td>
+            </tr>
+            <tr>
+              <td style={{ ...lbl, verticalAlign: 'middle' }}>総合的な支援の方針</td>
+              <td style={{ ...cell, minHeight: heights.section, whiteSpace: 'pre-wrap' }}>{values.supportPolicy}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* 目標 */}
+        <table style={{ borderCollapse: 'collapse', width: '100%', marginBottom: '2px' }}>
+          <tbody>
+            <tr>
+              <td style={{ ...lbl, width: '72px', verticalAlign: 'middle' }}>長期目標{'\n'}（内容・期間等）</td>
+              <td style={{ ...cell, minHeight: heights.section, whiteSpace: 'pre-wrap' }}>{values.longTermGoals}</td>
+              <td style={{ ...lbl, width: '88px', fontSize: `${Math.max(6, fontSize - 1)}pt` }} rowSpan={2}>
+                支援の標準的な提供時間等{'\n'}（曜日・頻度・時間）
+              </td>
+              <td style={{ ...cell, width: '60px', whiteSpace: 'pre-wrap' }} rowSpan={2}>{values.standardServiceTime}</td>
+            </tr>
+            <tr>
+              <td style={{ ...lbl, verticalAlign: 'middle' }}>短期目標{'\n'}（内容・期間等）</td>
+              <td style={{ ...cell, minHeight: heights.section, whiteSpace: 'pre-wrap' }}>{values.shortTermGoals}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* 評価テーブル */}
+        <div style={{ fontSize: `${Math.max(6, fontSize - 0.5)}pt`, marginBottom: '1px' }}>○支援目標及び具体的な支援内容等（評価）</div>
+        <table style={{ borderCollapse: 'collapse', width: '100%', marginBottom: '4px' }}>
+          <thead>
+            <tr>
+              <th style={{ ...th, width: '50px' }}>項　目</th>
+              <th style={{ ...th, width: '132px' }}>支援目標{'\n'}（具体的な到達目標）</th>
+              <th style={{ ...th }}>
+                支援内容{'\n'}
+                <span style={{ fontWeight: 'normal', fontSize: `${Math.max(5.5, fontSize - 1.5)}pt` }}>
+                  （内容・支援の提供上のポイント・5領域（※）との関連性等）
+                </span>
+              </th>
+              <th style={{ ...th, width: '36px' }}>達成時期</th>
+              <th style={{ ...th, width: '110px' }}>評価</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.areas.map((area, i) => (
+              <tr key={i}>
+                <td style={{ ...lbl, whiteSpace: 'pre-line', minHeight: heights.area, verticalAlign: 'middle' }}>
+                  {area.label}
+                </td>
+                <td style={{ ...cell, minHeight: heights.area, whiteSpace: 'pre-wrap' }}>
+                  {values.areaGoals[i] ?? ''}
+                </td>
+                <td style={{ ...cell, minHeight: heights.area, whiteSpace: 'pre-wrap' }}>
+                  {values.areaContents[i] ?? ''}
+                </td>
+                <td style={{ ...cell, textAlign: 'center', verticalAlign: 'middle', fontSize: `${Math.max(6, fontSize - 0.5)}pt` }}>
+                  {values.areaAchievements[i] ?? ''}
+                </td>
+                {/* 評価（編集可能） */}
+                <td style={{ ...cell, minHeight: heights.area }}>
+                  <EditCell
+                    value={values.areaEvaluations[i] ?? ''}
+                    minHeight={heights.area}
+                    onChange={(v) => setValues((p) => {
+                      const next = [...p.areaEvaluations]; next[i] = v
+                      return { ...p, areaEvaluations: next }
                     })}
                   />
                 </td>

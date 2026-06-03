@@ -59,19 +59,26 @@ type SupportPlan = {
   support_kasan_social_relationships: string | null
   support_kasan_transition: string | null
   support_kasan_family: string | null
+  support_evaluation_health_life: string | null
+  support_evaluation_movement_sensory: string | null
+  support_evaluation_cognition_behavior: string | null
+  support_evaluation_language_communication: string | null
+  support_evaluation_social_relationships: string | null
+  support_evaluation_transition: string | null
+  support_evaluation_family: string | null
   manager_name: string | null
   standard_service_time: string | null
   users: { name: string } | null
 }
 
-const SUPPORT_AREAS: { key: keyof SupportPlan; goalKey: keyof SupportPlan; assigneeKey: keyof SupportPlan; priorityKey: keyof SupportPlan; achievementKey: keyof SupportPlan; kasanKey: keyof SupportPlan; label: string; defaultKasan: string }[] = [
-  { key: 'support_health_life',            goalKey: 'support_goal_health_life',            assigneeKey: 'support_assignee_health_life',            priorityKey: 'support_priority_health_life',            achievementKey: 'support_achievement_health_life',            kasanKey: 'support_kasan_health_life',            label: '本人支援\n（健康・生活）',              defaultKasan: '医療連携体制加算' },
-  { key: 'support_movement_sensory',       goalKey: 'support_goal_movement_sensory',       assigneeKey: 'support_assignee_movement_sensory',       priorityKey: 'support_priority_movement_sensory',       achievementKey: 'support_achievement_movement_sensory',       kasanKey: 'support_kasan_movement_sensory',       label: '本人支援\n（運動・感覚）',              defaultKasan: '専門的支援実施加算' },
-  { key: 'support_cognition_behavior',     goalKey: 'support_goal_cognition_behavior',     assigneeKey: 'support_assignee_cognition_behavior',     priorityKey: 'support_priority_cognition_behavior',     achievementKey: 'support_achievement_cognition_behavior',     kasanKey: 'support_kasan_cognition_behavior',     label: '本人支援\n（認知・行動）',              defaultKasan: '' },
-  { key: 'support_language_communication', goalKey: 'support_goal_language_communication', assigneeKey: 'support_assignee_language_communication', priorityKey: 'support_priority_language_communication', achievementKey: 'support_achievement_language_communication', kasanKey: 'support_kasan_language_communication', label: '本人支援\n（言語・コミュニケーション）', defaultKasan: '' },
-  { key: 'support_social_relationships',   goalKey: 'support_goal_social_relationships',   assigneeKey: 'support_assignee_social_relationships',   priorityKey: 'support_priority_social_relationships',   achievementKey: 'support_achievement_social_relationships',   kasanKey: 'support_kasan_social_relationships',   label: '本人支援\n（人間関係・社会性）',        defaultKasan: '' },
-  { key: 'support_transition',             goalKey: 'support_goal_transition',             assigneeKey: 'support_assignee_transition',             priorityKey: 'support_priority_transition',             achievementKey: 'support_achievement_transition',             kasanKey: 'support_kasan_transition',             label: '本人支援\n（移行支援）',               defaultKasan: '' },
-  { key: 'support_family',                 goalKey: 'support_goal_family',                 assigneeKey: 'support_assignee_family',                 priorityKey: 'support_priority_family',                 achievementKey: 'support_achievement_family',                 kasanKey: 'support_kasan_family',                 label: '家族支援',                            defaultKasan: '家族支援加算' },
+const SUPPORT_AREAS: { key: keyof SupportPlan; goalKey: keyof SupportPlan; assigneeKey: keyof SupportPlan; priorityKey: keyof SupportPlan; achievementKey: keyof SupportPlan; kasanKey: keyof SupportPlan; evaluationKey: keyof SupportPlan; label: string; defaultKasan: string }[] = [
+  { key: 'support_health_life',            goalKey: 'support_goal_health_life',            assigneeKey: 'support_assignee_health_life',            priorityKey: 'support_priority_health_life',            achievementKey: 'support_achievement_health_life',            kasanKey: 'support_kasan_health_life',            evaluationKey: 'support_evaluation_health_life',            label: '本人支援\n（健康・生活）',              defaultKasan: '医療連携体制加算' },
+  { key: 'support_movement_sensory',       goalKey: 'support_goal_movement_sensory',       assigneeKey: 'support_assignee_movement_sensory',       priorityKey: 'support_priority_movement_sensory',       achievementKey: 'support_achievement_movement_sensory',       kasanKey: 'support_kasan_movement_sensory',       evaluationKey: 'support_evaluation_movement_sensory',       label: '本人支援\n（運動・感覚）',              defaultKasan: '専門的支援実施加算' },
+  { key: 'support_cognition_behavior',     goalKey: 'support_goal_cognition_behavior',     assigneeKey: 'support_assignee_cognition_behavior',     priorityKey: 'support_priority_cognition_behavior',     achievementKey: 'support_achievement_cognition_behavior',     kasanKey: 'support_kasan_cognition_behavior',     evaluationKey: 'support_evaluation_cognition_behavior',     label: '本人支援\n（認知・行動）',              defaultKasan: '' },
+  { key: 'support_language_communication', goalKey: 'support_goal_language_communication', assigneeKey: 'support_assignee_language_communication', priorityKey: 'support_priority_language_communication', achievementKey: 'support_achievement_language_communication', kasanKey: 'support_kasan_language_communication', evaluationKey: 'support_evaluation_language_communication', label: '本人支援\n（言語・コミュニケーション）', defaultKasan: '' },
+  { key: 'support_social_relationships',   goalKey: 'support_goal_social_relationships',   assigneeKey: 'support_assignee_social_relationships',   priorityKey: 'support_priority_social_relationships',   achievementKey: 'support_achievement_social_relationships',   kasanKey: 'support_kasan_social_relationships',   evaluationKey: 'support_evaluation_social_relationships',   label: '本人支援\n（人間関係・社会性）',        defaultKasan: '' },
+  { key: 'support_transition',             goalKey: 'support_goal_transition',             assigneeKey: 'support_assignee_transition',             priorityKey: 'support_priority_transition',             achievementKey: 'support_achievement_transition',             kasanKey: 'support_kasan_transition',             evaluationKey: 'support_evaluation_transition',             label: '本人支援\n（移行支援）',               defaultKasan: '' },
+  { key: 'support_family',                 goalKey: 'support_goal_family',                 assigneeKey: 'support_assignee_family',                 priorityKey: 'support_priority_family',                 achievementKey: 'support_achievement_family',                 kasanKey: 'support_kasan_family',                 evaluationKey: 'support_evaluation_family',                 label: '家族支援',                            defaultKasan: '家族支援加算' },
 ]
 
 export default async function PrintSupportPlanPage({
@@ -86,7 +93,7 @@ export default async function PrintSupportPlanPage({
     supabase.from('children').select('id, name').eq('id', childId).single(),
     supabase
       .from('support_plans')
-      .select('id, plan_date, review_date, long_term_goals, short_term_goals, family_wishes, child_wishes, support_policy, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, support_goal_health_life, support_goal_movement_sensory, support_goal_cognition_behavior, support_goal_language_communication, support_goal_social_relationships, support_goal_transition, support_goal_family, support_assignee_health_life, support_assignee_movement_sensory, support_assignee_cognition_behavior, support_assignee_language_communication, support_assignee_social_relationships, support_assignee_transition, support_assignee_family, support_priority_health_life, support_priority_movement_sensory, support_priority_cognition_behavior, support_priority_language_communication, support_priority_social_relationships, support_priority_transition, support_priority_family, support_achievement_health_life, support_achievement_movement_sensory, support_achievement_cognition_behavior, support_achievement_language_communication, support_achievement_social_relationships, support_achievement_transition, support_achievement_family, support_kasan_health_life, support_kasan_movement_sensory, support_kasan_cognition_behavior, support_kasan_language_communication, support_kasan_social_relationships, support_kasan_transition, support_kasan_family, manager_name, standard_service_time, users!support_plans_created_by_fkey(name)')
+      .select('id, plan_date, review_date, long_term_goals, short_term_goals, family_wishes, child_wishes, support_policy, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, support_goal_health_life, support_goal_movement_sensory, support_goal_cognition_behavior, support_goal_language_communication, support_goal_social_relationships, support_goal_transition, support_goal_family, support_assignee_health_life, support_assignee_movement_sensory, support_assignee_cognition_behavior, support_assignee_language_communication, support_assignee_social_relationships, support_assignee_transition, support_assignee_family, support_priority_health_life, support_priority_movement_sensory, support_priority_cognition_behavior, support_priority_language_communication, support_priority_social_relationships, support_priority_transition, support_priority_family, support_achievement_health_life, support_achievement_movement_sensory, support_achievement_cognition_behavior, support_achievement_language_communication, support_achievement_social_relationships, support_achievement_transition, support_achievement_family, support_kasan_health_life, support_kasan_movement_sensory, support_kasan_cognition_behavior, support_kasan_language_communication, support_kasan_social_relationships, support_kasan_transition, support_kasan_family, support_evaluation_health_life, support_evaluation_movement_sensory, support_evaluation_cognition_behavior, support_evaluation_language_communication, support_evaluation_social_relationships, support_evaluation_transition, support_evaluation_family, manager_name, standard_service_time, users!support_plans_created_by_fkey(name)')
       .eq('child_id', childId)
       .in('status', ['active', 'reviewed'])
       .order('plan_date', { ascending: false })
@@ -122,13 +129,15 @@ export default async function PrintSupportPlanPage({
       assignee:        (plan[area.assigneeKey] as string)    || '',
       priority:        (plan[area.priorityKey] as string)    || '',
       achievement:     (plan[area.achievementKey] as string) || '',
-      kasan:           (plan[area.kasanKey] as string)       || area.defaultKasan,
-      dbKey:           area.key as string,
+      kasan:            (plan[area.kasanKey] as string)        || area.defaultKasan,
+      evaluation:       (plan[area.evaluationKey] as string)  || '',
+      dbKey:            area.key as string,
       goalDbKey:       area.goalKey as string,
       assigneeDbKey:   area.assigneeKey as string,
       priorityDbKey:   area.priorityKey as string,
-      achievementDbKey: area.achievementKey as string,
-      kasanDbKey:      area.kasanKey as string,
+      achievementDbKey:  area.achievementKey as string,
+      kasanDbKey:        area.kasanKey as string,
+      evaluationDbKey:   area.evaluationKey as string,
     })),
   } : null
 
