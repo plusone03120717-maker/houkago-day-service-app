@@ -25,6 +25,13 @@ type SupportPlan = {
   support_social_relationships: string | null
   support_transition: string | null
   support_family: string | null
+  support_goal_health_life: string | null
+  support_goal_movement_sensory: string | null
+  support_goal_cognition_behavior: string | null
+  support_goal_language_communication: string | null
+  support_goal_social_relationships: string | null
+  support_goal_transition: string | null
+  support_goal_family: string | null
   family_wishes: string | null
   support_policy: string | null
   monitoring_notes: string | null
@@ -46,17 +53,19 @@ const statusVariant: Record<string, 'secondary' | 'success' | 'warning' | 'defau
 }
 
 const AREAS = [
-  { key: 'support_health_life' as const, label: '① 健康・生活' },
-  { key: 'support_movement_sensory' as const, label: '② 運動・感覚' },
-  { key: 'support_cognition_behavior' as const, label: '③ 認知・行動' },
-  { key: 'support_language_communication' as const, label: '④ 言語・コミュニケーション' },
-  { key: 'support_social_relationships' as const, label: '⑤ 人間関係・社会性' },
-  { key: 'support_transition' as const, label: '⑥ 移行支援' },
-  { key: 'support_family' as const, label: '⑦ 家族支援' },
+  { key: 'support_health_life' as const,            goalKey: 'support_goal_health_life' as const,            label: '① 健康・生活' },
+  { key: 'support_movement_sensory' as const,       goalKey: 'support_goal_movement_sensory' as const,       label: '② 運動・感覚' },
+  { key: 'support_cognition_behavior' as const,     goalKey: 'support_goal_cognition_behavior' as const,     label: '③ 認知・行動' },
+  { key: 'support_language_communication' as const, goalKey: 'support_goal_language_communication' as const, label: '④ 言語・コミュニケーション' },
+  { key: 'support_social_relationships' as const,   goalKey: 'support_goal_social_relationships' as const,   label: '⑤ 人間関係・社会性' },
+  { key: 'support_transition' as const,             goalKey: 'support_goal_transition' as const,             label: '⑥ 移行支援' },
+  { key: 'support_family' as const,                 goalKey: 'support_goal_family' as const,                 label: '⑦ 家族支援' },
 ] as const
 
-type AreaKey = typeof AREAS[number]['key']
-type AreaValues = Record<AreaKey, string>
+type AreaKey     = typeof AREAS[number]['key']
+type AreaGoalKey = typeof AREAS[number]['goalKey']
+type AreaValues  = Record<AreaKey, string>
+type GoalValues  = Record<AreaGoalKey, string>
 
 interface Props {
   plan: SupportPlan
@@ -86,9 +95,39 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
     support_transition: plan.support_transition ?? '',
     support_family: plan.support_family ?? '',
   })
+  const [goalValues, setGoalValues] = useState<GoalValues>({
+    support_goal_health_life: plan.support_goal_health_life ?? '',
+    support_goal_movement_sensory: plan.support_goal_movement_sensory ?? '',
+    support_goal_cognition_behavior: plan.support_goal_cognition_behavior ?? '',
+    support_goal_language_communication: plan.support_goal_language_communication ?? '',
+    support_goal_social_relationships: plan.support_goal_social_relationships ?? '',
+    support_goal_transition: plan.support_goal_transition ?? '',
+    support_goal_family: plan.support_goal_family ?? '',
+  })
   const [monitoringNotes, setMonitoringNotes] = useState(plan.monitoring_notes ?? '')
   const [saving, setSaving] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
+  const [generatingGoal, setGeneratingGoal] = useState<string | null>(null)
+
+  const setGoal = (key: AreaGoalKey, value: string) =>
+    setGoalValues((prev) => ({ ...prev, [key]: value }))
+
+  const generateGoal = async (area: typeof AREAS[number]) => {
+    const content = areaValues[area.key]
+    if (!content.trim()) return
+    setGeneratingGoal(area.goalKey)
+    try {
+      const res = await fetch('/api/support-plans/generate-goal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ areaLabel: area.label, supportContent: content }),
+      })
+      const json = await res.json()
+      if (json.goal) setGoal(area.goalKey, json.goal)
+    } finally {
+      setGeneratingGoal(null)
+    }
+  }
 
   const setArea = (key: AreaKey, value: string) =>
     setAreaValues((prev) => ({ ...prev, [key]: value }))
@@ -126,6 +165,13 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
       support_social_relationships: areaValues.support_social_relationships || null,
       support_transition: areaValues.support_transition || null,
       support_family: areaValues.support_family || null,
+      support_goal_health_life: goalValues.support_goal_health_life || null,
+      support_goal_movement_sensory: goalValues.support_goal_movement_sensory || null,
+      support_goal_cognition_behavior: goalValues.support_goal_cognition_behavior || null,
+      support_goal_language_communication: goalValues.support_goal_language_communication || null,
+      support_goal_social_relationships: goalValues.support_goal_social_relationships || null,
+      support_goal_transition: goalValues.support_goal_transition || null,
+      support_goal_family: goalValues.support_goal_family || null,
       monitoring_notes: monitoringNotes || null,
       long_term_goal_rating: longTermGoalRating || null,
       short_term_goal_rating: shortTermGoalRating || null,
@@ -217,15 +263,23 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
                 )}
               </div>
             )}
-            {/* 7領域の支援内容 */}
+            {/* 7領域の支援目標・支援内容 */}
             {hasAreaContent && (
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-2">支援内容・方法（7領域）</p>
                 <div className="space-y-2">
-                  {AREAS.map((area) => plan[area.key] && (
+                  {AREAS.map((area) => (plan[area.key] || plan[area.goalKey]) && (
                     <div key={area.key} className="bg-gray-50 rounded-lg px-3 py-2">
                       <p className="text-xs font-medium text-gray-600 mb-0.5">{area.label}</p>
-                      <p className="text-gray-700 whitespace-pre-wrap text-sm">{plan[area.key]}</p>
+                      {plan[area.goalKey] && (
+                        <div className="mb-1">
+                          <span className="text-xs text-indigo-600 font-medium">支援目標：</span>
+                          <span className="text-gray-700 whitespace-pre-wrap text-sm">{plan[area.goalKey]}</span>
+                        </div>
+                      )}
+                      {plan[area.key] && (
+                        <p className="text-gray-700 whitespace-pre-wrap text-sm">{plan[area.key]}</p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -363,29 +417,57 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
               </div>
             </div>
 
-            {/* 支援内容（7領域） */}
+            {/* 支援内容・支援目標（7領域） */}
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-gray-600 border-b border-gray-100 pb-1">支援内容・方法（7領域）</p>
+              <p className="text-xs font-semibold text-gray-600 border-b border-gray-100 pb-1">支援内容・支援目標（7領域）</p>
               {AREAS.map((area) => (
-                <div key={area.key} className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-gray-700">{area.label}</label>
-                    <button
-                      type="button"
-                      onClick={() => refineField(area.key, areaValues[area.key], (v) => setArea(area.key, v))}
-                      disabled={refining === area.key || !areaValues[area.key].trim()}
-                      className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Wand2 className="h-3 w-3" />
-                      {refining === area.key ? '整えています...' : '文章を整える'}
-                    </button>
+                <div key={area.key} className="bg-gray-50 rounded-lg p-3 space-y-2">
+                  <p className="text-xs font-semibold text-gray-700">{area.label}</p>
+
+                  {/* 支援内容 */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-gray-600">支援内容</label>
+                      <button
+                        type="button"
+                        onClick={() => refineField(area.key, areaValues[area.key], (v) => setArea(area.key, v))}
+                        disabled={refining === area.key || !areaValues[area.key].trim()}
+                        className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Wand2 className="h-3 w-3" />
+                        {refining === area.key ? '整えています...' : '文章を整える'}
+                      </button>
+                    </div>
+                    <textarea
+                      value={areaValues[area.key]}
+                      onChange={(e) => setArea(area.key, e.target.value)}
+                      rows={2}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none bg-white"
+                    />
                   </div>
-                  <textarea
-                    value={areaValues[area.key]}
-                    onChange={(e) => setArea(area.key, e.target.value)}
-                    rows={2}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none bg-white"
-                  />
+
+                  {/* 支援目標 */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-indigo-700">支援目標（到達目標）</label>
+                      <button
+                        type="button"
+                        onClick={() => void generateGoal(area)}
+                        disabled={generatingGoal === area.goalKey || !areaValues[area.key].trim()}
+                        className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-800 disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+                      >
+                        <Wand2 className="h-3 w-3" />
+                        {generatingGoal === area.goalKey ? 'AI生成中...' : 'AI で生成'}
+                      </button>
+                    </div>
+                    <textarea
+                      value={goalValues[area.goalKey]}
+                      onChange={(e) => setGoal(area.goalKey, e.target.value)}
+                      rows={2}
+                      placeholder="支援内容を入力後、「AI で生成」で自動作成できます"
+                      className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400 resize-none bg-indigo-50/40"
+                    />
+                  </div>
                 </div>
               ))}
             </div>

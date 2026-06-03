@@ -6,9 +6,11 @@ import { createClient } from '@/lib/supabase/client'
 
 export type AreaData = {
   label: string
+  goal: string
   content: string
   kasan: string
-  dbKey: string  // DBカラム名（保存時に使用）
+  dbKey: string       // 支援内容のDBカラム名
+  goalDbKey: string   // 支援目標のDBカラム名
 }
 
 export type SupportPlanDocumentData = {
@@ -29,6 +31,7 @@ type EditedValues = {
   supportPolicy: string
   longTermGoals: string
   shortTermGoals: string
+  areaGoals: string[]
   areaContents: string[]
 }
 
@@ -53,6 +56,7 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
     supportPolicy: data.supportPolicy,
     longTermGoals: data.longTermGoals,
     shortTermGoals: data.shortTermGoals,
+    areaGoals:     data.areas.map((a) => a.goal),
     areaContents:  data.areas.map((a) => a.content),
   })
 
@@ -68,7 +72,8 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
       short_term_goals: values.shortTermGoals,
     }
     data.areas.forEach((area, i) => {
-      payload[area.dbKey] = values.areaContents[i] ?? ''
+      payload[area.dbKey]     = values.areaContents[i] ?? ''
+      payload[area.goalDbKey] = values.areaGoals[i]    ?? ''
     })
     await supabase.from('support_plans').update(payload).eq('id', data.planId)
     setSaving(false)
@@ -304,8 +309,18 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
                 <td style={{ ...lbl, whiteSpace: 'pre-line', minHeight: heights.area, verticalAlign: 'middle' }}>
                   {area.label}
                 </td>
-                {/* 支援目標（現在DBに保存先なし） */}
-                <td style={{ ...cell, minHeight: heights.area }}></td>
+                {/* 支援目標 */}
+                <td style={{ ...cell, minHeight: heights.area }}>
+                  <EditCell
+                    value={values.areaGoals[i] ?? ''}
+                    minHeight={heights.area}
+                    onChange={(v) => setValues((p) => {
+                      const next = [...p.areaGoals]
+                      next[i] = v
+                      return { ...p, areaGoals: next }
+                    })}
+                  />
+                </td>
                 {/* 支援内容（DB保存対象） */}
                 <td style={{ ...cell, minHeight: heights.area }}>
                   <EditCell
