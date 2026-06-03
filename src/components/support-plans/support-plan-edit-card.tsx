@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Pencil, Wand2, ChevronUp } from 'lucide-react'
+import { Pencil, Wand2, ChevronUp, RefreshCw } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { StarRating } from '@/components/ui/star-rating'
 
@@ -49,6 +49,7 @@ type SupportPlan = {
   family_wishes: string | null
   support_policy: string | null
   manager_name: string | null
+  standard_service_time: string | null
   monitoring_notes: string | null
   long_term_goal_rating: number | null
   short_term_goal_rating: number | null
@@ -88,10 +89,11 @@ type PriorityValues = Record<PriorityKey, string>
 
 interface Props {
   plan: SupportPlan
+  childId: string
   readOnly?: boolean
 }
 
-export function SupportPlanEditCard({ plan, readOnly }: Props) {
+export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -142,7 +144,41 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
     support_goal_family: plan.support_goal_family ?? '',
   })
   const [managerName, setManagerName] = useState(plan.manager_name ?? '')
+  const [standardServiceTime, setStandardServiceTime] = useState(plan.standard_service_time ?? '')
+  const [autoFilling, setAutoFilling] = useState(false)
   const [monitoringNotes, setMonitoringNotes] = useState(plan.monitoring_notes ?? '')
+
+  const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
+
+  const autoFillServiceTime = async () => {
+    setAutoFilling(true)
+    try {
+      type DaySetting = { day_of_week: number; pickup_time: string | null; dropoff_time: string | null }
+      type UsagePlan = { pickup_time: string | null; dropoff_time: string | null; usage_plan_day_settings: DaySetting[] }
+      const { data } = await supabase
+        .from('usage_plans')
+        .select('pickup_time, dropoff_time, usage_plan_day_settings(day_of_week, pickup_time, dropoff_time)')
+        .eq('child_id', childId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      const p = (data as unknown as UsagePlan[] | null)?.[0]
+      if (!p) return
+      const days = [...(p.usage_plan_day_settings ?? [])].sort((a, b) => a.day_of_week - b.day_of_week)
+      const dayLabel = days.length > 0
+        ? `${days.map((d) => DAY_NAMES[d.day_of_week]).join('・')}（週${days.length}回）`
+        : ''
+      const pickupT  = days[0]?.pickup_time  ?? p.pickup_time
+      const dropoffT = days[0]?.dropoff_time ?? p.dropoff_time
+      const timeLabel = pickupT && dropoffT
+        ? ` ${pickupT.slice(0, 5)}〜${dropoffT.slice(0, 5)}`
+        : ''
+      const result = (dayLabel + timeLabel).trim()
+      if (result) setStandardServiceTime(result)
+    } finally {
+      setAutoFilling(false)
+    }
+  }
   const [saving, setSaving] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
   const [generatingGoal, setGeneratingGoal] = useState<string | null>(null)
@@ -226,6 +262,7 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
       support_priority_transition: priorityValues.support_priority_transition || null,
       support_priority_family: priorityValues.support_priority_family || null,
       manager_name: managerName || null,
+      standard_service_time: standardServiceTime || null,
       monitoring_notes: monitoringNotes || null,
       long_term_goal_rating: longTermGoalRating || null,
       short_term_goal_rating: shortTermGoalRating || null,
@@ -350,6 +387,12 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1">支援内容</p>
                 <p className="text-gray-700 whitespace-pre-wrap">{plan.support_content}</p>
+              </div>
+            )}
+            {plan.standard_service_time && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-1">支援の標準的な提供時間等</p>
+                <p className="text-gray-700">{plan.standard_service_time}</p>
               </div>
             )}
             {plan.manager_name && (
@@ -481,6 +524,29 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
                 <span className="text-xs text-gray-500">達成度評価:</span>
                 <StarRating value={shortTermGoalRating} onChange={(v) => setShortTermGoalRating(v || null)} />
               </div>
+            </div>
+
+            {/* 支援の標準的な提供時間等 */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700">支援の標準的な提供時間等（曜日・頻度・時間）</label>
+                <button
+                  type="button"
+                  onClick={() => void autoFillServiceTime()}
+                  disabled={autoFilling}
+                  className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-800 disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+                >
+                  <RefreshCw className={`h-3 w-3 ${autoFilling ? 'animate-spin' : ''}`} />
+                  {autoFilling ? '取得中...' : '利用計画から自動入力'}
+                </button>
+              </div>
+              <input
+                type="text"
+                value={standardServiceTime}
+                onChange={(e) => setStandardServiceTime(e.target.value)}
+                placeholder="例: 月・水・金（週3回）14:00〜16:30"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
             </div>
 
             {/* 支援内容・支援目標（7領域） */}

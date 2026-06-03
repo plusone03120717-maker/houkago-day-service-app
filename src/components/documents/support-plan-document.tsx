@@ -23,6 +23,7 @@ export type SupportPlanDocumentData = {
   planDate: string
   reviewDate: string
   wishes: string
+  standardServiceTime: string
   supportPolicy: string
   longTermGoals: string
   shortTermGoals: string
@@ -32,6 +33,7 @@ export type SupportPlanDocumentData = {
 
 type EditedValues = {
   wishes: string
+  standardServiceTime: string
   supportPolicy: string
   longTermGoals: string
   shortTermGoals: string
@@ -58,8 +60,9 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
   const [saved, setSaved]       = useState(false)
 
   const [values, setValues] = useState<EditedValues>({
-    wishes:        data.wishes,
-    supportPolicy: data.supportPolicy,
+    wishes:              data.wishes,
+    standardServiceTime: data.standardServiceTime,
+    supportPolicy:       data.supportPolicy,
     longTermGoals: data.longTermGoals,
     shortTermGoals: data.shortTermGoals,
     areaGoals:      data.areas.map((a) => a.goal),
@@ -74,8 +77,9 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
   const handleSave = async () => {
     setSaving(true)
     const payload: Record<string, string> = {
-      family_wishes:  values.wishes,
-      support_policy: values.supportPolicy,
+      family_wishes:         values.wishes,
+      standard_service_time: values.standardServiceTime,
+      support_policy:        values.supportPolicy,
       long_term_goals:  values.longTermGoals,
       short_term_goals: values.shortTermGoals,
     }
@@ -279,7 +283,13 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
               <td style={{ ...lbl, width: '88px', fontSize: `${Math.max(6, fontSize - 1)}pt` }} rowSpan={2}>
                 支援の標準的な提供時間等{'\n'}（曜日・頻度・時間）
               </td>
-              <td style={{ ...cell, width: '52px' }} rowSpan={2}></td>
+              <td style={{ ...cell, width: '60px' }} rowSpan={2}>
+                <EditCell
+                  value={values.standardServiceTime}
+                  minHeight={heights.section * 2}
+                  onChange={(v) => setValues((p) => ({ ...p, standardServiceTime: v }))}
+                />
+              </td>
             </tr>
             <tr>
               <td style={{ ...lbl, verticalAlign: 'middle' }}>短期目標{'\n'}（内容・期間等）</td>

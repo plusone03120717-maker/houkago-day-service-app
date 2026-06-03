@@ -46,6 +46,7 @@ type SupportPlan = {
   support_priority_transition: string | null
   support_priority_family: string | null
   manager_name: string | null
+  standard_service_time: string | null
   users: { name: string } | null
 }
 
@@ -71,7 +72,7 @@ export default async function PrintSupportPlanPage({
     supabase.from('children').select('id, name').eq('id', childId).single(),
     supabase
       .from('support_plans')
-      .select('id, plan_date, review_date, long_term_goals, short_term_goals, family_wishes, child_wishes, support_policy, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, support_goal_health_life, support_goal_movement_sensory, support_goal_cognition_behavior, support_goal_language_communication, support_goal_social_relationships, support_goal_transition, support_goal_family, support_assignee_health_life, support_assignee_movement_sensory, support_assignee_cognition_behavior, support_assignee_language_communication, support_assignee_social_relationships, support_assignee_transition, support_assignee_family, support_priority_health_life, support_priority_movement_sensory, support_priority_cognition_behavior, support_priority_language_communication, support_priority_social_relationships, support_priority_transition, support_priority_family, manager_name, users!support_plans_created_by_fkey(name)')
+      .select('id, plan_date, review_date, long_term_goals, short_term_goals, family_wishes, child_wishes, support_policy, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, support_goal_health_life, support_goal_movement_sensory, support_goal_cognition_behavior, support_goal_language_communication, support_goal_social_relationships, support_goal_transition, support_goal_family, support_assignee_health_life, support_assignee_movement_sensory, support_assignee_cognition_behavior, support_assignee_language_communication, support_assignee_social_relationships, support_assignee_transition, support_assignee_family, support_priority_health_life, support_priority_movement_sensory, support_priority_cognition_behavior, support_priority_language_communication, support_priority_social_relationships, support_priority_transition, support_priority_family, manager_name, standard_service_time, users!support_plans_created_by_fkey(name)')
       .eq('child_id', childId)
       .in('status', ['active', 'reviewed'])
       .order('plan_date', { ascending: false })
@@ -87,12 +88,15 @@ export default async function PrintSupportPlanPage({
   const managerName = plan?.manager_name || plan?.users?.name || ''
   const wishes      = [plan?.child_wishes, plan?.family_wishes].filter(Boolean).join('\n') || ''
 
+  const standardServiceTime = plan?.standard_service_time || ''
+
   const docData = plan ? {
     planId:        plan.id,
     childName:     child.name,
     planDate,
     reviewDate,
     wishes,
+    standardServiceTime,
     supportPolicy:  plan.support_policy   || '',
     longTermGoals:  plan.long_term_goals  || '',
     shortTermGoals: plan.short_term_goals || '',
