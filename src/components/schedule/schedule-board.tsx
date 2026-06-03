@@ -28,11 +28,35 @@ export type CalendarEvent = {
   allDay?: boolean
 }
 
+// ─── ドライバー別カラーパレット ───────────────────────────────────────────────
+
+const DRIVER_COLOR_PALETTE: { bg: string; text: string }[] = [
+  { bg: 'bg-blue-500',    text: 'text-white' },
+  { bg: 'bg-green-600',   text: 'text-white' },
+  { bg: 'bg-purple-500',  text: 'text-white' },
+  { bg: 'bg-rose-500',    text: 'text-white' },
+  { bg: 'bg-amber-500',   text: 'text-white' },
+  { bg: 'bg-cyan-600',    text: 'text-white' },
+  { bg: 'bg-teal-600',    text: 'text-white' },
+  { bg: 'bg-pink-500',    text: 'text-white' },
+  { bg: 'bg-lime-600',    text: 'text-white' },
+  { bg: 'bg-indigo-500',  text: 'text-white' },
+]
+
+function getDriverColor(driverId: string | null | undefined): { bg: string; text: string } {
+  if (!driverId) return { bg: 'bg-gray-400', text: 'text-white' }
+  let hash = 0
+  for (let i = 0; i < driverId.length; i++) {
+    hash = ((hash * 31) + driverId.charCodeAt(i)) >>> 0
+  }
+  return DRIVER_COLOR_PALETTE[hash % DRIVER_COLOR_PALETTE.length]
+}
+
 // ─── カラー定義 ───────────────────────────────────────────────────────────────
 
 const EVENT_COLORS: Record<CalendarEvent['type'], { bg: string; text: string }> = {
   transport_pickup:   { bg: 'bg-blue-500',   text: 'text-white' },
-  transport_dropoff:  { bg: 'bg-orange-500', text: 'text-white' },
+  transport_dropoff:  { bg: 'bg-blue-500',   text: 'text-white' },
   shift:              { bg: 'bg-indigo-400', text: 'text-white' },
   attendance:         { bg: 'bg-yellow-400', text: 'text-gray-800' },
   monitoring:         { bg: 'bg-green-500',  text: 'text-white' },
@@ -62,10 +86,10 @@ function buildEvents(
   const events: CalendarEvent[] = []
   const userMap = new Map(users.map((u) => [u.id, u.name]))
 
-  // 送迎
+  // 送迎（ドライバーごとに色分け）
   for (const sched of transport) {
     const type = sched.direction === 'pickup' ? 'transport_pickup' : 'transport_dropoff'
-    const col = EVENT_COLORS[type]
+    const col = getDriverColor(sched.staff_members?.id)
     const vehicle = sched.transport_vehicles?.name ?? ''
     const driver  = sched.staff_members?.name ?? ''
 
@@ -564,9 +588,16 @@ export function ScheduleBoard({
 
       {/* 凡例 */}
       <div className="flex gap-3 flex-wrap text-xs text-gray-500">
+        {/* 送迎：ドライバー別色分けの説明 */}
+        <div className="flex items-center gap-1">
+          <div className="flex gap-0.5">
+            {DRIVER_COLOR_PALETTE.slice(0, 4).map((c, i) => (
+              <div key={i} className={cn('w-2.5 h-3 rounded-sm', c.bg)} />
+            ))}
+          </div>
+          送迎（担当者別色分け）
+        </div>
         {([
-          ['transport_pickup', '迎え送迎'],
-          ['transport_dropoff', '帰り送迎'],
           ['shift', 'シフト'],
           ['attendance', '通所予定'],
           ['monitoring', 'モニタリング記録'],
