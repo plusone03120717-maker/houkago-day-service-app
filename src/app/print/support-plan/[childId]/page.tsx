@@ -31,18 +31,32 @@ type SupportPlan = {
   support_goal_social_relationships: string | null
   support_goal_transition: string | null
   support_goal_family: string | null
+  support_assignee_health_life: string | null
+  support_assignee_movement_sensory: string | null
+  support_assignee_cognition_behavior: string | null
+  support_assignee_language_communication: string | null
+  support_assignee_social_relationships: string | null
+  support_assignee_transition: string | null
+  support_assignee_family: string | null
+  support_priority_health_life: string | null
+  support_priority_movement_sensory: string | null
+  support_priority_cognition_behavior: string | null
+  support_priority_language_communication: string | null
+  support_priority_social_relationships: string | null
+  support_priority_transition: string | null
+  support_priority_family: string | null
   manager_name: string | null
   users: { name: string } | null
 }
 
-const SUPPORT_AREAS: { key: keyof SupportPlan; goalKey: keyof SupportPlan; label: string; kasan: string }[] = [
-  { key: 'support_health_life',            goalKey: 'support_goal_health_life',            label: '本人支援\n（健康・生活）',              kasan: '医療連携体制加算' },
-  { key: 'support_movement_sensory',       goalKey: 'support_goal_movement_sensory',       label: '本人支援\n（運動・感覚）',              kasan: '専門的支援実施加算' },
-  { key: 'support_cognition_behavior',     goalKey: 'support_goal_cognition_behavior',     label: '本人支援\n（認知・行動）',              kasan: '' },
-  { key: 'support_language_communication', goalKey: 'support_goal_language_communication', label: '本人支援\n（言語・コミュニケーション）', kasan: '' },
-  { key: 'support_social_relationships',   goalKey: 'support_goal_social_relationships',   label: '本人支援\n（人間関係・社会性）',        kasan: '' },
-  { key: 'support_transition',             goalKey: 'support_goal_transition',             label: '本人支援\n（移行支援）',               kasan: '' },
-  { key: 'support_family',                 goalKey: 'support_goal_family',                 label: '家族支援',                            kasan: '家族支援加算' },
+const SUPPORT_AREAS: { key: keyof SupportPlan; goalKey: keyof SupportPlan; assigneeKey: keyof SupportPlan; priorityKey: keyof SupportPlan; label: string; kasan: string }[] = [
+  { key: 'support_health_life',            goalKey: 'support_goal_health_life',            assigneeKey: 'support_assignee_health_life',            priorityKey: 'support_priority_health_life',            label: '本人支援\n（健康・生活）',              kasan: '医療連携体制加算' },
+  { key: 'support_movement_sensory',       goalKey: 'support_goal_movement_sensory',       assigneeKey: 'support_assignee_movement_sensory',       priorityKey: 'support_priority_movement_sensory',       label: '本人支援\n（運動・感覚）',              kasan: '専門的支援実施加算' },
+  { key: 'support_cognition_behavior',     goalKey: 'support_goal_cognition_behavior',     assigneeKey: 'support_assignee_cognition_behavior',     priorityKey: 'support_priority_cognition_behavior',     label: '本人支援\n（認知・行動）',              kasan: '' },
+  { key: 'support_language_communication', goalKey: 'support_goal_language_communication', assigneeKey: 'support_assignee_language_communication', priorityKey: 'support_priority_language_communication', label: '本人支援\n（言語・コミュニケーション）', kasan: '' },
+  { key: 'support_social_relationships',   goalKey: 'support_goal_social_relationships',   assigneeKey: 'support_assignee_social_relationships',   priorityKey: 'support_priority_social_relationships',   label: '本人支援\n（人間関係・社会性）',        kasan: '' },
+  { key: 'support_transition',             goalKey: 'support_goal_transition',             assigneeKey: 'support_assignee_transition',             priorityKey: 'support_priority_transition',             label: '本人支援\n（移行支援）',               kasan: '' },
+  { key: 'support_family',                 goalKey: 'support_goal_family',                 assigneeKey: 'support_assignee_family',                 priorityKey: 'support_priority_family',                 label: '家族支援',                            kasan: '家族支援加算' },
 ]
 
 export default async function PrintSupportPlanPage({
@@ -57,7 +71,7 @@ export default async function PrintSupportPlanPage({
     supabase.from('children').select('id, name').eq('id', childId).single(),
     supabase
       .from('support_plans')
-      .select('id, plan_date, review_date, long_term_goals, short_term_goals, family_wishes, child_wishes, support_policy, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, support_goal_health_life, support_goal_movement_sensory, support_goal_cognition_behavior, support_goal_language_communication, support_goal_social_relationships, support_goal_transition, support_goal_family, manager_name, users!support_plans_created_by_fkey(name)')
+      .select('id, plan_date, review_date, long_term_goals, short_term_goals, family_wishes, child_wishes, support_policy, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, support_goal_health_life, support_goal_movement_sensory, support_goal_cognition_behavior, support_goal_language_communication, support_goal_social_relationships, support_goal_transition, support_goal_family, support_assignee_health_life, support_assignee_movement_sensory, support_assignee_cognition_behavior, support_assignee_language_communication, support_assignee_social_relationships, support_assignee_transition, support_assignee_family, support_priority_health_life, support_priority_movement_sensory, support_priority_cognition_behavior, support_priority_language_communication, support_priority_social_relationships, support_priority_transition, support_priority_family, manager_name, users!support_plans_created_by_fkey(name)')
       .eq('child_id', childId)
       .in('status', ['active', 'reviewed'])
       .order('plan_date', { ascending: false })
@@ -84,12 +98,16 @@ export default async function PrintSupportPlanPage({
     shortTermGoals: plan.short_term_goals || '',
     managerName,
     areas: SUPPORT_AREAS.map((area) => ({
-      label:      area.label,
-      goal:       (plan[area.goalKey] as string) || '',
-      content:    (plan[area.key] as string) || '',
-      kasan:      area.kasan,
-      dbKey:      area.key as string,
-      goalDbKey:  area.goalKey as string,
+      label:          area.label,
+      goal:           (plan[area.goalKey] as string)     || '',
+      content:        (plan[area.key] as string)         || '',
+      assignee:       (plan[area.assigneeKey] as string) || '',
+      priority:       (plan[area.priorityKey] as string) || '',
+      kasan:          area.kasan,
+      dbKey:          area.key as string,
+      goalDbKey:      area.goalKey as string,
+      assigneeDbKey:  area.assigneeKey as string,
+      priorityDbKey:  area.priorityKey as string,
     })),
   } : null
 

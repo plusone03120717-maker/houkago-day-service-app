@@ -32,6 +32,20 @@ type SupportPlan = {
   support_goal_social_relationships: string | null
   support_goal_transition: string | null
   support_goal_family: string | null
+  support_assignee_health_life: string | null
+  support_assignee_movement_sensory: string | null
+  support_assignee_cognition_behavior: string | null
+  support_assignee_language_communication: string | null
+  support_assignee_social_relationships: string | null
+  support_assignee_transition: string | null
+  support_assignee_family: string | null
+  support_priority_health_life: string | null
+  support_priority_movement_sensory: string | null
+  support_priority_cognition_behavior: string | null
+  support_priority_language_communication: string | null
+  support_priority_social_relationships: string | null
+  support_priority_transition: string | null
+  support_priority_family: string | null
   family_wishes: string | null
   support_policy: string | null
   manager_name: string | null
@@ -54,19 +68,23 @@ const statusVariant: Record<string, 'secondary' | 'success' | 'warning' | 'defau
 }
 
 const AREAS = [
-  { key: 'support_health_life' as const,            goalKey: 'support_goal_health_life' as const,            label: '① 健康・生活' },
-  { key: 'support_movement_sensory' as const,       goalKey: 'support_goal_movement_sensory' as const,       label: '② 運動・感覚' },
-  { key: 'support_cognition_behavior' as const,     goalKey: 'support_goal_cognition_behavior' as const,     label: '③ 認知・行動' },
-  { key: 'support_language_communication' as const, goalKey: 'support_goal_language_communication' as const, label: '④ 言語・コミュニケーション' },
-  { key: 'support_social_relationships' as const,   goalKey: 'support_goal_social_relationships' as const,   label: '⑤ 人間関係・社会性' },
-  { key: 'support_transition' as const,             goalKey: 'support_goal_transition' as const,             label: '⑥ 移行支援' },
-  { key: 'support_family' as const,                 goalKey: 'support_goal_family' as const,                 label: '⑦ 家族支援' },
+  { key: 'support_health_life' as const,            goalKey: 'support_goal_health_life' as const,            assigneeKey: 'support_assignee_health_life' as const,            priorityKey: 'support_priority_health_life' as const,            label: '① 健康・生活' },
+  { key: 'support_movement_sensory' as const,       goalKey: 'support_goal_movement_sensory' as const,       assigneeKey: 'support_assignee_movement_sensory' as const,       priorityKey: 'support_priority_movement_sensory' as const,       label: '② 運動・感覚' },
+  { key: 'support_cognition_behavior' as const,     goalKey: 'support_goal_cognition_behavior' as const,     assigneeKey: 'support_assignee_cognition_behavior' as const,     priorityKey: 'support_priority_cognition_behavior' as const,     label: '③ 認知・行動' },
+  { key: 'support_language_communication' as const, goalKey: 'support_goal_language_communication' as const, assigneeKey: 'support_assignee_language_communication' as const, priorityKey: 'support_priority_language_communication' as const, label: '④ 言語・コミュニケーション' },
+  { key: 'support_social_relationships' as const,   goalKey: 'support_goal_social_relationships' as const,   assigneeKey: 'support_assignee_social_relationships' as const,   priorityKey: 'support_priority_social_relationships' as const,   label: '⑤ 人間関係・社会性' },
+  { key: 'support_transition' as const,             goalKey: 'support_goal_transition' as const,             assigneeKey: 'support_assignee_transition' as const,             priorityKey: 'support_priority_transition' as const,             label: '⑥ 移行支援' },
+  { key: 'support_family' as const,                 goalKey: 'support_goal_family' as const,                 assigneeKey: 'support_assignee_family' as const,                 priorityKey: 'support_priority_family' as const,                 label: '⑦ 家族支援' },
 ] as const
 
-type AreaKey     = typeof AREAS[number]['key']
-type AreaGoalKey = typeof AREAS[number]['goalKey']
-type AreaValues  = Record<AreaKey, string>
-type GoalValues  = Record<AreaGoalKey, string>
+type AreaKey      = typeof AREAS[number]['key']
+type AreaGoalKey  = typeof AREAS[number]['goalKey']
+type AssigneeKey  = typeof AREAS[number]['assigneeKey']
+type PriorityKey  = typeof AREAS[number]['priorityKey']
+type AreaValues   = Record<AreaKey, string>
+type GoalValues   = Record<AreaGoalKey, string>
+type AssigneeValues = Record<AssigneeKey, string>
+type PriorityValues = Record<PriorityKey, string>
 
 interface Props {
   plan: SupportPlan
@@ -96,6 +114,24 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
     support_transition: plan.support_transition ?? '',
     support_family: plan.support_family ?? '',
   })
+  const [assigneeValues, setAssigneeValues] = useState<AssigneeValues>({
+    support_assignee_health_life: plan.support_assignee_health_life ?? '',
+    support_assignee_movement_sensory: plan.support_assignee_movement_sensory ?? '',
+    support_assignee_cognition_behavior: plan.support_assignee_cognition_behavior ?? '',
+    support_assignee_language_communication: plan.support_assignee_language_communication ?? '',
+    support_assignee_social_relationships: plan.support_assignee_social_relationships ?? '',
+    support_assignee_transition: plan.support_assignee_transition ?? '',
+    support_assignee_family: plan.support_assignee_family ?? '',
+  })
+  const [priorityValues, setPriorityValues] = useState<PriorityValues>({
+    support_priority_health_life: plan.support_priority_health_life ?? '',
+    support_priority_movement_sensory: plan.support_priority_movement_sensory ?? '',
+    support_priority_cognition_behavior: plan.support_priority_cognition_behavior ?? '',
+    support_priority_language_communication: plan.support_priority_language_communication ?? '',
+    support_priority_social_relationships: plan.support_priority_social_relationships ?? '',
+    support_priority_transition: plan.support_priority_transition ?? '',
+    support_priority_family: plan.support_priority_family ?? '',
+  })
   const [goalValues, setGoalValues] = useState<GoalValues>({
     support_goal_health_life: plan.support_goal_health_life ?? '',
     support_goal_movement_sensory: plan.support_goal_movement_sensory ?? '',
@@ -111,8 +147,9 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
   const [refining, setRefining] = useState<string | null>(null)
   const [generatingGoal, setGeneratingGoal] = useState<string | null>(null)
 
-  const setGoal = (key: AreaGoalKey, value: string) =>
-    setGoalValues((prev) => ({ ...prev, [key]: value }))
+  const setGoal     = (key: AreaGoalKey,  value: string) => setGoalValues((p)     => ({ ...p, [key]: value }))
+  const setAssignee = (key: AssigneeKey,  value: string) => setAssigneeValues((p) => ({ ...p, [key]: value }))
+  const setPriority = (key: PriorityKey,  value: string) => setPriorityValues((p) => ({ ...p, [key]: value }))
 
   const generateGoal = async (area: typeof AREAS[number]) => {
     const content = areaValues[area.key]
@@ -174,6 +211,20 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
       support_goal_social_relationships: goalValues.support_goal_social_relationships || null,
       support_goal_transition: goalValues.support_goal_transition || null,
       support_goal_family: goalValues.support_goal_family || null,
+      support_assignee_health_life: assigneeValues.support_assignee_health_life || null,
+      support_assignee_movement_sensory: assigneeValues.support_assignee_movement_sensory || null,
+      support_assignee_cognition_behavior: assigneeValues.support_assignee_cognition_behavior || null,
+      support_assignee_language_communication: assigneeValues.support_assignee_language_communication || null,
+      support_assignee_social_relationships: assigneeValues.support_assignee_social_relationships || null,
+      support_assignee_transition: assigneeValues.support_assignee_transition || null,
+      support_assignee_family: assigneeValues.support_assignee_family || null,
+      support_priority_health_life: priorityValues.support_priority_health_life || null,
+      support_priority_movement_sensory: priorityValues.support_priority_movement_sensory || null,
+      support_priority_cognition_behavior: priorityValues.support_priority_cognition_behavior || null,
+      support_priority_language_communication: priorityValues.support_priority_language_communication || null,
+      support_priority_social_relationships: priorityValues.support_priority_social_relationships || null,
+      support_priority_transition: priorityValues.support_priority_transition || null,
+      support_priority_family: priorityValues.support_priority_family || null,
       manager_name: managerName || null,
       monitoring_notes: monitoringNotes || null,
       long_term_goal_rating: longTermGoalRating || null,
@@ -282,6 +333,12 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
                       )}
                       {plan[area.key] && (
                         <p className="text-gray-700 whitespace-pre-wrap text-sm">{plan[area.key]}</p>
+                      )}
+                      {(plan[area.assigneeKey] || plan[area.priorityKey]) && (
+                        <div className="flex gap-3 mt-1">
+                          {plan[area.assigneeKey] && <span className="text-xs text-gray-500">担当: {plan[area.assigneeKey]}</span>}
+                          {plan[area.priorityKey] && <span className="text-xs text-gray-500">優先順位: {plan[area.priorityKey]}</span>}
+                        </div>
                       )}
                     </div>
                   ))}
@@ -453,6 +510,30 @@ export function SupportPlanEditCard({ plan, readOnly }: Props) {
                       rows={2}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none bg-white"
                     />
+                  </div>
+
+                  {/* 担当者・優先順位 */}
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">担当者</label>
+                      <input
+                        type="text"
+                        value={assigneeValues[area.assigneeKey]}
+                        onChange={(e) => setAssignee(area.assigneeKey, e.target.value)}
+                        placeholder="担当者名"
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                      />
+                    </div>
+                    <div style={{ width: '90px' }}>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">優先順位</label>
+                      <input
+                        type="text"
+                        value={priorityValues[area.priorityKey]}
+                        onChange={(e) => setPriority(area.priorityKey, e.target.value)}
+                        placeholder="例: 1"
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                      />
+                    </div>
                   </div>
 
                   {/* 支援目標 */}

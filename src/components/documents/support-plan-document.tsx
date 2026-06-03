@@ -8,9 +8,13 @@ export type AreaData = {
   label: string
   goal: string
   content: string
+  assignee: string
+  priority: string
   kasan: string
-  dbKey: string       // 支援内容のDBカラム名
-  goalDbKey: string   // 支援目標のDBカラム名
+  dbKey: string
+  goalDbKey: string
+  assigneeDbKey: string
+  priorityDbKey: string
 }
 
 export type SupportPlanDocumentData = {
@@ -33,6 +37,8 @@ type EditedValues = {
   shortTermGoals: string
   areaGoals: string[]
   areaContents: string[]
+  areaAssignees: string[]
+  areaPriorities: string[]
 }
 
 const FONT_SIZES = [6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
@@ -56,8 +62,10 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
     supportPolicy: data.supportPolicy,
     longTermGoals: data.longTermGoals,
     shortTermGoals: data.shortTermGoals,
-    areaGoals:     data.areas.map((a) => a.goal),
-    areaContents:  data.areas.map((a) => a.content),
+    areaGoals:      data.areas.map((a) => a.goal),
+    areaContents:   data.areas.map((a) => a.content),
+    areaAssignees:  data.areas.map((a) => a.assignee),
+    areaPriorities: data.areas.map((a) => a.priority),
   })
 
   const fontSize = FONT_SIZES[fontIdx]
@@ -72,8 +80,10 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
       short_term_goals: values.shortTermGoals,
     }
     data.areas.forEach((area, i) => {
-      payload[area.dbKey]     = values.areaContents[i] ?? ''
-      payload[area.goalDbKey] = values.areaGoals[i]    ?? ''
+      payload[area.dbKey]          = values.areaContents[i]   ?? ''
+      payload[area.goalDbKey]      = values.areaGoals[i]      ?? ''
+      payload[area.assigneeDbKey]  = values.areaAssignees[i]  ?? ''
+      payload[area.priorityDbKey]  = values.areaPriorities[i] ?? ''
     })
     await supabase.from('support_plans').update(payload).eq('id', data.planId)
     setSaving(false)
@@ -340,9 +350,25 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
                   {area.kasan}
                 </td>
                 <td style={{ ...cell, textAlign: 'center', verticalAlign: 'middle', fontSize: `${Math.max(6, fontSize - 0.5)}pt` }}>
-                  {data.managerName}
+                  <EditCell
+                    value={values.areaAssignees[i] ?? ''}
+                    minHeight={heights.area}
+                    onChange={(v) => setValues((p) => {
+                      const next = [...p.areaAssignees]; next[i] = v
+                      return { ...p, areaAssignees: next }
+                    })}
+                  />
                 </td>
-                <td style={{ ...cell }}></td>
+                <td style={{ ...cell, textAlign: 'center', verticalAlign: 'middle', fontSize: `${Math.max(6, fontSize - 0.5)}pt` }}>
+                  <EditCell
+                    value={values.areaPriorities[i] ?? ''}
+                    minHeight={heights.area}
+                    onChange={(v) => setValues((p) => {
+                      const next = [...p.areaPriorities]; next[i] = v
+                      return { ...p, areaPriorities: next }
+                    })}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
