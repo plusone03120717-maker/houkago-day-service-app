@@ -156,6 +156,28 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
         .update(mergedUpdates)
         .eq('id', existing.id)
       if (error) { alert(`更新エラー: ${error.message}`); setSaving(null); return }
+
+      // 欠席になった場合、送迎時間・提供時間をすべてクリア
+      if (updates.status === 'absent') {
+        await supabase
+          .from('daily_attendance')
+          .update({
+            pickup_departure_time: null,
+            pickup_arrival_time: null,
+            dropoff_departure_time: null,
+            dropoff_arrival_time: null,
+            service_start_time: null,
+            service_end_time: null,
+            daytime_support: false,
+            daytime_support_start_time: null,
+            daytime_support_end_time: null,
+            pickup_driver_member_id: null,
+            pickup_vehicle_id: null,
+            dropoff_driver_member_id: null,
+            dropoff_vehicle_id: null,
+          })
+          .eq('id', existing.id)
+      }
     } else {
       const { error } = await supabase.from('daily_attendance').insert({
         child_id: childId,

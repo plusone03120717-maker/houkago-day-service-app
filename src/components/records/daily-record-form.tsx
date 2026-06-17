@@ -18,6 +18,7 @@ import {
   Pill,
   Car,
   Bot,
+  Trash2,
 } from 'lucide-react'
 import { MedicationLogForm } from '@/components/medications/medication-log-form'
 import { formatDate } from '@/lib/utils'
@@ -503,7 +504,19 @@ export function DailyRecordForm({
         <CardContent className="space-y-4">
           {/* お迎え */}
           <div>
-            <p className="text-xs font-semibold text-gray-500 mb-2">お迎え</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-gray-500">お迎え</p>
+              {(pickupDepartureTime || pickupArrivalTime || pickupDriverId || pickupVehicleId) && (
+                <button
+                  type="button"
+                  onClick={() => { setPickupDepartureTime(''); setPickupArrivalTime(''); setPickupDriverId(''); setPickupVehicleId('') }}
+                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  クリア
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-gray-600 mb-1 block">お迎えに行った時間</label>
@@ -559,7 +572,19 @@ export function DailyRecordForm({
 
           {/* 送り */}
           <div>
-            <p className="text-xs font-semibold text-gray-500 mb-2">送り</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-gray-500">送り</p>
+              {(dropoffDepartureTime || dropoffArrivalTime || dropoffDriverId || dropoffVehicleId) && (
+                <button
+                  type="button"
+                  onClick={() => { setDropoffDepartureTime(''); setDropoffArrivalTime(''); setDropoffDriverId(''); setDropoffVehicleId('') }}
+                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  クリア
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-gray-600 mb-1 block">事務所を出た時間</label>
@@ -617,12 +642,24 @@ export function DailyRecordForm({
 
           {/* 提供時間 */}
           <div className="border-t border-gray-100 pt-4">
-            <p className="text-xs font-semibold text-gray-500 mb-2">
-              提供時間
-              {isSchoolHoliday && (
-                <span className="ml-2 text-blue-500 font-normal">（学校休日）</span>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-gray-500">
+                提供時間
+                {isSchoolHoliday && (
+                  <span className="ml-2 text-blue-500 font-normal">（学校休日）</span>
+                )}
+              </p>
+              {(serviceStartTime || serviceEndTime) && (
+                <button
+                  type="button"
+                  onClick={() => { setServiceStartTime(''); setServiceEndTime('') }}
+                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  クリア
+                </button>
               )}
-            </p>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-gray-600 mb-1 block">開始時間</label>
