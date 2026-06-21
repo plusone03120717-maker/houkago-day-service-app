@@ -33,22 +33,23 @@ export default async function AttendancePage({
           .in('status', ['confirmed', 'reserved', 'cancel_waiting'])
       : { data: [] },
 
-    // 有効な利用計画を取得（曜日フィルタはJSで行う）
+    // 有効な利用計画を取得（日付・曜日フィルタはJSで行う）
     selectedUnitId
       ? supabase
           .from('usage_plans')
-          .select('id, child_id, day_of_week, children (id, name, name_kana, photo_url, allergy_info, medical_info)')
+          .select('id, child_id, start_date, end_date, day_of_week, children (id, name, name_kana, photo_url, allergy_info, medical_info)')
           .eq('unit_id', selectedUnitId)
           .eq('is_active', true)
-          .lte('start_date', today)
-          .or(`end_date.is.null,end_date.gte.${today}`)
       : { data: [] },
   ])
 
-  type PlanRow = { id: string; child_id: string; day_of_week: number[]; children: Reservation['children'] }
-  // スケジュールページと同様にJS側で曜日フィルタを実施（Supabaseのcontainsが整数配列で正しく動作しない場合の対策）
-  const planRows = ((plansRaw ?? []) as unknown as PlanRow[])
-    .filter((p) => (p.day_of_week ?? []).includes(todayDow))
+  type PlanRow = { id: string; child_id: string; start_date: string; end_date: string | null; day_of_week: number[]; children: Reservation['children'] }
+  // 利用スケジュールページと同じロジックでJSフィルタ（Supabaseの or/contains が正常動作しない場合の対策）
+  const planRows = ((plansRaw ?? []) as unknown as PlanRow[]).filter((p) => {
+    if (p.start_date > today) return false
+    if (p.end_date !== null && p.end_date < today) return false
+    return (p.day_of_week ?? []).includes(todayDow)
+  })
 
   // この日付でキャンセルされた計画IDを取得
   const planIds = planRows.map((p) => p.id)
