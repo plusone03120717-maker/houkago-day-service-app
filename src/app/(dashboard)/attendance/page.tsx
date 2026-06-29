@@ -70,13 +70,12 @@ export default async function AttendancePage({
 
   // 予約フィルタリング:
   // - 有効な計画あり → 常に表示
-  // - 計画あるが全日付キャンセル → 除外
-  // - 計画なし（削除・曜日変更・終了日変更済み）→ 保護者ポータルからの手動予約（requested_by!=null）のみ表示
+  // - 計画あるが当日がキャンセルoverride → 手動予約（requested_by!=null）のみ表示
+  // - 計画なし（削除・曜日変更・終了日変更済み）→ 手動予約のみ表示
   //   ※自動生成予約（requested_by=null）は計画がなければ除外することで同期ズレを防ぐ
   type ReservationWithMeta = Reservation & { requested_by: string | null }
   const reservations = ((reservationsRaw ?? []) as unknown as ReservationWithMeta[]).filter((r) => {
     if (childHasValidPlan.has(r.child_id)) return true
-    if (childHasPlan.has(r.child_id)) return false
     return r.requested_by != null
   }) as unknown as Reservation[]
 
