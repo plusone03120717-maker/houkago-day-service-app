@@ -25,6 +25,8 @@ import {
   Clock,
   Umbrella,
   CalendarRange,
+  SmartphoneNfc,
+  KeyRound,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -60,6 +62,13 @@ const adminNav = [
       { href: '/messages', label: 'メッセージ', icon: MessageSquare },
       { href: '/announcements', label: 'お知らせ', icon: Bell },
       { href: '/usage', label: '利用状況', icon: CalendarDays },
+    ],
+  },
+  {
+    group: 'LINE連携',
+    items: [
+      { href: '/parent-contacts', label: '保護者連絡一覧', icon: SmartphoneNfc },
+      { href: '/settings/registration-codes', label: '登録コード発行', icon: KeyRound },
     ],
   },
   {
@@ -99,6 +108,12 @@ const staffNav = [
       { href: '/messages', label: 'メッセージ', icon: MessageSquare },
       { href: '/announcements', label: 'お知らせ', icon: Bell },
       { href: '/usage', label: '利用状況', icon: CalendarDays },
+    ],
+  },
+  {
+    group: 'LINE連携',
+    items: [
+      { href: '/parent-contacts', label: '保護者連絡一覧', icon: SmartphoneNfc },
     ],
   },
   {

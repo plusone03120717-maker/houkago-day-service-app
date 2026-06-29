@@ -194,6 +194,19 @@ export default async function ChildSchedulePage({
       }
     }
   }
+  // キャンセル済み予定日（override で is_cancelled=true の日）を計算
+  const cancelledPlanDates: Record<string, { planId: string; overrideId: string; unitId: string }> = {}
+  for (const ov of dateOverrides) {
+    if (!ov.is_cancelled) continue
+    if (ov.date < startDate || ov.date > endDate) continue
+    const plan = plans.find((p) => p.id === ov.plan_id)
+    if (!plan || !plan.is_active) continue
+    const dow = new Date(ov.date + 'T00:00:00').getDay()
+    if (!(plan.day_of_week ?? []).includes(dow)) continue
+    if (ov.date < plan.start_date || (plan.end_date && ov.date > plan.end_date)) continue
+    cancelledPlanDates[ov.date] = { planId: ov.plan_id, overrideId: ov.id, unitId: plan.unit_id }
+  }
+
   const { data: attendancesRaw } = await supabase
     .from('daily_attendance')
     .select(`
@@ -262,6 +275,7 @@ export default async function ChildSchedulePage({
             plannedDateDropoffTime={plannedDateDropoffTime}
             plannedDateServiceStartTime={plannedDateServiceStartTime}
             plannedDateServiceEndTime={plannedDateServiceEndTime}
+            cancelledPlanDates={cancelledPlanDates}
           />
         </CardContent>
       </Card>

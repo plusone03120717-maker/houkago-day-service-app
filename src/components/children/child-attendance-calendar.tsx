@@ -40,6 +40,7 @@ interface Props {
   plannedDateDropoffTime?: Record<string, string | null>
   plannedDateServiceStartTime?: Record<string, string | null>
   plannedDateServiceEndTime?: Record<string, string | null>
+  cancelledPlanDates?: Record<string, { planId: string; overrideId: string; unitId: string }>
   basePath?: string
 }
 
@@ -71,7 +72,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, basePath }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -86,6 +87,8 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
   const [cancellingPlan, setCancellingPlan] = useState(false)
   const [confirmBulkCancelPlan, setConfirmBulkCancelPlan] = useState(false)
   const [bulkCancellingPlan, setBulkCancellingPlan] = useState(false)
+  const [confirmRestorePlan, setConfirmRestorePlan] = useState(false)
+  const [restoringPlan, setRestoringPlan] = useState(false)
 
   // 編集フィールドの状態
   const [pickupDeparture, setPickupDeparture] = useState('')
@@ -153,6 +156,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     setSaved(false)
     setConfirmDelete(false)
     setConfirmCancelPlan(false)
+    setConfirmRestorePlan(false)
     if (ctrlKey) {
       // Ctrl+クリック: 複数選択トグル
       setSelectedDates((prev) => {
@@ -325,6 +329,25 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     startTransition(() => router.refresh())
   }
 
+  const handleRestorePlan = async () => {
+    if (!selectedDate) return
+    const info = cancelledPlanDates[selectedDate]
+    if (!info) return
+    setRestoringPlan(true)
+    await supabase.from('usage_plan_date_overrides').update({ is_cancelled: false }).eq('id', info.overrideId)
+    await supabase
+      .from('usage_reservations')
+      .update({ status: 'confirmed' })
+      .eq('child_id', childId)
+      .eq('unit_id', info.unitId)
+      .eq('date', selectedDate)
+      .eq('status', 'cancelled')
+    setRestoringPlan(false)
+    setConfirmRestorePlan(false)
+    setSelectedDates(new Set())
+    startTransition(() => router.refresh())
+  }
+
   const handleCancelPlan = async () => {
     if (!selectedDate) return
     const planId = plannedDatePlanId[selectedDate]
@@ -475,6 +498,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
             const isAbsent = att?.status === 'absent'
             const isScheduled = att?.status === 'scheduled'
             const isPlanned = plannedSet.has(date) && !att
+            const isCancelledPlan = !!cancelledPlanDates[date] && !att && !plannedSet.has(date)
 
             return (
               <button
@@ -503,6 +527,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
                 {isAbsent && <div className="w-1.5 h-1.5 rounded-full bg-red-300 mt-0.5" />}
                 {isScheduled && <div className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-0.5" />}
                 {isPlanned && <div className="w-1.5 h-1.5 rounded-full bg-indigo-300 mt-0.5" />}
+                {isCancelledPlan && <div className="w-1.5 h-1.5 rounded-full bg-gray-300 mt-0.5" />}
               </button>
             )
           })}
@@ -522,6 +547,9 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-full bg-indigo-300" />スケジュール
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-full bg-gray-300" />キャンセル済み予定
         </div>
         <div className="flex items-center gap-1.5 text-gray-400">
           Ctrl+クリックで複数選択
@@ -776,6 +804,40 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
               >
                 <Trash2 className="h-4 w-4" />
                 この記録を削除
+              </Button>
+            )
+          )}
+
+          {/* キャンセル解除ボタン（キャンセル済み予定の日、既存レコードなし） */}
+          {!selected && selectedDate && cancelledPlanDates[selectedDate] && (
+            confirmRestorePlan ? (
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleRestorePlan}
+                  disabled={restoringPlan}
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 text-green-600 border-green-300 hover:bg-green-50"
+                >
+                  {restoringPlan ? '解除中...' : '予定を復元する'}
+                </Button>
+                <Button
+                  onClick={() => setConfirmRestorePlan(false)}
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                >
+                  キャンセル
+                </Button>
+              </div>
+            ) : (
+              <Button
+                onClick={() => setConfirmRestorePlan(true)}
+                size="sm"
+                variant="outline"
+                className="w-full text-green-600 border-green-300 hover:bg-green-50"
+              >
+                この日のキャンセルを解除する
               </Button>
             )
           )}

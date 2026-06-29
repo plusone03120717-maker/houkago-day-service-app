@@ -44,7 +44,6 @@ export default async function AttendancePage({
   ])
 
   type PlanRow = { id: string; child_id: string; start_date: string; end_date: string | null; day_of_week: number[]; children: Reservation['children'] }
-  // 利用スケジュールページと同じロジックでJSフィルタ（Supabaseの or/contains が正常動作しない場合の対策）
   const planRows = ((plansRaw ?? []) as unknown as PlanRow[]).filter((p) => {
     if (p.start_date > today) return false
     if (p.end_date !== null && p.end_date < today) return false
