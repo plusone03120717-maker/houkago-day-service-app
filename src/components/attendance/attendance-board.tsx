@@ -17,9 +17,11 @@ import {
   AlertTriangle,
   Thermometer,
   ClipboardEdit,
-  Car,
+  LayoutList,
+  CalendarDays,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { WeeklyAttendanceView } from './weekly-attendance-view'
 
 export type Unit = {
   id: string
@@ -72,6 +74,7 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
   const [, startTransition] = useTransition()
   const [saving, setSaving] = useState<string | null>(null)
   const [tempInput, setTempInput] = useState<Record<string, string>>({})
+  const [view, setView] = useState<'day' | 'week'>('day')
 
   const attendanceMap = Object.fromEntries(attendances.map((a) => [a.child_id, a]))
 
@@ -271,7 +274,7 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
           <h1 className="text-2xl font-bold text-gray-900">出席管理</h1>
           <p className="text-sm text-gray-500 mt-0.5">出席・欠席・入退室時間の記録</p>
         </div>
-        {unrecorded.length > 0 && (
+        {view === 'day' && unrecorded.length > 0 && (
           <Button onClick={markAllPresent} disabled={saving === 'all'}>
             <CheckCircle className="h-4 w-4" />
             未記録を一括出席登録
@@ -280,7 +283,7 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
       </div>
 
       {/* 日付・ユニット選択バー */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
         <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
           <button onClick={() => changeDate(-1)} className="p-1 hover:bg-gray-100 rounded">
             <ChevronLeft className="h-4 w-4" />
@@ -299,7 +302,7 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
           </button>
         </div>
 
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap flex-1">
           {units.map((u) => (
             <button
               key={u.id}
@@ -314,8 +317,42 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
             </button>
           ))}
         </div>
+
+        {/* ビュー切替 */}
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 flex-shrink-0">
+          <button
+            onClick={() => setView('day')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              view === 'day' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <LayoutList className="h-3.5 w-3.5" />
+            日別
+          </button>
+          <button
+            onClick={() => setView('week')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              view === 'week' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <CalendarDays className="h-3.5 w-3.5" />
+            週別
+          </button>
+        </div>
       </div>
 
+      {/* 週別ビュー */}
+      {view === 'week' && (
+        <WeeklyAttendanceView
+          baseDate={date}
+          selectedUnitId={selectedUnitId}
+          units={units}
+        />
+      )}
+
+      {/* 日別ビュー */}
+      {view === 'day' && (
+        <>
       {/* 統計 */}
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
         <Card>
@@ -500,6 +537,8 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
           </div>
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   )
 }
