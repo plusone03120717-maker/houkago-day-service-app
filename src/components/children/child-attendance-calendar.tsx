@@ -184,25 +184,28 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     if (!schedules || schedules.length === 0) return
 
     const scheduleIds = schedules.map((s) => s.id)
+    // この児童が属している transport_details を取得
     const { data: childDetails } = await supabase
       .from('transport_details')
-      .select('schedule_id')
+      .select('id, schedule_id')
       .eq('child_id', childId)
       .in('schedule_id', scheduleIds)
 
-    const childScheduleIds = new Set((childDetails ?? []).map((d) => d.schedule_id))
-    for (const schedule of schedules) {
-      if (!childScheduleIds.has(schedule.id)) continue
-      const newDeparture =
-        schedule.direction === 'pickup' ? (pickupDeparture || null)
-        : schedule.direction === 'dropoff' ? (dropoffDeparture || null)
+    if (!childDetails || childDetails.length === 0) return
+
+    const scheduleMap = new Map(schedules.map((s) => [s.id as string, s.direction as string]))
+    for (const detail of childDetails) {
+      const direction = scheduleMap.get(detail.schedule_id as string)
+      // 児童個人の実績お迎え・お送り時刻を actual_pickup_time に保存
+      // (transport_schedules.departure_time は変更しない：他の児童のスケジュールに影響するため)
+      const actualTime =
+        direction === 'pickup' ? (pickupDeparture || null)
+        : direction === 'dropoff' ? (dropoffDeparture || null)
         : null
-      if (newDeparture !== undefined) {
-        await supabase
-          .from('transport_schedules')
-          .update({ departure_time: newDeparture })
-          .eq('id', schedule.id)
-      }
+      await supabase
+        .from('transport_details')
+        .update({ actual_pickup_time: actualTime })
+        .eq('id', detail.id as string)
     }
   }
 

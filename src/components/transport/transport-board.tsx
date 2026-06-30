@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -287,11 +287,13 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
 function PickupTimeCell({
   detailId,
   pickupTime,
+  actualPickupTime,
   defaultTime,
   label,
 }: {
   detailId: string
   pickupTime: string | null
+  actualPickupTime: string | null
   defaultTime: string | null
   label: string
 }) {
@@ -326,6 +328,11 @@ function PickupTimeCell({
           <option key={t} value={t}>{t}</option>
         ))}
       </select>
+      {actualPickupTime && (
+        <span className="text-[10px] text-teal-600 leading-none mt-0.5">
+          実績 {actualPickupTime.slice(0, 5)}
+        </span>
+      )}
     </div>
   )
 }
@@ -576,13 +583,13 @@ function ScheduleCard({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [reordering, setReordering] = useState(false)
 
-  // schedule が変わったらローカル状態をリセット
-  const scheduleId = schedule?.id
-  const [lastScheduleId, setLastScheduleId] = useState(scheduleId)
-  if (scheduleId !== lastScheduleId) {
-    setLocalDetails(sortedDetails)
-    setLastScheduleId(scheduleId)
-  }
+  // schedule prop が変わった（追加・削除・再生成後）らローカル状態を同期
+  useEffect(() => {
+    const sorted = schedule
+      ? [...schedule.transport_details].sort((a, b) => a.sort_order - b.sort_order)
+      : []
+    setLocalDetails(sorted)
+  }, [schedule])
 
   const handleDeleteSchedule = async () => {
     if (!schedule) return
@@ -752,6 +759,7 @@ function ScheduleCard({
                       <PickupTimeCell
                         detailId={detail.id}
                         pickupTime={detail.pickup_time}
+                        actualPickupTime={detail.actual_pickup_time}
                         defaultTime={schedule.departure_time}
                         label="お迎え時刻"
                       />
