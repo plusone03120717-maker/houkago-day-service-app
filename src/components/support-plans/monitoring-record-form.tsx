@@ -20,6 +20,7 @@ type AiResult = {
   short_term_progress?: string
   issues?: string
   next_actions?: string
+  specialized_support?: string
   overall_status?: string
   period?: { endDate: string }
 }
@@ -43,6 +44,7 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
   const [nextActions, setNextActions] = useState('')
   const [overallStatus, setOverallStatus] = useState<'ongoing' | 'achieved' | 'revised' | 'needs_review'>('ongoing')
   const [familyWishes, setFamilyWishes] = useState('')
+  const [specializedSupport, setSpecializedSupport] = useState('')
   const [agencyNotes, setAgencyNotes] = useState<AgencyNote[]>([])
   const [saving, setSaving] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
@@ -108,6 +110,7 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
       short_term_progress: shortTermProgress || null,
       issues: issues || null,
       next_actions: nextActions || null,
+      specialized_support: specializedSupport || null,
       overall_status: overallStatus,
       family_wishes: familyWishes || null,
       agency_notes: agencyNotes.filter((n) => n.name.trim() || n.content.trim()),
@@ -118,6 +121,7 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
     setShortTermProgress('')
     setIssues('')
     setNextActions('')
+    setSpecializedSupport('')
     setOverallStatus('ongoing')
     setFamilyWishes('')
     setAgencyNotes([])
@@ -129,6 +133,7 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
     { key: 'short_term_progress', resultKey: 'short_term_progress' as keyof AiResult, label: '短期目標の達成状況', value: shortTermProgress, setter: setShortTermProgress, placeholder: '短期目標に対する現在の進捗・変化' },
     { key: 'issues', resultKey: 'issues' as keyof AiResult, label: '課題・気になること', value: issues, setter: setIssues, placeholder: '現在の課題や懸念事項' },
     { key: 'next_actions', resultKey: 'next_actions' as keyof AiResult, label: '今後の対応・方針', value: nextActions, setter: setNextActions, placeholder: '次期計画への反映事項、支援の見直し点など' },
+    { key: 'specialized_support', resultKey: 'specialized_support' as keyof AiResult, label: '専門的支援', value: specializedSupport, setter: setSpecializedSupport, placeholder: '専門的支援として実施した内容・手法・工夫点' },
   ] as const
 
   return (

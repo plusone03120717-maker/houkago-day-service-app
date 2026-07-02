@@ -126,6 +126,7 @@ ${dailyRecordsText}
   "short_term_progress": "短期目標に対する達成状況を具体的に記述（80〜150字）",
   "issues": "日々の記録から読み取れる課題・気になる点（80〜150字）",
   "next_actions": "今後の支援の方向性・見直し点（80〜150字）",
+  "specialized_support": "専門的支援として実施した内容・手法・工夫点を具体的に記述（80〜150字）",
   "overall_status": "ongoing か achieved か revised か needs_review のいずれか1つ"
 }`
 
@@ -148,6 +149,7 @@ ${dailyRecordsText}
       short_term_progress: string
       issues: string
       next_actions: string
+      specialized_support: string
       overall_status: string
     }
 

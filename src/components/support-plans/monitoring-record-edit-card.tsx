@@ -17,6 +17,7 @@ type MonitoringRecord = {
   short_term_progress: string | null
   issues: string | null
   next_actions: string | null
+  specialized_support: string | null
   overall_status: string
   family_wishes: string | null
   agency_notes: AgencyNote[]
@@ -27,6 +28,7 @@ type AiResult = {
   short_term_progress?: string
   issues?: string
   next_actions?: string
+  specialized_support?: string
   overall_status?: string
 }
 
@@ -55,6 +57,7 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
   const [shortTermProgress, setShortTermProgress] = useState(record.short_term_progress ?? '')
   const [issues, setIssues] = useState(record.issues ?? '')
   const [nextActions, setNextActions] = useState(record.next_actions ?? '')
+  const [specializedSupport, setSpecializedSupport] = useState(record.specialized_support ?? '')
   const [familyWishes, setFamilyWishes] = useState(record.family_wishes ?? '')
   const [agencyNotes, setAgencyNotes] = useState<AgencyNote[]>(record.agency_notes ?? [])
   const [saving, setSaving] = useState(false)
@@ -119,6 +122,7 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
       short_term_progress: shortTermProgress || null,
       issues: issues || null,
       next_actions: nextActions || null,
+      specialized_support: specializedSupport || null,
       family_wishes: familyWishes || null,
       agency_notes: agencyNotes.filter((n) => n.name.trim() || n.content.trim()),
     }).eq('id', record.id)
@@ -134,6 +138,7 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
     { key: 'short_term_progress', resultKey: 'short_term_progress' as keyof AiResult, label: '短期目標の達成状況', value: shortTermProgress, setter: setShortTermProgress, rows: 3 },
     { key: 'issues', resultKey: 'issues' as keyof AiResult, label: '課題', value: issues, setter: setIssues, rows: 3 },
     { key: 'next_actions', resultKey: 'next_actions' as keyof AiResult, label: '今後の対応', value: nextActions, setter: setNextActions, rows: 3 },
+    { key: 'specialized_support', resultKey: 'specialized_support' as keyof AiResult, label: '専門的支援', value: specializedSupport, setter: setSpecializedSupport, rows: 3 },
   ] as const
 
   return (
@@ -178,6 +183,12 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
             <div>
               <p className="text-xs text-gray-400 mb-0.5">今後の対応</p>
               <p className="text-sm text-gray-700 whitespace-pre-wrap">{record.next_actions}</p>
+            </div>
+          )}
+          {record.specialized_support && (
+            <div>
+              <p className="text-xs text-gray-400 mb-0.5">専門的支援</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{record.specialized_support}</p>
             </div>
           )}
           {record.family_wishes && (
