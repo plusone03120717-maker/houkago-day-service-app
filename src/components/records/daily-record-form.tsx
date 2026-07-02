@@ -220,11 +220,18 @@ export function DailyRecordForm({
     }
   }
 
+  // "HH:MM" を表示用に正規化（00:00 は未入力と同じため空文字に変換）
+  const fmtTime = (t: string | null | undefined): string => {
+    if (!t) return ''
+    const hhmm = t.slice(0, 5)
+    return hhmm === '00:00' ? '' : hhmm
+  }
+
   // 送迎時間
-  const [pickupDepartureTime, setPickupDepartureTime] = useState(attendance?.pickup_departure_time?.slice(0, 5) ?? '')
-  const [pickupArrivalTime, setPickupArrivalTime] = useState(attendance?.pickup_arrival_time?.slice(0, 5) ?? '')
-  const [dropoffDepartureTime, setDropoffDepartureTime] = useState(attendance?.dropoff_departure_time?.slice(0, 5) ?? '')
-  const [dropoffArrivalTime, setDropoffArrivalTime] = useState(attendance?.dropoff_arrival_time?.slice(0, 5) ?? '')
+  const [pickupDepartureTime, setPickupDepartureTime] = useState(fmtTime(attendance?.pickup_departure_time))
+  const [pickupArrivalTime, setPickupArrivalTime] = useState(fmtTime(attendance?.pickup_arrival_time))
+  const [dropoffDepartureTime, setDropoffDepartureTime] = useState(fmtTime(attendance?.dropoff_departure_time))
+  const [dropoffArrivalTime, setDropoffArrivalTime] = useState(fmtTime(attendance?.dropoff_arrival_time))
 
   // ドライバー・車種（attendance に保存済みの値を優先、なければ送迎管理スケジュールから初期値）
   const [pickupDriverId, setPickupDriverId] = useState(
@@ -405,10 +412,10 @@ export function DailyRecordForm({
     await supabase
       .from('daily_attendance')
       .update({
-        pickup_departure_time: pickupDepartureTime || null,
-        pickup_arrival_time: pickupArrivalTime || null,
-        dropoff_departure_time: dropoffDepartureTime || null,
-        dropoff_arrival_time: dropoffArrivalTime || null,
+        pickup_departure_time: (pickupDepartureTime && pickupDepartureTime !== '00:00') ? pickupDepartureTime : null,
+        pickup_arrival_time: (pickupArrivalTime && pickupArrivalTime !== '00:00') ? pickupArrivalTime : null,
+        dropoff_departure_time: (dropoffDepartureTime && dropoffDepartureTime !== '00:00') ? dropoffDepartureTime : null,
+        dropoff_arrival_time: (dropoffArrivalTime && dropoffArrivalTime !== '00:00') ? dropoffArrivalTime : null,
         service_start_time: serviceStartTime || null,
         service_end_time: serviceEndTime || null,
         daytime_support: daytimeSupport,

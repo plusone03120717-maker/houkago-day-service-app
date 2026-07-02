@@ -310,11 +310,13 @@ export function BillingChildMonthlyView({
       durationMinutes: startTime && endTime ? timeToMinutes(endTime) - timeToMinutes(startTime) : 0,
       hoursCalculated: hours,
       billingCategory,
+      // 実際の到着時刻が記録されている場合のみ送迎ありと判定（pickup_typeは計画値のため除外）
+      // "00:00:00" は時刻未入力での誤保存として送迎なしとみなす
       transportPickup: att
-        ? (att.pickup_arrival_time != null || ['both', 'pickup_only'].includes(att.pickup_type))
+        ? (att.pickup_arrival_time != null && att.pickup_arrival_time > '00:00:00')
         : false,
       transportDropoff: att
-        ? (att.dropoff_arrival_time != null || ['both', 'dropoff_only'].includes(att.pickup_type))
+        ? (att.dropoff_arrival_time != null && att.dropoff_arrival_time > '00:00:00')
         : false,
       daytimeSupport: att?.daytime_support ?? false,
       participatedActivities: activityMap.get(dateStr) ?? new Set(),
