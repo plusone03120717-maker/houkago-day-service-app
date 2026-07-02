@@ -165,6 +165,7 @@ export function BillingChildMonthlyView({
   yearMonth,
   serviceItems: initialServiceItems,
   certInfo,
+  facilityId,
 }: {
   childId: string
   childName: string
@@ -172,6 +173,7 @@ export function BillingChildMonthlyView({
   yearMonth: string
   serviceItems: ServiceItem[]
   certInfo: { certificate_number?: string; max_days_per_month?: number; copay_limit?: number; municipality?: string } | null
+  facilityId?: string | null
 }) {
   const supabase = createClient()
   const router = useRouter()
@@ -180,6 +182,7 @@ export function BillingChildMonthlyView({
 
   const [attendances, setAttendances] = useState<DailyAttendance[]>([])
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([])
+  const [publicHolidays, setPublicHolidays] = useState<string[]>([])
   const [manualRecords, setManualRecords] = useState<BillingDailyRecord[]>([])
   const [activityMap, setActivityMap] = useState<Map<string, Set<string>>>(new Map())
   const [serviceItems, setServiceItems] = useState<ServiceItem[]>(initialServiceItems)
@@ -217,13 +220,22 @@ export function BillingChildMonthlyView({
       .map((a: { id: string }) => a.id)
 
     // Step 2: 残りを並列取得
-    const [{ data: holidayData }, { data: recordData }, { data: actData }] = await Promise.all([
+    const [{ data: holidayData }, { data: publicHolidayData }, { data: recordData }, { data: actData }] = await Promise.all([
       supabase
         .from('child_school_holidays')
         .select('start_date, end_date, label')
         .eq('child_id', childId)
         .lte('start_date', monthEnd)
         .gte('end_date', monthStart),
+      facilityId
+        ? supabase
+            .from('facility_events')
+            .select('event_date')
+            .eq('facility_id', facilityId)
+            .eq('event_type', 'holiday')
+            .gte('event_date', monthStart)
+            .lte('event_date', monthEnd)
+        : { data: [] },
       supabase
         .from('billing_daily_records')
         .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time')
@@ -242,6 +254,7 @@ export function BillingChildMonthlyView({
 
     setAttendances((attData ?? []) as DailyAttendance[])
     setSchoolHolidays((holidayData ?? []) as SchoolHoliday[])
+    setPublicHolidays((publicHolidayData ?? []).map((h: { event_date: string }) => h.event_date))
     setManualRecords((recordData ?? []) as BillingDailyRecord[])
 
     // 日付ごとの参加活動名セットを構築
@@ -269,7 +282,7 @@ export function BillingChildMonthlyView({
     const att = attMap.get(dateStr) ?? null
     const isAttended = att?.status === 'attended'
     const isAbsent = att?.status === 'absent'
-    const isHoliday = isSchoolHolidayDate(dateStr, schoolHolidays)
+    const isHoliday = isSchoolHolidayDate(dateStr, schoolHolidays) || publicHolidays.includes(dateStr)
     const serviceFormType: 1 | 2 = isHoliday ? 2 : 1
 
     // Check for billing_start_time override

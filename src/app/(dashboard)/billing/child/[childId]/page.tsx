@@ -51,14 +51,17 @@ export default async function BillingChildPage({
   // 所属ユニット
   const { data: unitsRaw } = await supabase
     .from('children_units')
-    .select('units(id, name, service_type, facilities(name, facility_number))')
+    .select('units(id, name, service_type, facilities(id, name, facility_number))')
     .eq('child_id', childId)
   const units = (unitsRaw ?? []).map((r: unknown) => (r as { units: unknown }).units).filter(Boolean) as {
     id: string; name: string; service_type: string
-    facilities: { name: string; facility_number: string } | null
+    facilities: { id: string; name: string; facility_number: string } | null
   }[]
 
   const selectedUnitId = sp.unit ?? units[0]?.id ?? ''
+  const facilityId = units.find((u) => u.id === selectedUnitId)?.facilities?.id
+    ?? units[0]?.facilities?.id
+    ?? null
 
   // 受給者証情報
   const { data: certRaw } = await supabase
@@ -123,6 +126,7 @@ export default async function BillingChildPage({
           yearMonth={yearMonth}
           serviceItems={serviceItems}
           certInfo={certRaw ?? null}
+          facilityId={facilityId}
         />
       ) : (
         <p className="text-sm text-gray-400 text-center py-8">ユニットが登録されていません</p>
