@@ -96,8 +96,8 @@ function calcHours(startTime: string | null, endTime: string | null): number {
 function getBillingCategory(hours: number, hasValidTimes: boolean): 0 | 1 | 2 | null {
   if (!hasValidTimes) return null
   if (hours <= 0) return 0   // 30分未満（30分単位で切り捨て → 0h）
-  if (hours <= 1.5) return 1 // 30分以上〜1時間30分以下
-  return 2                   // 1時間30分超
+  if (hours < 1.5) return 1  // 30分以上〜1時間30分未満
+  return 2                   // 1時間30分以上
 }
 
 function isSchoolHolidayDate(dateStr: string, holidays: SchoolHoliday[]): boolean {
