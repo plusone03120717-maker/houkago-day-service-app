@@ -93,11 +93,11 @@ function calcHours(startTime: string | null, endTime: string | null): number {
   return Math.floor(dur / 30) * 0.5
 }
 
-function getBillingCategory(hours: number, hasValidTimes: boolean): 0 | 1 | 2 | null {
+function getBillingCategory(minutes: number, hasValidTimes: boolean): 0 | 1 | 2 | null {
   if (!hasValidTimes) return null
-  if (hours <= 0) return 0   // 30分未満（30分単位で切り捨て → 0h）
-  if (hours < 1.5) return 1  // 30分以上〜1時間30分未満
-  return 2                   // 1時間30分以上
+  if (minutes < 30) return 0   // 30分未満
+  if (minutes <= 90) return 1  // 30分以上〜90分以下
+  return 2                     // 90分超
 }
 
 function isSchoolHolidayDate(dateStr: string, holidays: SchoolHoliday[]): boolean {
@@ -296,7 +296,8 @@ export function BillingChildMonthlyView({
     const endTime = basicRecord?.billing_end_time ?? att?.service_end_time ?? att?.check_out_time ?? null
 
     const hours = calcHours(startTime, endTime)
-    const billingCategory = getBillingCategory(hours, startTime !== null && endTime !== null)
+    const rawMinutes = startTime && endTime ? Math.max(0, timeToMinutes(endTime) - timeToMinutes(startTime)) : 0
+    const billingCategory = getBillingCategory(rawMinutes, startTime !== null && endTime !== null)
 
     return {
       date: dateStr,
@@ -307,7 +308,7 @@ export function BillingChildMonthlyView({
       serviceFormType,
       startTime: startTime?.slice(0, 5) ?? null,
       endTime: endTime?.slice(0, 5) ?? null,
-      durationMinutes: startTime && endTime ? timeToMinutes(endTime) - timeToMinutes(startTime) : 0,
+      durationMinutes: rawMinutes,
       hoursCalculated: hours,
       billingCategory,
       // 実際の到着時刻が記録されている場合のみ送迎ありと判定（pickup_typeは計画値のため除外）
@@ -690,9 +691,12 @@ export function BillingChildMonthlyView({
                     const startTimeVal = basicRec?.billing_start_time?.slice(0, 5) ?? d.startTime ?? ''
                     const endTimeVal = basicRec?.billing_end_time?.slice(0, 5) ?? d.endTime ?? ''
 
-                    // Recompute hours if overridden
+                    // Recompute category if overridden
                     const overriddenHours = calcHours(startTimeVal, endTimeVal)
-                    const overriddenCategory = getBillingCategory(overriddenHours, startTimeVal !== '' && endTimeVal !== '')
+                    const overriddenMinutes = startTimeVal && endTimeVal
+                      ? Math.max(0, timeToMinutes(endTimeVal) - timeToMinutes(startTimeVal))
+                      : 0
+                    const overriddenCategory = getBillingCategory(overriddenMinutes, startTimeVal !== '' && endTimeVal !== '')
 
                     // 日中一時支援の時間（billing override → 出席記録の順）
                     const daytimeRec = daytimeSupportItem && d.daytimeSupport
