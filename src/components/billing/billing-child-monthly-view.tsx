@@ -395,7 +395,8 @@ export function BillingChildMonthlyView({
     itemId: string,
     dateStr: string,
     field: 'billing_start_time' | 'billing_end_time',
-    value: string
+    value: string,
+    attendanceField?: 'service_start_time' | 'service_end_time' | 'daytime_support_start_time' | 'daytime_support_end_time'
   ) => {
     const existing = getManualRecord(itemId, dateStr)
     const payload = {
@@ -417,7 +418,24 @@ export function BillingChildMonthlyView({
         const filtered = prev.filter((r) => !(r.date === dateStr && r.service_item_id === itemId))
         return [...filtered, data as BillingDailyRecord]
       })
+      if (attendanceField) {
+        const att = attendances.find((a) => a.date === dateStr)
+        if (att) {
+          await supabase.from('daily_attendance').update({ [attendanceField]: value || null }).eq('id', att.id)
+          setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, [attendanceField]: value || null } : a))
+        }
+      }
     }
+  }
+
+  // ── Toggle transport in daily_attendance ────────────────────
+  const toggleTransport = async (dateStr: string, type: 'pickup' | 'dropoff', currentlyOn: boolean) => {
+    const att = attendances.find((a) => a.date === dateStr)
+    if (!att) return
+    const field = type === 'pickup' ? 'pickup_arrival_time' : 'dropoff_arrival_time'
+    const newValue = currentlyOn ? null : '09:00:00'
+    await supabase.from('daily_attendance').update({ [field]: newValue }).eq('id', att.id)
+    setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, [field]: newValue } : a))
   }
 
   // ── Add default service items ───────────────────────────────
@@ -725,7 +743,7 @@ export function BillingChildMonthlyView({
                             className="text-xs border border-gray-200 rounded px-1.5 py-0.5 w-full text-center"
                             onBlur={(e) => {
                               if (!basicItem) return
-                              updateBillingTimes(basicItem.id, dateStr, 'billing_start_time', e.target.value)
+                              updateBillingTimes(basicItem.id, dateStr, 'billing_start_time', e.target.value, 'service_start_time')
                             }}
                           />
                         </td>
@@ -736,7 +754,7 @@ export function BillingChildMonthlyView({
                             className="text-xs border border-gray-200 rounded px-1.5 py-0.5 w-full text-center"
                             onBlur={(e) => {
                               if (!basicItem) return
-                              updateBillingTimes(basicItem.id, dateStr, 'billing_end_time', e.target.value)
+                              updateBillingTimes(basicItem.id, dateStr, 'billing_end_time', e.target.value, 'service_end_time')
                             }}
                           />
                         </td>
@@ -750,14 +768,22 @@ export function BillingChildMonthlyView({
                             <span className="text-gray-300">—</span>
                           )}
                         </td>
-                        <td className="border border-gray-200 px-1 py-1 text-center">
+                        <td
+                          className="border border-gray-200 px-1 py-1 text-center cursor-pointer hover:bg-orange-50"
+                          onClick={() => toggleTransport(dateStr, 'pickup', d.transportPickup)}
+                          title="クリックで送迎（迎え）を切替"
+                        >
                           {d.transportPickup ? (
                             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold">1</span>
                           ) : (
                             <span className="text-gray-300 text-xs">—</span>
                           )}
                         </td>
-                        <td className="border border-gray-200 px-1 py-1 text-center">
+                        <td
+                          className="border border-gray-200 px-1 py-1 text-center cursor-pointer hover:bg-orange-50"
+                          onClick={() => toggleTransport(dateStr, 'dropoff', d.transportDropoff)}
+                          title="クリックで送迎（送り）を切替"
+                        >
                           {d.transportDropoff ? (
                             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold">1</span>
                           ) : (
@@ -775,7 +801,7 @@ export function BillingChildMonthlyView({
                                   className="text-xs border border-gray-200 rounded px-1.5 py-0.5 w-full text-center"
                                   onBlur={(e) => {
                                     if (!daytimeSupportItem) return
-                                    updateBillingTimes(daytimeSupportItem.id, dateStr, 'billing_start_time', e.target.value)
+                                    updateBillingTimes(daytimeSupportItem.id, dateStr, 'billing_start_time', e.target.value, 'daytime_support_start_time')
                                   }}
                                 />
                               ) : (
@@ -791,7 +817,7 @@ export function BillingChildMonthlyView({
                                   className="text-xs border border-gray-200 rounded px-1.5 py-0.5 w-full text-center"
                                   onBlur={(e) => {
                                     if (!daytimeSupportItem) return
-                                    updateBillingTimes(daytimeSupportItem.id, dateStr, 'billing_end_time', e.target.value)
+                                    updateBillingTimes(daytimeSupportItem.id, dateStr, 'billing_end_time', e.target.value, 'daytime_support_end_time')
                                   }}
                                 />
                               ) : (
