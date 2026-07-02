@@ -27,6 +27,8 @@ type DailyAttendance = {
   status: string
   check_in_time: string | null
   check_out_time: string | null
+  service_start_time: string | null
+  service_end_time: string | null
   pickup_type: string
   pickup_arrival_time: string | null
   dropoff_arrival_time: string | null
@@ -201,7 +203,7 @@ export function BillingChildMonthlyView({
     // Step 1: 出席レコードを取得（活動取得のためIDが必要）
     const { data: attData } = await supabase
       .from('daily_attendance')
-      .select('id, date, status, check_in_time, check_out_time, pickup_type, pickup_arrival_time, dropoff_arrival_time, daytime_support, daytime_support_start_time, daytime_support_end_time')
+      .select('id, date, status, check_in_time, check_out_time, service_start_time, service_end_time, pickup_type, pickup_arrival_time, dropoff_arrival_time, daytime_support, daytime_support_start_time, daytime_support_end_time')
       .eq('child_id', childId)
       .eq('unit_id', unitId)
       .gte('date', monthStart)
@@ -270,8 +272,8 @@ export function BillingChildMonthlyView({
       const item = serviceItems.find((i) => i.id === r.service_item_id)
       return item?.trigger_field === 'basic' && r.date === dateStr
     })
-    const startTime = basicRecord?.billing_start_time ?? att?.check_in_time ?? null
-    const endTime = basicRecord?.billing_end_time ?? att?.check_out_time ?? null
+    const startTime = basicRecord?.billing_start_time ?? att?.service_start_time ?? att?.check_in_time ?? null
+    const endTime = basicRecord?.billing_end_time ?? att?.service_end_time ?? att?.check_out_time ?? null
 
     const hours = calcHours(startTime, endTime)
     const billingCategory = getBillingCategory(hours)
