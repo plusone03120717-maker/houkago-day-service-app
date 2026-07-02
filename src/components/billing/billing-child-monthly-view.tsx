@@ -28,9 +28,17 @@ type DailyAttendance = {
   check_in_time: string | null
   check_out_time: string | null
   pickup_type: string
+  pickup_arrival_time: string | null
+  dropoff_arrival_time: string | null
   daytime_support: boolean
   daytime_support_start_time: string | null
   daytime_support_end_time: string | null
+}
+
+type ActivityRecord = {
+  attendance_id: string
+  participated: boolean
+  activity_programs: { name: string } | null
 }
 
 type SchoolHoliday = {
@@ -62,6 +70,7 @@ type DayComputed = {
   transportPickup: boolean
   transportDropoff: boolean
   daytimeSupport: boolean
+  participatedActivities: Set<string>
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -169,6 +178,7 @@ export function BillingChildMonthlyView({
   const [attendances, setAttendances] = useState<DailyAttendance[]>([])
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([])
   const [manualRecords, setManualRecords] = useState<BillingDailyRecord[]>([])
+  const [activityMap, setActivityMap] = useState<Map<string, Set<string>>>(new Map())
   const [serviceItems, setServiceItems] = useState<ServiceItem[]>(initialServiceItems)
   const [showAddItem, setShowAddItem] = useState(false)
   const [newItemName, setNewItemName] = useState('')
@@ -188,15 +198,20 @@ export function BillingChildMonthlyView({
     const monthStart = days[0]
     const monthEnd = days[days.length - 1]
 
-    const [{ data: attData }, { data: holidayData }, { data: recordData }] = await Promise.all([
-      supabase
-        .from('daily_attendance')
-        .select('id, date, status, check_in_time, check_out_time, pickup_type, daytime_support, daytime_support_start_time, daytime_support_end_time')
-        .eq('child_id', childId)
-        .eq('unit_id', unitId)
-        .gte('date', monthStart)
-        .lte('date', monthEnd)
-        .eq('status', 'attended'),
+    // Step 1: 出席レコードを取得（活動取得のためIDが必要）
+    const { data: attData } = await supabase
+      .from('daily_attendance')
+      .select('id, date, status, check_in_time, check_out_time, pickup_type, pickup_arrival_time, dropoff_arrival_time, daytime_support, daytime_support_start_time, daytime_support_end_time')
+      .eq('child_id', childId)
+      .eq('unit_id', unitId)
+      .gte('date', monthStart)
+      .lte('date', monthEnd)
+      .eq('status', 'attended')
+
+    const attendanceIds = (attData ?? []).map((a: { id: string }) => a.id)
+
+    // Step 2: 残りを並列取得
+    const [{ data: holidayData }, { data: recordData }, { data: actData }] = await Promise.all([
       supabase
         .from('child_school_holidays')
         .select('start_date, end_date, label')
@@ -210,11 +225,32 @@ export function BillingChildMonthlyView({
         .eq('unit_id', unitId)
         .gte('date', monthStart)
         .lte('date', monthEnd),
+      attendanceIds.length > 0
+        ? supabase
+            .from('daily_activities')
+            .select('attendance_id, participated, activity_programs(name)')
+            .in('attendance_id', attendanceIds)
+            .eq('participated', true)
+        : { data: [] },
     ])
 
     setAttendances((attData ?? []) as DailyAttendance[])
     setSchoolHolidays((holidayData ?? []) as SchoolHoliday[])
     setManualRecords((recordData ?? []) as BillingDailyRecord[])
+
+    // 日付ごとの参加活動名セットを構築
+    const attIdToDate = new Map((attData ?? []).map((a: { id: string; date: string }) => [a.id, a.date]))
+    const newActivityMap = new Map<string, Set<string>>()
+    for (const act of (actData ?? []) as unknown as { attendance_id: string; activity_programs: { name: string } | null }[]) {
+      const date = attIdToDate.get(act.attendance_id)
+      if (!date) continue
+      const progName = act.activity_programs?.name
+      if (!progName) continue
+      if (!newActivityMap.has(date)) newActivityMap.set(date, new Set())
+      newActivityMap.get(date)!.add(progName)
+    }
+    setActivityMap(newActivityMap)
+
     setLoading(false)
   }, [childId, unitId, effYearMonth]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -251,9 +287,14 @@ export function BillingChildMonthlyView({
       durationMinutes: startTime && endTime ? timeToMinutes(endTime) - timeToMinutes(startTime) : 0,
       hoursCalculated: hours,
       billingCategory,
-      transportPickup: att ? ['both', 'pickup_only'].includes(att.pickup_type) : false,
-      transportDropoff: att ? ['both', 'dropoff_only'].includes(att.pickup_type) : false,
+      transportPickup: att
+        ? (att.pickup_arrival_time != null || ['both', 'pickup_only'].includes(att.pickup_type))
+        : false,
+      transportDropoff: att
+        ? (att.dropoff_arrival_time != null || ['both', 'dropoff_only'].includes(att.pickup_type))
+        : false,
       daytimeSupport: att?.daytime_support ?? false,
+      participatedActivities: activityMap.get(dateStr) ?? new Set(),
     }
   }
 
@@ -267,7 +308,7 @@ export function BillingChildMonthlyView({
       case 'transport_pickup': return d.transportPickup
       case 'transport_dropoff': return d.transportDropoff
       case 'daytime_support': return d.daytimeSupport
-      case 'manual': return false
+      case 'manual': return d.participatedActivities.has(item.name)
     }
   }
 
