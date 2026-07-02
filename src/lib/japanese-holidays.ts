@@ -9,20 +9,23 @@ function toDateStr(year: number, month: number, day: number): string {
   return `${year}-${pad(month)}-${pad(day)}`
 }
 
+// タイムゾーン依存を排除するため UTC で計算する
 function getDayOfWeek(dateStr: string): number {
-  return new Date(dateStr + 'T00:00:00').getDay() // 0=日, 1=月, ..., 6=土
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0=日, 1=月, ..., 6=土
 }
 
 function addDays(dateStr: string, n: number): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  date.setUTCDate(date.getUTCDate() + n)
+  return date.toISOString().slice(0, 10)
 }
 
 // 第n月曜日の日付を返す
 function getNthMonday(year: number, month: number, nth: number): string {
-  const firstDay = new Date(year, month - 1, 1)
-  const dow = firstDay.getDay()
+  const firstDay = new Date(Date.UTC(year, month - 1, 1))
+  const dow = firstDay.getUTCDay()
   const firstMonday = dow === 1 ? 1 : 1 + (8 - dow) % 7
   return toDateStr(year, month, firstMonday + (nth - 1) * 7)
 }
