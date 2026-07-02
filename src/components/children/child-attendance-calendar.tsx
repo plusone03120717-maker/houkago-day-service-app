@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Car, Clock, CalendarDays, Save, CheckCircle,
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
 export type AttendanceRecord = {
   id: string
@@ -517,7 +518,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
                     'text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full',
                     isToday
                       ? 'bg-indigo-600 text-white'
-                      : dow === 0
+                      : (dow === 0 || isJapaneseNationalHoliday(date))
                       ? 'text-red-500'
                       : dow === 6
                       ? 'text-blue-500'

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
 type AttendanceRecord = {
   id: string
@@ -193,7 +194,7 @@ export default async function ParentAttendancePage({
                         ? 'ring-2 ring-indigo-400 text-indigo-600'
                         : isFuture
                           ? 'text-gray-300'
-                          : dow === 0
+                          : (dow === 0 || isJapaneseNationalHoliday(dateStr))
                             ? 'text-red-400'
                             : dow === 6
                               ? 'text-blue-400'

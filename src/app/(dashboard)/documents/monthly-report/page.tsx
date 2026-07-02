@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { PrintButton } from '@/components/documents/print-button'
 import { formatDate } from '@/lib/utils'
+import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
 type Unit = {
   id: string
@@ -252,14 +253,14 @@ export default async function MonthlyReportPage({
             {Array.from({ length: new Date(year, month - 1, 1).getDay() }).map((_, i) => (
               <div key={`pad-${i}`} className="border-r border-b border-gray-400 h-10" />
             ))}
-            {dates.map(({ day, dow, count }) => (
+            {dates.map(({ day, dow, dateStr, count }) => (
               <div
                 key={day}
                 className={`border-r border-b border-gray-400 text-center py-1 h-10 ${
-                  dow === 0 ? 'bg-red-50' : dow === 6 ? 'bg-blue-50' : ''
+                  (dow === 0 || isJapaneseNationalHoliday(dateStr)) ? 'bg-red-50' : dow === 6 ? 'bg-blue-50' : ''
                 }`}
               >
-                <p className={`text-xs font-medium ${dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'}`}>{day}</p>
+                <p className={`text-xs font-medium ${(dow === 0 || isJapaneseNationalHoliday(dateStr)) ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'}`}>{day}</p>
                 {count > 0 && <p className="text-xs font-bold text-indigo-700">{count}名</p>}
               </div>
             ))}

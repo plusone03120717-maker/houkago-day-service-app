@@ -539,7 +539,7 @@ export function BillingChildMonthlyView({
                           <th
                             key={d}
                             className={`border border-gray-300 w-7 px-0.5 py-1 text-center font-medium ${
-                              isSat ? 'text-blue-600 bg-blue-50' : isSun ? 'text-red-500 bg-red-50' : ''
+                              isSat ? 'text-blue-600 bg-blue-50' : (isSun || isJapaneseNationalHoliday(d)) ? 'text-red-500 bg-red-50' : ''
                             }`}
                           >
                             <div>{day.getDate()}</div>
@@ -583,7 +583,7 @@ export function BillingChildMonthlyView({
                               <td
                                 key={d}
                                 className={`border border-gray-300 w-7 p-0.5 text-center cursor-pointer hover:bg-gray-50 transition-colors ${
-                                  dow === 6 ? 'bg-blue-50/50' : dow === 0 ? 'bg-red-50/50' : dd.isAbsent ? 'bg-gray-100/70' : ''
+                                  dow === 6 ? 'bg-blue-50/50' : (dow === 0 || isJapaneseNationalHoliday(d)) ? 'bg-red-50/50' : dd.isAbsent ? 'bg-gray-100/70' : ''
                                 }`}
                                 onClick={() => toggleItem(item, d, !checked)}
                                 title={dd.isAbsent ? `${d} (欠席)` : d}

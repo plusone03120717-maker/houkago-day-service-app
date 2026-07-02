@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { PrintButton } from '@/components/documents/print-button'
+import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
 type StaffUser = { id: string; name: string }
 type ShiftEntry = {
@@ -98,12 +99,13 @@ export default async function ShiftTablePage({
               <tr>
                 <th className="border border-gray-400 p-2 bg-gray-100 text-left whitespace-nowrap">スタッフ名</th>
                 {days.map((d) => {
+                  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
                   const dow = new Date(year, month - 1, d).getDay()
                   return (
                     <th
                       key={d}
                       className={`border border-gray-400 p-0.5 bg-gray-100 text-center w-8 ${
-                        dow === 0 ? 'text-red-600' : dow === 6 ? 'text-blue-600' : ''
+                        (dow === 0 || isJapaneseNationalHoliday(dateStr)) ? 'text-red-600' : dow === 6 ? 'text-blue-600' : ''
                       }`}
                     >
                       <div>{d}</div>

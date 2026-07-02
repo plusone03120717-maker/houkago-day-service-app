@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { ArrowLeft, ChevronLeft, ChevronRight, FileText, CheckCircle } from 'lucide-react'
+import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
 type DailyReport = {
   report_date: string
@@ -85,7 +86,7 @@ export default async function DailyReportListPage({
           const isToday = date === today
           const d = new Date(date)
           const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()]
-          const isSun = d.getDay() === 0
+          const isSun = d.getDay() === 0 || isJapaneseNationalHoliday(date)
           const isSat = d.getDay() === 6
 
           return (

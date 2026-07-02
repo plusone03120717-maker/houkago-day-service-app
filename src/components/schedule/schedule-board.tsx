@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Clock, Plus, X, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 import type {
   TransportScheduleRaw,
   StaffShiftRaw,
@@ -1122,7 +1123,7 @@ function MonthView({ year, month, events, onDateClick }: {
             >
               <div className={cn(
                 'text-xs font-medium mb-0.5 w-6 h-6 flex items-center justify-center rounded-full',
-                isToday ? 'bg-indigo-600 text-white' : dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'
+                isToday ? 'bg-indigo-600 text-white' : (dow === 0 || isJapaneseNationalHoliday(d)) ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'
               )}>
                 {parseInt(d.split('-')[2])}
               </div>

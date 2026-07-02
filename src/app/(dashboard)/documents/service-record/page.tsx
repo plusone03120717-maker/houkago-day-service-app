@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { PrintButton } from '@/components/documents/print-button'
+import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
 type AttendanceRow = {
   id: string
@@ -166,12 +167,13 @@ export default async function ServiceRecordPage({
                 <th className="border border-gray-400 p-1 bg-gray-100 text-left whitespace-nowrap" rowSpan={2}>氏名</th>
                 <th className="border border-gray-400 p-1 bg-gray-100 text-center whitespace-nowrap" rowSpan={2}>受給者証番号</th>
                 {days.map((d) => {
+                  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
                   const dow = new Date(year, month - 1, d).getDay()
                   return (
                     <th
                       key={d}
                       className={`border border-gray-400 p-0.5 bg-gray-100 text-center w-6 ${
-                        dow === 0 ? 'text-red-600' : dow === 6 ? 'text-blue-600' : ''
+                        (dow === 0 || isJapaneseNationalHoliday(dateStr)) ? 'text-red-600' : dow === 6 ? 'text-blue-600' : ''
                       }`}
                     >
                       {d}
@@ -183,13 +185,14 @@ export default async function ServiceRecordPage({
               </tr>
               <tr>
                 {days.map((d) => {
+                  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
                   const dow = new Date(year, month - 1, d).getDay()
                   const dayLabels = ['日', '月', '火', '水', '木', '金', '土']
                   return (
                     <th
                       key={d}
                       className={`border border-gray-400 p-0.5 bg-gray-50 text-center text-xs w-6 ${
-                        dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-500'
+                        (dow === 0 || isJapaneseNationalHoliday(dateStr)) ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-500'
                       }`}
                     >
                       {dayLabels[dow]}

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
 import { FacilityEventForm } from '@/components/settings/facility-event-form'
 import { FacilityEventDeleteButton } from '@/components/settings/facility-event-delete-button'
+import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
 type FacilityEvent = {
   id: string
@@ -125,12 +126,12 @@ export default async function FacilityCalendarPage({
                     className={`text-center py-1 rounded text-xs ${
                       isClosed ? 'bg-red-100' :
                       dayEvents.length > 0 ? 'bg-indigo-50' :
-                      dow === 0 ? 'bg-red-50' : dow === 6 ? 'bg-blue-50' : ''
+                      (dow === 0 || isJapaneseNationalHoliday(dateStr)) ? 'bg-red-50' : dow === 6 ? 'bg-blue-50' : ''
                     } ${isToday ? 'ring-1 ring-indigo-400' : ''}`}
                   >
                     <span className={`font-medium ${
                       isClosed ? 'text-red-600' :
-                      dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'
+                      (dow === 0 || isJapaneseNationalHoliday(dateStr)) ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'
                     }`}>
                       {d}
                     </span>
