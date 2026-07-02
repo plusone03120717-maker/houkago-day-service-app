@@ -450,6 +450,9 @@ export function BillingChildMonthlyView({
   const countChecked = (item: ServiceItem) =>
     days.filter((d) => isItemChecked(item, d, dayDataMap.get(d)!)).length
 
+  const hasDaytimeItems = serviceItems.some((i) => i.trigger_field === 'daytime_support')
+  const daytimeSupportItem = serviceItems.find((i) => i.trigger_field === 'daytime_support') ?? null
+
   // ─────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────
@@ -594,8 +597,8 @@ export function BillingChildMonthlyView({
                     <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 w-24">終了時間</th>
                     <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 w-24">算定時間数</th>
                     <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 w-20" colSpan={2}>送迎加算</th>
-                    {serviceItems.filter((i) => i.trigger_field === 'daytime_support').length > 0 && (
-                      <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 w-20">日中一時</th>
+                    {hasDaytimeItems && (
+                      <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 bg-purple-50" colSpan={4}>日中一時支援</th>
                     )}
                   </tr>
                   <tr className="bg-[#f5f0e8] text-[10px]">
@@ -606,8 +609,13 @@ export function BillingChildMonthlyView({
                     <th className="border border-gray-300" />
                     <th className="border border-gray-300 px-2 py-1 text-center text-gray-500">往</th>
                     <th className="border border-gray-300 px-2 py-1 text-center text-gray-500">復</th>
-                    {serviceItems.filter((i) => i.trigger_field === 'daytime_support').length > 0 && (
-                      <th className="border border-gray-300" />
+                    {hasDaytimeItems && (
+                      <>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-gray-500 bg-purple-50">開始</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-gray-500 bg-purple-50">終了</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-gray-500 bg-purple-50">往</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-gray-500 bg-purple-50">復</th>
+                      </>
                     )}
                   </tr>
                 </thead>
@@ -627,6 +635,15 @@ export function BillingChildMonthlyView({
                     // Recompute hours if overridden
                     const overriddenHours = calcHours(startTimeVal, endTimeVal)
                     const overriddenCategory = getBillingCategory(overriddenHours)
+
+                    // 日中一時支援の時間（billing override → 出席記録の順）
+                    const daytimeRec = daytimeSupportItem && d.daytimeSupport
+                      ? getManualRecord(daytimeSupportItem.id, dateStr)
+                      : null
+                    const dtStartVal = daytimeRec?.billing_start_time?.slice(0, 5)
+                      ?? d.attendance?.daytime_support_start_time?.slice(0, 5) ?? ''
+                    const dtEndVal = daytimeRec?.billing_end_time?.slice(0, 5)
+                      ?? d.attendance?.daytime_support_end_time?.slice(0, 5) ?? ''
 
                     return (
                       <tr key={dateStr} className={`hover:bg-gray-50 ${d.isSchoolHoliday ? 'bg-blue-50/30' : ''}`}>
@@ -685,21 +702,64 @@ export function BillingChildMonthlyView({
                             <span className="text-gray-300 text-xs">—</span>
                           )}
                         </td>
-                        {serviceItems.filter((i) => i.trigger_field === 'daytime_support').length > 0 && (
-                          <td className="border border-gray-200 px-2 py-2 text-center">
-                            {d.daytimeSupport ? (
-                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold">1</span>
-                            ) : (
-                              <span className="text-gray-300 text-xs">—</span>
-                            )}
-                          </td>
+                        {hasDaytimeItems && (
+                          <>
+                            {/* 日中一時 開始時間 */}
+                            <td className="border border-gray-200 px-2 py-2 text-center bg-purple-50/30">
+                              {d.daytimeSupport ? (
+                                <input
+                                  type="time"
+                                  defaultValue={dtStartVal}
+                                  className="text-xs border border-gray-200 rounded px-1.5 py-0.5 w-full text-center"
+                                  onBlur={(e) => {
+                                    if (!daytimeSupportItem) return
+                                    updateBillingTimes(daytimeSupportItem.id, dateStr, 'billing_start_time', e.target.value)
+                                  }}
+                                />
+                              ) : (
+                                <span className="text-gray-300 text-xs">—</span>
+                              )}
+                            </td>
+                            {/* 日中一時 終了時間 */}
+                            <td className="border border-gray-200 px-2 py-2 text-center bg-purple-50/30">
+                              {d.daytimeSupport ? (
+                                <input
+                                  type="time"
+                                  defaultValue={dtEndVal}
+                                  className="text-xs border border-gray-200 rounded px-1.5 py-0.5 w-full text-center"
+                                  onBlur={(e) => {
+                                    if (!daytimeSupportItem) return
+                                    updateBillingTimes(daytimeSupportItem.id, dateStr, 'billing_end_time', e.target.value)
+                                  }}
+                                />
+                              ) : (
+                                <span className="text-gray-300 text-xs">—</span>
+                              )}
+                            </td>
+                            {/* 日中一時 送迎往 */}
+                            <td className="border border-gray-200 px-2 py-2 text-center bg-purple-50/30">
+                              {d.daytimeSupport && d.transportPickup ? (
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold">1</span>
+                              ) : (
+                                <span className="text-gray-300 text-xs">—</span>
+                              )}
+                            </td>
+                            {/* 日中一時 送迎復 */}
+                            <td className="border border-gray-200 px-2 py-2 text-center bg-purple-50/30">
+                              {d.daytimeSupport && d.transportDropoff ? (
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold">1</span>
+                              ) : (
+                                <span className="text-gray-300 text-xs">—</span>
+                              )}
+                            </td>
+                          </>
                         )}
                       </tr>
                     )
                   })}
                   {attendedDays.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+                      <td colSpan={hasDaytimeItems ? 11 : 7} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
                         この月の実績記録がありません
                       </td>
                     </tr>
@@ -721,10 +781,17 @@ export function BillingChildMonthlyView({
                       <td className="border border-gray-300 text-center text-xs font-bold text-gray-700">
                         {attendedDays.filter((d) => d.transportDropoff).length}
                       </td>
-                      {serviceItems.filter((i) => i.trigger_field === 'daytime_support').length > 0 && (
-                        <td className="border border-gray-300 text-center text-xs font-bold text-gray-700">
-                          {attendedDays.filter((d) => d.daytimeSupport).length}
-                        </td>
+                      {hasDaytimeItems && (
+                        <>
+                          <td className="border border-gray-300 bg-purple-50/30" />
+                          <td className="border border-gray-300 bg-purple-50/30" />
+                          <td className="border border-gray-300 text-center text-xs font-bold text-gray-700 bg-purple-50/30">
+                            {attendedDays.filter((d) => d.daytimeSupport && d.transportPickup).length}
+                          </td>
+                          <td className="border border-gray-300 text-center text-xs font-bold text-gray-700 bg-purple-50/30">
+                            {attendedDays.filter((d) => d.daytimeSupport && d.transportDropoff).length}
+                          </td>
+                        </>
                       )}
                     </tr>
                   </tfoot>
