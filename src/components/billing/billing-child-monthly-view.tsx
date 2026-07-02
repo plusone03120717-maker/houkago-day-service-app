@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, ChevronRight, Loader2, Plus, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -69,7 +70,7 @@ type DayComputed = {
   endTime: string | null
   durationMinutes: number
   hoursCalculated: number
-  billingCategory: 1 | 2 | null
+  billingCategory: 0 | 1 | 2 | null
   transportPickup: boolean
   transportDropoff: boolean
   daytimeSupport: boolean
@@ -92,10 +93,11 @@ function calcHours(startTime: string | null, endTime: string | null): number {
   return Math.floor(dur / 30) * 0.5
 }
 
-function getBillingCategory(hours: number): 1 | 2 | null {
-  if (hours <= 0) return null
-  if (hours <= 1.5) return 1
-  return 2
+function getBillingCategory(hours: number, hasValidTimes: boolean): 0 | 1 | 2 | null {
+  if (!hasValidTimes) return null
+  if (hours <= 0) return 0   // 30分未満（30分単位で切り捨て → 0h）
+  if (hours <= 1.5) return 1 // 30分以上〜1時間30分以下
+  return 2                   // 1時間30分超
 }
 
 function isSchoolHolidayDate(dateStr: string, holidays: SchoolHoliday[]): boolean {
@@ -282,7 +284,7 @@ export function BillingChildMonthlyView({
     const att = attMap.get(dateStr) ?? null
     const isAttended = att?.status === 'attended'
     const isAbsent = att?.status === 'absent'
-    const isHoliday = isSchoolHolidayDate(dateStr, schoolHolidays) || publicHolidays.includes(dateStr)
+    const isHoliday = isSchoolHolidayDate(dateStr, schoolHolidays) || publicHolidays.includes(dateStr) || isJapaneseNationalHoliday(dateStr)
     const serviceFormType: 1 | 2 = isHoliday ? 2 : 1
 
     // Check for billing_start_time override
@@ -294,7 +296,7 @@ export function BillingChildMonthlyView({
     const endTime = basicRecord?.billing_end_time ?? att?.service_end_time ?? att?.check_out_time ?? null
 
     const hours = calcHours(startTime, endTime)
-    const billingCategory = getBillingCategory(hours)
+    const billingCategory = getBillingCategory(hours, startTime !== null && endTime !== null)
 
     return {
       date: dateStr,
@@ -688,7 +690,7 @@ export function BillingChildMonthlyView({
 
                     // Recompute hours if overridden
                     const overriddenHours = calcHours(startTimeVal, endTimeVal)
-                    const overriddenCategory = getBillingCategory(overriddenHours)
+                    const overriddenCategory = getBillingCategory(overriddenHours, startTimeVal !== '' && endTimeVal !== '')
 
                     // 日中一時支援の時間（billing override → 出席記録の順）
                     const daytimeRec = daytimeSupportItem && d.daytimeSupport
@@ -733,7 +735,7 @@ export function BillingChildMonthlyView({
                           />
                         </td>
                         <td className="border border-gray-200 px-2 py-2 text-center">
-                          {overriddenCategory ? (
+                          {overriddenCategory !== null ? (
                             <div>
                               <BillingCircle value={overriddenCategory} />
                               <div className="text-[9px] text-gray-400 mt-0.5">{overriddenHours}h</div>
@@ -905,6 +907,10 @@ export function BillingChildMonthlyView({
             <span className="flex items-center gap-1">
               <FormTypeCircle type={2} small />
               学校休日（土日・長期休暇等）
+            </span>
+            <span className="flex items-center gap-1">
+              <BillingCircle value={0} small />
+              算定区分0 30分未満
             </span>
             <span className="flex items-center gap-1">
               <BillingCircle value={1} small />
