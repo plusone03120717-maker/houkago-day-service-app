@@ -398,11 +398,12 @@ export function BillingChildMonthlyView({
   const addDefaultItems = async () => {
     const defaults: Omit<ServiceItem, 'id' | 'billing_code'>[] = [
       { unit_id: unitId, name: '放デイ基本報酬', category: '基本', trigger_field: 'basic', is_active: true, sort_order: 1 },
-      { unit_id: unitId, name: '送迎加算（迎え）', category: '加算', trigger_field: 'transport_pickup', is_active: true, sort_order: 2 },
-      { unit_id: unitId, name: '送迎加算（送り）', category: '加算', trigger_field: 'transport_dropoff', is_active: true, sort_order: 3 },
-      { unit_id: unitId, name: '専門的支援実施加算', category: '加算', trigger_field: 'manual', is_active: true, sort_order: 4 },
-      { unit_id: unitId, name: 'おやつ', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 5 },
-      { unit_id: unitId, name: '学習教材', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 6 },
+      { unit_id: unitId, name: '日中一時支援', category: '基本', trigger_field: 'daytime_support', is_active: true, sort_order: 2 },
+      { unit_id: unitId, name: '送迎加算（迎え）', category: '加算', trigger_field: 'transport_pickup', is_active: true, sort_order: 3 },
+      { unit_id: unitId, name: '送迎加算（送り）', category: '加算', trigger_field: 'transport_dropoff', is_active: true, sort_order: 4 },
+      { unit_id: unitId, name: '専門的支援実施加算', category: '加算', trigger_field: 'manual', is_active: true, sort_order: 5 },
+      { unit_id: unitId, name: 'おやつ', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 6 },
+      { unit_id: unitId, name: '学習教材', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 7 },
     ]
     const { data } = await supabase
       .from('billing_service_items')
