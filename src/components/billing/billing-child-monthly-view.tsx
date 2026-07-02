@@ -61,6 +61,7 @@ type BillingDailyRecord = {
 type DayComputed = {
   date: string
   isAttended: boolean
+  isAbsent: boolean
   attendance: DailyAttendance | null
   isSchoolHoliday: boolean
   serviceFormType: 1 | 2
@@ -208,9 +209,12 @@ export function BillingChildMonthlyView({
       .eq('unit_id', unitId)
       .gte('date', monthStart)
       .lte('date', monthEnd)
-      .eq('status', 'attended')
+      .in('status', ['attended', 'absent'])
 
-    const attendanceIds = (attData ?? []).map((a: { id: string }) => a.id)
+    // 活動記録の取得は出席日のみ
+    const attendanceIds = (attData ?? [])
+      .filter((a: { id: string; status: string }) => a.status === 'attended')
+      .map((a: { id: string }) => a.id)
 
     // Step 2: 残りを並列取得
     const [{ data: holidayData }, { data: recordData }, { data: actData }] = await Promise.all([
@@ -263,7 +267,8 @@ export function BillingChildMonthlyView({
 
   const computeDay = (dateStr: string): DayComputed => {
     const att = attMap.get(dateStr) ?? null
-    const isAttended = !!att
+    const isAttended = att?.status === 'attended'
+    const isAbsent = att?.status === 'absent'
     const isHoliday = isSchoolHolidayDate(dateStr, schoolHolidays)
     const serviceFormType: 1 | 2 = isHoliday ? 2 : 1
 
@@ -281,6 +286,7 @@ export function BillingChildMonthlyView({
     return {
       date: dateStr,
       isAttended,
+      isAbsent,
       attendance: att,
       isSchoolHoliday: isHoliday,
       serviceFormType,
@@ -511,6 +517,7 @@ export function BillingChildMonthlyView({
                         const dow = day.getDay()
                         const isSat = dow === 6
                         const isSun = dow === 0
+                        const dd = dayDataMap.get(d)!
                         return (
                           <th
                             key={d}
@@ -520,6 +527,9 @@ export function BillingChildMonthlyView({
                           >
                             <div>{day.getDate()}</div>
                             <div className="text-[8px] font-normal">{DAY_LABELS[dow]}</div>
+                            {dd.isAbsent && (
+                              <div className="text-[7px] text-gray-400 font-normal leading-none mt-0.5">欠</div>
+                            )}
                           </th>
                         )
                       })}
@@ -556,10 +566,10 @@ export function BillingChildMonthlyView({
                               <td
                                 key={d}
                                 className={`border border-gray-300 w-7 p-0.5 text-center cursor-pointer hover:bg-gray-50 transition-colors ${
-                                  dow === 6 ? 'bg-blue-50/50' : dow === 0 ? 'bg-red-50/50' : ''
+                                  dow === 6 ? 'bg-blue-50/50' : dow === 0 ? 'bg-red-50/50' : dd.isAbsent ? 'bg-gray-100/70' : ''
                                 }`}
                                 onClick={() => toggleItem(item, d, !checked)}
-                                title={d}
+                                title={dd.isAbsent ? `${d} (欠席)` : d}
                               >
                                 {isSaving ? (
                                   <Loader2 className="h-3 w-3 animate-spin text-gray-400 mx-auto" />
@@ -624,12 +634,41 @@ export function BillingChildMonthlyView({
                 <tbody className="divide-y divide-gray-100">
                   {days.map((dateStr) => {
                     const d = dayDataMap.get(dateStr)!
-                    if (!d.isAttended) return null
+                    if (!d.isAttended && !d.isAbsent) return null
 
                     const dow = new Date(dateStr + 'T00:00:00').getDay()
                     const dayLabel = `${parseInt(dateStr.slice(8))}日（${DAY_LABELS[dow]}）`
                     const basicItem = serviceItems.find((i) => i.trigger_field === 'basic')
                     const basicRec = basicItem ? getManualRecord(basicItem.id, dateStr) : null
+
+                    // 欠席行
+                    if (d.isAbsent) {
+                      return (
+                        <tr key={dateStr} className="bg-gray-50 text-gray-400">
+                          <td className="border border-gray-200 px-3 py-2 text-gray-500 font-medium">
+                            {dayLabel}
+                          </td>
+                          <td className="border border-gray-200 px-2 py-2 text-center">
+                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-gray-200 text-gray-500 text-[10px] font-medium whitespace-nowrap">
+                              欠席
+                            </span>
+                          </td>
+                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
+                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
+                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
+                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
+                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
+                          {hasDaytimeItems && (
+                            <>
+                              <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
+                              <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
+                              <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
+                              <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
+                            </>
+                          )}
+                        </tr>
+                      )
+                    }
 
                     const startTimeVal = basicRec?.billing_start_time?.slice(0, 5) ?? d.startTime ?? ''
                     const endTimeVal = basicRec?.billing_end_time?.slice(0, 5) ?? d.endTime ?? ''
