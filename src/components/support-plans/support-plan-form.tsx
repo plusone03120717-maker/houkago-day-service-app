@@ -90,6 +90,7 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
     transition: '',
     family: '',
   })
+  const [specializedSupport, setSpecializedSupport] = useState('')
   const [monitoringNotes, setMonitoringNotes] = useState('')
   const [generating, setGenerating] = useState(false)
   const [refining, setRefining] = useState<string | null>(null)
@@ -145,6 +146,7 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
       if (json.supportSocialRelationships) setArea('socialRelationships', json.supportSocialRelationships)
       if (json.supportTransition) setArea('transition', json.supportTransition)
       if (json.supportFamily) setArea('family', json.supportFamily)
+      if (json.supportSpecialized) setSpecializedSupport(json.supportSpecialized)
     } catch (e) {
       alert('AI生成中にエラーが発生しました')
       console.error(e)
@@ -169,6 +171,7 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
       support_social_relationships: areaValues.socialRelationships || null,
       support_transition: areaValues.transition || null,
       support_family: areaValues.family || null,
+      support_specialized: specializedSupport || null,
       family_wishes: familyWishes || null,
       support_policy: supportPolicy || null,
       monitoring_notes: monitoringNotes || null,
@@ -180,6 +183,7 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
     setLongTermGoals('')
     setShortTermGoals('')
     setAreaValues({ healthLife: '', movementSensory: '', cognitionBehavior: '', languageCommunication: '', socialRelationships: '', transition: '', family: '' })
+    setSpecializedSupport('')
     setFamilyWishes('')
     setSupportPolicy('')
     setMonitoringNotes('')
@@ -364,6 +368,29 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
                 />
               </div>
             ))}
+          </div>
+
+          {/* 専門的支援 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-700">専門的支援</label>
+              <button
+                type="button"
+                onClick={() => refineField('support_specialized', specializedSupport, setSpecializedSupport)}
+                disabled={refining === 'support_specialized' || !specializedSupport.trim()}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Wand2 className="h-3 w-3" />
+                {refining === 'support_specialized' ? '整えています...' : '文章を整える'}
+              </button>
+            </div>
+            <textarea
+              value={specializedSupport}
+              onChange={(e) => setSpecializedSupport(e.target.value)}
+              rows={3}
+              placeholder="例：OT（作業療法士）による感覚統合訓練を月2回実施し、手先の巧緻性向上と感覚過敏への対応を行う"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            />
           </div>
 
           {/* モニタリング記録 */}

@@ -137,7 +137,7 @@ ${dailyRecordsText}
 【連絡帳の記録】
 ${contactNotesText}
 
-上記の情報を最大限に活用し、以下の11項目をJSON形式で出力してください。
+上記の情報を最大限に活用し、以下の12項目をJSON形式で出力してください。
 アセスメントの「保護者の希望」はfamilyWishesに、「利用目標」はsupportPolicyに反映してください。
 日々の記録・活動記録から読み取れる現状を各支援領域の内容に具体的に反映してください。
 各項目は80〜200文字程度で具体的かつ実践的な内容にしてください。
@@ -153,7 +153,8 @@ ${contactNotesText}
   "supportLanguageCommunication": "④言語・コミュニケーション領域の支援内容",
   "supportSocialRelationships": "⑤人間関係・社会性領域の支援内容",
   "supportTransition": "⑥移行支援の内容",
-  "supportFamily": "⑦家族支援の内容"
+  "supportFamily": "⑦家族支援の内容",
+  "supportSpecialized": "専門的支援（PT・OT・ST・心理士等の専門職による支援内容）"
 }
 
 JSONのみを出力し、説明文は不要です。`

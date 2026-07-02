@@ -67,6 +67,7 @@ type SupportPlan = {
   support_evaluation_social_relationships: string | null
   support_evaluation_transition: string | null
   support_evaluation_family: string | null
+  support_specialized: string | null
   family_wishes: string | null
   support_policy: string | null
   manager_name: string | null
@@ -175,6 +176,8 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
   const [managerName, setManagerName] = useState(plan.manager_name ?? '')
   const [standardServiceTime, setStandardServiceTime] = useState(plan.standard_service_time ?? '')
   const [autoFilling, setAutoFilling] = useState(false)
+  const [specializedSupport, setSpecializedSupport] = useState(plan.support_specialized ?? '')
+  const [generatingSpecialized, setGeneratingSpecialized] = useState(false)
   const [monitoringNotes, setMonitoringNotes] = useState(plan.monitoring_notes ?? '')
 
   const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
@@ -265,6 +268,26 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
     }
   }
 
+  const generateSpecialized = async () => {
+    setGeneratingSpecialized(true)
+    try {
+      const res = await fetch('/api/support-plans/generate-specialized', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          childName: '',
+          diagnosis: null,
+          supportPolicy,
+          longTermGoals,
+        }),
+      })
+      const json = await res.json()
+      if (json.content) setSpecializedSupport(json.content)
+    } finally {
+      setGeneratingSpecialized(false)
+    }
+  }
+
   const setArea = (key: AreaKey, value: string) =>
     setAreaValues((prev) => ({ ...prev, [key]: value }))
 
@@ -343,6 +366,7 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
       support_evaluation_social_relationships: evaluationValues.support_evaluation_social_relationships || null,
       support_evaluation_transition: evaluationValues.support_evaluation_transition || null,
       support_evaluation_family: evaluationValues.support_evaluation_family || null,
+      support_specialized: specializedSupport || null,
       manager_name: managerName || null,
       standard_service_time: standardServiceTime || null,
       monitoring_notes: monitoringNotes || null,
@@ -469,6 +493,12 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1">支援内容</p>
                 <p className="text-gray-700 whitespace-pre-wrap">{plan.support_content}</p>
+              </div>
+            )}
+            {plan.support_specialized && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-1">専門的支援</p>
+                <p className="text-gray-700 whitespace-pre-wrap">{plan.support_specialized}</p>
               </div>
             )}
             {plan.standard_service_time && (
@@ -742,6 +772,40 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* 専門的支援 */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700">専門的支援</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void generateSpecialized()}
+                    disabled={generatingSpecialized}
+                    className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-800 disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+                  >
+                    <Wand2 className="h-3 w-3" />
+                    {generatingSpecialized ? 'AI生成中...' : 'AI で生成'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => refineField('support_specialized', specializedSupport, setSpecializedSupport)}
+                    disabled={refining === 'support_specialized' || !specializedSupport.trim()}
+                    className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Wand2 className="h-3 w-3" />
+                    {refining === 'support_specialized' ? '整えています...' : '文章を整える'}
+                  </button>
+                </div>
+              </div>
+              <textarea
+                value={specializedSupport}
+                onChange={(e) => setSpecializedSupport(e.target.value)}
+                rows={3}
+                placeholder="例：OT（作業療法士）による感覚統合訓練を月2回実施し、手先の巧緻性向上と感覚過敏への対応を行う"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              />
             </div>
 
             {/* 児童発達支援管理責任者 */}

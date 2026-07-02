@@ -625,7 +625,7 @@ export function BillingChildMonthlyView({
                     <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 w-24">開始時間</th>
                     <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 w-24">終了時間</th>
                     <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 w-24">算定時間数</th>
-                    <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 w-20" colSpan={2}>送迎加算</th>
+                    <th className="border border-gray-300 px-1 py-2 text-center font-medium text-gray-600 w-14" colSpan={2}>送迎加算</th>
                     {hasDaytimeItems && (
                       <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 bg-purple-50" colSpan={4}>日中一時支援</th>
                     )}
@@ -636,8 +636,8 @@ export function BillingChildMonthlyView({
                     <th className="border border-gray-300" />
                     <th className="border border-gray-300" />
                     <th className="border border-gray-300" />
-                    <th className="border border-gray-300 px-2 py-1 text-center text-gray-500">往</th>
-                    <th className="border border-gray-300 px-2 py-1 text-center text-gray-500">復</th>
+                    <th className="border border-gray-300 px-0 py-1 text-center text-gray-500 w-7">往</th>
+                    <th className="border border-gray-300 px-0 py-1 text-center text-gray-500 w-7">復</th>
                     {hasDaytimeItems && (
                       <>
                         <th className="border border-gray-300 px-1 py-1 text-center text-gray-500 bg-purple-50">開始</th>
@@ -746,14 +746,14 @@ export function BillingChildMonthlyView({
                             <span className="text-gray-300">—</span>
                           )}
                         </td>
-                        <td className="border border-gray-200 px-2 py-2 text-center">
+                        <td className="border border-gray-200 px-1 py-1 text-center">
                           {d.transportPickup ? (
                             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold">1</span>
                           ) : (
                             <span className="text-gray-300 text-xs">—</span>
                           )}
                         </td>
-                        <td className="border border-gray-200 px-2 py-2 text-center">
+                        <td className="border border-gray-200 px-1 py-1 text-center">
                           {d.transportDropoff ? (
                             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold">1</span>
                           ) : (
@@ -795,7 +795,7 @@ export function BillingChildMonthlyView({
                               )}
                             </td>
                             {/* 日中一時 送迎往 */}
-                            <td className="border border-gray-200 px-2 py-2 text-center bg-purple-50/30">
+                            <td className="border border-gray-200 px-1 py-1 text-center bg-purple-50/30">
                               {d.daytimeSupport && d.transportPickup ? (
                                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold">1</span>
                               ) : (
@@ -803,7 +803,7 @@ export function BillingChildMonthlyView({
                               )}
                             </td>
                             {/* 日中一時 送迎復 */}
-                            <td className="border border-gray-200 px-2 py-2 text-center bg-purple-50/30">
+                            <td className="border border-gray-200 px-1 py-1 text-center bg-purple-50/30">
                               {d.daytimeSupport && d.transportDropoff ? (
                                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold">1</span>
                               ) : (
