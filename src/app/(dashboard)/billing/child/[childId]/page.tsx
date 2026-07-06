@@ -73,25 +73,57 @@ export default async function BillingChildPage({
     .limit(1)
     .maybeSingle()
 
-  // 請求明細（確定状態）— 2ステップで取得
+  // billing_monthly を自動作成（なければ insert）
   const yearMonthCompact = yearMonth.replace('-', '')
-  const { data: billingMonthlyRow } = selectedUnitId
-    ? await supabase
+  let billingMonthlyId: string | null = null
+  if (selectedUnitId) {
+    const { data: existingMonthly } = await supabase
+      .from('billing_monthly')
+      .select('id')
+      .eq('unit_id', selectedUnitId)
+      .eq('year_month', yearMonthCompact)
+      .maybeSingle()
+    if (existingMonthly) {
+      billingMonthlyId = existingMonthly.id
+    } else {
+      const { data: newMonthly } = await supabase
         .from('billing_monthly')
+        .insert({ unit_id: selectedUnitId, year_month: yearMonthCompact, status: 'draft' })
         .select('id')
-        .eq('unit_id', selectedUnitId)
-        .eq('year_month', yearMonthCompact)
         .maybeSingle()
-    : { data: null }
-  const { data: billingDetailRaw } = billingMonthlyRow
-    ? await supabase
+      billingMonthlyId = newMonthly?.id ?? null
+    }
+  }
+
+  // billing_details を自動作成（なければ insert、あれば既存を使用）
+  let billingDetail: { id: string; is_confirmed: boolean } | null = null
+  if (billingMonthlyId) {
+    const { data: existingDetail } = await supabase
+      .from('billing_details')
+      .select('id, is_confirmed')
+      .eq('billing_monthly_id', billingMonthlyId)
+      .eq('child_id', childId)
+      .maybeSingle()
+    if (existingDetail) {
+      billingDetail = existingDetail as { id: string; is_confirmed: boolean }
+    } else {
+      const { data: newDetail } = await supabase
         .from('billing_details')
+        .insert({
+          billing_monthly_id: billingMonthlyId,
+          child_id: childId,
+          total_days: 0,
+          total_units: 0,
+          copay_amount: 0,
+          billed_amount: 0,
+          service_code: 'H43',
+          errors: [],
+        })
         .select('id, is_confirmed')
-        .eq('billing_monthly_id', billingMonthlyRow.id)
-        .eq('child_id', childId)
         .maybeSingle()
-    : { data: null }
-  const billingDetail = billingDetailRaw as { id: string; is_confirmed: boolean } | null
+      billingDetail = newDetail as { id: string; is_confirmed: boolean } | null
+    }
+  }
 
   // サービス項目マスタ
   const { data: serviceItemsRaw } = selectedUnitId

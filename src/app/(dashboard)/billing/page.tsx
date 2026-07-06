@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FileText, AlertCircle, Download, User } from 'lucide-react'
-import { generateBilling } from '@/app/actions/billing'
 import { BillingConfirmToggle } from '@/components/billing/billing-confirm-toggle'
 
 type BillingDetail = {
@@ -295,17 +294,7 @@ export default async function BillingPage({
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-gray-400">この月の請求データがありません</p>
-                    <form action={generateBilling}>
-                      <input type="hidden" name="unitId" value={unit.id} />
-                      <input type="hidden" name="yearMonth" value={yearMonth} />
-                      <Button type="submit" size="sm">
-                        <FileText className="h-4 w-4" />
-                        請求データ生成
-                      </Button>
-                    </form>
-                  </div>
+                  <p className="text-sm text-gray-400">児童個別ページを開くと自動で作成されます</p>
                 )}
               </CardContent>
             </Card>
