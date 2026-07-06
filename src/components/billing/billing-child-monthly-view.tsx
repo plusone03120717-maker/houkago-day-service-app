@@ -287,6 +287,35 @@ export function BillingChildMonthlyView({
     }
     setActivityMap(newActivityMap)
 
+    // サービス項目を最新化（欠席時対応加算の自動挿入を含む）
+    const { data: latestItems } = await supabase
+      .from('billing_service_items')
+      .select('id, unit_id, name, category, trigger_field, billing_code, is_active, sort_order')
+      .eq('unit_id', unitId)
+      .eq('is_active', true)
+      .order('sort_order')
+    const items = (latestItems ?? []) as ServiceItem[]
+    if (items.length > 0 && !items.some((i) => i.trigger_field === 'absent')) {
+      const maxOrder = Math.max(...items.map((i) => i.sort_order), 0)
+      const { data: inserted } = await supabase
+        .from('billing_service_items')
+        .insert({
+          unit_id: unitId,
+          name: '欠席時対応加算',
+          category: '加算',
+          trigger_field: 'absent',
+          billing_code: null,
+          is_active: true,
+          sort_order: maxOrder + 1,
+        })
+        .select('id, unit_id, name, category, trigger_field, billing_code, is_active, sort_order')
+        .maybeSingle()
+      if (inserted) setServiceItems([...items, inserted as ServiceItem])
+      else setServiceItems(items)
+    } else {
+      setServiceItems(items)
+    }
+
     setLoading(false)
   }, [childId, unitId, effYearMonth]) // eslint-disable-line react-hooks/exhaustive-deps
 
