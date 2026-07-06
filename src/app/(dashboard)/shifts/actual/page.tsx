@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,7 +26,7 @@ export default async function ActualAttendancePage({
   searchParams: Promise<{ date?: string }>
 }) {
   const params = await searchParams
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getTodayJST()
   const date = params.date ?? today
 
   const d = new Date(date)

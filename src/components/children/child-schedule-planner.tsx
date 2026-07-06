@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Plus, Trash2, Power, CalendarRange, Clock, Pencil, X, Check, CalendarDays, Repeat, Car, ChevronDown, RotateCcw } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getTodayJST } from '@/lib/utils'
 
 type Unit = { id: string; name: string; service_type: string }
 type Plan = {
@@ -195,8 +195,8 @@ export function ChildSchedulePlanner({
   const [addMode, setAddMode] = useState<'repeat' | 'once'>('repeat')
   const [selectedUnit, setSelectedUnit] = useState(units[0]?.id ?? '')
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5])
-  const [onceDate, setOnceDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [onceDate, setOnceDate] = useState(() => getTodayJST())
+  const [startDate, setStartDate] = useState(() => getTodayJST())
   const [endDate, setEndDate] = useState('')
   const [noEndDate, setNoEndDate] = useState(true)
   const [pickupTime, setPickupTime] = useState('')
@@ -382,7 +382,7 @@ export function ChildSchedulePlanner({
       unit_id: plan.unit_id,
       mode: once ? 'once' : 'repeat',
       day_of_week: once ? [1, 2, 3, 4, 5] : [...plan.day_of_week],
-      once_date: once ? plan.start_date : new Date().toISOString().slice(0, 10),
+      once_date: once ? plan.start_date : getTodayJST(),
       start_date: plan.start_date,
       end_date: plan.end_date ?? '',
       no_end_date: !plan.end_date,
@@ -438,7 +438,7 @@ export function ChildSchedulePlanner({
 
     // ユニット変更・曜日縮小・終了日繰り上げ時に古い予約をキャンセル
     if (oldPlan && !error) {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = getTodayJST()
       const unitChanged = oldPlan.unit_id !== newUnitId
       const daysRemoved = (oldPlan.day_of_week ?? []).filter((d) => !newDays.includes(d))
       const endDateEarlier = newEndDate != null && (oldPlan.end_date == null || newEndDate < oldPlan.end_date)
@@ -545,8 +545,8 @@ export function ChildSchedulePlanner({
       setShowForm(false)
       setPlanName('')
       setAddMode('repeat'); setSelectedDays([1, 2, 3, 4, 5])
-      setOnceDate(new Date().toISOString().slice(0, 10))
-      setStartDate(new Date().toISOString().slice(0, 10))
+      setOnceDate(getTodayJST())
+      setStartDate(getTodayJST())
       setEndDate(''); setNoEndDate(true)
       setPickupTime(''); setDropoffTime('')
       setServiceStartTime(''); setServiceEndTime('')
@@ -560,7 +560,7 @@ export function ChildSchedulePlanner({
 
   const handleToggleActive = async (plan: Plan) => {
     if (plan.is_active) {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = getTodayJST()
       await supabase
         .from('usage_reservations')
         .update({ status: 'cancelled' })
@@ -577,7 +577,7 @@ export function ChildSchedulePlanner({
     if (!confirm('このスケジュールを削除しますか？')) return
     const plan = plans.find((p) => p.id === planId)
     if (plan) {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = getTodayJST()
       await supabase
         .from('usage_reservations')
         .update({ status: 'cancelled' })

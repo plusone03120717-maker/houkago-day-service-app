@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 'use client'
 
 import { useState, useTransition } from 'react'
@@ -69,7 +70,7 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [open, setOpen] = useState(false)
-  const [planDate, setPlanDate] = useState(new Date().toISOString().slice(0, 10))
+  const [planDate, setPlanDate] = useState(getTodayJST())
   const [reviewDate, setReviewDate] = useState(() => {
     const d = new Date()
     d.setMonth(d.getMonth() + 6)

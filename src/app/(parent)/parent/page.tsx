@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { BookOpen, Calendar, ChevronRight, ClipboardList, MessageSquare, Receipt } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getTodayJST } from '@/lib/utils'
 
 type Child = {
   id: string
@@ -49,7 +49,7 @@ export default async function ParentHomePage() {
   const childIds = children.map((c) => c.id)
 
   // 今後1週間の利用予約
-  const today = formatDate(new Date(), 'yyyy-MM-dd')
+  const today = getTodayJST()
   const nextWeek = new Date()
   nextWeek.setDate(nextWeek.getDate() + 7)
   const { data: reservationsRaw } = childIds.length > 0

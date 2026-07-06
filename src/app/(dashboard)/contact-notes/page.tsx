@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FileText, Plus, ChevronRight, MessageCircle } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getTodayJST } from '@/lib/utils'
 import { DateNav } from '@/components/ui/date-nav'
 
 type ContactNote = {
@@ -27,7 +27,7 @@ export default async function ContactNotesPage({
   const params = await searchParams
   const supabase = await createClient()
 
-  const targetDate = params.date ?? new Date().toISOString().slice(0, 10)
+  const targetDate = params.date ?? getTodayJST()
 
   let query = supabase
     .from('contact_notes')

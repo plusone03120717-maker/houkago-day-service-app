@@ -52,3 +52,9 @@ export function formatWareki(dateStr: string): string {
 export function getDaysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate()
 }
+
+// JST（日本標準時）の今日の日付を "YYYY-MM-DD" 形式で返す
+// Vercel サーバーは UTC で動作するため new Date().toISOString() では 0:00〜8:59 JST に前日を返す
+export function getTodayJST(): string {
+  return new Intl.DateTimeFormat('sv', { timeZone: 'Asia/Tokyo' }).format(new Date())
+}

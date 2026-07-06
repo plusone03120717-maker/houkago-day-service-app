@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getTodayJST } from '@/lib/utils'
 import { ParentContactsBoard } from '@/components/parent-contacts/parent-contacts-board'
 
 export default async function ParentContactsPage({
@@ -9,7 +9,7 @@ export default async function ParentContactsPage({
 }) {
   const params = await searchParams
   const supabase = await createClient()
-  const today = params.date ?? formatDate(new Date(), 'yyyy-MM-dd')
+  const today = params.date ?? getTodayJST()
   const filter = params.filter ?? 'all'
 
   // その日の保護者連絡を取得

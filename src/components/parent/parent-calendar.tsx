@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { makeParentReservation } from '@/app/actions/parent-reservation'
 import { Badge } from '@/components/ui/badge'
 import { ChevronLeft, ChevronRight, Check, X, Car, Clock } from 'lucide-react'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, getTodayJST } from '@/lib/utils'
 import type { AttendanceRecord } from '@/components/children/child-attendance-calendar'
 
 type Child = { id: string; name: string }
@@ -119,7 +119,7 @@ export function ParentCalendar({
     eventMap.set(e.event_date, arr)
   })
 
-  const today = formatDate(new Date(), 'yyyy-MM-dd')
+  const today = getTodayJST()
 
   // 出席マップ: date → child_id → AttendanceWithChild
   const attendanceMap: Record<string, Record<string, AttendanceWithChild>> = {}

@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
@@ -21,7 +22,7 @@ export default async function NewContactNotePage({
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const targetDate = params.date ?? new Date().toISOString().slice(0, 10)
+  const targetDate = params.date ?? getTodayJST()
 
   // 当日の出席児童一覧
   const { data: attendedRaw } = await supabase

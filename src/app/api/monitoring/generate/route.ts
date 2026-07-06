@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     .maybeSingle()
 
   const startDate = lastRecord?.record_date ?? (plan.plan_date as string)
-  const endDate = new Date().toISOString().slice(0, 10)
+  const endDate = getTodayJST()
 
   // 対象期間の日々の記録を取得
   const { data: attendancesRaw } = await supabase

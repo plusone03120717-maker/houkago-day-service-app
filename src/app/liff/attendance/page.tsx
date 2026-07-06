@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useLiff } from '@/hooks/use-liff'
 import { Loader2, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getTodayJST } from '@/lib/utils'
 
 type Child = { id: string; name: string }
 
@@ -26,7 +26,7 @@ export default function LiffAttendancePage() {
   const liffState = useLiff()
   const [children, setChildren] = useState<Child[]>([])
   const [entries, setEntries] = useState<ContactEntry[]>([])
-  const [date, setDate] = useState(() => formatDate(new Date(), 'yyyy-MM-dd'))
+  const [date, setDate] = useState(() => getTodayJST())
   const [loadingChildren, setLoadingChildren] = useState(false)
   const [notRegistered, setNotRegistered] = useState(false)
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus>('idle')

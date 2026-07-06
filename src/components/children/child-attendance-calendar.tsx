@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 'use client'
 
 import { useState, useEffect, useTransition } from 'react'
@@ -6,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, ChevronRight, Car, Clock, CalendarDays, Save, CheckCircle, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/utils' 
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
 export type AttendanceRecord = {
@@ -443,7 +444,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
     }
   )
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getTodayJST()
 
   return (
     <div className="space-y-3">

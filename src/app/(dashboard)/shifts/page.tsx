@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { ClipboardCheck } from 'lucide-react'
@@ -80,7 +81,7 @@ export default async function ShiftsPage({
     .eq('status', 'approved')
   const overtimeRequests = (overtimeRaw ?? []) as OvertimeRequest[]
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getTodayJST()
 
   return (
     <div className="space-y-4">

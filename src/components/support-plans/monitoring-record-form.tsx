@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 'use client'
 
 import { useState, useTransition } from 'react'
@@ -37,7 +38,7 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [open, setOpen] = useState(false)
-  const [recordDate, setRecordDate] = useState(new Date().toISOString().slice(0, 10))
+  const [recordDate, setRecordDate] = useState(getTodayJST())
   const [longTermProgress, setLongTermProgress] = useState('')
   const [shortTermProgress, setShortTermProgress] = useState('')
   const [issues, setIssues] = useState('')

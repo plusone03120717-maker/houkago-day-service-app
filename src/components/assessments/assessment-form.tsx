@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 'use client'
 
 import { useState, useTransition } from 'react'
@@ -62,7 +63,7 @@ export function AssessmentForm({ childId, staffId }: Props) {
   const [, startTransition] = useTransition()
 
   const [open, setOpen] = useState(false)
-  const [assessmentDate, setAssessmentDate] = useState(new Date().toISOString().slice(0, 10))
+  const [assessmentDate, setAssessmentDate] = useState(getTodayJST())
   const [fields, setFields] = useState<Record<FieldKey, string>>({
     child_situation: '',
     current_issues: '',

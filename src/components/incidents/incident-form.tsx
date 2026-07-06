@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 'use client'
 
 import { useState, useTransition } from 'react'
@@ -34,7 +35,7 @@ export function IncidentForm({ children, facilityId }: Props) {
   const supabase = createClient()
   const [, startTransition] = useTransition()
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getTodayJST()
   const now = new Date().toISOString().slice(0, 16)
 
   const [childId, setChildId] = useState('')

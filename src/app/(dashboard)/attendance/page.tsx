@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getTodayJST } from '@/lib/utils'
 import { AttendanceBoard } from '@/components/attendance/attendance-board'
 import type { Unit, Reservation, Attendance } from '@/components/attendance/attendance-board'
 
@@ -10,7 +10,7 @@ export default async function AttendancePage({
 }) {
   const params = await searchParams
   const supabase = await createClient()
-  const today = params.date ?? formatDate(new Date(), 'yyyy-MM-dd')
+  const today = params.date ?? getTodayJST()
   const todayDow = new Date(today).getDay()
 
   const { data: { user } } = await supabase.auth.getUser()

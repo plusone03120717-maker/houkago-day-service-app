@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
@@ -11,7 +12,7 @@ export default async function SchedulePage({
   const params = await searchParams
   const supabase = await createClient()
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getTodayJST()
   const date = params.date ?? today
   const view = (params.view ?? 'day') as 'day' | 'week' | 'month'
 

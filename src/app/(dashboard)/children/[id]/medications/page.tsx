@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { ArrowLeft, Pill } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getTodayJST } from '@/lib/utils'
 import { MedicationForm } from '@/components/medications/medication-form'
 import { MedicationLogForm } from '@/components/medications/medication-log-form'
 import { MedicationList } from '@/components/medications/medication-list'
@@ -69,7 +69,7 @@ export default async function MedicationsPage({
   const inactiveMeds = medications.filter((m) => !m.is_active)
 
   // 今日の与薬状況
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getTodayJST()
   const todayLogs = logs.filter((l) => l.log_date === today)
   const todayGivenIds = new Set(todayLogs.filter((l) => l.status === 'given').map((l) => l.medication_id))
 

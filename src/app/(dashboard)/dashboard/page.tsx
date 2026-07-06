@@ -8,7 +8,7 @@ import {
   Users, AlertTriangle, ClipboardList, MessageSquare,
   Calendar, BookOpen, ArrowRight, TrendingUp, Pill, TriangleAlert, FileText,
 } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getTodayJST } from '@/lib/utils'
 
 type ExpiringCert = {
   id: string
@@ -43,15 +43,15 @@ type Reservation = {
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const today = formatDate(new Date(), 'yyyy-MM-dd')
-  const now = new Date()
-  const thisMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const today = getTodayJST()
+  const [todayY, todayM] = today.split('-').map(Number)
+  const thisMonthStart = `${todayY}-${String(todayM).padStart(2, '0')}-01`
+  const lastMonthDate = new Date(todayY, todayM - 2, 1)
   const lastMonthStart = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}-01`
-  const lastMonthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+  const lastMonthEnd = `${todayY}-${String(todayM).padStart(2, '0')}-01`
 
   // 今日の曜日（0=日, 1=月, ..., 6=土）
-  const todayDow = now.getDay()
+  const todayDow = new Date(today + 'T00:00:00+09:00').getDay()
 
   // 並列フェッチ
   const [
@@ -267,7 +267,7 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
-        <p className="text-sm text-gray-500 mt-1">{formatDate(new Date(), 'yyyy年MM月dd日')}</p>
+        <p className="text-sm text-gray-500 mt-1">{today.replace(/(\d{4})-(\d{2})-(\d{2})/, '$1年$2月$3日')}</p>
       </div>
 
       {/* サマリーカード */}
@@ -300,7 +300,7 @@ export default async function DashboardPage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-indigo-500" />
-            今月の利用状況（{now.getMonth() + 1}月）
+            今月の利用状況（{todayM}月）
           </CardTitle>
         </CardHeader>
         <CardContent>

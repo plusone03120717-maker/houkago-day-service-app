@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { BookOpen, ChevronRight, CheckCircle, Flag } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getTodayJST } from '@/lib/utils'
 import { DateNav } from '@/components/ui/date-nav'
 
 type AttendedChild = {
@@ -34,7 +34,7 @@ export default async function RecordsPage({
   const params = await searchParams
   const supabase = await createClient()
 
-  const targetDate = params.date ?? new Date().toISOString().slice(0, 10)
+  const targetDate = params.date ?? getTodayJST()
 
   // 当日の出席記録
   const { data: attendedRaw } = await supabase

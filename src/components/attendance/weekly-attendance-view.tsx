@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -64,7 +65,7 @@ export function WeeklyAttendanceView({
 }) {
   const supabase = createClient()
   const router = useRouter()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getTodayJST()
 
   const [weekOffset, setWeekOffset] = useState(0)
   const [loading, setLoading] = useState(true)

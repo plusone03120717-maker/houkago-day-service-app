@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 'use client'
 
 import { useState } from 'react'
@@ -23,7 +24,7 @@ interface Props {
 
 export function FamilyMeetingForm({ childId, initial, onSaved, onDeleted }: Props) {
   const supabase = createClient()
-  const [date, setDate] = useState(initial?.meeting_date ?? new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(initial?.meeting_date ?? getTodayJST())
   const [attendees, setAttendees] = useState(initial?.attendees ?? '')
   const [content, setContent] = useState(initial?.content ?? '')
   const [saving, setSaving] = useState(false)
