@@ -294,6 +294,8 @@ export function BillingChildMonthlyView({
 
   // computeDay 内で参照するため先に定義
   const daytimeSupportItem = serviceItems.find((i) => i.trigger_field === 'daytime_support') ?? null
+  const getManualRecord = (itemId: string, dateStr: string) =>
+    manualRecords.find((r) => r.service_item_id === itemId && r.date === dateStr)
 
   // ── Compute day data ────────────────────────────────────────
   const attMap = new Map(attendances.map((a) => [a.date, a]))
@@ -362,9 +364,6 @@ export function BillingChildMonthlyView({
       default: return false
     }
   }
-
-  const getManualRecord = (itemId: string, dateStr: string) =>
-    manualRecords.find((r) => r.service_item_id === itemId && r.date === dateStr)
 
   const isItemChecked = (item: ServiceItem, dateStr: string, d: DayComputed): boolean => {
     const rec = getManualRecord(item.id, dateStr)
