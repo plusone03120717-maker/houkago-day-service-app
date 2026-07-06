@@ -134,7 +134,26 @@ export default async function BillingChildPage({
         .eq('is_active', true)
         .order('sort_order')
     : { data: [] }
-  const serviceItems = (serviceItemsRaw ?? []) as ServiceItem[]
+  let serviceItems = (serviceItemsRaw ?? []) as ServiceItem[]
+
+  // 欠席時対応加算がなければ自動挿入
+  if (selectedUnitId && serviceItems.length > 0 && !serviceItems.some((i) => i.trigger_field === 'absent')) {
+    const maxOrder = Math.max(...serviceItems.map((i) => i.sort_order), 0)
+    const { data: inserted } = await supabase
+      .from('billing_service_items')
+      .insert({
+        unit_id: selectedUnitId,
+        name: '欠席時対応加算',
+        category: '加算',
+        trigger_field: 'absent',
+        billing_code: null,
+        is_active: true,
+        sort_order: maxOrder + 1,
+      })
+      .select('id, unit_id, name, category, trigger_field, billing_code, is_active, sort_order')
+      .maybeSingle()
+    if (inserted) serviceItems = [...serviceItems, inserted as ServiceItem]
+  }
 
   return (
     <div className="space-y-4">
