@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { confirmReservation, confirmAllReservations } from '@/app/actions/reservation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, Check, CheckCheck, X, Plus, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, CheckCheck, X, Plus, AlertTriangle, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Unit = { id: string; name: string; capacity: number }
@@ -108,17 +108,73 @@ export function UsageCalendar({
     startTransition(() => router.refresh())
   }
 
+  // 施設カレンダーからキャンセル/復元した際に usage_plan_date_overrides も同期する
+  const syncPlanOverride = async (childId: string, date: string, isCancelled: boolean) => {
+    const { data: plans } = await supabase
+      .from('usage_plans')
+      .select('id, day_of_week, start_date, end_date, transport_type, pickup_location_type, dropoff_location_type')
+      .eq('child_id', childId)
+      .eq('is_active', true)
+    if (!plans || plans.length === 0) return
+    const dow = new Date(date + 'T00:00:00').getDay()
+    for (const plan of plans as { id: string; day_of_week: number[]; start_date: string; end_date: string | null; transport_type: string; pickup_location_type: string; dropoff_location_type: string }[]) {
+      if (!(plan.day_of_week ?? []).includes(dow)) continue
+      if (date < plan.start_date) continue
+      if (plan.end_date && date > plan.end_date) continue
+      const { data: existing } = await supabase
+        .from('usage_plan_date_overrides')
+        .select('id')
+        .eq('plan_id', plan.id)
+        .eq('date', date)
+        .maybeSingle()
+      if (isCancelled) {
+        if (existing) {
+          await supabase.from('usage_plan_date_overrides').update({ is_cancelled: true }).eq('id', existing.id)
+        } else {
+          await supabase.from('usage_plan_date_overrides').insert({
+            plan_id: plan.id, date, is_cancelled: true,
+            transport_type: plan.transport_type,
+            pickup_location_type: plan.pickup_location_type,
+            dropoff_location_type: plan.dropoff_location_type,
+          })
+        }
+      } else if (existing) {
+        await supabase.from('usage_plan_date_overrides').update({ is_cancelled: false }).eq('id', existing.id)
+      }
+    }
+  }
+
   const handleCancel = async (reservationId: string) => {
+    const reservation = reservations.find((r) => r.id === reservationId)
     setUpdating(true)
     const { error } = await supabase
       .from('usage_reservations')
-      .delete()
+      .update({ status: 'cancelled' })
       .eq('id', reservationId)
-    setUpdating(false)
     if (error) {
-      alert(`削除エラー: ${error.message}`)
+      setUpdating(false)
+      alert(`キャンセルエラー: ${error.message}`)
       return
     }
+    if (reservation) await syncPlanOverride(reservation.child_id, reservation.date, true)
+    setUpdating(false)
+    startTransition(() => router.refresh())
+  }
+
+  const handleRestore = async (reservationId: string) => {
+    const reservation = reservations.find((r) => r.id === reservationId)
+    setUpdating(true)
+    const { error } = await supabase
+      .from('usage_reservations')
+      .update({ status: 'confirmed' })
+      .eq('id', reservationId)
+    if (error) {
+      setUpdating(false)
+      alert(`復元エラー: ${error.message}`)
+      return
+    }
+    if (reservation) await syncPlanOverride(reservation.child_id, reservation.date, false)
+    setUpdating(false)
     startTransition(() => router.refresh())
   }
 
@@ -360,14 +416,25 @@ export function UsageCalendar({
                         <Check className="h-4 w-4" />
                       </button>
                     )}
-                    <button
-                      onClick={() => handleCancel(r.id)}
-                      disabled={updating}
-                      className="p-1 text-red-400 hover:bg-red-50 rounded"
-                      title="削除"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
+                    {r.status === 'cancelled' ? (
+                      <button
+                        onClick={() => handleRestore(r.id)}
+                        disabled={updating}
+                        className="p-1 text-indigo-500 hover:bg-indigo-50 rounded"
+                        title="予約を復元"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleCancel(r.id)}
+                        disabled={updating}
+                        className="p-1 text-red-400 hover:bg-red-50 rounded"
+                        title="キャンセル"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -418,9 +485,11 @@ export function UsageCalendar({
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                 >
                   <option value="">選択してください</option>
-                  {childOptions.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
+                  {childOptions
+                    .filter((c) => !selectedDateReservations.some((r) => r.child_id === c.id))
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
                 </select>
               </div>
               <div>

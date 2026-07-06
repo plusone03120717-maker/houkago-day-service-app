@@ -16,7 +16,7 @@ type ServiceItem = {
   unit_id: string
   name: string
   category: '基本' | '加算' | '保険外'
-  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'manual'
+  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'daytime_pickup' | 'daytime_dropoff' | 'manual'
   billing_code: string | null
   is_active: boolean
   sort_order: number
@@ -57,12 +57,15 @@ type BillingDailyRecord = {
   is_checked: boolean
   billing_start_time: string | null
   billing_end_time: string | null
+  daytime_pickup: boolean
+  daytime_dropoff: boolean
 }
 
 type DayComputed = {
   date: string
   isAttended: boolean
   isAbsent: boolean
+  isCancelled: boolean
   attendance: DailyAttendance | null
   isSchoolHoliday: boolean
   serviceFormType: 1 | 2
@@ -74,6 +77,8 @@ type DayComputed = {
   transportPickup: boolean
   transportDropoff: boolean
   daytimeSupport: boolean
+  daytimeTransportPickup: boolean
+  daytimeTransportDropoff: boolean
   participatedActivities: Set<string>
 }
 
@@ -186,6 +191,7 @@ export function BillingChildMonthlyView({
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([])
   const [publicHolidays, setPublicHolidays] = useState<string[]>([])
   const [manualRecords, setManualRecords] = useState<BillingDailyRecord[]>([])
+  const [cancelledDates, setCancelledDates] = useState<Set<string>>(new Set())
   const [activityMap, setActivityMap] = useState<Map<string, Set<string>>>(new Map())
   const [serviceItems, setServiceItems] = useState<ServiceItem[]>(initialServiceItems)
   const [showAddItem, setShowAddItem] = useState(false)
@@ -222,7 +228,7 @@ export function BillingChildMonthlyView({
       .map((a: { id: string }) => a.id)
 
     // Step 2: 残りを並列取得
-    const [{ data: holidayData }, { data: publicHolidayData }, { data: recordData }, { data: actData }] = await Promise.all([
+    const [{ data: holidayData }, { data: publicHolidayData }, { data: recordData }, { data: actData }, { data: cancelledData }] = await Promise.all([
       supabase
         .from('child_school_holidays')
         .select('start_date, end_date, label')
@@ -240,7 +246,7 @@ export function BillingChildMonthlyView({
         : { data: [] },
       supabase
         .from('billing_daily_records')
-        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time')
+        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, daytime_pickup, daytime_dropoff')
         .eq('child_id', childId)
         .eq('unit_id', unitId)
         .gte('date', monthStart)
@@ -252,12 +258,21 @@ export function BillingChildMonthlyView({
             .in('attendance_id', attendanceIds)
             .eq('participated', true)
         : { data: [] },
+      supabase
+        .from('usage_reservations')
+        .select('date')
+        .eq('child_id', childId)
+        .eq('unit_id', unitId)
+        .gte('date', monthStart)
+        .lte('date', monthEnd)
+        .eq('status', 'cancelled'),
     ])
 
     setAttendances((attData ?? []) as DailyAttendance[])
     setSchoolHolidays((holidayData ?? []) as SchoolHoliday[])
     setPublicHolidays((publicHolidayData ?? []).map((h: { event_date: string }) => h.event_date))
     setManualRecords((recordData ?? []) as BillingDailyRecord[])
+    setCancelledDates(new Set((cancelledData ?? []).map((r: { date: string }) => r.date)))
 
     // 日付ごとの参加活動名セットを構築
     const attIdToDate = new Map((attData ?? []).map((a: { id: string; date: string }) => [a.id, a.date]))
@@ -277,6 +292,9 @@ export function BillingChildMonthlyView({
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // computeDay 内で参照するため先に定義
+  const daytimeSupportItem = serviceItems.find((i) => i.trigger_field === 'daytime_support') ?? null
+
   // ── Compute day data ────────────────────────────────────────
   const attMap = new Map(attendances.map((a) => [a.date, a]))
 
@@ -284,6 +302,7 @@ export function BillingChildMonthlyView({
     const att = attMap.get(dateStr) ?? null
     const isAttended = att?.status === 'attended'
     const isAbsent = att?.status === 'absent'
+    const isCancelled = !isAttended && !isAbsent && cancelledDates.has(dateStr)
     const isHoliday = isSchoolHolidayDate(dateStr, schoolHolidays) || publicHolidays.includes(dateStr) || isJapaneseNationalHoliday(dateStr)
     const serviceFormType: 1 | 2 = isHoliday ? 2 : 1
 
@@ -303,6 +322,7 @@ export function BillingChildMonthlyView({
       date: dateStr,
       isAttended,
       isAbsent,
+      isCancelled,
       attendance: att,
       isSchoolHoliday: isHoliday,
       serviceFormType,
@@ -320,6 +340,8 @@ export function BillingChildMonthlyView({
         ? (att.dropoff_arrival_time != null && att.dropoff_arrival_time > '00:00:00')
         : false,
       daytimeSupport: att?.daytime_support ?? false,
+      daytimeTransportPickup: (daytimeSupportItem ? getManualRecord(daytimeSupportItem.id, dateStr)?.daytime_pickup : false) ?? false,
+      daytimeTransportDropoff: (daytimeSupportItem ? getManualRecord(daytimeSupportItem.id, dateStr)?.daytime_dropoff : false) ?? false,
       participatedActivities: activityMap.get(dateStr) ?? new Set(),
     }
   }
@@ -334,7 +356,10 @@ export function BillingChildMonthlyView({
       case 'transport_pickup': return d.transportPickup
       case 'transport_dropoff': return d.transportDropoff
       case 'daytime_support': return d.daytimeSupport
+      case 'daytime_pickup': return d.daytimeSupport && d.daytimeTransportPickup
+      case 'daytime_dropoff': return d.daytimeSupport && d.daytimeTransportDropoff
       case 'manual': return d.participatedActivities.has(item.name)
+      default: return false
     }
   }
 
@@ -378,7 +403,7 @@ export function BillingChildMonthlyView({
       const { data, error } = await supabase
         .from('billing_daily_records')
         .upsert(payload, { onConflict: 'child_id,unit_id,date,service_item_id' })
-        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time')
+        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, daytime_pickup, daytime_dropoff')
         .single()
       if (!error && data) {
         setManualRecords((prev) => {
@@ -411,7 +436,7 @@ export function BillingChildMonthlyView({
     const { data, error } = await supabase
       .from('billing_daily_records')
       .upsert({ ...(existing ?? {}), ...payload }, { onConflict: 'child_id,unit_id,date,service_item_id' })
-      .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time')
+      .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, daytime_pickup, daytime_dropoff')
       .single()
     if (!error && data) {
       setManualRecords((prev) => {
@@ -436,6 +461,34 @@ export function BillingChildMonthlyView({
     const newValue = currentlyOn ? null : '09:00:00'
     await supabase.from('daily_attendance').update({ [field]: newValue }).eq('id', att.id)
     setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, [field]: newValue } : a))
+  }
+
+  // ── Toggle daytime transport in billing_daily_records ──────
+  const toggleDaytimeTransport = async (dateStr: string, type: 'pickup' | 'dropoff') => {
+    if (!daytimeSupportItem) return
+    const existing = getManualRecord(daytimeSupportItem.id, dateStr)
+    const field = type === 'pickup' ? 'daytime_pickup' : 'daytime_dropoff'
+    const newVal = !(existing?.[field] ?? false)
+    const payload = {
+      child_id: childId,
+      unit_id: unitId,
+      date: dateStr,
+      year_month: effYearMonth,
+      service_item_id: daytimeSupportItem.id,
+      is_checked: existing?.is_checked ?? true,
+      [field]: newVal,
+    }
+    const { data, error } = await supabase
+      .from('billing_daily_records')
+      .upsert({ ...(existing ?? {}), ...payload }, { onConflict: 'child_id,unit_id,date,service_item_id' })
+      .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, daytime_pickup, daytime_dropoff')
+      .single()
+    if (!error && data) {
+      setManualRecords((prev) => {
+        const filtered = prev.filter((r) => !(r.date === dateStr && r.service_item_id === daytimeSupportItem.id))
+        return [...filtered, data as BillingDailyRecord]
+      })
+    }
   }
 
   // ── Add default service items ───────────────────────────────
@@ -495,7 +548,6 @@ export function BillingChildMonthlyView({
     days.filter((d) => isItemChecked(item, d, dayDataMap.get(d)!)).length
 
   const hasDaytimeItems = serviceItems.some((i) => i.trigger_field === 'daytime_support')
-  const daytimeSupportItem = serviceItems.find((i) => i.trigger_field === 'daytime_support') ?? null
 
   // ─────────────────────────────────────────────────────────────
   // Render
@@ -566,6 +618,9 @@ export function BillingChildMonthlyView({
                             {dd.isAbsent && (
                               <div className="text-[7px] text-gray-400 font-normal leading-none mt-0.5">欠</div>
                             )}
+                            {dd.isCancelled && (
+                              <div className="text-[7px] text-orange-400 font-normal leading-none mt-0.5">キ</div>
+                            )}
                           </th>
                         )
                       })}
@@ -602,10 +657,10 @@ export function BillingChildMonthlyView({
                               <td
                                 key={d}
                                 className={`border border-gray-300 w-7 p-0.5 text-center cursor-pointer hover:bg-gray-50 transition-colors ${
-                                  dow === 6 ? 'bg-blue-50/50' : (dow === 0 || isJapaneseNationalHoliday(d)) ? 'bg-red-50/50' : dd.isAbsent ? 'bg-gray-100/70' : ''
+                                  dow === 6 ? 'bg-blue-50/50' : (dow === 0 || isJapaneseNationalHoliday(d)) ? 'bg-red-50/50' : dd.isAbsent ? 'bg-gray-100/70' : dd.isCancelled ? 'bg-orange-50/70' : ''
                                 }`}
                                 onClick={() => toggleItem(item, d, !checked)}
-                                title={dd.isAbsent ? `${d} (欠席)` : d}
+                                title={dd.isAbsent ? `${d} (欠席)` : dd.isCancelled ? `${d} (キャンセル)` : d}
                               >
                                 {isSaving ? (
                                   <Loader2 className="h-3 w-3 animate-spin text-gray-400 mx-auto" />
@@ -646,7 +701,7 @@ export function BillingChildMonthlyView({
                     <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 w-24">算定時間数</th>
                     <th className="border border-gray-300 px-1 py-2 text-center font-medium text-gray-600 w-14" colSpan={2}>送迎加算</th>
                     {hasDaytimeItems && (
-                      <th className="border border-gray-300 px-2 py-2 text-center font-medium text-gray-600 bg-purple-50" colSpan={4}>日中一時支援</th>
+                      <th className="border border-gray-300 px-1 py-2 text-center font-medium text-gray-600 bg-purple-50 w-14" colSpan={2}>日中一時支援</th>
                     )}
                   </tr>
                   <tr className="bg-[#f5f0e8] text-[10px]">
@@ -659,10 +714,8 @@ export function BillingChildMonthlyView({
                     <th className="border border-gray-300 px-0 py-1 text-center text-gray-500 w-7">復</th>
                     {hasDaytimeItems && (
                       <>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-gray-500 bg-purple-50">開始</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-gray-500 bg-purple-50">終了</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-gray-500 bg-purple-50">往</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-gray-500 bg-purple-50">復</th>
+                        <th className="border border-gray-300 px-0 py-1 text-center text-gray-500 bg-purple-50 w-7">往</th>
+                        <th className="border border-gray-300 px-0 py-1 text-center text-gray-500 bg-purple-50 w-7">復</th>
                       </>
                     )}
                   </tr>
@@ -670,12 +723,39 @@ export function BillingChildMonthlyView({
                 <tbody className="divide-y divide-gray-100">
                   {days.map((dateStr) => {
                     const d = dayDataMap.get(dateStr)!
-                    if (!d.isAttended && !d.isAbsent) return null
+                    if (!d.isAttended && !d.isAbsent && !d.isCancelled) return null
 
                     const dow = new Date(dateStr + 'T00:00:00').getDay()
                     const dayLabel = `${parseInt(dateStr.slice(8))}日（${DAY_LABELS[dow]}）`
                     const basicItem = serviceItems.find((i) => i.trigger_field === 'basic')
                     const basicRec = basicItem ? getManualRecord(basicItem.id, dateStr) : null
+
+                    // キャンセル行
+                    if (d.isCancelled) {
+                      return (
+                        <tr key={dateStr} className="bg-orange-50/40 text-gray-400">
+                          <td className="border border-gray-200 px-3 py-2 text-gray-500 font-medium">
+                            {dayLabel}
+                          </td>
+                          <td className="border border-gray-200 px-2 py-2 text-center">
+                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-orange-100 text-orange-500 text-[10px] font-medium whitespace-nowrap">
+                              キャンセル
+                            </span>
+                          </td>
+                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
+                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
+                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
+                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
+                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
+                          {hasDaytimeItems && (
+                            <>
+                              <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
+                              <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
+                            </>
+                          )}
+                        </tr>
+                      )
+                    }
 
                     // 欠席行
                     if (d.isAbsent) {
@@ -698,8 +778,6 @@ export function BillingChildMonthlyView({
                             <>
                               <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
                               <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
-                              <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
-                              <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
                             </>
                           )}
                         </tr>
@@ -716,14 +794,6 @@ export function BillingChildMonthlyView({
                       : 0
                     const overriddenCategory = getBillingCategory(overriddenMinutes, startTimeVal !== '' && endTimeVal !== '')
 
-                    // 日中一時支援の時間（billing override → 出席記録の順）
-                    const daytimeRec = daytimeSupportItem && d.daytimeSupport
-                      ? getManualRecord(daytimeSupportItem.id, dateStr)
-                      : null
-                    const dtStartVal = daytimeRec?.billing_start_time?.slice(0, 5)
-                      ?? d.attendance?.daytime_support_start_time?.slice(0, 5) ?? ''
-                    const dtEndVal = daytimeRec?.billing_end_time?.slice(0, 5)
-                      ?? d.attendance?.daytime_support_end_time?.slice(0, 5) ?? ''
 
                     return (
                       <tr key={dateStr} className={`hover:bg-gray-50 ${d.isSchoolHoliday ? 'bg-blue-50/30' : ''}`}>
@@ -792,50 +862,26 @@ export function BillingChildMonthlyView({
                         </td>
                         {hasDaytimeItems && (
                           <>
-                            {/* 日中一時 開始時間 */}
-                            <td className="border border-gray-200 px-2 py-2 text-center bg-purple-50/30">
-                              {d.daytimeSupport ? (
-                                <input
-                                  type="time"
-                                  defaultValue={dtStartVal}
-                                  className="text-xs border border-gray-200 rounded px-1.5 py-0.5 w-full text-center"
-                                  onBlur={(e) => {
-                                    if (!daytimeSupportItem) return
-                                    updateBillingTimes(daytimeSupportItem.id, dateStr, 'billing_start_time', e.target.value, 'daytime_support_start_time')
-                                  }}
-                                />
+                            {/* 日中一時 送迎往（基本送迎とは独立） */}
+                            <td
+                              className={`border border-gray-200 px-1 py-1 text-center bg-purple-50/30 ${d.daytimeSupport ? 'cursor-pointer hover:bg-purple-100/50' : ''}`}
+                              onClick={() => { if (d.daytimeSupport) toggleDaytimeTransport(dateStr, 'pickup') }}
+                              title={d.daytimeSupport ? 'クリックで日中一時支援の送迎（往）を切替' : undefined}
+                            >
+                              {d.daytimeSupport && d.daytimeTransportPickup ? (
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-purple-500 text-white text-[10px] font-bold">1</span>
                               ) : (
                                 <span className="text-gray-300 text-xs">—</span>
                               )}
                             </td>
-                            {/* 日中一時 終了時間 */}
-                            <td className="border border-gray-200 px-2 py-2 text-center bg-purple-50/30">
-                              {d.daytimeSupport ? (
-                                <input
-                                  type="time"
-                                  defaultValue={dtEndVal}
-                                  className="text-xs border border-gray-200 rounded px-1.5 py-0.5 w-full text-center"
-                                  onBlur={(e) => {
-                                    if (!daytimeSupportItem) return
-                                    updateBillingTimes(daytimeSupportItem.id, dateStr, 'billing_end_time', e.target.value, 'daytime_support_end_time')
-                                  }}
-                                />
-                              ) : (
-                                <span className="text-gray-300 text-xs">—</span>
-                              )}
-                            </td>
-                            {/* 日中一時 送迎往 */}
-                            <td className="border border-gray-200 px-1 py-1 text-center bg-purple-50/30">
-                              {d.daytimeSupport && d.transportPickup ? (
-                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold">1</span>
-                              ) : (
-                                <span className="text-gray-300 text-xs">—</span>
-                              )}
-                            </td>
-                            {/* 日中一時 送迎復 */}
-                            <td className="border border-gray-200 px-1 py-1 text-center bg-purple-50/30">
-                              {d.daytimeSupport && d.transportDropoff ? (
-                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold">1</span>
+                            {/* 日中一時 送迎復（基本送迎とは独立） */}
+                            <td
+                              className={`border border-gray-200 px-1 py-1 text-center bg-purple-50/30 ${d.daytimeSupport ? 'cursor-pointer hover:bg-purple-100/50' : ''}`}
+                              onClick={() => { if (d.daytimeSupport) toggleDaytimeTransport(dateStr, 'dropoff') }}
+                              title={d.daytimeSupport ? 'クリックで日中一時支援の送迎（復）を切替' : undefined}
+                            >
+                              {d.daytimeSupport && d.daytimeTransportDropoff ? (
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-purple-500 text-white text-[10px] font-bold">1</span>
                               ) : (
                                 <span className="text-gray-300 text-xs">—</span>
                               )}
@@ -847,7 +893,7 @@ export function BillingChildMonthlyView({
                   })}
                   {attendedDays.length === 0 && (
                     <tr>
-                      <td colSpan={hasDaytimeItems ? 11 : 7} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+                      <td colSpan={hasDaytimeItems ? 9 : 7} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
                         この月の実績記録がありません
                       </td>
                     </tr>
@@ -871,13 +917,11 @@ export function BillingChildMonthlyView({
                       </td>
                       {hasDaytimeItems && (
                         <>
-                          <td className="border border-gray-300 bg-purple-50/30" />
-                          <td className="border border-gray-300 bg-purple-50/30" />
                           <td className="border border-gray-300 text-center text-xs font-bold text-gray-700 bg-purple-50/30">
-                            {attendedDays.filter((d) => d.daytimeSupport && d.transportPickup).length}
+                            {attendedDays.filter((d) => d.daytimeTransportPickup).length}
                           </td>
                           <td className="border border-gray-300 text-center text-xs font-bold text-gray-700 bg-purple-50/30">
-                            {attendedDays.filter((d) => d.daytimeSupport && d.transportDropoff).length}
+                            {attendedDays.filter((d) => d.daytimeTransportDropoff).length}
                           </td>
                         </>
                       )}
@@ -917,6 +961,8 @@ export function BillingChildMonthlyView({
                   <option value="transport_pickup">お迎え時（自動）</option>
                   <option value="transport_dropoff">お送り時（自動）</option>
                   <option value="daytime_support">日中一時支援時（自動）</option>
+                  <option value="daytime_pickup">日中一時支援・送迎往時（自動）</option>
+                  <option value="daytime_dropoff">日中一時支援・送迎復時（自動）</option>
                   <option value="manual">手動のみ</option>
                 </select>
                 <Button size="sm" onClick={addServiceItem}>追加</Button>
