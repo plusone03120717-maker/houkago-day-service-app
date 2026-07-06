@@ -11,7 +11,7 @@ type ServiceItem = {
   unit_id: string
   name: string
   category: '基本' | '加算' | '保険外'
-  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'daytime_pickup' | 'daytime_dropoff' | 'absent' | 'manual'
+  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'daytime_pickup' | 'daytime_dropoff' | 'absent' | 'extension' | 'manual'
   billing_code: string | null
   is_active: boolean
   sort_order: number
@@ -136,23 +136,23 @@ export default async function BillingChildPage({
     : { data: [] }
   let serviceItems = (serviceItemsRaw ?? []) as ServiceItem[]
 
-  // 欠席時対応加算がなければ自動挿入
-  if (selectedUnitId && serviceItems.length > 0 && !serviceItems.some((i) => i.trigger_field === 'absent')) {
-    const maxOrder = Math.max(...serviceItems.map((i) => i.sort_order), 0)
-    const { data: inserted } = await supabase
-      .from('billing_service_items')
-      .insert({
-        unit_id: selectedUnitId,
-        name: '欠席時対応加算',
-        category: '加算',
-        trigger_field: 'absent',
-        billing_code: null,
-        is_active: true,
-        sort_order: maxOrder + 1,
-      })
-      .select('id, unit_id, name, category, trigger_field, billing_code, is_active, sort_order')
-      .maybeSingle()
-    if (inserted) serviceItems = [...serviceItems, inserted as ServiceItem]
+  // 欠席時対応加算・延長加算がなければ自動挿入
+  if (selectedUnitId && serviceItems.length > 0) {
+    const toInsert: Omit<ServiceItem, 'id'>[] = []
+    let maxOrder = Math.max(...serviceItems.map((i) => i.sort_order), 0)
+    if (!serviceItems.some((i) => i.trigger_field === 'absent')) {
+      toInsert.push({ unit_id: selectedUnitId, name: '欠席時対応加算', category: '加算', trigger_field: 'absent', billing_code: null, is_active: true, sort_order: ++maxOrder })
+    }
+    if (!serviceItems.some((i) => i.trigger_field === 'extension')) {
+      toInsert.push({ unit_id: selectedUnitId, name: '延長加算', category: '加算', trigger_field: 'extension', billing_code: null, is_active: true, sort_order: ++maxOrder })
+    }
+    if (toInsert.length > 0) {
+      const { data: inserted } = await supabase
+        .from('billing_service_items')
+        .insert(toInsert)
+        .select('id, unit_id, name, category, trigger_field, billing_code, is_active, sort_order')
+      if (inserted) serviceItems = [...serviceItems, ...(inserted as ServiceItem[])]
+    }
   }
 
   return (

@@ -16,7 +16,7 @@ type ServiceItem = {
   unit_id: string
   name: string
   category: '基本' | '加算' | '保険外'
-  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'daytime_pickup' | 'daytime_dropoff' | 'absent' | 'manual'
+  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'daytime_pickup' | 'daytime_dropoff' | 'absent' | 'extension' | 'manual'
   billing_code: string | null
   is_active: boolean
   sort_order: number
@@ -79,6 +79,7 @@ type DayComputed = {
   daytimeSupport: boolean
   daytimeTransportPickup: boolean
   daytimeTransportDropoff: boolean
+  extensionHours: number
   participatedActivities: Set<string>
 }
 
@@ -287,34 +288,32 @@ export function BillingChildMonthlyView({
     }
     setActivityMap(newActivityMap)
 
-    // サービス項目を最新化（欠席時対応加算の自動挿入を含む）
+    // サービス項目を最新化（欠席時対応加算・延長加算の自動挿入を含む）
     const { data: latestItems } = await supabase
       .from('billing_service_items')
       .select('id, unit_id, name, category, trigger_field, billing_code, is_active, sort_order')
       .eq('unit_id', unitId)
       .eq('is_active', true)
       .order('sort_order')
-    const items = (latestItems ?? []) as ServiceItem[]
-    if (items.length > 0 && !items.some((i) => i.trigger_field === 'absent')) {
-      const maxOrder = Math.max(...items.map((i) => i.sort_order), 0)
-      const { data: inserted } = await supabase
-        .from('billing_service_items')
-        .insert({
-          unit_id: unitId,
-          name: '欠席時対応加算',
-          category: '加算',
-          trigger_field: 'absent',
-          billing_code: null,
-          is_active: true,
-          sort_order: maxOrder + 1,
-        })
-        .select('id, unit_id, name, category, trigger_field, billing_code, is_active, sort_order')
-        .maybeSingle()
-      if (inserted) setServiceItems([...items, inserted as ServiceItem])
-      else setServiceItems(items)
-    } else {
-      setServiceItems(items)
+    let items = (latestItems ?? []) as ServiceItem[]
+    if (items.length > 0) {
+      const toInsert: Omit<ServiceItem, 'id'>[] = []
+      let maxOrder = Math.max(...items.map((i) => i.sort_order), 0)
+      if (!items.some((i) => i.trigger_field === 'absent')) {
+        toInsert.push({ unit_id: unitId, name: '欠席時対応加算', category: '加算', trigger_field: 'absent', billing_code: null, is_active: true, sort_order: ++maxOrder })
+      }
+      if (!items.some((i) => i.trigger_field === 'extension')) {
+        toInsert.push({ unit_id: unitId, name: '延長加算', category: '加算', trigger_field: 'extension', billing_code: null, is_active: true, sort_order: ++maxOrder })
+      }
+      if (toInsert.length > 0) {
+        const { data: inserted } = await supabase
+          .from('billing_service_items')
+          .insert(toInsert)
+          .select('id, unit_id, name, category, trigger_field, billing_code, is_active, sort_order')
+        if (inserted) items = [...items, ...(inserted as ServiceItem[])]
+      }
     }
+    setServiceItems(items)
 
     setLoading(false)
   }, [childId, unitId, effYearMonth]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -349,6 +348,9 @@ export function BillingChildMonthlyView({
     const rawMinutes = startTime && endTime ? Math.max(0, timeToMinutes(endTime) - timeToMinutes(startTime)) : 0
     const billingCategory = getBillingCategory(rawMinutes, startTime !== null && endTime !== null)
 
+    const thresholdMins = serviceFormType === 1 ? 180 : 300
+    const extensionHours = isAttended ? Math.max(0, Math.floor((rawMinutes - thresholdMins) / 60)) : 0
+
     return {
       date: dateStr,
       isAttended,
@@ -373,6 +375,7 @@ export function BillingChildMonthlyView({
       daytimeSupport: att?.daytime_support ?? false,
       daytimeTransportPickup: (daytimeSupportItem ? getManualRecord(daytimeSupportItem.id, dateStr)?.daytime_pickup : false) ?? false,
       daytimeTransportDropoff: (daytimeSupportItem ? getManualRecord(daytimeSupportItem.id, dateStr)?.daytime_dropoff : false) ?? false,
+      extensionHours,
       participatedActivities: activityMap.get(dateStr) ?? new Set(),
     }
   }
@@ -391,6 +394,7 @@ export function BillingChildMonthlyView({
       case 'daytime_support': return d.daytimeSupport
       case 'daytime_pickup': return d.daytimeSupport && d.daytimeTransportPickup
       case 'daytime_dropoff': return d.daytimeSupport && d.daytimeTransportDropoff
+      case 'extension': return d.extensionHours > 0
       case 'manual': return d.participatedActivities.has(item.name)
       default: return false
     }
@@ -404,6 +408,7 @@ export function BillingChildMonthlyView({
 
   const getCircleValue = (item: ServiceItem, d: DayComputed): number => {
     if (item.trigger_field === 'basic') return d.billingCategory ?? 1
+    if (item.trigger_field === 'extension') return d.extensionHours
     return 1
   }
 
@@ -529,9 +534,10 @@ export function BillingChildMonthlyView({
       { unit_id: unitId, name: '送迎加算（迎え）', category: '加算', trigger_field: 'transport_pickup', is_active: true, sort_order: 3 },
       { unit_id: unitId, name: '送迎加算（送り）', category: '加算', trigger_field: 'transport_dropoff', is_active: true, sort_order: 4 },
       { unit_id: unitId, name: '欠席時対応加算', category: '加算', trigger_field: 'absent', is_active: true, sort_order: 5 },
-      { unit_id: unitId, name: '専門的支援実施加算', category: '加算', trigger_field: 'manual', is_active: true, sort_order: 6 },
-      { unit_id: unitId, name: 'おやつ', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 7 },
-      { unit_id: unitId, name: '学習教材', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 8 },
+      { unit_id: unitId, name: '延長加算', category: '加算', trigger_field: 'extension', is_active: true, sort_order: 6 },
+      { unit_id: unitId, name: '専門的支援実施加算', category: '加算', trigger_field: 'manual', is_active: true, sort_order: 7 },
+      { unit_id: unitId, name: 'おやつ', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 8 },
+      { unit_id: unitId, name: '学習教材', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 9 },
     ]
     const { data } = await supabase
       .from('billing_service_items')
@@ -578,9 +584,21 @@ export function BillingChildMonthlyView({
   const countChecked = (item: ServiceItem) =>
     days.filter((d) => isItemChecked(item, d, dayDataMap.get(d)!)).length
 
+  // 延長加算は日数でなく合計時間数を返す
+  const getTotalUnits = (item: ServiceItem) => {
+    if (item.trigger_field === 'extension') {
+      return days
+        .filter((d) => isItemChecked(item, d, dayDataMap.get(d)!))
+        .reduce((sum, d) => sum + dayDataMap.get(d)!.extensionHours, 0)
+    }
+    return countChecked(item)
+  }
+
   const hasDaytimeItems = serviceItems.some((i) => i.trigger_field === 'daytime_support')
   const absentItem = serviceItems.find((i) => i.trigger_field === 'absent') ?? null
   const hasAbsentItems = absentItem !== null
+  const extensionItem = serviceItems.find((i) => i.trigger_field === 'extension') ?? null
+  const hasExtensionItems = extensionItem !== null
 
   // ─────────────────────────────────────────────────────────────
   // Render
@@ -662,7 +680,7 @@ export function BillingChildMonthlyView({
                   </thead>
                   <tbody>
                     {serviceItems.map((item) => {
-                      const total = countChecked(item)
+                      const total = getTotalUnits(item)
                       return [
                         // 実績行
                         <tr key={`${item.id}-actual`}>
@@ -739,6 +757,9 @@ export function BillingChildMonthlyView({
                     {hasAbsentItems && (
                       <th className="border border-gray-300 px-1 py-2 text-center font-medium text-gray-600 bg-yellow-50 w-16">欠席時加算</th>
                     )}
+                    {hasExtensionItems && (
+                      <th className="border border-gray-300 px-1 py-2 text-center font-medium text-gray-600 bg-green-50 w-16">延長加算</th>
+                    )}
                   </tr>
                   <tr className="bg-[#f5f0e8] text-[10px]">
                     <th className="border border-gray-300" />
@@ -755,6 +776,7 @@ export function BillingChildMonthlyView({
                       </>
                     )}
                     {hasAbsentItems && <th className="border border-gray-300 bg-yellow-50" />}
+                    {hasExtensionItems && <th className="border border-gray-300 px-0 py-1 text-center text-gray-500 bg-green-50">時間</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -792,6 +814,9 @@ export function BillingChildMonthlyView({
                           )}
                           {hasAbsentItems && (
                             <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-yellow-50/30">—</td>
+                          )}
+                          {hasExtensionItems && (
+                            <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-green-50/30">—</td>
                           )}
                         </tr>
                       )
@@ -839,6 +864,9 @@ export function BillingChildMonthlyView({
                               </td>
                             )
                           })()}
+                          {hasExtensionItems && (
+                            <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-green-50/30">—</td>
+                          )}
                         </tr>
                       )
                     }
@@ -846,12 +874,14 @@ export function BillingChildMonthlyView({
                     const startTimeVal = basicRec?.billing_start_time?.slice(0, 5) ?? d.startTime ?? ''
                     const endTimeVal = basicRec?.billing_end_time?.slice(0, 5) ?? d.endTime ?? ''
 
-                    // Recompute category if overridden
+                    // Recompute category and extension if overridden
                     const overriddenHours = calcHours(startTimeVal, endTimeVal)
                     const overriddenMinutes = startTimeVal && endTimeVal
                       ? Math.max(0, timeToMinutes(endTimeVal) - timeToMinutes(startTimeVal))
                       : 0
                     const overriddenCategory = getBillingCategory(overriddenMinutes, startTimeVal !== '' && endTimeVal !== '')
+                    const extThreshold = d.serviceFormType === 1 ? 180 : 300
+                    const overriddenExtensionHours = Math.max(0, Math.floor((overriddenMinutes - extThreshold) / 60))
 
 
                     return (
@@ -950,12 +980,24 @@ export function BillingChildMonthlyView({
                         {hasAbsentItems && (
                           <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-yellow-50/30">—</td>
                         )}
+                        {hasExtensionItems && (
+                          <td className="border border-gray-200 px-1 py-1 text-center bg-green-50/30">
+                            {overriddenExtensionHours > 0 ? (
+                              <div>
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-600 text-white text-[10px] font-bold">{overriddenExtensionHours}</span>
+                                <div className="text-[9px] text-gray-400 mt-0.5">時間</div>
+                              </div>
+                            ) : (
+                              <span className="text-gray-300 text-xs">—</span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
                   {attendedDays.length === 0 && (
                     <tr>
-                      <td colSpan={(hasDaytimeItems ? 9 : 7) + (hasAbsentItems ? 1 : 0)} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+                      <td colSpan={(hasDaytimeItems ? 9 : 7) + (hasAbsentItems ? 1 : 0) + (hasExtensionItems ? 1 : 0)} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
                         この月の実績記録がありません
                       </td>
                     </tr>
@@ -990,6 +1032,11 @@ export function BillingChildMonthlyView({
                       {hasAbsentItems && absentItem && (
                         <td className="border border-gray-300 text-center text-xs font-bold text-gray-700 bg-yellow-50/30">
                           {days.filter((dateStr) => isItemChecked(absentItem, dateStr, dayDataMap.get(dateStr)!)).length}
+                        </td>
+                      )}
+                      {hasExtensionItems && extensionItem && (
+                        <td className="border border-gray-300 text-center text-xs font-bold text-green-700 bg-green-50/30">
+                          {attendedDays.reduce((sum, d) => sum + d.extensionHours, 0)}h
                         </td>
                       )}
                     </tr>
@@ -1031,6 +1078,7 @@ export function BillingChildMonthlyView({
                   <option value="daytime_pickup">日中一時支援・送迎往時（自動）</option>
                   <option value="daytime_dropoff">日中一時支援・送迎復時（自動）</option>
                   <option value="absent">欠席時（自動）</option>
+                  <option value="extension">延長加算（自動）</option>
                   <option value="manual">手動のみ</option>
                 </select>
                 <Button size="sm" onClick={addServiceItem}>追加</Button>
