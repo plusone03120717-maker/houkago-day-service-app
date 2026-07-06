@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { BillingChildMonthlyView } from '@/components/billing/billing-child-monthly-view'
+import { BillingConfirmToggle } from '@/components/billing/billing-confirm-toggle'
 
 type ServiceItem = {
   id: string
@@ -72,6 +73,19 @@ export default async function BillingChildPage({
     .limit(1)
     .maybeSingle()
 
+  // 請求明細（確定状態）— billing_monthly を inner join してユニット・年月で絞り込む
+  const yearMonthCompact = yearMonth.replace('-', '')
+  const { data: billingDetailRaw } = selectedUnitId
+    ? await supabase
+        .from('billing_details')
+        .select('id, is_confirmed, billing_monthly!inner(unit_id, year_month)')
+        .eq('child_id', childId)
+        .eq('billing_monthly.unit_id', selectedUnitId)
+        .eq('billing_monthly.year_month', yearMonthCompact)
+        .maybeSingle()
+    : { data: null }
+  const billingDetail = billingDetailRaw as { id: string; is_confirmed: boolean } | null
+
   // サービス項目マスタ
   const { data: serviceItemsRaw } = selectedUnitId
     ? await supabase
@@ -90,13 +104,21 @@ export default async function BillingChildPage({
         <Link href="/billing" className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <div>
+        <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold text-gray-900">{childRaw.name}</h1>
           <p className="text-xs text-gray-400 mt-0.5">
             {certRaw?.certificate_number ? `受給者番号: ${certRaw.certificate_number}` : '受給者番号未登録'}
             {certRaw?.municipality ? ` ／ ${certRaw.municipality}` : ''}
           </p>
         </div>
+        {billingDetail ? (
+          <BillingConfirmToggle
+            billingDetailId={billingDetail.id}
+            initialConfirmed={billingDetail.is_confirmed}
+          />
+        ) : (
+          <span className="text-xs text-gray-400 border border-gray-200 rounded-lg px-2 py-1">未作成</span>
+        )}
       </div>
 
       {/* ユニット選択 */}
