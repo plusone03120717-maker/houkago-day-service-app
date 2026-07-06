@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
 import { SchoolHolidaySection } from '@/components/children/school-holiday-section'
 import { AttendanceStatusToggle } from '@/components/attendance/attendance-status-toggle'
+import { AttendanceTimeEditor } from '@/components/attendance/attendance-time-editor'
 
 function monthRange(year: number, month: number): { start: string; end: string } {
   const lastDay = new Date(year, month, 0).getDate()
@@ -272,23 +273,19 @@ export default async function ChildAttendanceHistoryPage({
                           )}
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <div className="flex items-center gap-2">
-                          {(att.service_start_time || att.service_end_time) && (
-                            <span className="text-xs text-indigo-600">
-                              利用: {att.service_start_time?.slice(0, 5) ?? '—'}〜{att.service_end_time?.slice(0, 5) ?? '—'}
-                            </span>
-                          )}
-                          {att.daytime_support && (
-                            <span className="text-xs text-teal-600">
-                              日中一時: {att.daytime_support_start_time?.slice(0, 5) ?? '—'}〜{att.daytime_support_end_time?.slice(0, 5) ?? '—'}
-                            </span>
-                          )}
-                          <AttendanceStatusToggle
-                            attendanceId={att.id}
-                            currentStatus={att.status}
-                          />
-                        </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <AttendanceStatusToggle
+                          attendanceId={att.id}
+                          currentStatus={att.status}
+                        />
+                        <AttendanceTimeEditor
+                          attendanceId={att.id}
+                          serviceStartTime={att.service_start_time}
+                          serviceEndTime={att.service_end_time}
+                          daytimeSupport={att.daytime_support}
+                          daytimeSupportStartTime={att.daytime_support_start_time}
+                          daytimeSupportEndTime={att.daytime_support_end_time}
+                        />
                       </div>
                     </div>
                     {hasContent && (
