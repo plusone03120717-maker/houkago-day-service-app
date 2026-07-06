@@ -1,0 +1,1 @@
+ALTER TABLE billing_details ADD COLUMN IF NOT EXISTS is_confirmed BOOLEAN NOT NULL DEFAULT false;

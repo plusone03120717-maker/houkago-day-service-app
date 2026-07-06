@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FileText, AlertCircle, Download, User } from 'lucide-react'
 import { generateBilling } from '@/app/actions/billing'
+import { BillingConfirmToggle } from '@/components/billing/billing-confirm-toggle'
 
 type BillingDetail = {
   id: string
@@ -14,6 +15,7 @@ type BillingDetail = {
   copay_amount: number
   billed_amount: number
   errors: unknown[]
+  is_confirmed: boolean
   children: { name: string } | null
 }
 
@@ -67,11 +69,20 @@ export default async function BillingPage({
 
   const { data: billingMonthlyRaw } = await supabase
     .from('billing_monthly')
-    .select('id, unit_id, year_month, status, billing_details (id, child_id, total_days, total_units, copay_amount, billed_amount, errors, children (name))')
+    .select('id, unit_id, year_month, status, billing_details (id, child_id, total_days, total_units, copay_amount, billed_amount, errors, is_confirmed, children (name))')
     .eq('year_month', yearMonth)
   const billingMonthly = (billingMonthlyRaw ?? []) as unknown as BillingMonthly[]
 
   const billingByUnit = Object.fromEntries(billingMonthly.map((b) => [b.unit_id, b]))
+
+  // unitId -> childId -> { id, is_confirmed } のルックアップ
+  const detailByUnitChild: Record<string, Record<string, { id: string; is_confirmed: boolean }>> = {}
+  for (const b of billingMonthly) {
+    detailByUnitChild[b.unit_id] = {}
+    for (const d of b.billing_details) {
+      detailByUnitChild[b.unit_id][d.child_id] = { id: d.id, is_confirmed: d.is_confirmed }
+    }
+  }
 
   // 児童一覧（ユニット別）
   const { data: childrenUnitsRaw } = await supabase
@@ -177,25 +188,40 @@ export default async function BillingPage({
                       })
                       .map((cu) => {
                         const child = cu.children!
+                        const detail = detailByUnitChild[unit.id]?.[child.id]
                         return (
-                          <Link
-                            key={child.id}
-                            href={`/billing/child/${child.id}?month=${effYearMonth}&unit=${unit.id}`}
-                            className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
-                          >
-                            <div className="flex items-center gap-3">
+                          <div key={child.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+                            <Link
+                              href={`/billing/child/${child.id}?month=${effYearMonth}&unit=${unit.id}`}
+                              className="flex items-center gap-3 flex-1 min-w-0"
+                            >
                               <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-sm font-bold flex-shrink-0">
                                 {child.name.charAt(0)}
                               </div>
-                              <div>
+                              <div className="min-w-0">
                                 <p className="text-sm font-medium text-gray-900">{child.name}</p>
                                 {child.name_kana && (
                                   <p className="text-xs text-gray-400">{child.name_kana}</p>
                                 )}
                               </div>
+                            </Link>
+                            <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                              {detail ? (
+                                <BillingConfirmToggle
+                                  billingDetailId={detail.id}
+                                  initialConfirmed={detail.is_confirmed}
+                                />
+                              ) : (
+                                <span className="text-xs text-gray-400">未作成</span>
+                              )}
+                              <Link
+                                href={`/billing/child/${child.id}?month=${effYearMonth}&unit=${unit.id}`}
+                                className="text-xs text-indigo-600 font-medium whitespace-nowrap"
+                              >
+                                明細を見る →
+                              </Link>
                             </div>
-                            <span className="text-xs text-indigo-600 font-medium">明細を見る →</span>
-                          </Link>
+                          </div>
                         )
                       })}
                   </div>
