@@ -550,6 +550,8 @@ export function BillingChildMonthlyView({
     days.filter((d) => isItemChecked(item, d, dayDataMap.get(d)!)).length
 
   const hasDaytimeItems = serviceItems.some((i) => i.trigger_field === 'daytime_support')
+  const absentItem = serviceItems.find((i) => i.trigger_field === 'absent') ?? null
+  const hasAbsentItems = absentItem !== null
 
   // ─────────────────────────────────────────────────────────────
   // Render
@@ -705,6 +707,9 @@ export function BillingChildMonthlyView({
                     {hasDaytimeItems && (
                       <th className="border border-gray-300 px-1 py-2 text-center font-medium text-gray-600 bg-purple-50 w-14" colSpan={2}>日中一時支援</th>
                     )}
+                    {hasAbsentItems && (
+                      <th className="border border-gray-300 px-1 py-2 text-center font-medium text-gray-600 bg-yellow-50 w-16">欠席時加算</th>
+                    )}
                   </tr>
                   <tr className="bg-[#f5f0e8] text-[10px]">
                     <th className="border border-gray-300" />
@@ -720,6 +725,7 @@ export function BillingChildMonthlyView({
                         <th className="border border-gray-300 px-0 py-1 text-center text-gray-500 bg-purple-50 w-7">復</th>
                       </>
                     )}
+                    {hasAbsentItems && <th className="border border-gray-300 bg-yellow-50" />}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -755,6 +761,9 @@ export function BillingChildMonthlyView({
                               <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
                             </>
                           )}
+                          {hasAbsentItems && (
+                            <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-yellow-50/30">—</td>
+                          )}
                         </tr>
                       )
                     }
@@ -782,6 +791,25 @@ export function BillingChildMonthlyView({
                               <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
                             </>
                           )}
+                          {hasAbsentItems && absentItem && (() => {
+                            const checked = isItemChecked(absentItem, dateStr, d)
+                            const isSavingAbsent = saving === `${absentItem.id}-${dateStr}`
+                            return (
+                              <td
+                                className="border border-gray-200 px-1 py-1 text-center bg-yellow-50/40 cursor-pointer hover:bg-yellow-100/60"
+                                onClick={() => toggleItem(absentItem, dateStr, !checked)}
+                                title="クリックで欠席時加算を切替"
+                              >
+                                {isSavingAbsent ? (
+                                  <Loader2 className="h-3 w-3 animate-spin text-gray-400 mx-auto" />
+                                ) : checked ? (
+                                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-yellow-500 text-white text-[10px] font-bold">✓</span>
+                                ) : (
+                                  <span className="text-gray-300 text-xs">—</span>
+                                )}
+                              </td>
+                            )
+                          })()}
                         </tr>
                       )
                     }
@@ -890,12 +918,15 @@ export function BillingChildMonthlyView({
                             </td>
                           </>
                         )}
+                        {hasAbsentItems && (
+                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-yellow-50/30">—</td>
+                        )}
                       </tr>
                     )
                   })}
                   {attendedDays.length === 0 && (
                     <tr>
-                      <td colSpan={hasDaytimeItems ? 9 : 7} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+                      <td colSpan={(hasDaytimeItems ? 9 : 7) + (hasAbsentItems ? 1 : 0)} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
                         この月の実績記録がありません
                       </td>
                     </tr>
@@ -926,6 +957,11 @@ export function BillingChildMonthlyView({
                             {attendedDays.filter((d) => d.daytimeTransportDropoff).length}
                           </td>
                         </>
+                      )}
+                      {hasAbsentItems && absentItem && (
+                        <td className="border border-gray-300 text-center text-xs font-bold text-gray-700 bg-yellow-50/30">
+                          {days.filter((dateStr) => isItemChecked(absentItem, dateStr, dayDataMap.get(dateStr)!)).length}
+                        </td>
                       )}
                     </tr>
                   </tfoot>
