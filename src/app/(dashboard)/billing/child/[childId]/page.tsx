@@ -73,15 +73,22 @@ export default async function BillingChildPage({
     .limit(1)
     .maybeSingle()
 
-  // 請求明細（確定状態）— billing_monthly を inner join してユニット・年月で絞り込む
+  // 請求明細（確定状態）— 2ステップで取得
   const yearMonthCompact = yearMonth.replace('-', '')
-  const { data: billingDetailRaw } = selectedUnitId
+  const { data: billingMonthlyRow } = selectedUnitId
+    ? await supabase
+        .from('billing_monthly')
+        .select('id')
+        .eq('unit_id', selectedUnitId)
+        .eq('year_month', yearMonthCompact)
+        .maybeSingle()
+    : { data: null }
+  const { data: billingDetailRaw } = billingMonthlyRow
     ? await supabase
         .from('billing_details')
-        .select('id, is_confirmed, billing_monthly!inner(unit_id, year_month)')
+        .select('id, is_confirmed')
+        .eq('billing_monthly_id', billingMonthlyRow.id)
         .eq('child_id', childId)
-        .eq('billing_monthly.unit_id', selectedUnitId)
-        .eq('billing_monthly.year_month', yearMonthCompact)
         .maybeSingle()
     : { data: null }
   const billingDetail = billingDetailRaw as { id: string; is_confirmed: boolean } | null
@@ -117,7 +124,7 @@ export default async function BillingChildPage({
             initialConfirmed={billingDetail.is_confirmed}
           />
         ) : (
-          <span className="text-xs text-gray-400 border border-gray-200 rounded-lg px-2 py-1">未作成</span>
+          <span className="text-xs text-gray-400">請求データ未作成</span>
         )}
       </div>
 
