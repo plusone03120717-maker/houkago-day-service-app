@@ -16,7 +16,7 @@ type ServiceItem = {
   unit_id: string
   name: string
   category: '基本' | '加算' | '保険外'
-  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'daytime_pickup' | 'daytime_dropoff' | 'manual'
+  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'daytime_pickup' | 'daytime_dropoff' | 'absent' | 'manual'
   billing_code: string | null
   is_active: boolean
   sort_order: number
@@ -352,6 +352,8 @@ export function BillingChildMonthlyView({
 
   // ── Check if item is auto-triggered ────────────────────────
   const isAutoTriggered = (item: ServiceItem, d: DayComputed): boolean => {
+    // 欠席時加算は欠席日のみ（出席チェックより先に評価）
+    if (item.trigger_field === 'absent') return d.isAbsent
     if (!d.isAttended) return false
     switch (item.trigger_field) {
       case 'basic': return true
@@ -962,6 +964,7 @@ export function BillingChildMonthlyView({
                   <option value="daytime_support">日中一時支援時（自動）</option>
                   <option value="daytime_pickup">日中一時支援・送迎往時（自動）</option>
                   <option value="daytime_dropoff">日中一時支援・送迎復時（自動）</option>
+                  <option value="absent">欠席時（自動）</option>
                   <option value="manual">手動のみ</option>
                 </select>
                 <Button size="sm" onClick={addServiceItem}>追加</Button>

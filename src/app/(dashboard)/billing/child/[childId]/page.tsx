@@ -11,7 +11,7 @@ type ServiceItem = {
   unit_id: string
   name: string
   category: '基本' | '加算' | '保険外'
-  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'manual'
+  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'daytime_pickup' | 'daytime_dropoff' | 'absent' | 'manual'
   billing_code: string | null
   is_active: boolean
   sort_order: number
