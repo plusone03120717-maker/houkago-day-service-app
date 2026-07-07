@@ -782,45 +782,12 @@ export function BillingChildMonthlyView({
                 <tbody className="divide-y divide-gray-100">
                   {days.map((dateStr) => {
                     const d = dayDataMap.get(dateStr)!
-                    if (!d.isAttended && !d.isAbsent && !d.isCancelled) return null
+                    if (!d.isAttended && !d.isAbsent) return null
 
                     const dow = new Date(dateStr + 'T00:00:00').getDay()
                     const dayLabel = `${parseInt(dateStr.slice(8))}日（${DAY_LABELS[dow]}）`
                     const basicItem = serviceItems.find((i) => i.trigger_field === 'basic')
                     const basicRec = basicItem ? getManualRecord(basicItem.id, dateStr) : null
-
-                    // キャンセル行
-                    if (d.isCancelled) {
-                      return (
-                        <tr key={dateStr} className="bg-orange-50/40 text-gray-400">
-                          <td className="border border-gray-200 px-3 py-2 text-gray-500 font-medium">
-                            {dayLabel}
-                          </td>
-                          <td className="border border-gray-200 px-2 py-2 text-center">
-                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-orange-100 text-orange-500 text-[10px] font-medium whitespace-nowrap">
-                              キャンセル
-                            </span>
-                          </td>
-                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
-                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
-                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
-                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
-                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
-                          {hasDaytimeItems && (
-                            <>
-                              <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
-                              <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
-                            </>
-                          )}
-                          {hasAbsentItems && (
-                            <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-yellow-50/30">—</td>
-                          )}
-                          {hasExtensionItems && (
-                            <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-green-50/30">—</td>
-                          )}
-                        </tr>
-                      )
-                    }
 
                     // 欠席行
                     if (d.isAbsent) {
