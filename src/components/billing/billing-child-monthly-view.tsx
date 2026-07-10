@@ -79,6 +79,7 @@ type DayComputed = {
   transportPickup: boolean
   transportDropoff: boolean
   daytimeSupport: boolean
+  daytimeBillingCategory: 0 | 1 | 2 | null
   daytimeTransportPickup: boolean
   daytimeTransportDropoff: boolean
   extensionHours: number
@@ -380,6 +381,14 @@ export function BillingChildMonthlyView({
         ? (att.dropoff_arrival_time != null && att.dropoff_arrival_time > '00:00:00')
         : false,
       daytimeSupport: att?.daytime_support ?? false,
+      daytimeBillingCategory: att?.daytime_support
+        ? (() => {
+            const ds = att.daytime_support_start_time ?? null
+            const de = att.daytime_support_end_time ?? null
+            const dm = ds && de ? Math.max(0, timeToMinutes(de) - timeToMinutes(ds)) : 0
+            return getBillingCategory(dm, ds !== null && de !== null)
+          })()
+        : null,
       daytimeTransportPickup: att
         ? (att.daytime_pickup_arrival_time != null && att.daytime_pickup_arrival_time > '00:00:00')
         : false,
@@ -780,7 +789,7 @@ export function BillingChildMonthlyView({
                     <th className="border border-gray-300 px-2 py-2 text-center font-medium text-teal-700 w-24">算定時間数</th>
                     <th className="border border-gray-300 px-1 py-2 text-center font-medium text-teal-700 w-14" colSpan={2}>送迎加算</th>
                     {hasDaytimeItems && (
-                      <th className="border border-gray-300 px-1 py-2 text-center font-medium text-purple-700 bg-purple-50 w-14" colSpan={4}>日中一時利用</th>
+                      <th className="border border-gray-300 px-1 py-2 text-center font-medium text-purple-700 bg-purple-50 w-14" colSpan={5}>日中一時利用</th>
                     )}
                     {hasAbsentItems && (
                       <th className="border border-gray-300 px-1 py-2 text-center font-medium text-gray-600 bg-yellow-50 w-16">欠席時加算</th>
@@ -801,6 +810,7 @@ export function BillingChildMonthlyView({
                       <>
                         <th className="border border-gray-300 px-0 py-1 text-center text-purple-600 bg-purple-50 w-20">開始</th>
                         <th className="border border-gray-300 px-0 py-1 text-center text-purple-600 bg-purple-50 w-20">終了</th>
+                        <th className="border border-gray-300 px-0 py-1 text-center text-purple-600 bg-purple-50 w-16">算定</th>
                         <th className="border border-gray-300 px-0 py-1 text-center text-purple-600 bg-purple-50 w-7">往</th>
                         <th className="border border-gray-300 px-0 py-1 text-center text-purple-600 bg-purple-50 w-7">復</th>
                       </>
@@ -838,6 +848,7 @@ export function BillingChildMonthlyView({
                           <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
                           {hasDaytimeItems && (
                             <>
+                              <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
                               <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
                               <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
                               <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
@@ -976,6 +987,16 @@ export function BillingChildMonthlyView({
                                 <span className="text-gray-300 text-xs">—</span>
                               )}
                             </td>
+                            {/* 日中一時 算定区分 */}
+                            <td className="border border-gray-200 px-1 py-2 text-center bg-purple-50/30">
+                              {d.daytimeSupport && d.daytimeBillingCategory !== null ? (
+                                <div>
+                                  <BillingCircle value={d.daytimeBillingCategory} small />
+                                </div>
+                              ) : (
+                                <span className="text-gray-300 text-xs">—</span>
+                              )}
+                            </td>
                             {/* 日中一時 送迎往（基本送迎とは独立） */}
                             <td
                               className={`border border-gray-200 px-1 py-1 text-center bg-purple-50/30 ${d.daytimeSupport ? 'cursor-pointer hover:bg-purple-100/50' : ''}`}
@@ -1022,7 +1043,7 @@ export function BillingChildMonthlyView({
                   })}
                   {attendedDays.length === 0 && (
                     <tr>
-                      <td colSpan={(hasDaytimeItems ? 11 : 7) + (hasAbsentItems ? 1 : 0) + (hasExtensionItems ? 1 : 0)} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+                      <td colSpan={(hasDaytimeItems ? 12 : 7) + (hasAbsentItems ? 1 : 0) + (hasExtensionItems ? 1 : 0)} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
                         この月の実績記録がありません
                       </td>
                     </tr>
@@ -1046,6 +1067,7 @@ export function BillingChildMonthlyView({
                       </td>
                       {hasDaytimeItems && (
                         <>
+                          <td className="border border-gray-300 bg-purple-50/30" />
                           <td className="border border-gray-300 bg-purple-50/30" />
                           <td className="border border-gray-300 bg-purple-50/30" />
                           <td className="border border-gray-300 text-center text-xs font-bold text-purple-700 bg-purple-50/30">
