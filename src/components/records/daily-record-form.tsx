@@ -45,6 +45,7 @@ type Attendance = {
   dropoff_arrival_time: string | null
   service_start_time: string | null
   service_end_time: string | null
+  basic_service: boolean
   daytime_support: boolean
   daytime_support_start_time: string | null
   daytime_support_end_time: string | null
@@ -234,6 +235,9 @@ export function DailyRecordForm({
     const hhmm = t.slice(0, 5)
     return hhmm === '00:00' ? '' : hhmm
   }
+
+  // 放課後等デイサービス提供フラグ（デフォルト true）
+  const [basicService, setBasicService] = useState(attendance?.basic_service ?? true)
 
   // 送迎時間
   const [pickupDepartureTime, setPickupDepartureTime] = useState(fmtTime(attendance?.pickup_departure_time))
@@ -430,6 +434,7 @@ export function DailyRecordForm({
     await supabase
       .from('daily_attendance')
       .update({
+        basic_service: basicService,
         pickup_departure_time: (pickupDepartureTime && pickupDepartureTime !== '00:00') ? pickupDepartureTime : null,
         pickup_arrival_time: (pickupArrivalTime && pickupArrivalTime !== '00:00') ? pickupArrivalTime : null,
         dropoff_departure_time: (dropoffDepartureTime && dropoffDepartureTime !== '00:00') ? dropoffDepartureTime : null,
@@ -530,12 +535,22 @@ export function DailyRecordForm({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Car className="h-5 w-5 text-teal-500" />
-            送迎時間
-            <span className="text-xs font-normal text-gray-400 ml-1">（放課後等デイサービス）</span>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={basicService}
+                onChange={(e) => setBasicService(e.target.checked)}
+                className="w-4 h-4 accent-teal-600"
+                disabled={!attendance}
+              />
+              <Car className="h-5 w-5 text-teal-500" />
+              送迎時間
+              <span className="text-xs font-normal text-gray-400 ml-1">（放課後等デイサービス）</span>
+            </label>
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        {basicService && (
+          <CardContent className="space-y-4">
           {/* お迎え */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -718,7 +733,8 @@ export function DailyRecordForm({
               ※ 事務所到着時間を入力すると提供時間の開始時間に自動反映します（終了は{isSchoolHoliday ? holidayServiceEndTime : defaultServiceEndTime}がデフォルト）
             </p>
           </div>
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
 
       {/* 日中一時利用 */}
