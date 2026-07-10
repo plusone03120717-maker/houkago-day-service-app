@@ -136,10 +136,17 @@ export default async function BillingChildPage({
     : { data: [] }
   let serviceItems = (serviceItemsRaw ?? []) as ServiceItem[]
 
-  // 欠席時対応加算・延長加算がなければ自動挿入
+  // 各種加算がなければ自動挿入
   if (selectedUnitId && serviceItems.length > 0) {
     const toInsert: Omit<ServiceItem, 'id'>[] = []
     let maxOrder = Math.max(...serviceItems.map((i) => i.sort_order), 0)
+    const hasDaytimeSupportItem = serviceItems.some((i) => i.trigger_field === 'daytime_support')
+    if (hasDaytimeSupportItem && !serviceItems.some((i) => i.trigger_field === 'daytime_pickup')) {
+      toInsert.push({ unit_id: selectedUnitId, name: '日中一時支援・送迎加算（往）', category: '加算', trigger_field: 'daytime_pickup', billing_code: null, is_active: true, sort_order: ++maxOrder })
+    }
+    if (hasDaytimeSupportItem && !serviceItems.some((i) => i.trigger_field === 'daytime_dropoff')) {
+      toInsert.push({ unit_id: selectedUnitId, name: '日中一時支援・送迎加算（復）', category: '加算', trigger_field: 'daytime_dropoff', billing_code: null, is_active: true, sort_order: ++maxOrder })
+    }
     if (!serviceItems.some((i) => i.trigger_field === 'absent')) {
       toInsert.push({ unit_id: selectedUnitId, name: '欠席時対応加算', category: '加算', trigger_field: 'absent', billing_code: null, is_active: true, sort_order: ++maxOrder })
     }

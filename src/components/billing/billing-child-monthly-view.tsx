@@ -290,7 +290,7 @@ export function BillingChildMonthlyView({
     }
     setActivityMap(newActivityMap)
 
-    // サービス項目を最新化（欠席時対応加算・延長加算の自動挿入を含む）
+    // サービス項目を最新化（各種加算の自動挿入を含む）
     const { data: latestItems } = await supabase
       .from('billing_service_items')
       .select('id, unit_id, name, category, trigger_field, billing_code, is_active, sort_order')
@@ -301,6 +301,13 @@ export function BillingChildMonthlyView({
     if (items.length > 0) {
       const toInsert: Omit<ServiceItem, 'id'>[] = []
       let maxOrder = Math.max(...items.map((i) => i.sort_order), 0)
+      const hasDaytimeSupportItem = items.some((i) => i.trigger_field === 'daytime_support')
+      if (hasDaytimeSupportItem && !items.some((i) => i.trigger_field === 'daytime_pickup')) {
+        toInsert.push({ unit_id: unitId, name: '日中一時支援・送迎加算（往）', category: '加算', trigger_field: 'daytime_pickup', billing_code: null, is_active: true, sort_order: ++maxOrder })
+      }
+      if (hasDaytimeSupportItem && !items.some((i) => i.trigger_field === 'daytime_dropoff')) {
+        toInsert.push({ unit_id: unitId, name: '日中一時支援・送迎加算（復）', category: '加算', trigger_field: 'daytime_dropoff', billing_code: null, is_active: true, sort_order: ++maxOrder })
+      }
       if (!items.some((i) => i.trigger_field === 'absent')) {
         toInsert.push({ unit_id: unitId, name: '欠席時対応加算', category: '加算', trigger_field: 'absent', billing_code: null, is_active: true, sort_order: ++maxOrder })
       }
@@ -526,13 +533,15 @@ export function BillingChildMonthlyView({
     const defaults: Omit<ServiceItem, 'id' | 'billing_code'>[] = [
       { unit_id: unitId, name: '放デイ基本報酬', category: '基本', trigger_field: 'basic', is_active: true, sort_order: 1 },
       { unit_id: unitId, name: '日中一時支援', category: '基本', trigger_field: 'daytime_support', is_active: true, sort_order: 2 },
-      { unit_id: unitId, name: '送迎加算（迎え）', category: '加算', trigger_field: 'transport_pickup', is_active: true, sort_order: 3 },
-      { unit_id: unitId, name: '送迎加算（送り）', category: '加算', trigger_field: 'transport_dropoff', is_active: true, sort_order: 4 },
-      { unit_id: unitId, name: '欠席時対応加算', category: '加算', trigger_field: 'absent', is_active: true, sort_order: 5 },
-      { unit_id: unitId, name: '延長加算', category: '加算', trigger_field: 'extension', is_active: true, sort_order: 6 },
-      { unit_id: unitId, name: '専門的支援実施加算', category: '加算', trigger_field: 'manual', is_active: true, sort_order: 7 },
-      { unit_id: unitId, name: 'おやつ', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 8 },
-      { unit_id: unitId, name: '学習教材', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 9 },
+      { unit_id: unitId, name: '日中一時支援・送迎加算（往）', category: '加算', trigger_field: 'daytime_pickup', is_active: true, sort_order: 3 },
+      { unit_id: unitId, name: '日中一時支援・送迎加算（復）', category: '加算', trigger_field: 'daytime_dropoff', is_active: true, sort_order: 4 },
+      { unit_id: unitId, name: '送迎加算（迎え）', category: '加算', trigger_field: 'transport_pickup', is_active: true, sort_order: 5 },
+      { unit_id: unitId, name: '送迎加算（送り）', category: '加算', trigger_field: 'transport_dropoff', is_active: true, sort_order: 6 },
+      { unit_id: unitId, name: '欠席時対応加算', category: '加算', trigger_field: 'absent', is_active: true, sort_order: 7 },
+      { unit_id: unitId, name: '延長加算', category: '加算', trigger_field: 'extension', is_active: true, sort_order: 8 },
+      { unit_id: unitId, name: '専門的支援実施加算', category: '加算', trigger_field: 'manual', is_active: true, sort_order: 9 },
+      { unit_id: unitId, name: 'おやつ', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 10 },
+      { unit_id: unitId, name: '学習教材', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 11 },
     ]
     const { data } = await supabase
       .from('billing_service_items')
@@ -591,6 +600,21 @@ export function BillingChildMonthlyView({
 
   const isDaytimeItem = (item: ServiceItem) =>
     ['daytime_support', 'daytime_pickup', 'daytime_dropoff'].includes(item.trigger_field)
+
+  const isDaytimeTransportItem = (item: ServiceItem) =>
+    item.trigger_field === 'daytime_pickup' || item.trigger_field === 'daytime_dropoff'
+
+  // 月次グリッド表示順: daytime_pickup / daytime_dropoff は daytime_support の直後に固定
+  const daytimeSupportSortOrder =
+    serviceItems.find((i) => i.trigger_field === 'daytime_support')?.sort_order ?? Infinity
+  const gridServiceItems = [...serviceItems].sort((a, b) => {
+    const effectiveOrder = (item: ServiceItem) => {
+      if (item.trigger_field === 'daytime_pickup') return daytimeSupportSortOrder + 0.1
+      if (item.trigger_field === 'daytime_dropoff') return daytimeSupportSortOrder + 0.2
+      return item.sort_order
+    }
+    return effectiveOrder(a) - effectiveOrder(b)
+  })
 
   const hasDaytimeItems = serviceItems.some((i) => i.trigger_field === 'daytime_support')
   const absentItem = serviceItems.find((i) => i.trigger_field === 'absent') ?? null
@@ -677,7 +701,7 @@ export function BillingChildMonthlyView({
                     </tr>
                   </thead>
                   <tbody>
-                    {serviceItems.map((item) => {
+                    {gridServiceItems.map((item) => {
                       const total = getTotalUnits(item)
                       return [
                         // 実績行
@@ -686,8 +710,11 @@ export function BillingChildMonthlyView({
                             className={`border border-gray-300 px-2 py-1 sticky left-0 z-10 ${isDaytimeItem(item) ? 'bg-purple-50' : 'bg-white'}`}
                             rowSpan={1}
                           >
-                            <div className="flex items-center gap-1.5">
-                              {isDaytimeItem(item) && <div className="w-1 h-4 rounded-full bg-purple-400 flex-shrink-0" />}
+                            <div className={`flex items-center gap-1.5 ${isDaytimeTransportItem(item) ? 'pl-3' : ''}`}>
+                              {isDaytimeTransportItem(item)
+                                ? <span className="text-purple-400 text-[11px] leading-none flex-shrink-0">└</span>
+                                : isDaytimeItem(item) && <div className="w-1 h-4 rounded-full bg-purple-400 flex-shrink-0" />
+                              }
                               <span className={`text-[10px] px-1 rounded font-medium ${CATEGORY_COLORS[item.category]}`}>
                                 {item.category}
                               </span>
