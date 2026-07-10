@@ -48,6 +48,14 @@ type Attendance = {
   daytime_support: boolean
   daytime_support_start_time: string | null
   daytime_support_end_time: string | null
+  daytime_pickup_departure_time: string | null
+  daytime_pickup_arrival_time: string | null
+  daytime_dropoff_departure_time: string | null
+  daytime_dropoff_arrival_time: string | null
+  daytime_pickup_driver_member_id: string | null
+  daytime_pickup_vehicle_id: string | null
+  daytime_dropoff_driver_member_id: string | null
+  daytime_dropoff_vehicle_id: string | null
   pickup_driver_member_id: string | null
   pickup_vehicle_id: string | null
   dropoff_driver_member_id: string | null
@@ -256,6 +264,16 @@ export function DailyRecordForm({
   const [daytimeSupportStartTime, setDaytimeSupportStartTime] = useState(attendance?.daytime_support_start_time?.slice(0, 5) ?? '')
   const [daytimeSupportEndTime, setDaytimeSupportEndTime] = useState(attendance?.daytime_support_end_time?.slice(0, 5) ?? '')
 
+  // 日中一時利用 送迎時間・ドライバー・車種
+  const [daytimePickupDepartureTime, setDaytimePickupDepartureTime] = useState(fmtTime(attendance?.daytime_pickup_departure_time))
+  const [daytimePickupArrivalTime, setDaytimePickupArrivalTime] = useState(fmtTime(attendance?.daytime_pickup_arrival_time))
+  const [daytimeDropoffDepartureTime, setDaytimeDropoffDepartureTime] = useState(fmtTime(attendance?.daytime_dropoff_departure_time))
+  const [daytimeDropoffArrivalTime, setDaytimeDropoffArrivalTime] = useState(fmtTime(attendance?.daytime_dropoff_arrival_time))
+  const [daytimePickupDriverId, setDaytimePickupDriverId] = useState(attendance?.daytime_pickup_driver_member_id ?? '')
+  const [daytimePickupVehicleId, setDaytimePickupVehicleId] = useState(attendance?.daytime_pickup_vehicle_id ?? '')
+  const [daytimeDropoffDriverId, setDaytimeDropoffDriverId] = useState(attendance?.daytime_dropoff_driver_member_id ?? '')
+  const [daytimeDropoffVehicleId, setDaytimeDropoffVehicleId] = useState(attendance?.daytime_dropoff_vehicle_id ?? '')
+
   // 休日かどうかによって使うデフォルト終了時間を決定
   const serviceEndDefault = isSchoolHoliday ? holidayServiceEndTime : defaultServiceEndTime
 
@@ -421,6 +439,14 @@ export function DailyRecordForm({
         daytime_support: daytimeSupport,
         daytime_support_start_time: daytimeSupport ? (daytimeSupportStartTime || null) : null,
         daytime_support_end_time: daytimeSupport ? (daytimeSupportEndTime || null) : null,
+        daytime_pickup_departure_time: daytimeSupport ? (daytimePickupDepartureTime || null) : null,
+        daytime_pickup_arrival_time: daytimeSupport ? (daytimePickupArrivalTime || null) : null,
+        daytime_dropoff_departure_time: daytimeSupport ? (daytimeDropoffDepartureTime || null) : null,
+        daytime_dropoff_arrival_time: daytimeSupport ? (daytimeDropoffArrivalTime || null) : null,
+        daytime_pickup_driver_member_id: daytimeSupport ? (daytimePickupDriverId || null) : null,
+        daytime_pickup_vehicle_id: daytimeSupport ? (daytimePickupVehicleId || null) : null,
+        daytime_dropoff_driver_member_id: daytimeSupport ? (daytimeDropoffDriverId || null) : null,
+        daytime_dropoff_vehicle_id: daytimeSupport ? (daytimeDropoffVehicleId || null) : null,
         pickup_driver_member_id: pickupDriverId || null,
         pickup_vehicle_id: pickupVehicleId || null,
         dropoff_driver_member_id: dropoffDriverId || null,
@@ -500,12 +526,13 @@ export function DailyRecordForm({
         </div>
       )}
 
-      {/* 送迎時間 */}
+      {/* 送迎時間（放課後等デイサービス） */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Car className="h-5 w-5 text-teal-500" />
             送迎時間
+            <span className="text-xs font-normal text-gray-400 ml-1">（放課後等デイサービス）</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -703,34 +730,172 @@ export function DailyRecordForm({
                 type="checkbox"
                 checked={daytimeSupport}
                 onChange={(e) => setDaytimeSupport(e.target.checked)}
-                className="w-4 h-4 accent-teal-600"
+                className="w-4 h-4 accent-purple-600"
                 disabled={!attendance}
               />
-              <Car className="h-5 w-5 text-teal-500" />
+              <Car className="h-5 w-5 text-purple-500" />
               日中一時利用
             </label>
           </CardTitle>
         </CardHeader>
         {daytimeSupport && (
-          <CardContent>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">開始時間</label>
-                <input
-                  type="time"
-                  value={daytimeSupportStartTime}
-                  onChange={(e) => setDaytimeSupportStartTime(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
+          <CardContent className="space-y-4">
+            {/* 提供時間 */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-2">提供時間</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">開始時間</label>
+                  <input
+                    type="time"
+                    value={daytimeSupportStartTime}
+                    onChange={(e) => setDaytimeSupportStartTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">終了時間</label>
+                  <input
+                    type="time"
+                    value={daytimeSupportEndTime}
+                    onChange={(e) => setDaytimeSupportEndTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">終了時間</label>
-                <input
-                  type="time"
-                  value={daytimeSupportEndTime}
-                  onChange={(e) => setDaytimeSupportEndTime(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
+            </div>
+
+            {/* 日中一時 お迎え */}
+            <div className="border-t border-gray-100 pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-gray-500">お迎え（日中一時）</p>
+                {(daytimePickupDepartureTime || daytimePickupArrivalTime || daytimePickupDriverId || daytimePickupVehicleId) && (
+                  <button
+                    type="button"
+                    onClick={() => { setDaytimePickupDepartureTime(''); setDaytimePickupArrivalTime(''); setDaytimePickupDriverId(''); setDaytimePickupVehicleId('') }}
+                    className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    クリア
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">お迎えに行った時間</label>
+                  <input
+                    type="time"
+                    value={daytimePickupDepartureTime}
+                    onChange={(e) => setDaytimePickupDepartureTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">事務所に到着した時間</label>
+                  <input
+                    type="time"
+                    value={daytimePickupArrivalTime}
+                    onChange={(e) => setDaytimePickupArrivalTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                </div>
+                {staffMembers.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">ドライバー</label>
+                    <select
+                      value={daytimePickupDriverId}
+                      onChange={(e) => setDaytimePickupDriverId(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white"
+                    >
+                      <option value="">未選択</option>
+                      {staffMembers.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {vehicles.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">車種</label>
+                    <select
+                      value={daytimePickupVehicleId}
+                      onChange={(e) => setDaytimePickupVehicleId(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white"
+                    >
+                      <option value="">未選択</option>
+                      {vehicles.map((v) => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 日中一時 送り */}
+            <div className="border-t border-gray-100 pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-gray-500">送り（日中一時）</p>
+                {(daytimeDropoffDepartureTime || daytimeDropoffArrivalTime || daytimeDropoffDriverId || daytimeDropoffVehicleId) && (
+                  <button
+                    type="button"
+                    onClick={() => { setDaytimeDropoffDepartureTime(''); setDaytimeDropoffArrivalTime(''); setDaytimeDropoffDriverId(''); setDaytimeDropoffVehicleId('') }}
+                    className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    クリア
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">事務所を出た時間</label>
+                  <input
+                    type="time"
+                    value={daytimeDropoffDepartureTime}
+                    onChange={(e) => setDaytimeDropoffDepartureTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">自宅に到着した時間</label>
+                  <input
+                    type="time"
+                    value={daytimeDropoffArrivalTime}
+                    onChange={(e) => setDaytimeDropoffArrivalTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                </div>
+                {staffMembers.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">ドライバー</label>
+                    <select
+                      value={daytimeDropoffDriverId}
+                      onChange={(e) => setDaytimeDropoffDriverId(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white"
+                    >
+                      <option value="">未選択</option>
+                      {staffMembers.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {vehicles.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">車種</label>
+                    <select
+                      value={daytimeDropoffVehicleId}
+                      onChange={(e) => setDaytimeDropoffVehicleId(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white"
+                    >
+                      <option value="">未選択</option>
+                      {vehicles.map((v) => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
