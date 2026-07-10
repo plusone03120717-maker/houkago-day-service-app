@@ -27,6 +27,14 @@ export type AttendanceRecord = {
   daytime_support: boolean
   daytime_support_start_time: string | null
   daytime_support_end_time: string | null
+  daytime_pickup_departure_time: string | null
+  daytime_pickup_arrival_time: string | null
+  daytime_dropoff_departure_time: string | null
+  daytime_dropoff_arrival_time: string | null
+  daytime_pickup_driver_member_id: string | null
+  daytime_pickup_vehicle_id: string | null
+  daytime_dropoff_driver_member_id: string | null
+  daytime_dropoff_vehicle_id: string | null
   units: { name: string } | null
 }
 
@@ -45,6 +53,8 @@ interface Props {
   plannedDateServiceEndTime?: Record<string, string | null>
   cancelledPlanDates?: Record<string, { planId: string; overrideId: string; unitId: string }>
   basePath?: string
+  staffMembers?: Array<{ id: string; name: string }>
+  vehicles?: Array<{ id: string; name: string }>
 }
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -75,7 +85,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [] }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -103,6 +113,14 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
   const [daytimeSupport, setDaytimeSupport] = useState(false)
   const [daytimeSupportStart, setDaytimeSupportStart] = useState('')
   const [daytimeSupportEnd, setDaytimeSupportEnd] = useState('')
+  const [daytimePickupDeparture, setDaytimePickupDeparture] = useState('')
+  const [daytimePickupArrival, setDaytimePickupArrival] = useState('')
+  const [daytimeDropoffDeparture, setDaytimeDropoffDeparture] = useState('')
+  const [daytimeDropoffArrival, setDaytimeDropoffArrival] = useState('')
+  const [daytimePickupDriverId, setDaytimePickupDriverId] = useState('')
+  const [daytimePickupVehicleId, setDaytimePickupVehicleId] = useState('')
+  const [daytimeDropoffDriverId, setDaytimeDropoffDriverId] = useState('')
+  const [daytimeDropoffVehicleId, setDaytimeDropoffVehicleId] = useState('')
 
   const attendanceMap = Object.fromEntries(attendances.map((a) => [a.date, a]))
   const plannedSet = new Set(plannedDates)
@@ -127,6 +145,14 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         setDaytimeSupport(att.daytime_support)
         setDaytimeSupportStart(fmt(att.daytime_support_start_time))
         setDaytimeSupportEnd(fmt(att.daytime_support_end_time))
+        setDaytimePickupDeparture(fmt(att.daytime_pickup_departure_time))
+        setDaytimePickupArrival(fmt(att.daytime_pickup_arrival_time))
+        setDaytimeDropoffDeparture(fmt(att.daytime_dropoff_departure_time))
+        setDaytimeDropoffArrival(fmt(att.daytime_dropoff_arrival_time))
+        setDaytimePickupDriverId(att.daytime_pickup_driver_member_id ?? '')
+        setDaytimePickupVehicleId(att.daytime_pickup_vehicle_id ?? '')
+        setDaytimeDropoffDriverId(att.daytime_dropoff_driver_member_id ?? '')
+        setDaytimeDropoffVehicleId(att.daytime_dropoff_vehicle_id ?? '')
       } else {
         // 利用スケジュールのお迎え・お送り・利用時間を初期値として設定
         setPickupDeparture(fmt(plannedDatePickupTime[selectedDate]))
@@ -138,6 +164,14 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         setDaytimeSupport(false)
         setDaytimeSupportStart('')
         setDaytimeSupportEnd('')
+        setDaytimePickupDeparture('')
+        setDaytimePickupArrival('')
+        setDaytimeDropoffDeparture('')
+        setDaytimeDropoffArrival('')
+        setDaytimePickupDriverId('')
+        setDaytimePickupVehicleId('')
+        setDaytimeDropoffDriverId('')
+        setDaytimeDropoffVehicleId('')
         const plannedUnitId = plannedDateUnitId[selectedDate] ?? ''
         setNewUnitId(plannedUnitId || (units.length === 1 ? units[0].id : ''))
       }
@@ -152,6 +186,14 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
       setDaytimeSupport(false)
       setDaytimeSupportStart('')
       setDaytimeSupportEnd('')
+      setDaytimePickupDeparture('')
+      setDaytimePickupArrival('')
+      setDaytimeDropoffDeparture('')
+      setDaytimeDropoffArrival('')
+      setDaytimePickupDriverId('')
+      setDaytimePickupVehicleId('')
+      setDaytimeDropoffDriverId('')
+      setDaytimeDropoffVehicleId('')
     }
   }, [selectedDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -226,6 +268,14 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
       daytime_support: daytimeSupport,
       daytime_support_start_time: daytimeSupport ? (daytimeSupportStart || null) : null,
       daytime_support_end_time: daytimeSupport ? (daytimeSupportEnd || null) : null,
+      daytime_pickup_departure_time: daytimeSupport ? (daytimePickupDeparture || null) : null,
+      daytime_pickup_arrival_time: daytimeSupport ? (daytimePickupArrival || null) : null,
+      daytime_dropoff_departure_time: daytimeSupport ? (daytimeDropoffDeparture || null) : null,
+      daytime_dropoff_arrival_time: daytimeSupport ? (daytimeDropoffArrival || null) : null,
+      daytime_pickup_driver_member_id: daytimeSupport ? (daytimePickupDriverId || null) : null,
+      daytime_pickup_vehicle_id: daytimeSupport ? (daytimePickupVehicleId || null) : null,
+      daytime_dropoff_driver_member_id: daytimeSupport ? (daytimeDropoffDriverId || null) : null,
+      daytime_dropoff_vehicle_id: daytimeSupport ? (daytimeDropoffVehicleId || null) : null,
     }
 
     let unitId: string
@@ -289,6 +339,14 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
       daytime_support: daytimeSupport,
       daytime_support_start_time: daytimeSupport ? (daytimeSupportStart || null) : null,
       daytime_support_end_time: daytimeSupport ? (daytimeSupportEnd || null) : null,
+      daytime_pickup_departure_time: daytimeSupport ? (daytimePickupDeparture || null) : null,
+      daytime_pickup_arrival_time: daytimeSupport ? (daytimePickupArrival || null) : null,
+      daytime_dropoff_departure_time: daytimeSupport ? (daytimeDropoffDeparture || null) : null,
+      daytime_dropoff_arrival_time: daytimeSupport ? (daytimeDropoffArrival || null) : null,
+      daytime_pickup_driver_member_id: daytimeSupport ? (daytimePickupDriverId || null) : null,
+      daytime_pickup_vehicle_id: daytimeSupport ? (daytimePickupVehicleId || null) : null,
+      daytime_dropoff_driver_member_id: daytimeSupport ? (daytimeDropoffDriverId || null) : null,
+      daytime_dropoff_vehicle_id: daytimeSupport ? (daytimeDropoffVehicleId || null) : null,
     }
 
     for (const date of selectedDates) {
@@ -603,15 +661,63 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
                 type="checkbox"
                 checked={daytimeSupport}
                 onChange={(e) => setDaytimeSupport(e.target.checked)}
-                className="w-4 h-4 accent-orange-500"
+                className="w-4 h-4 accent-purple-500"
               />
-              <Clock className="h-3.5 w-3.5 text-orange-500" />
+              <Clock className="h-3.5 w-3.5 text-purple-500" />
               <span className="text-xs font-semibold text-gray-600">日中一時利用</span>
             </label>
             {daytimeSupport && (
-              <div className="grid grid-cols-2 gap-2 pl-6">
-                <TimeField label="開始時間" value={daytimeSupportStart} onChange={setDaytimeSupportStart} />
-                <TimeField label="終了時間" value={daytimeSupportEnd} onChange={setDaytimeSupportEnd} />
+              <div className="space-y-2 pl-2 border-l-2 border-purple-100">
+                <div className="grid grid-cols-2 gap-2">
+                  <TimeField label="提供開始時間" value={daytimeSupportStart} onChange={setDaytimeSupportStart} />
+                  <TimeField label="提供終了時間" value={daytimeSupportEnd} onChange={setDaytimeSupportEnd} />
+                </div>
+                <p className="text-[10px] font-semibold text-gray-500">お迎え（日中一時）</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <TimeField label="お迎え出発" value={daytimePickupDeparture} onChange={setDaytimePickupDeparture} />
+                  <TimeField label="事務所到着" value={daytimePickupArrival} onChange={setDaytimePickupArrival} />
+                </div>
+                {staffMembers.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">ドライバー（お迎え）</label>
+                    <select value={daytimePickupDriverId} onChange={(e) => setDaytimePickupDriverId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                      <option value="">未選択</option>
+                      {staffMembers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                {vehicles.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">車種（お迎え）</label>
+                    <select value={daytimePickupVehicleId} onChange={(e) => setDaytimePickupVehicleId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                      <option value="">未選択</option>
+                      {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                <p className="text-[10px] font-semibold text-gray-500">送り（日中一時）</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <TimeField label="事務所出発" value={daytimeDropoffDeparture} onChange={setDaytimeDropoffDeparture} />
+                  <TimeField label="自宅到着" value={daytimeDropoffArrival} onChange={setDaytimeDropoffArrival} />
+                </div>
+                {staffMembers.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">ドライバー（送り）</label>
+                    <select value={daytimeDropoffDriverId} onChange={(e) => setDaytimeDropoffDriverId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                      <option value="">未選択</option>
+                      {staffMembers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                {vehicles.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">車種（送り）</label>
+                    <select value={daytimeDropoffVehicleId} onChange={(e) => setDaytimeDropoffVehicleId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                      <option value="">未選択</option>
+                      {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -748,15 +854,63 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
                 type="checkbox"
                 checked={daytimeSupport}
                 onChange={(e) => setDaytimeSupport(e.target.checked)}
-                className="w-4 h-4 accent-orange-500"
+                className="w-4 h-4 accent-purple-500"
               />
-              <Clock className="h-3.5 w-3.5 text-orange-500" />
+              <Clock className="h-3.5 w-3.5 text-purple-500" />
               <span className="text-xs font-semibold text-gray-600">日中一時利用</span>
             </label>
             {daytimeSupport && (
-              <div className="grid grid-cols-2 gap-2 pl-6">
-                <TimeField label="開始時間" value={daytimeSupportStart} onChange={setDaytimeSupportStart} />
-                <TimeField label="終了時間" value={daytimeSupportEnd} onChange={setDaytimeSupportEnd} />
+              <div className="space-y-2 pl-2 border-l-2 border-purple-100">
+                <div className="grid grid-cols-2 gap-2">
+                  <TimeField label="提供開始時間" value={daytimeSupportStart} onChange={setDaytimeSupportStart} />
+                  <TimeField label="提供終了時間" value={daytimeSupportEnd} onChange={setDaytimeSupportEnd} />
+                </div>
+                <p className="text-[10px] font-semibold text-gray-500">お迎え（日中一時）</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <TimeField label="お迎え出発" value={daytimePickupDeparture} onChange={setDaytimePickupDeparture} />
+                  <TimeField label="事務所到着" value={daytimePickupArrival} onChange={setDaytimePickupArrival} />
+                </div>
+                {staffMembers.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">ドライバー（お迎え）</label>
+                    <select value={daytimePickupDriverId} onChange={(e) => setDaytimePickupDriverId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                      <option value="">未選択</option>
+                      {staffMembers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                {vehicles.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">車種（お迎え）</label>
+                    <select value={daytimePickupVehicleId} onChange={(e) => setDaytimePickupVehicleId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                      <option value="">未選択</option>
+                      {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                <p className="text-[10px] font-semibold text-gray-500">送り（日中一時）</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <TimeField label="事務所出発" value={daytimeDropoffDeparture} onChange={setDaytimeDropoffDeparture} />
+                  <TimeField label="自宅到着" value={daytimeDropoffArrival} onChange={setDaytimeDropoffArrival} />
+                </div>
+                {staffMembers.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">ドライバー（送り）</label>
+                    <select value={daytimeDropoffDriverId} onChange={(e) => setDaytimeDropoffDriverId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                      <option value="">未選択</option>
+                      {staffMembers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                {vehicles.length > 0 && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">車種（送り）</label>
+                    <select value={daytimeDropoffVehicleId} onChange={(e) => setDaytimeDropoffVehicleId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                      <option value="">未選択</option>
+                      {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
           </div>

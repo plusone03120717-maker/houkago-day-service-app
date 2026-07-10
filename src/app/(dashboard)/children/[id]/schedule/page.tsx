@@ -207,22 +207,39 @@ export default async function ChildSchedulePage({
     cancelledPlanDates[ov.date] = { planId: ov.plan_id, overrideId: ov.id, unitId: plan.unit_id }
   }
 
-  const { data: attendancesRaw } = await supabase
-    .from('daily_attendance')
-    .select(`
-      id, unit_id, date, status,
-      check_in_time, check_out_time,
-      pickup_departure_time, pickup_arrival_time,
-      dropoff_departure_time, dropoff_arrival_time,
-      service_start_time, service_end_time,
-      daytime_support, daytime_support_start_time, daytime_support_end_time,
-      units(name)
-    `)
-    .eq('child_id', childId)
-    .gte('date', startDate)
-    .lte('date', endDate)
-    .order('date')
+  const [{ data: attendancesRaw }, { data: staffMembersRaw }, { data: vehiclesRaw }] = await Promise.all([
+    supabase
+      .from('daily_attendance')
+      .select(`
+        id, unit_id, date, status,
+        check_in_time, check_out_time,
+        pickup_departure_time, pickup_arrival_time,
+        dropoff_departure_time, dropoff_arrival_time,
+        service_start_time, service_end_time,
+        daytime_support, daytime_support_start_time, daytime_support_end_time,
+        daytime_pickup_departure_time, daytime_pickup_arrival_time,
+        daytime_dropoff_departure_time, daytime_dropoff_arrival_time,
+        daytime_pickup_driver_member_id, daytime_pickup_vehicle_id,
+        daytime_dropoff_driver_member_id, daytime_dropoff_vehicle_id,
+        units(name)
+      `)
+      .eq('child_id', childId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date'),
+    supabase
+      .from('staff_members')
+      .select('id, name')
+      .eq('is_active', true)
+      .order('name'),
+    supabase
+      .from('transport_vehicles')
+      .select('id, name')
+      .order('name'),
+  ])
   const attendances = (attendancesRaw ?? []) as unknown as AttendanceRecord[]
+  const staffMembers = (staffMembersRaw ?? []) as { id: string; name: string }[]
+  const vehicles = (vehiclesRaw ?? []) as { id: string; name: string }[]
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -276,6 +293,8 @@ export default async function ChildSchedulePage({
             plannedDateServiceStartTime={plannedDateServiceStartTime}
             plannedDateServiceEndTime={plannedDateServiceEndTime}
             cancelledPlanDates={cancelledPlanDates}
+            staffMembers={staffMembers}
+            vehicles={vehicles}
           />
         </CardContent>
       </Card>
