@@ -79,7 +79,6 @@ type DayComputed = {
   transportPickup: boolean
   transportDropoff: boolean
   daytimeSupport: boolean
-  daytimeBillingCategory: 0 | 1 | 2 | null
   daytimeTransportPickup: boolean
   daytimeTransportDropoff: boolean
   extensionHours: number
@@ -381,14 +380,6 @@ export function BillingChildMonthlyView({
         ? (att.dropoff_arrival_time != null && att.dropoff_arrival_time > '00:00:00')
         : false,
       daytimeSupport: att?.daytime_support ?? false,
-      daytimeBillingCategory: att?.daytime_support
-        ? (() => {
-            const ds = att.daytime_support_start_time ?? null
-            const de = att.daytime_support_end_time ?? null
-            const dm = ds && de ? Math.max(0, timeToMinutes(de) - timeToMinutes(ds)) : 0
-            return getBillingCategory(dm, ds !== null && de !== null)
-          })()
-        : null,
       daytimeTransportPickup: att
         ? (att.daytime_pickup_arrival_time != null && att.daytime_pickup_arrival_time > '00:00:00')
         : false,
@@ -987,12 +978,10 @@ export function BillingChildMonthlyView({
                                 <span className="text-gray-300 text-xs">—</span>
                               )}
                             </td>
-                            {/* 日中一時 算定区分 */}
+                            {/* 日中一時 利用有無 */}
                             <td className="border border-gray-200 px-1 py-2 text-center bg-purple-50/30">
-                              {d.daytimeSupport && d.daytimeBillingCategory !== null ? (
-                                <div>
-                                  <BillingCircle value={d.daytimeBillingCategory} small />
-                                </div>
+                              {d.daytimeSupport ? (
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-purple-500 text-white text-[10px] font-bold">✓</span>
                               ) : (
                                 <span className="text-gray-300 text-xs">—</span>
                               )}
