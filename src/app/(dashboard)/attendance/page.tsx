@@ -92,23 +92,45 @@ export default async function AttendancePage({
     }))
   const allReservations = [...reservations, ...planReservations]
 
-  const childIds = allReservations.map((r) => r.child_id)
-  const { data: attendancesRaw } = childIds.length > 0
+  // daily_attendance を全件取得（予約・計画の有無に関わらず）
+  const { data: attendancesRaw } = selectedUnitId
     ? await supabase
         .from('daily_attendance')
         .select('*')
         .eq('unit_id', selectedUnitId)
         .eq('date', today)
-        .in('child_id', childIds)
     : { data: [] }
   const attendances = (attendancesRaw ?? []) as unknown as Attendance[]
+
+  // daily_attendance に記録があるが allReservations に含まれない子ども（子ども管理から直接登録）を追加
+  const existingChildIds = new Set(allReservations.map((r) => r.child_id))
+  const extraChildIds = attendances
+    .map((a) => a.child_id)
+    .filter((id) => !existingChildIds.has(id))
+
+  let finalReservations: Reservation[] = allReservations
+  if (extraChildIds.length > 0) {
+    const { data: extraChildrenRaw } = await supabase
+      .from('children')
+      .select('id, name, name_kana, photo_url, allergy_info, medical_info')
+      .in('id', extraChildIds)
+    type ChildInfo = { id: string; name: string; name_kana: string | null; photo_url: string | null; allergy_info: string | null; medical_info: string | null }
+    const extraReservations: Reservation[] = ((extraChildrenRaw ?? []) as unknown as ChildInfo[]).map((child) => ({
+      id: `da-${child.id}`,
+      child_id: child.id,
+      date: today,
+      status: 'scheduled',
+      children: child,
+    }))
+    finalReservations = [...allReservations, ...extraReservations]
+  }
 
   return (
     <AttendanceBoard
       date={today}
       units={units}
       selectedUnitId={selectedUnitId}
-      reservations={allReservations}
+      reservations={finalReservations}
       attendances={attendances}
       staffId={user?.id ?? ''}
     />
