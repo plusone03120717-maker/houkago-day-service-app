@@ -573,12 +573,6 @@ export default function StaffLiffPage() {
                 </button>
               )}
 
-              {/* ログインアカウントなし注意 */}
-              {!staff?.userId && (
-                <p className="text-xs text-gray-400 text-center pt-1">
-                  有給・残業申請はログインアカウントが必要です
-                </p>
-              )}
             </div>
           </div>
         </div>
