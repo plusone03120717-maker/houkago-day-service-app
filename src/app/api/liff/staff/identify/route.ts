@@ -13,21 +13,28 @@ export async function POST(req: NextRequest) {
     if (!accessToken) return NextResponse.json({ error: 'accessToken が必要です' }, { status: 400 })
 
     const lineUserId = await verifyLineAccessToken(accessToken)
+    console.log('[identify] lineUserId:', lineUserId)
 
     // staff_members.line_user_id で検索
-    let staffRow = (await adminClient
+    const { data: staffRowData, error: staffRowError } = await adminClient
       .from('staff_members')
       .select('id, name, user_id')
       .eq('line_user_id', lineUserId)
-      .maybeSingle()).data as { id: string; name: string; user_id: string | null } | null
+      .maybeSingle()
+    console.log('[identify] staff_members query data:', JSON.stringify(staffRowData))
+    console.log('[identify] staff_members query error:', JSON.stringify(staffRowError))
+
+    let staffRow = staffRowData as { id: string; name: string; user_id: string | null } | null
 
     if (!staffRow) {
       // users.line_user_id → staff_members.user_id で検索（ログインありスタッフ）
-      const { data: linkedUser } = await adminClient
+      const { data: linkedUser, error: userError } = await adminClient
         .from('users')
         .select('id')
         .eq('line_user_id', lineUserId)
         .maybeSingle()
+      console.log('[identify] users query data:', JSON.stringify(linkedUser))
+      console.log('[identify] users query error:', JSON.stringify(userError))
 
       if (linkedUser) {
         const { data: member } = await adminClient
