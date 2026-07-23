@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
       date,
       days_used: daysUsed,
       note: 'LINEアプリから申請',
+      is_new: true,
     } as never)
 
     if (error) {

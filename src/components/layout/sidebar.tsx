@@ -27,6 +27,7 @@ import {
   CalendarRange,
   SmartphoneNfc,
   KeyRound,
+  Inbox,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -53,6 +54,7 @@ const adminNav = [
       { href: '/shifts/leave', label: '有給管理', icon: Umbrella },
       { href: '/timecard', label: 'タイムカード', icon: Clock },
       { href: '/billing', label: '国保連請求', icon: CreditCard },
+      { href: '/staff-requests', label: 'スタッフ申請', icon: Inbox },
     ],
   },
   {

@@ -32,11 +32,19 @@ export default async function DashboardLayout({
 
   const role = userData?.role ?? 'staff'
 
+  // スタッフ申請の未確認件数
+  const [{ count: overtimeCount }, { count: leaveCount }, { count: breakCount }] = await Promise.all([
+    supabase.from('overtime_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+    supabase.from('paid_leave_usages').select('id', { count: 'exact', head: true }).eq('is_new', true),
+    supabase.from('time_records').select('id', { count: 'exact', head: true }).eq('type', 'break_start').eq('is_new', true),
+  ])
+  const pendingCount = (overtimeCount ?? 0) + (leaveCount ?? 0) + (breakCount ?? 0)
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <Sidebar role={role} />
       <div className="flex flex-col flex-1 overflow-hidden">
-        <Header userName={userData?.name} />
+        <Header userName={userData?.name} pendingCount={pendingCount} />
         <main className="flex-1 overflow-y-auto p-6">
           {children}
         </main>

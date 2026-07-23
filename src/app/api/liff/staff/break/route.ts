@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     const breakEndAt = new Date(`${date}T${endTime}:00+09:00`).toISOString()
 
     const { error } = await adminClient.from('time_records').insert([
-      { staff_member_id: staffMemberId, type: 'break_start', recorded_at: breakStartAt },
+      { staff_member_id: staffMemberId, type: 'break_start', recorded_at: breakStartAt, is_new: true },
       { staff_member_id: staffMemberId, type: 'break_end', recorded_at: breakEndAt },
     ] as never)
 
