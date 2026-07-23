@@ -447,7 +447,7 @@ export default function StaffLiffPage() {
               {/* 申請フォーム群 */}
 
               {/* 有給申請 */}
-              {!dateInfo.leave && staff?.userId && (
+              {!dateInfo.leave && (
                 activeForm === 'leave' ? (
                   <div className="bg-green-50 rounded-2xl p-4 border border-green-100">
                     <p className="text-sm font-semibold text-green-800 mb-3">有給申請</p>
@@ -489,7 +489,7 @@ export default function StaffLiffPage() {
               )}
 
               {/* 残業申請 */}
-              {!dateInfo.overtime && staff?.userId && (
+              {!dateInfo.overtime && (
                 activeForm === 'overtime' ? (
                   <div className="bg-orange-50 rounded-2xl p-4 border border-orange-100">
                     <p className="text-sm font-semibold text-orange-800 mb-3">残業申請</p>

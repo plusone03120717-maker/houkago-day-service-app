@@ -247,17 +247,19 @@ export function TimecardBoard({
     const userId = member.user_id
     const monthStart = `${ym}-01`
     const monthEnd = getLastDayOfMonth(ym)
-    if (!userId) { setShifts([]); setOvertimeRequests([]); return }
 
-    const [{ data: sData }, { data: oData }] = await Promise.all([
-      supabase.from('staff_shifts').select('id, date, shift_type, start_time, end_time, break_start_time, break_end_time')
-        .eq('staff_id', userId).gte('date', monthStart).lte('date', monthEnd),
-      supabase.from('overtime_requests')
-        .select('id, date, scheduled_end_time, actual_end_time, overtime_minutes, request_type, status, note')
-        .eq('staff_id', userId).gte('date', monthStart).lte('date', monthEnd),
-    ])
-    setShifts((sData ?? []) as ShiftEntry[])
+    // 残業申請は staff_members.id で検索（ログイン不要）
+    const { data: oData } = await supabase.from('overtime_requests')
+      .select('id, date, scheduled_end_time, actual_end_time, overtime_minutes, request_type, status, note')
+      .eq('staff_id', member.id).gte('date', monthStart).lte('date', monthEnd)
     setOvertimeRequests((oData ?? []) as OvertimeRequest[])
+
+    // シフトはログインアカウントが必要
+    if (!userId) { setShifts([]); return }
+    const { data: sData } = await supabase.from('staff_shifts')
+      .select('id, date, shift_type, start_time, end_time, break_start_time, break_end_time')
+      .eq('staff_id', userId).gte('date', monthStart).lte('date', monthEnd)
+    setShifts((sData ?? []) as ShiftEntry[])
   }
 
   async function fetchRateForMonth(sId: string, ym: string) {
@@ -412,8 +414,7 @@ export function TimecardBoard({
   // ─── 残業申請 ──────────────────────────────────────────────────────────────
 
   async function handlePreOTSubmit() {
-    const userId = selectedStaff?.user_id
-    if (!userId || !preOTForm.date) return
+    if (!selectedStaffId || !preOTForm.date) return
     const ot = parseInt(preOTForm.overtime_minutes)
     if (!ot || ot <= 0) return
     setSavingPreOT(true)
@@ -422,7 +423,7 @@ export function TimecardBoard({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        staff_id: userId,
+        staff_id: selectedStaffId,
         date: preOTForm.date,
         scheduled_end_time: shift?.end_time ?? null,
         actual_end_time: null,

@@ -23,11 +23,10 @@ export default async function PaidLeavePage({
 
   const year = params.year ? parseInt(params.year) : currentYear()
 
-  // スタッフ一覧（ログインあり）
+  // スタッフ一覧（staff_members.id を使用）
   const { data: staffRaw } = await supabase
-    .from('users')
+    .from('staff_members')
     .select('id, name')
-    .in('role', ['admin', 'staff'])
     .order('name')
   const staffList = (staffRaw ?? []) as StaffUser[]
   const staffIds = staffList.map((s) => s.id)

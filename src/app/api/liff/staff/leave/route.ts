@@ -24,33 +24,20 @@ export async function POST(req: NextRequest) {
 
     const lineUserId = await verifyLineAccessToken(accessToken)
 
-    let userId: string | null = null
     const { data: staffRows } = await adminClient
       .from('staff_members')
-      .select('user_id')
+      .select('id')
       .eq('line_user_id', lineUserId)
       .limit(1)
-    const staffRow = staffRows && (staffRows as { user_id: string | null }[]).length > 0
-      ? (staffRows as { user_id: string | null }[])[0] : null
+    const staffMemberId = staffRows && (staffRows as { id: string }[]).length > 0
+      ? (staffRows as { id: string }[])[0].id : null
 
-    if (staffRow) {
-      userId = staffRow.user_id
-    } else {
-      const { data: userRows } = await adminClient
-        .from('users')
-        .select('id')
-        .eq('line_user_id', lineUserId)
-        .limit(1)
-      const linkedUser = userRows && (userRows as { id: string }[]).length > 0 ? (userRows as { id: string }[])[0] : null
-      if (linkedUser) userId = linkedUser.id
-    }
-
-    if (!userId) {
-      return NextResponse.json({ error: 'スタッフが見つかりません、またはアカウント未登録です' }, { status: 403 })
+    if (!staffMemberId) {
+      return NextResponse.json({ error: 'スタッフが見つかりません' }, { status: 403 })
     }
 
     const { error } = await adminClient.from('paid_leave_usages').insert({
-      staff_id: userId,
+      staff_id: staffMemberId,
       date,
       days_used: daysUsed,
       note: 'LINEアプリから申請',

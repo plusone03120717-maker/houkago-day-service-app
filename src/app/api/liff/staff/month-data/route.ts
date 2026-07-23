@@ -73,26 +73,22 @@ export async function POST(req: NextRequest) {
     const endDate = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
 
     const [overtimeRes, leaveRes, breakRes] = await Promise.all([
-      // 残業申請（users.id が必要）
-      userId
-        ? adminClient
-            .from('overtime_requests')
-            .select('id, date, actual_end_time, status')
-            .eq('staff_id', userId)
-            .gte('date', startDate)
-            .lte('date', endDate)
-            .eq('request_type', 'pre')
-        : Promise.resolve({ data: [] }),
+      // 残業申請（staff_members.id で検索）
+      adminClient
+        .from('overtime_requests')
+        .select('id, date, actual_end_time, status')
+        .eq('staff_id', staffMemberId)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .eq('request_type', 'pre'),
 
-      // 有給使用（users.id が必要）
-      userId
-        ? adminClient
-            .from('paid_leave_usages')
-            .select('id, date, days_used')
-            .eq('staff_id', userId)
-            .gte('date', startDate)
-            .lte('date', endDate)
-        : Promise.resolve({ data: [] }),
+      // 有給使用（staff_members.id で検索）
+      adminClient
+        .from('paid_leave_usages')
+        .select('id, date, days_used')
+        .eq('staff_id', staffMemberId)
+        .gte('date', startDate)
+        .lte('date', endDate),
 
       // 中抜け記録（staff_members.id で検索）
       adminClient
