@@ -8,11 +8,11 @@ type LiffState =
   | { status: 'ready'; liff: typeof Liff; lineUserId: string; displayName: string }
   | { status: 'error'; message: string }
 
-export function useLiff() {
+export function useLiff(liffIdOverride?: string) {
   const [state, setState] = useState<LiffState>({ status: 'loading' })
 
   useEffect(() => {
-    const liffId = process.env.NEXT_PUBLIC_LIFF_ID
+    const liffId = liffIdOverride ?? process.env.NEXT_PUBLIC_LIFF_ID
     if (!liffId) {
       setState({ status: 'error', message: 'LIFF IDが設定されていません' })
       return
@@ -37,6 +37,7 @@ export function useLiff() {
         setState({ status: 'error', message: String(err) })
       }
     })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return state

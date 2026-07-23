@@ -131,14 +131,7 @@ async function findMissingClockOut(adminClient: any, staffId: string): Promise<s
   return null
 }
 
-const HELP_TEXT = `利用できるコマンド：
-・出勤
-・退勤
-・残業申請 HH:MM
-・残業申請 YYYY-MM-DD HH:MM
-・有給申請 YYYY-MM-DD
-・有給申請 YYYY-MM-DD 半日
-・中抜け申請 HH:MM HH:MM`
+const LIFF_STAFF_URL = process.env.LINE_LIFF_STAFF_URL ?? ''
 
 export async function POST(request: NextRequest) {
   const channelSecret = process.env.LINE_CHANNEL_SECRET
@@ -245,104 +238,13 @@ export async function POST(request: NextRequest) {
       continue
     }
 
-    // 残業申請: 「残業申請 HH:MM」or「残業申請 YYYY-MM-DD HH:MM」
-    const overtimeMatch = text.match(/^残業申請\s+(?:(\d{4}-\d{2}-\d{2})\s+)?(\d{2}:\d{2})$/)
-    if (overtimeMatch) {
-      const staff = await findStaffByLineUserId(adminClient, userId)
-      if (!staff) {
-        await replyMessage(replyToken, `スタッフとして登録されていません。\n管理者にLINE User ID（${userId}）を伝えて登録してもらってください。`, channelToken)
-        continue
-      }
-      if (!staff.user_id) {
-        await replyMessage(replyToken, `${staff.name}さんのアカウントは残業申請に対応していません。管理者にお問い合わせください。`, channelToken)
-        continue
-      }
-      const targetDate = overtimeMatch[1] ?? todayJST()
-      const endTimeHHMM = overtimeMatch[2]
-      const { error } = await adminClient.from('overtime_requests').insert({
-        staff_id: staff.user_id,
-        date: targetDate,
-        actual_end_time: `${endTimeHHMM}:00`,
-        request_type: 'pre',
-        status: 'pending',
-        note: 'LINEから申請',
-      })
-      if (error) {
-        const msg = error.code === '23505'
-          ? `⚠️ ${targetDate}の残業申請はすでに登録されています。`
-          : `❌ 残業申請の登録に失敗しました。管理者にご連絡ください。`
-        await replyMessage(replyToken, msg, channelToken)
-      } else {
-        const [y, m, d] = targetDate.split('-').map(Number)
-        await replyMessage(replyToken, `✅ ${staff.name}さんの残業申請を受け付けました\n📅 ${y}年${m}月${d}日\n⏰ 終了予定：${endTimeHHMM}\n\n管理者の承認をお待ちください。`, channelToken)
-      }
-      continue
-    }
-
-    // 有給申請: 「有給申請 YYYY-MM-DD」or「有給申請 YYYY-MM-DD 半日」
-    const leaveMatch = text.match(/^有給申請\s+(\d{4}-\d{2}-\d{2})(\s+半日)?$/)
-    if (leaveMatch) {
-      const staff = await findStaffByLineUserId(adminClient, userId)
-      if (!staff) {
-        await replyMessage(replyToken, `スタッフとして登録されていません。\n管理者にLINE User ID（${userId}）を伝えて登録してもらってください。`, channelToken)
-        continue
-      }
-      if (!staff.user_id) {
-        await replyMessage(replyToken, `${staff.name}さんのアカウントは有給申請に対応していません。管理者にお問い合わせください。`, channelToken)
-        continue
-      }
-      const targetDate = leaveMatch[1]
-      const isHalfDay = !!leaveMatch[2]
-      const { error } = await adminClient.from('paid_leave_usages').insert({
-        staff_id: staff.user_id,
-        date: targetDate,
-        days_used: isHalfDay ? 0.5 : 1.0,
-        note: 'LINEから申請',
-      })
-      if (error) {
-        const msg = error.code === '23505'
-          ? `⚠️ ${targetDate}の有給申請はすでに登録されています。`
-          : `❌ 有給申請の登録に失敗しました。管理者にご連絡ください。`
-        await replyMessage(replyToken, msg, channelToken)
-      } else {
-        const [y, m, d] = targetDate.split('-').map(Number)
-        const label = isHalfDay ? '半日' : '1日'
-        await replyMessage(replyToken, `✅ ${staff.name}さんの有給申請を受け付けました\n📅 ${y}年${m}月${d}日（${label}）\n\n管理者に通知されます。`, channelToken)
-      }
-      continue
-    }
-
-    // 中抜け申請: 「中抜け申請 HH:MM HH:MM」
-    const breakMatch = text.match(/^中抜け申請\s+(\d{2}:\d{2})\s+(\d{2}:\d{2})$/)
-    if (breakMatch) {
-      const staff = await findStaffByLineUserId(adminClient, userId)
-      if (!staff) {
-        await replyMessage(replyToken, `スタッフとして登録されていません。\n管理者にLINE User ID（${userId}）を伝えて登録してもらってください。`, channelToken)
-        continue
-      }
-      const breakStart = breakMatch[1]
-      const breakEnd = breakMatch[2]
-      if (breakStart >= breakEnd) {
-        await replyMessage(replyToken, `⚠️ 開始時刻は終了時刻より前に指定してください。\n例：中抜け申請 12:00 13:00`, channelToken)
-        continue
-      }
-      const today = todayJST()
-      const { error } = await adminClient.from('time_records').insert([
-        { staff_member_id: staff.id, type: 'break_start', recorded_at: new Date(`${today}T${breakStart}:00+09:00`).toISOString() },
-        { staff_member_id: staff.id, type: 'break_end', recorded_at: new Date(`${today}T${breakEnd}:00+09:00`).toISOString() },
-      ])
-      if (error) {
-        await replyMessage(replyToken, `❌ 中抜け申請の登録に失敗しました。管理者にご連絡ください。`, channelToken)
-      } else {
-        await replyMessage(replyToken, `✅ ${staff.name}さんの中抜けを記録しました\n📅 ${today}\n⏰ ${breakStart}〜${breakEnd}`, channelToken)
-      }
-      continue
-    }
-
-    // その他: コマンド一覧＋LINE User ID
+    // その他: LINE User ID ＋ 申請ページ案内
+    const staffAppMsg = LIFF_STAFF_URL
+      ? `有給・残業・中抜けの申請はこちらから：\n${LIFF_STAFF_URL}`
+      : '有給・残業・中抜けの申請は管理者から共有されたURLよりご利用ください。'
     await replyMessage(
       replyToken,
-      `あなたのLINE User IDは以下です。\n\n${userId}\n\n${HELP_TEXT}`,
+      `あなたのLINE User IDは以下です。\n\n${userId}\n\nこのIDを管理アプリの「設定」→「スタッフ管理」→ご自身の名前→「LINE User ID」欄に貼り付けてください。\n\n${staffAppMsg}`,
       channelToken
     )
   }
