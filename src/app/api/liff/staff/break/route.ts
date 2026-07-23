@@ -62,12 +62,12 @@ export async function POST(req: NextRequest) {
 
     const { error } = await adminClient.from('time_records').insert([
       { staff_member_id: staffMemberId, type: 'break_start', recorded_at: breakStartAt, is_new: true },
-      { staff_member_id: staffMemberId, type: 'break_end', recorded_at: breakEndAt },
+      { staff_member_id: staffMemberId, type: 'break_end', recorded_at: breakEndAt, is_new: false },
     ] as never)
 
     if (error) {
       console.error('[liff/staff/break] insert error:', JSON.stringify(error))
-      return NextResponse.json({ error: `登録に失敗しました: ${error.message}` }, { status: 500 })
+      return NextResponse.json({ error: '登録に失敗しました' }, { status: 500 })
     }
 
     return NextResponse.json({ ok: true })
