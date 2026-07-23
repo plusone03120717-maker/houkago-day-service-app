@@ -46,6 +46,7 @@ export default function StaffLiffPage() {
   const [staff, setStaff] = useState<StaffInfo | null>(null)
   const [pageStatus, setPageStatus] = useState<'loading' | 'noToken' | 'notRegistered' | 'apiError' | 'ready'>('loading')
   const [debugError, setDebugError] = useState<string | null>(null)
+  const [serverLineId, setServerLineId] = useState<string | null>(null)
 
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
@@ -79,10 +80,11 @@ export default function StaffLiffPage() {
       body: JSON.stringify({ accessToken }),
     })
       .then(async r => {
-        const json = await r.json() as { staff?: StaffInfo; error?: string }
+        const json = await r.json() as { staff?: StaffInfo; error?: string; debug_server_line_id?: string }
         if (json.staff) {
           setStaff(json.staff); setPageStatus('ready')
         } else if (r.status === 404) {
+          if (json.debug_server_line_id) setServerLineId(json.debug_server_line_id)
           setPageStatus('notRegistered')
         } else {
           setDebugError(json.error ?? `HTTP ${r.status}`)
@@ -251,8 +253,13 @@ export default function StaffLiffPage() {
           管理者にLINE連携の設定を依頼してください。
         </p>
         {liffState.status === 'ready' && (
-          <p className="text-xs text-gray-400 font-mono break-all">
-            LINE ID: {liffState.lineUserId}
+          <p className="text-xs text-gray-400 font-mono break-all mb-1">
+            クライアントID: {liffState.lineUserId}
+          </p>
+        )}
+        {serverLineId && (
+          <p className="text-xs text-red-400 font-mono break-all">
+            サーバーID: {serverLineId}
           </p>
         )}
       </div>

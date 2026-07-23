@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!staffRow) {
-      return NextResponse.json({ error: 'スタッフが見つかりません' }, { status: 404 })
+      return NextResponse.json({ error: 'スタッフが見つかりません', debug_server_line_id: lineUserId }, { status: 404 })
     }
 
     return NextResponse.json({
