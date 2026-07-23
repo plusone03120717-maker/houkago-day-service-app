@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '日数は 0.5 か 1.0 のみ指定できます' }, { status: 400 })
     }
 
-    const lineUserId = await verifyLineIdToken(idToken)
+    const lineUserId = await verifyLineIdToken(idToken, process.env.LINE_CHANNEL_ID_STAFF)
 
     let userId: string | null = null
     const { data: staffRow } = await adminClient

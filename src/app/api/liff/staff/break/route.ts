@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '開始時刻は終了時刻より前にしてください' }, { status: 400 })
     }
 
-    const lineUserId = await verifyLineIdToken(idToken)
+    const lineUserId = await verifyLineIdToken(idToken, process.env.LINE_CHANNEL_ID_STAFF)
 
     let staffMemberId: string | null = null
     const { data: staffRow } = await adminClient

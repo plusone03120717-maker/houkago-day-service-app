@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     const { idToken } = await req.json() as { idToken?: string }
     if (!idToken) return NextResponse.json({ error: 'idToken が必要です' }, { status: 400 })
 
-    const lineUserId = await verifyLineIdToken(idToken)
+    const lineUserId = await verifyLineIdToken(idToken, process.env.LINE_CHANNEL_ID_STAFF)
 
     // staff_members.line_user_id で検索
     let staffRow = (await adminClient

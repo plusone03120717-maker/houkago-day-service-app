@@ -1,12 +1,13 @@
 /**
  * LINE IDトークンをLINEのサーバーで検証し、line_user_id (sub) を返す。
  * クライアントから送られたトークンを信用せず必ずサーバー側で検証すること。
+ * channelId を省略すると環境変数 LINE_CHANNEL_ID を使用する。
  */
-export async function verifyLineIdToken(idToken: string): Promise<string> {
-  const channelId = process.env.LINE_CHANNEL_ID
-  if (!channelId) throw new Error('LINE_CHANNEL_ID が設定されていません')
+export async function verifyLineIdToken(idToken: string, channelId?: string): Promise<string> {
+  const effectiveChannelId = channelId ?? process.env.LINE_CHANNEL_ID
+  if (!effectiveChannelId) throw new Error('LINE_CHANNEL_ID が設定されていません')
 
-  const params = new URLSearchParams({ id_token: idToken, client_id: channelId })
+  const params = new URLSearchParams({ id_token: idToken, client_id: effectiveChannelId })
   const res = await fetch('https://api.line.me/oauth2/v2.1/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

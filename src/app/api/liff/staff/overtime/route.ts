@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '日付の形式が正しくありません' }, { status: 400 })
     }
 
-    const lineUserId = await verifyLineIdToken(idToken)
+    const lineUserId = await verifyLineIdToken(idToken, process.env.LINE_CHANNEL_ID_STAFF)
 
     // ユーザーID取得
     let userId: string | null = null
