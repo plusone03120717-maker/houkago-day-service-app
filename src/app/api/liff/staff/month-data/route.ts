@@ -32,30 +32,35 @@ export async function POST(req: NextRequest) {
     let staffMemberId: string | null = null
     let userId: string | null = null
 
-    const { data: staffRow } = await adminClient
+    const { data: staffRows } = await adminClient
       .from('staff_members')
       .select('id, user_id')
       .eq('line_user_id', lineUserId)
-      .maybeSingle()
+      .limit(1)
+    const staffRow = staffRows && (staffRows as { id: string; user_id: string | null }[]).length > 0
+      ? (staffRows as { id: string; user_id: string | null }[])[0] : null
 
     if (staffRow) {
-      staffMemberId = (staffRow as { id: string; user_id: string | null }).id
-      userId = (staffRow as { id: string; user_id: string | null }).user_id ?? null
+      staffMemberId = staffRow.id
+      userId = staffRow.user_id ?? null
     } else {
-      const { data: linkedUser } = await adminClient
+      const { data: userRows } = await adminClient
         .from('users')
         .select('id')
         .eq('line_user_id', lineUserId)
-        .maybeSingle()
+        .limit(1)
+      const linkedUser = userRows && (userRows as { id: string }[]).length > 0 ? (userRows as { id: string }[])[0] : null
       if (linkedUser) {
-        const { data: member } = await adminClient
+        const { data: memberRows } = await adminClient
           .from('staff_members')
           .select('id, user_id')
-          .eq('user_id', (linkedUser as { id: string }).id)
-          .maybeSingle()
+          .eq('user_id', linkedUser.id)
+          .limit(1)
+        const member = memberRows && (memberRows as { id: string; user_id: string | null }[]).length > 0
+          ? (memberRows as { id: string; user_id: string | null }[])[0] : null
         if (member) {
-          staffMemberId = (member as { id: string; user_id: string | null }).id
-          userId = (member as { id: string; user_id: string | null }).user_id ?? null
+          staffMemberId = member.id
+          userId = member.user_id ?? null
         }
       }
     }

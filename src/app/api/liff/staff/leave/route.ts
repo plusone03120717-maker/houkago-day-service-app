@@ -25,21 +25,24 @@ export async function POST(req: NextRequest) {
     const lineUserId = await verifyLineAccessToken(accessToken)
 
     let userId: string | null = null
-    const { data: staffRow } = await adminClient
+    const { data: staffRows } = await adminClient
       .from('staff_members')
       .select('user_id')
       .eq('line_user_id', lineUserId)
-      .maybeSingle()
+      .limit(1)
+    const staffRow = staffRows && (staffRows as { user_id: string | null }[]).length > 0
+      ? (staffRows as { user_id: string | null }[])[0] : null
 
     if (staffRow) {
-      userId = (staffRow as { user_id: string | null }).user_id
+      userId = staffRow.user_id
     } else {
-      const { data: linkedUser } = await adminClient
+      const { data: userRows } = await adminClient
         .from('users')
         .select('id')
         .eq('line_user_id', lineUserId)
-        .maybeSingle()
-      if (linkedUser) userId = (linkedUser as { id: string }).id
+        .limit(1)
+      const linkedUser = userRows && (userRows as { id: string }[]).length > 0 ? (userRows as { id: string }[])[0] : null
+      if (linkedUser) userId = linkedUser.id
     }
 
     if (!userId) {

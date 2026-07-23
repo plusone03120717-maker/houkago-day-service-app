@@ -7,54 +7,53 @@ const adminClient = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
+type StaffRow = { id: string; name: string; user_id: string | null }
+
+async function findStaffByLineUserId(lineUserId: string): Promise<StaffRow | null> {
+  // 重複行があっても最初の1件を取得する
+  const { data: rows } = await adminClient
+    .from('staff_members')
+    .select('id, name, user_id')
+    .eq('line_user_id', lineUserId)
+    .limit(1)
+  if (rows && (rows as StaffRow[]).length > 0) return (rows as StaffRow[])[0]
+
+  // users.line_user_id → staff_members.user_id で検索（ログインありスタッフ）
+  const { data: userRows } = await adminClient
+    .from('users')
+    .select('id')
+    .eq('line_user_id', lineUserId)
+    .limit(1)
+  const linkedUser = userRows && (userRows as { id: string }[]).length > 0 ? (userRows as { id: string }[])[0] : null
+  if (!linkedUser) return null
+
+  const { data: memberRows } = await adminClient
+    .from('staff_members')
+    .select('id, name, user_id')
+    .eq('user_id', linkedUser.id)
+    .limit(1)
+  const member = memberRows && (memberRows as StaffRow[]).length > 0 ? (memberRows as StaffRow[])[0] : null
+  if (!member) return null
+
+  await adminClient
+    .from('staff_members')
+    .update({ line_user_id: lineUserId } as never)
+    .eq('id', member.id)
+
+  return member
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { accessToken } = await req.json() as { accessToken?: string }
     if (!accessToken) return NextResponse.json({ error: 'accessToken が必要です' }, { status: 400 })
 
     const lineUserId = await verifyLineAccessToken(accessToken)
-    console.log('[identify] lineUserId:', lineUserId)
 
-    // staff_members.line_user_id で検索
-    const { data: staffRowData, error: staffRowError } = await adminClient
-      .from('staff_members')
-      .select('id, name, user_id')
-      .eq('line_user_id', lineUserId)
-      .maybeSingle()
-    console.log('[identify] staff_members query data:', JSON.stringify(staffRowData))
-    console.log('[identify] staff_members query error:', JSON.stringify(staffRowError))
-
-    let staffRow = staffRowData as { id: string; name: string; user_id: string | null } | null
+    const staffRow = await findStaffByLineUserId(lineUserId)
 
     if (!staffRow) {
-      // users.line_user_id → staff_members.user_id で検索（ログインありスタッフ）
-      const { data: linkedUser, error: userError } = await adminClient
-        .from('users')
-        .select('id')
-        .eq('line_user_id', lineUserId)
-        .maybeSingle()
-      console.log('[identify] users query data:', JSON.stringify(linkedUser))
-      console.log('[identify] users query error:', JSON.stringify(userError))
-
-      if (linkedUser) {
-        const { data: member } = await adminClient
-          .from('staff_members')
-          .select('id, name, user_id')
-          .eq('user_id', (linkedUser as { id: string }).id)
-          .maybeSingle()
-
-        if (member) {
-          await adminClient
-            .from('staff_members')
-            .update({ line_user_id: lineUserId } as never)
-            .eq('id', (member as { id: string }).id)
-          staffRow = member as { id: string; name: string; user_id: string | null }
-        }
-      }
-    }
-
-    if (!staffRow) {
-      return NextResponse.json({ error: 'スタッフが見つかりません', debug_server_line_id: lineUserId }, { status: 404 })
+      return NextResponse.json({ error: 'スタッフが見つかりません' }, { status: 404 })
     }
 
     return NextResponse.json({
