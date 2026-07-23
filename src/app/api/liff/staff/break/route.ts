@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyLineIdToken } from '@/lib/line/verify-id-token'
+import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,10 +9,10 @@ const adminClient = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { idToken, date, startTime, endTime } = await req.json() as {
-      idToken?: string; date?: string; startTime?: string; endTime?: string
+    const { accessToken, date, startTime, endTime } = await req.json() as {
+      accessToken?: string; date?: string; startTime?: string; endTime?: string
     }
-    if (!idToken || !date || !startTime || !endTime) {
+    if (!accessToken || !date || !startTime || !endTime) {
       return NextResponse.json({ error: 'パラメータが不足しています' }, { status: 400 })
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '開始時刻は終了時刻より前にしてください' }, { status: 400 })
     }
 
-    const lineUserId = await verifyLineIdToken(idToken, process.env.LINE_CHANNEL_ID_STAFF)
+    const lineUserId = await verifyLineAccessToken(accessToken)
 
     let staffMemberId: string | null = null
     const { data: staffRow } = await adminClient

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyLineIdToken } from '@/lib/line/verify-id-token'
+import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,14 +19,14 @@ function toJSTTime(isoStr: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const { idToken, year, month } = await req.json() as {
-      idToken?: string; year?: number; month?: number
+    const { accessToken, year, month } = await req.json() as {
+      accessToken?: string; year?: number; month?: number
     }
-    if (!idToken || !year || !month) {
+    if (!accessToken || !year || !month) {
       return NextResponse.json({ error: 'パラメータが不足しています' }, { status: 400 })
     }
 
-    const lineUserId = await verifyLineIdToken(idToken, process.env.LINE_CHANNEL_ID_STAFF)
+    const lineUserId = await verifyLineAccessToken(accessToken)
 
     // スタッフ特定
     let staffMemberId: string | null = null

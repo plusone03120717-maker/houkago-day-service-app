@@ -1,8 +1,3 @@
-/**
- * LINE IDトークンをLINEのサーバーで検証し、line_user_id (sub) を返す。
- * クライアントから送られたトークンを信用せず必ずサーバー側で検証すること。
- * channelId を省略すると環境変数 LINE_CHANNEL_ID を使用する。
- */
 export async function verifyLineIdToken(idToken: string, channelId?: string): Promise<string> {
   const effectiveChannelId = channelId ?? process.env.LINE_CHANNEL_ID
   if (!effectiveChannelId) throw new Error('LINE_CHANNEL_ID が設定されていません')
@@ -23,4 +18,22 @@ export async function verifyLineIdToken(idToken: string, channelId?: string): Pr
   if (!json.sub) throw new Error('LINE token に sub が含まれていません')
 
   return json.sub
+}
+
+// アクセストークンをLINE Profile APIで検証し、lineUserIdを返す。
+// openid スコープ不要で profile スコープのみで動作する。
+export async function verifyLineAccessToken(accessToken: string): Promise<string> {
+  const res = await fetch('https://api.line.me/v2/profile', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`LINE access token verification failed: ${text}`)
+  }
+
+  const json = await res.json() as { userId?: string }
+  if (!json.userId) throw new Error('LINE profile に userId が含まれていません')
+
+  return json.userId
 }

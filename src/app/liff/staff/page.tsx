@@ -69,13 +69,13 @@ export default function StaffLiffPage() {
   // スタッフ特定
   useEffect(() => {
     if (liffState.status !== 'ready') return
-    const idToken = liffState.liff.getIDToken()
-    if (!idToken) { setPageStatus('notRegistered'); return }
+    const accessToken = liffState.liff.getAccessToken()
+    if (!accessToken) { setPageStatus('notRegistered'); return }
 
     fetch('/api/liff/staff/identify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken }),
+      body: JSON.stringify({ accessToken }),
     })
       .then(r => r.json())
       .then((json: { staff?: StaffInfo }) => {
@@ -88,14 +88,14 @@ export default function StaffLiffPage() {
   // 月次データ取得
   const loadMonth = useCallback((y: number, m: number) => {
     if (liffState.status !== 'ready') return
-    const idToken = liffState.liff.getIDToken()
-    if (!idToken) return
+    const accessToken = liffState.liff.getAccessToken()
+    if (!accessToken) return
 
     setLoadingMonth(true)
     fetch('/api/liff/staff/month-data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken, year: y, month: m }),
+      body: JSON.stringify({ accessToken, year: y, month: m }),
     })
       .then(r => r.json())
       .then((json: { overtimeRequests?: OvertimeReq[]; leaveUsages?: LeaveUsage[]; breakRecords?: BreakRecord[] }) => {
@@ -148,15 +148,15 @@ export default function StaffLiffPage() {
   // 申請送信
   async function submit(endpoint: string, body: Record<string, unknown>) {
     if (liffState.status !== 'ready') return
-    const idToken = liffState.liff.getIDToken()
-    if (!idToken) return
+    const accessToken = liffState.liff.getAccessToken()
+    if (!accessToken) return
 
     setSubmitting(true)
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, ...body }),
+        body: JSON.stringify({ accessToken, ...body }),
       })
       const json = await res.json() as { error?: string }
       if (!res.ok) {
