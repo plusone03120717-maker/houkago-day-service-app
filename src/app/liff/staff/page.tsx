@@ -44,7 +44,8 @@ export default function StaffLiffPage() {
   const liffState = useLiff(process.env.NEXT_PUBLIC_LIFF_STAFF_ID)
 
   const [staff, setStaff] = useState<StaffInfo | null>(null)
-  const [pageStatus, setPageStatus] = useState<'loading' | 'notRegistered' | 'ready'>('loading')
+  const [pageStatus, setPageStatus] = useState<'loading' | 'noToken' | 'notRegistered' | 'apiError' | 'ready'>('loading')
+  const [debugError, setDebugError] = useState<string | null>(null)
 
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
@@ -70,19 +71,25 @@ export default function StaffLiffPage() {
   useEffect(() => {
     if (liffState.status !== 'ready') return
     const accessToken = liffState.liff.getAccessToken()
-    if (!accessToken) { setPageStatus('notRegistered'); return }
+    if (!accessToken) { setPageStatus('noToken'); return }
 
     fetch('/api/liff/staff/identify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accessToken }),
     })
-      .then(r => r.json())
-      .then((json: { staff?: StaffInfo }) => {
-        if (json.staff) { setStaff(json.staff); setPageStatus('ready') }
-        else setPageStatus('notRegistered')
+      .then(async r => {
+        const json = await r.json() as { staff?: StaffInfo; error?: string }
+        if (json.staff) {
+          setStaff(json.staff); setPageStatus('ready')
+        } else if (r.status === 404) {
+          setPageStatus('notRegistered')
+        } else {
+          setDebugError(json.error ?? `HTTP ${r.status}`)
+          setPageStatus('apiError')
+        }
       })
-      .catch(() => setPageStatus('notRegistered'))
+      .catch(e => { setDebugError(String(e)); setPageStatus('apiError') })
   }, [liffState])
 
   // 月次データ取得
@@ -197,15 +204,57 @@ export default function StaffLiffPage() {
     )
   }
 
+  // アクセストークンなし
+  if (pageStatus === 'noToken') {
+    return (
+      <div className="max-w-sm mx-auto px-6 pt-12 text-center">
+        <AlertCircle className="h-12 w-12 mx-auto mb-4 text-yellow-500" />
+        <h1 className="text-lg font-bold text-gray-900 mb-2">認証エラー</h1>
+        <p className="text-sm text-gray-500 mb-4">
+          LINEのアクセストークンを取得できませんでした。
+        </p>
+        {liffState.status === 'ready' && (
+          <p className="text-xs text-gray-400 font-mono break-all">
+            LINE ID: {liffState.lineUserId}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  // APIエラー
+  if (pageStatus === 'apiError') {
+    return (
+      <div className="max-w-sm mx-auto px-6 pt-12 text-center">
+        <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+        <h1 className="text-lg font-bold text-gray-900 mb-2">通信エラー</h1>
+        <p className="text-sm text-gray-500 mb-4">サーバーとの通信に失敗しました。</p>
+        {debugError && (
+          <p className="text-xs text-red-400 font-mono break-all bg-red-50 rounded p-2 mb-4">{debugError}</p>
+        )}
+        {liffState.status === 'ready' && (
+          <p className="text-xs text-gray-400 font-mono break-all">
+            LINE ID: {liffState.lineUserId}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   // 未登録
   if (pageStatus === 'notRegistered') {
     return (
       <div className="max-w-sm mx-auto px-6 pt-12 text-center">
         <AlertCircle className="h-12 w-12 mx-auto mb-4 text-yellow-500" />
         <h1 className="text-lg font-bold text-gray-900 mb-2">スタッフ登録が必要です</h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-gray-500 mb-4">
           管理者にLINE連携の設定を依頼してください。
         </p>
+        {liffState.status === 'ready' && (
+          <p className="text-xs text-gray-400 font-mono break-all">
+            LINE ID: {liffState.lineUserId}
+          </p>
+        )}
       </div>
     )
   }
