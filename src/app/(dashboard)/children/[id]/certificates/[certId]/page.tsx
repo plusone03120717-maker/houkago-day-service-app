@@ -16,7 +16,7 @@ export default async function EditCertificatePage({
     supabase.from('children').select('id, name').eq('id', id).single(),
     supabase
       .from('benefit_certificates')
-      .select('id, certificate_number, service_type, start_date, end_date, max_days_per_month, copay_limit, copay_category, municipality')
+      .select('id, certificate_number, service_type, start_date, end_date, max_days_per_month, copay_limit, copay_category, municipality, upper_limit_manager')
       .eq('id', certId)
       .eq('child_id', id)
       .single(),
@@ -48,6 +48,7 @@ export default async function EditCertificatePage({
           copay_limit: cert.copay_limit,
           copay_category: cert.copay_category ?? '',
           municipality: cert.municipality ?? '',
+          upper_limit_manager: cert.upper_limit_manager ?? '',
         }}
       />
     </div>

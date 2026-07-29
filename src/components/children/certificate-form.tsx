@@ -19,6 +19,7 @@ interface Props {
     copay_limit?: number
     copay_category?: string
     municipality?: string
+    upper_limit_manager?: string
   }
 }
 
@@ -38,12 +39,13 @@ export function CertificateForm({ childId, initial }: Props) {
     copay_limit: String(initial?.copay_limit ?? 0),
     copay_category: initial?.copay_category ?? '',
     municipality: initial?.municipality ?? '',
+    upper_limit_manager: initial?.upper_limit_manager ?? '',
   })
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!form.certificate_number || !form.start_date || !form.end_date) {
       setError('受給者証番号・有効期間は必須です')
@@ -62,6 +64,7 @@ export function CertificateForm({ childId, initial }: Props) {
       copay_limit: parseInt(form.copay_limit) || 0,
       copay_category: form.copay_category || null,
       municipality: form.municipality || null,
+      upper_limit_manager: form.upper_limit_manager || null,
     }
 
     if (initial?.id) {
@@ -169,6 +172,16 @@ export function CertificateForm({ childId, initial }: Props) {
             placeholder="例: 131016"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-gray-700 mb-1 block">上限管理事業所</label>
+        <Input
+          value={form.upper_limit_manager}
+          onChange={set('upper_limit_manager')}
+          placeholder="例: ○○放課後デイサービス"
+        />
+        <p className="text-xs text-gray-400 mt-1">上限管理を行う事業所名を入力してください（任意）</p>
       </div>
 
       <Button type="submit" disabled={saving}>

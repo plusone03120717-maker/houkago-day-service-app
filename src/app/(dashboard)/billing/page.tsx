@@ -47,6 +47,13 @@ type ChildWithUnit = {
   } | null
 }
 
+type CertRow = {
+  child_id: string
+  upper_limit_manager: string | null
+  start_date: string
+  end_date: string
+}
+
 export default async function BillingPage({
   searchParams,
 }: {
@@ -89,6 +96,22 @@ export default async function BillingPage({
     .select('child_id, children(id, name, name_kana), units(id, name, service_type)')
     .order('children(name_kana)')
   const childrenUnits = (childrenUnitsRaw ?? []) as unknown as ChildWithUnit[]
+
+  // 該当月に有効な受給者証から上限管理事業所を取得
+  const certMonthStart = `${year}-${String(month).padStart(2, '0')}-01`
+  const certMonthEnd = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
+  const { data: certsRaw } = await supabase
+    .from('benefit_certificates')
+    .select('child_id, upper_limit_manager, start_date, end_date')
+    .lte('start_date', certMonthEnd)
+    .gte('end_date', certMonthStart)
+    .not('upper_limit_manager', 'is', null)
+  const certs = (certsRaw ?? []) as CertRow[]
+  // child_id → 最新の上限管理事業所（複数ある場合は start_date 最新を優先）
+  const upperLimitMap = new Map<string, string>()
+  for (const c of certs.sort((a, b) => a.start_date.localeCompare(b.start_date))) {
+    if (c.upper_limit_manager) upperLimitMap.set(c.child_id, c.upper_limit_manager)
+  }
 
   const statusLabel: Record<string, string> = {
     draft: '作成中',
@@ -201,6 +224,11 @@ export default async function BillingPage({
                                 <p className="text-sm font-medium text-gray-900">{child.name}</p>
                                 {child.name_kana && (
                                   <p className="text-xs text-gray-400">{child.name_kana}</p>
+                                )}
+                                {upperLimitMap.get(child.id) && (
+                                  <p className="text-xs text-indigo-600 mt-0.5">
+                                    上限管理: {upperLimitMap.get(child.id)}
+                                  </p>
                                 )}
                               </div>
                             </Link>
