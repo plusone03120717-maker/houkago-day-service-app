@@ -24,6 +24,8 @@ type StaffShift = {
 }
 
 type TCRecord = { staff_member_id: string; type: string; recorded_at: string }
+type OvertimeRow = { staff_id: string; date: string; overtime_minutes: number | null }
+type PaidLeaveRow = { staff_member_id: string; date: string; days_used: number }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -157,7 +159,7 @@ export default async function ShiftSummaryPage({
   const memberIds = members.map((m) => m.id)
   const userIds = members.map((m) => m.user_id).filter(Boolean) as string[]
 
-  const [{ data: shiftsRaw }, { data: tcRaw }] = await Promise.all([
+  const [{ data: shiftsRaw }, { data: tcRaw }, { data: otRaw }, { data: lvRaw }] = await Promise.all([
     userIds.length > 0
       ? supabase
           .from('staff_shifts')
@@ -176,10 +178,29 @@ export default async function ShiftSummaryPage({
           .in('type', ['clock_in', 'clock_out'])
           .order('recorded_at')
       : Promise.resolve({ data: [] }),
+    memberIds.length > 0
+      ? supabase
+          .from('overtime_requests')
+          .select('staff_id, date, overtime_minutes')
+          .in('staff_id', memberIds)
+          .eq('status', 'approved')
+          .gte('date', monthStart)
+          .lte('date', monthEnd)
+      : Promise.resolve({ data: [] }),
+    memberIds.length > 0
+      ? supabase
+          .from('paid_leave_usages')
+          .select('staff_member_id, date, days_used')
+          .in('staff_member_id', memberIds)
+          .gte('date', monthStart)
+          .lte('date', monthEnd)
+      : Promise.resolve({ data: [] }),
   ])
 
   const shifts = (shiftsRaw ?? []) as StaffShift[]
   const tcRecords = (tcRaw ?? []) as TCRecord[]
+  const overtimes = (otRaw ?? []) as OvertimeRow[]
+  const leaves = (lvRaw ?? []) as PaidLeaveRow[]
 
   // ─── スタッフ別集計 ────────────────────────────────────────────────────────
 
@@ -211,6 +232,18 @@ export default async function ShiftSummaryPage({
     const tcWorkDays = tcDays.filter((d) => d.clockIn !== null).length
     const tcTotalHours = Math.round(tcDays.reduce((sum, d) => sum + (d.hours ?? 0), 0) * 100) / 100
 
+    // 残業集計（承認済み・30分単位切り捨て）
+    const myOvertimes = overtimes.filter((o) => o.staff_id === member.id)
+    const approvedOvertimeMinutes = myOvertimes.reduce(
+      (sum, o) => sum + Math.floor((o.overtime_minutes ?? 0) / 30) * 30, 0,
+    )
+    const overtimeByDate = new Map(myOvertimes.map((o) => [o.date, o.overtime_minutes]))
+
+    // 有給集計
+    const myLeaves = leaves.filter((l) => l.staff_member_id === member.id)
+    const paidLeaveDays = myLeaves.reduce((sum, l) => sum + l.days_used, 0)
+    const leaveByDate = new Map(myLeaves.map((l) => [l.date, l.days_used]))
+
     return {
       member,
       hasShifts: !!member.user_id,
@@ -225,6 +258,11 @@ export default async function ShiftSummaryPage({
       tcWorkDays,
       tcTotalHours,
       tcDays,
+      // overtime / leave
+      approvedOvertimeMinutes,
+      overtimeByDate,
+      paidLeaveDays,
+      leaveByDate,
       // 日次詳細用
       myShifts: myShifts.sort((a, b) => a.date.localeCompare(b.date)),
     }
@@ -305,17 +343,19 @@ export default async function ShiftSummaryPage({
                   </th>
                   <th className="text-center px-3 py-2.5 font-medium">シフト予定</th>
                   <th className="text-center px-3 py-2.5 font-medium">休み</th>
+                  <th className="text-center px-3 py-2.5 font-medium text-blue-600">有給</th>
                   <th className="text-right px-3 py-2.5 font-medium">計画時間</th>
                   <th className="text-right px-3 py-2.5 font-medium">
                     <span className="flex items-center justify-end gap-1">
                       <Fingerprint className="h-3 w-3" />打刻時間
                     </span>
                   </th>
+                  <th className="text-right px-3 py-2.5 font-medium text-orange-600">残業</th>
                   <th className="text-center px-4 py-2.5 font-medium">確認状況</th>
                 </tr>
               </thead>
               <tbody>
-                {staffStats.map(({ member, hasShifts, shiftWorkDays, plannedMinutes, offDays, typeCounts, tcWorkDays, tcTotalHours, confirmedDays, unconfirmedCount }) => (
+                {staffStats.map(({ member, hasShifts, shiftWorkDays, plannedMinutes, offDays, typeCounts, tcWorkDays, tcTotalHours, confirmedDays, unconfirmedCount, approvedOvertimeMinutes, paidLeaveDays }) => (
                   <tr key={member.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{member.name}</p>
@@ -346,6 +386,14 @@ export default async function ShiftSummaryPage({
                     <td className="px-3 py-3 text-center text-gray-500">
                       {hasShifts ? `${offDays}日` : <span className="text-gray-300">—</span>}
                     </td>
+                    {/* 有給 */}
+                    <td className="px-3 py-3 text-center">
+                      {paidLeaveDays > 0 ? (
+                        <span className="font-semibold text-blue-600">{paidLeaveDays}<span className="font-normal text-gray-400 ml-0.5">日</span></span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
                     {/* 計画時間 */}
                     <td className="px-3 py-3 text-right text-gray-600">
                       {hasShifts && plannedMinutes > 0 ? formatDuration(plannedMinutes) : <span className="text-gray-300">—</span>}
@@ -354,6 +402,14 @@ export default async function ShiftSummaryPage({
                     <td className="px-3 py-3 text-right">
                       {tcTotalHours > 0 ? (
                         <span className="font-medium text-teal-700">{tcTotalHours}h</span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    {/* 残業 */}
+                    <td className="px-3 py-3 text-right">
+                      {approvedOvertimeMinutes > 0 ? (
+                        <span className="font-medium text-orange-600">{formatDuration(approvedOvertimeMinutes)}</span>
                       ) : (
                         <span className="text-gray-300">—</span>
                       )}
@@ -386,8 +442,18 @@ export default async function ShiftSummaryPage({
                     <td className="px-3 py-2.5 text-center text-gray-500">
                       {staffStats.reduce((s, st) => s + st.offDays, 0)}日
                     </td>
+                    <td className="px-3 py-2.5 text-center text-blue-600">
+                      {staffStats.reduce((s, st) => s + st.paidLeaveDays, 0) > 0
+                        ? `${staffStats.reduce((s, st) => s + st.paidLeaveDays, 0)}日`
+                        : '—'}
+                    </td>
                     <td className="px-3 py-2.5 text-right text-gray-600">{formatDuration(totalPlanned)}</td>
                     <td className="px-3 py-2.5 text-right text-teal-700">{totalTCHours}h</td>
+                    <td className="px-3 py-2.5 text-right text-orange-600">
+                      {staffStats.reduce((s, st) => s + st.approvedOvertimeMinutes, 0) > 0
+                        ? formatDuration(staffStats.reduce((s, st) => s + st.approvedOvertimeMinutes, 0))
+                        : '—'}
+                    </td>
                     <td className="px-4 py-2.5" />
                   </tr>
                 </tfoot>
@@ -400,11 +466,13 @@ export default async function ShiftSummaryPage({
       {/* スタッフ別 日次詳細 */}
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-gray-700">スタッフ別 日次詳細</h2>
-        {staffStats.map(({ member, myShifts, tcDays, hasShifts }) => {
+        {staffStats.map(({ member, myShifts, tcDays, hasShifts, overtimeByDate, leaveByDate }) => {
           // シフトと打刻をdateでマージ
           const allDates = new Set([
             ...myShifts.map((s) => s.date),
             ...tcDays.map((d) => d.date),
+            ...Array.from(overtimeByDate.keys()),
+            ...Array.from(leaveByDate.keys()),
           ])
           const sortedDates = Array.from(allDates).sort()
           if (sortedDates.length === 0) return null
@@ -466,6 +534,20 @@ export default async function ShiftSummaryPage({
                           isWork && hasShifts && (
                             <span className="text-xs text-gray-300">打刻なし</span>
                           )
+                        )}
+
+                        {/* 有給バッジ */}
+                        {leaveByDate.has(date) && (
+                          <Badge variant="secondary" className="text-xs flex-shrink-0 bg-blue-100 text-blue-700 border-blue-200">
+                            有給{leaveByDate.get(date) === 0.5 ? ' 半日' : ''}
+                          </Badge>
+                        )}
+
+                        {/* 残業バッジ */}
+                        {overtimeByDate.has(date) && (
+                          <span className="text-xs text-orange-600 flex-shrink-0">
+                            残業 {overtimeByDate.get(date) != null ? `${overtimeByDate.get(date)}分` : ''}
+                          </span>
                         )}
 
                         {/* 確認済バッジ */}
