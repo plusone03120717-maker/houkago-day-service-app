@@ -10,8 +10,8 @@ export default async function StaffRequestsPage() {
   const [overtimeRes, leaveRes, breakRes] = await Promise.all([
     supabase
       .from('overtime_requests')
-      .select('id, date, actual_end_time, status, staff_members(name)')
-      .eq('status', 'pending')
+      .select('id, date, actual_end_time, overtime_minutes, status, staff_members(name)')
+      .eq('is_new', true)
       .order('date', { ascending: false }),
     supabase
       .from('paid_leave_usages')

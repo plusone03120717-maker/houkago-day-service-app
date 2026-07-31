@@ -34,7 +34,7 @@ export default async function DashboardLayout({
 
   // スタッフ申請の未確認件数
   const [{ count: overtimeCount }, { count: leaveCount }, { count: breakCount }] = await Promise.all([
-    supabase.from('overtime_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+    supabase.from('overtime_requests').select('id', { count: 'exact', head: true }).eq('is_new', true),
     supabase.from('paid_leave_usages').select('id', { count: 'exact', head: true }).eq('is_new', true),
     supabase.from('time_records').select('id', { count: 'exact', head: true }).eq('type', 'break_start').eq('is_new', true),
   ])

@@ -10,6 +10,7 @@ export type OvertimeRequest = {
   id: string
   date: string
   actual_end_time: string | null
+  overtime_minutes: number | null
   status: string
   staff_members: { name: string } | null
 }
@@ -53,12 +54,12 @@ export function StaffRequestsBoard({ overtimeRequests: init_ot, leaveUsages: ini
   const [breaks, setBreaks] = useState(init_br)
   const [loading, setLoading] = useState<string | null>(null)
 
-  const handleOvertimeStatus = async (id: string, status: 'approved' | 'rejected') => {
+  const handleOvertimeReviewed = async (id: string) => {
     setLoading(id)
-    await fetch('/api/staff-requests/overtime', {
-      method: 'PATCH',
+    await fetch('/api/staff-requests/overtime-reviewed', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, status }),
+      body: JSON.stringify({ id }),
     })
     setOvertimes((prev) => prev.filter((r) => r.id !== id))
     setLoading(null)
@@ -116,28 +117,19 @@ export function StaffRequestsBoard({ overtimeRequests: init_ot, leaveUsages: ini
                   <p className="font-medium text-gray-900">{req.staff_members?.name ?? '—'}</p>
                   <p className="text-sm text-gray-500">
                     {formatDate(req.date)}
-                    {req.actual_end_time ? ` まで ${req.actual_end_time}` : ''}
+                    {req.actual_end_time ? ` 終了 ${req.actual_end_time.slice(0, 5)}` : ''}
+                    {req.overtime_minutes ? `　残業 ${req.overtime_minutes}分` : ''}
                   </p>
+                  <p className="text-xs text-green-600 mt-0.5">自動承認済み</p>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-red-300 text-red-600 hover:bg-red-50"
-                    disabled={loading === req.id}
-                    onClick={() => handleOvertimeStatus(req.id, 'rejected')}
-                  >
-                    却下
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                    disabled={loading === req.id}
-                    onClick={() => handleOvertimeStatus(req.id, 'approved')}
-                  >
-                    承認
-                  </Button>
-                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={loading === req.id}
+                  onClick={() => handleOvertimeReviewed(req.id)}
+                >
+                  確認済み
+                </Button>
               </div>
             ))}
           </CardContent>

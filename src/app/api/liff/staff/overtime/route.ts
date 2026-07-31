@@ -38,7 +38,8 @@ export async function POST(req: NextRequest) {
       date,
       actual_end_time: `${endTime}:00`,
       request_type: 'pre',
-      status: 'pending',
+      status: 'approved',
+      is_new: true,
       note: 'LINEアプリから申請',
     } as never)
 
