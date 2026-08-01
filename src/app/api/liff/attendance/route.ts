@@ -8,12 +8,26 @@ const adminClient = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
+type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
+
 type Entry = {
   childId: string
   status: 'attending' | 'absent'
   serviceType?: 'regular' | 'daytime_support'
-  pickupRequired: boolean
+  serviceStartTime?: string | null
+  serviceEndTime?: string | null
+  transportType?: TransportType
+  pickupTime?: string | null
+  dropoffTime?: string | null
   note: string
+}
+
+const TRANSPORT_TYPES: TransportType[] = ['none', 'pickup_only', 'dropoff_only', 'both']
+
+/** "HH:MM" 形式を検証し、空文字は null に正規化する */
+function normalizeTime(v: string | null | undefined): string | null | undefined {
+  if (v === null || v === undefined || v === '') return null
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : undefined
 }
 
 export async function POST(req: NextRequest) {
@@ -50,6 +64,20 @@ export async function POST(req: NextRequest) {
       ) {
         return NextResponse.json({ error: 'サービス区分が正しくありません' }, { status: 400 })
       }
+      if (entry.transportType !== undefined && !TRANSPORT_TYPES.includes(entry.transportType)) {
+        return NextResponse.json({ error: '送迎区分が正しくありません' }, { status: 400 })
+      }
+      for (const t of [entry.serviceStartTime, entry.serviceEndTime, entry.pickupTime, entry.dropoffTime]) {
+        if (normalizeTime(t) === undefined) {
+          return NextResponse.json({ error: '時刻の形式が正しくありません' }, { status: 400 })
+        }
+      }
+      // 利用時間は開始 < 終了 であること（両方入力されている場合のみ）
+      const s = normalizeTime(entry.serviceStartTime)
+      const e = normalizeTime(entry.serviceEndTime)
+      if (s && e && s >= e) {
+        return NextResponse.json({ error: '利用時間の終了は開始より後にしてください' }, { status: 400 })
+      }
     }
 
     const lineUserId = await verifyLineAccessToken(accessToken)
@@ -84,16 +112,27 @@ export async function POST(req: NextRequest) {
     }
 
     // upsert（同じchild_id + dateなら更新）
-    const records = entries.map((e) => ({
-      child_id: e.childId,
-      date,
-      status: e.status,
-      service_type: e.status === 'attending' ? (e.serviceType ?? 'regular') : 'regular',
-      pickup_required: e.status === 'attending' ? e.pickupRequired : false,
-      note: e.note ?? null,
-      reported_via: 'line',
-      reported_at: new Date().toISOString(),
-    }))
+    // お休みの場合は利用時間・送迎の指定を無視してクリアする
+    const records = entries.map((e) => {
+      const attending = e.status === 'attending'
+      const transport: TransportType = attending ? (e.transportType ?? 'none') : 'none'
+      const usesPickup = transport === 'pickup_only' || transport === 'both'
+      const usesDropoff = transport === 'dropoff_only' || transport === 'both'
+      return {
+        child_id: e.childId,
+        date,
+        status: e.status,
+        service_type: attending ? (e.serviceType ?? 'regular') : 'regular',
+        service_start_time: attending ? normalizeTime(e.serviceStartTime) ?? null : null,
+        service_end_time: attending ? normalizeTime(e.serviceEndTime) ?? null : null,
+        transport_type: transport,
+        pickup_time: usesPickup ? normalizeTime(e.pickupTime) ?? null : null,
+        dropoff_time: usesDropoff ? normalizeTime(e.dropoffTime) ?? null : null,
+        note: e.note ?? null,
+        reported_via: 'line',
+        reported_at: new Date().toISOString(),
+      }
+    })
 
     const { error } = await adminClient
       .from('parent_attendance_contacts')

@@ -239,7 +239,7 @@ export default async function ChildSchedulePage({
     // LINEの利用連絡（保護者からの申告）
     supabase
       .from('parent_attendance_contacts')
-      .select('date, status, service_type, pickup_required, note, reported_at')
+      .select('date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at')
       .eq('child_id', childId)
       .gte('date', startDate)
       .lte('date', endDate)

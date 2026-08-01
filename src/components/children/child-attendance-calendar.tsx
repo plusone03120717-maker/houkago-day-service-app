@@ -43,9 +43,20 @@ export type ParentContact = {
   date: string
   status: 'attending' | 'absent'
   service_type: 'regular' | 'daytime_support'
-  pickup_required: boolean
+  service_start_time: string | null
+  service_end_time: string | null
+  transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
+  pickup_time: string | null
+  dropoff_time: string | null
   note: string | null
   reported_at: string
+}
+
+const PARENT_TRANSPORT_LABELS: Record<ParentContact['transport_type'], string> = {
+  none: '送迎なし',
+  both: '送り迎え',
+  pickup_only: '迎えのみ',
+  dropoff_only: '送りのみ',
 }
 
 /** 保護者連絡の区分ごとの色・ラベル */
@@ -862,12 +873,27 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                   {contact.status === 'attending' && (
                     <span className={cn(
                       'text-[10px] px-1.5 py-0.5 rounded-full font-medium',
-                      contact.pickup_required ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                      contact.transport_type !== 'none' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
                     )}>
-                      {contact.pickup_required ? '送迎希望あり' : '送迎なし'}
+                      {PARENT_TRANSPORT_LABELS[contact.transport_type]}
                     </span>
                   )}
                 </div>
+                {contact.status === 'attending' && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-4">
+                    {(fmt(contact.service_start_time) || fmt(contact.service_end_time)) && (
+                      <span className="text-xs text-gray-600">
+                        利用希望 {fmt(contact.service_start_time) || '—'}〜{fmt(contact.service_end_time) || '—'}
+                      </span>
+                    )}
+                    {fmt(contact.pickup_time) && (
+                      <span className="text-xs text-gray-600">迎え希望 {fmt(contact.pickup_time)}</span>
+                    )}
+                    {fmt(contact.dropoff_time) && (
+                      <span className="text-xs text-gray-600">送り希望 {fmt(contact.dropoff_time)}</span>
+                    )}
+                  </div>
+                )}
                 {contact.note && (
                   <p className="text-xs text-gray-600 pl-4 whitespace-pre-wrap">{contact.note}</p>
                 )}

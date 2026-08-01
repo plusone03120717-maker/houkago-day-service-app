@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     const lastDay = new Date(year, month, 0).getDate()
     const { data: contacts } = await adminClient
       .from('parent_attendance_contacts')
-      .select('child_id, date, status, service_type, pickup_required, note')
+      .select('child_id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note')
       .in('child_id', children.map((c) => c.id))
       .gte('date', `${year}-${mm}-01`)
       .lte('date', `${year}-${mm}-${String(lastDay).padStart(2, '0')}`)

@@ -3,7 +3,7 @@
 import { useRouter, usePathname } from 'next/navigation'
 import { useTransition } from 'react'
 import { formatDate } from '@/lib/utils'
-import { ChevronLeft, ChevronRight, Car, CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Car, Clock, CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
 
 type Contact = {
   id: string
@@ -11,10 +11,32 @@ type Contact = {
   date: string
   status: 'attending' | 'absent'
   service_type: 'regular' | 'daytime_support'
-  pickup_required: boolean
+  service_start_time: string | null
+  service_end_time: string | null
+  transport_type: TransportType
+  pickup_time: string | null
+  dropoff_time: string | null
   note: string | null
   reported_at: string
   children: { id: string; name: string } | null
+}
+
+type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
+
+const TRANSPORT_LABELS: Record<TransportType, string> = {
+  none: '送迎なし',
+  both: '送り迎え',
+  pickup_only: '迎えのみ',
+  dropoff_only: '送りのみ',
+}
+
+/** DBの time 型（HH:MM:SS）を HH:MM で表示する */
+function fmtTime(v: string | null) {
+  return v ? v.slice(0, 5) : null
+}
+
+function hasTransport(c: Contact) {
+  return c.status === 'attending' && c.transport_type !== 'none'
 }
 
 type UncontactedChild = { id: string; name: string }
@@ -49,7 +71,7 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
 
   const filtered =
     filter === 'pickup'
-      ? contacts.filter((c) => c.status === 'attending' && c.pickup_required)
+      ? contacts.filter(hasTransport)
       : filter === 'daytime'
         ? contacts.filter((c) => c.status === 'attending' && c.service_type === 'daytime_support')
         : contacts
@@ -57,7 +79,7 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
   const attendingCount = contacts.filter((c) => c.status === 'attending').length
   const daytimeCount = contacts.filter((c) => c.status === 'attending' && c.service_type === 'daytime_support').length
   const absentCount = contacts.filter((c) => c.status === 'absent').length
-  const pickupCount = contacts.filter((c) => c.status === 'attending' && c.pickup_required).length
+  const pickupCount = contacts.filter(hasTransport).length
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
@@ -109,6 +131,7 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
         {[
           { value: 'all', label: 'すべて' },
           { value: 'pickup', label: '送迎あり' },
+          // 送り/迎えの内訳は各カードのバッジで確認できる
           { value: 'daytime', label: '日中一時' },
         ].map((f) => (
           <button
@@ -163,13 +186,32 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
                       日中一時
                     </span>
                   )}
-                  {c.status === 'attending' && c.pickup_required && (
+                  {hasTransport(c) && (
                     <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
                       <Car className="h-3 w-3" />
-                      送迎あり
+                      {TRANSPORT_LABELS[c.transport_type]}
                     </span>
                   )}
                 </div>
+
+                {/* 利用時間・送迎時間 */}
+                {c.status === 'attending' && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                    {(fmtTime(c.service_start_time) || fmtTime(c.service_end_time)) && (
+                      <span className="flex items-center gap-1 text-xs text-gray-500">
+                        <Clock className="h-3 w-3 text-indigo-400" />
+                        利用 {fmtTime(c.service_start_time) ?? '—'}〜{fmtTime(c.service_end_time) ?? '—'}
+                      </span>
+                    )}
+                    {fmtTime(c.pickup_time) && (
+                      <span className="text-xs text-gray-500">迎え {fmtTime(c.pickup_time)}</span>
+                    )}
+                    {fmtTime(c.dropoff_time) && (
+                      <span className="text-xs text-gray-500">送り {fmtTime(c.dropoff_time)}</span>
+                    )}
+                  </div>
+                )}
+
                 {c.note && (
                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">{c.note}</p>
                 )}

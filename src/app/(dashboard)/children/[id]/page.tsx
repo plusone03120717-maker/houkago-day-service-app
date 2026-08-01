@@ -110,7 +110,7 @@ export default async function ChildDetailPage({
     // LINEの利用連絡（今日以降の予定を新しい順に）
     supabase
       .from('parent_attendance_contacts')
-      .select('id, date, status, service_type, pickup_required, note, reported_at')
+      .select('id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at')
       .eq('child_id', id)
       .gte('date', getTodayJST())
       .order('date')
@@ -137,11 +137,19 @@ export default async function ChildDetailPage({
     date: string
     status: 'attending' | 'absent'
     service_type: 'regular' | 'daytime_support'
-    pickup_required: boolean
+    service_start_time: string | null
+    service_end_time: string | null
+    transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
+    pickup_time: string | null
+    dropoff_time: string | null
     note: string | null
     reported_at: string
   }
   const parentContacts = (parentContactsRaw ?? []) as unknown as ParentContactRow[]
+  const transportLabels: Record<ParentContactRow['transport_type'], string> = {
+    none: '送迎なし', both: '送り迎え', pickup_only: '迎えのみ', dropoff_only: '送りのみ',
+  }
+  const hhmm = (v: string | null) => (v ? v.slice(0, 5) : null)
 
   return (
     <div className="space-y-5 max-w-4xl">
@@ -420,12 +428,27 @@ export default async function ChildDetailPage({
                           }`}>
                             {isAbsent ? 'お休み' : isDaytime ? '日中一時' : '放デイ'}
                           </span>
-                          {!isAbsent && pc.pickup_required && (
+                          {!isAbsent && pc.transport_type !== 'none' && (
                             <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">
-                              送迎あり
+                              {transportLabels[pc.transport_type]}
                             </span>
                           )}
                         </div>
+                        {!isAbsent && (
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                            {(hhmm(pc.service_start_time) || hhmm(pc.service_end_time)) && (
+                              <span className="text-xs text-gray-500">
+                                利用 {hhmm(pc.service_start_time) ?? '—'}〜{hhmm(pc.service_end_time) ?? '—'}
+                              </span>
+                            )}
+                            {hhmm(pc.pickup_time) && (
+                              <span className="text-xs text-gray-500">迎え {hhmm(pc.pickup_time)}</span>
+                            )}
+                            {hhmm(pc.dropoff_time) && (
+                              <span className="text-xs text-gray-500">送り {hhmm(pc.dropoff_time)}</span>
+                            )}
+                          </div>
+                        )}
                         {pc.note && (
                           <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{pc.note}</p>
                         )}

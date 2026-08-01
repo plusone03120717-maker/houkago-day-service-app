@@ -2,16 +2,22 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useLiff } from '@/hooks/use-liff'
-import { Loader2, AlertCircle, ChevronLeft, ChevronRight, X, Car } from 'lucide-react'
+import { Loader2, AlertCircle, ChevronLeft, ChevronRight, X, Car, Clock } from 'lucide-react'
 
 type Child = { id: string; name: string }
+
+type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
 
 type Contact = {
   child_id: string
   date: string
   status: 'attending' | 'absent'
   service_type: 'regular' | 'daytime_support'
-  pickup_required: boolean
+  service_start_time: string | null
+  service_end_time: string | null
+  transport_type: TransportType
+  pickup_time: string | null
+  dropoff_time: string | null
   note: string | null
 }
 
@@ -19,8 +25,24 @@ type Choice = 'regular' | 'daytime_support' | 'absent'
 
 type EntryState = {
   choice: Choice | null
-  pickup: boolean
+  serviceStart: string
+  serviceEnd: string
+  transport: TransportType
+  pickupTime: string
+  dropoffTime: string
   note: string
+}
+
+const TRANSPORT_OPTIONS: { value: TransportType; label: string }[] = [
+  { value: 'none', label: '送迎なし' },
+  { value: 'both', label: '送り迎え' },
+  { value: 'pickup_only', label: '迎えのみ' },
+  { value: 'dropoff_only', label: '送りのみ' },
+]
+
+/** DBの time 型（HH:MM:SS）を input[type=time] 用の HH:MM に切り詰める */
+function toTimeInput(v: string | null): string {
+  return v ? v.slice(0, 5) : ''
 }
 
 const DOW = ['日', '月', '火', '水', '木', '金', '土']
@@ -121,8 +143,24 @@ export default function LiffAttendancePage() {
     for (const child of children) {
       const existing = dayContacts.find((c) => c.child_id === child.id)
       init[child.id] = existing
-        ? { choice: contactToChoice(existing), pickup: existing.pickup_required, note: existing.note ?? '' }
-        : { choice: null, pickup: false, note: '' }
+        ? {
+            choice: contactToChoice(existing),
+            serviceStart: toTimeInput(existing.service_start_time),
+            serviceEnd: toTimeInput(existing.service_end_time),
+            transport: existing.transport_type ?? 'none',
+            pickupTime: toTimeInput(existing.pickup_time),
+            dropoffTime: toTimeInput(existing.dropoff_time),
+            note: existing.note ?? '',
+          }
+        : {
+            choice: null,
+            serviceStart: '',
+            serviceEnd: '',
+            transport: 'none',
+            pickupTime: '',
+            dropoffTime: '',
+            note: '',
+          }
     }
     setEntries(init)
     setSelectedDate(dateStr)
@@ -146,23 +184,37 @@ export default function LiffAttendancePage() {
       return
     }
 
-    const payload = children
-      .filter((c) => entries[c.id]?.choice != null)
-      .map((c) => {
-        const e = entries[c.id]
-        return {
-          childId: c.id,
-          status: e.choice === 'absent' ? 'absent' : 'attending',
-          serviceType: e.choice === 'absent' ? undefined : e.choice,
-          pickupRequired: e.choice === 'absent' ? false : e.pickup,
-          note: e.note.trim(),
-        }
-      })
+    const targets = children.filter((c) => entries[c.id]?.choice != null)
 
-    if (payload.length === 0) {
+    if (targets.length === 0) {
       setToast({ ok: false, message: '少なくとも1人の連絡内容を選択してください' })
       return
     }
+
+    // 利用時間の前後関係を送信前に確認する
+    for (const c of targets) {
+      const e = entries[c.id]
+      if (e.choice !== 'absent' && e.serviceStart && e.serviceEnd && e.serviceStart >= e.serviceEnd) {
+        setToast({ ok: false, message: `${c.name}さんの利用時間は終了を開始より後にしてください` })
+        return
+      }
+    }
+
+    const payload = targets.map((c) => {
+      const e = entries[c.id]
+      const attending = e.choice !== 'absent'
+      return {
+        childId: c.id,
+        status: attending ? 'attending' : 'absent',
+        serviceType: attending ? e.choice : undefined,
+        serviceStartTime: attending ? e.serviceStart : null,
+        serviceEndTime: attending ? e.serviceEnd : null,
+        transportType: attending ? e.transport : 'none',
+        pickupTime: attending ? e.pickupTime : null,
+        dropoffTime: attending ? e.dropoffTime : null,
+        note: e.note.trim(),
+      }
+    })
 
     setSubmitting(true)
     setToast(null)
@@ -408,7 +460,7 @@ export default function LiffAttendancePage() {
                       {(['regular', 'daytime_support', 'absent'] as Choice[]).map((choice) => (
                         <button
                           key={choice}
-                          onClick={() => updateEntry(child.id, { choice, ...(choice === 'absent' ? { pickup: false } : {}) })}
+                          onClick={() => updateEntry(child.id, { choice })}
                           className={`rounded-xl py-3 text-xs font-semibold transition-colors ${
                             entry.choice === choice
                               ? CHOICE_META[choice].active
@@ -420,18 +472,91 @@ export default function LiffAttendancePage() {
                       ))}
                     </div>
 
-                    {/* 送迎希望（利用する場合のみ） */}
+                    {/* 利用時間・送迎（利用する場合のみ） */}
                     {(entry.choice === 'regular' || entry.choice === 'daytime_support') && (
-                      <label className="flex items-center gap-2.5 bg-white rounded-xl px-4 py-3 mb-3 border border-gray-200 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={entry.pickup}
-                          onChange={(e) => updateEntry(child.id, { pickup: e.target.checked })}
-                          className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <Car className="h-4 w-4 text-indigo-500" />
-                        <span className="text-sm text-gray-700">送迎を希望する</span>
-                      </label>
+                      <>
+                        {/* 利用時間 */}
+                        <div className="bg-white rounded-xl px-4 py-3 mb-3 border border-gray-200">
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <Clock className="h-3.5 w-3.5 text-indigo-500" />
+                            <span className="text-xs font-semibold text-gray-600">利用時間</span>
+                            <span className="text-[10px] text-gray-400">（任意）</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-gray-400 mb-1 block">開始</label>
+                              <input
+                                type="time"
+                                value={entry.serviceStart}
+                                onChange={(e) => updateEntry(child.id, { serviceStart: e.target.value })}
+                                className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-gray-400 mb-1 block">終了</label>
+                              <input
+                                type="time"
+                                value={entry.serviceEnd}
+                                onChange={(e) => updateEntry(child.id, { serviceEnd: e.target.value })}
+                                className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 送迎 */}
+                        <div className="bg-white rounded-xl px-4 py-3 mb-3 border border-gray-200">
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <Car className="h-3.5 w-3.5 text-indigo-500" />
+                            <span className="text-xs font-semibold text-gray-600">送迎</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {TRANSPORT_OPTIONS.map((opt) => (
+                              <button
+                                key={opt.value}
+                                onClick={() => updateEntry(child.id, { transport: opt.value })}
+                                className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${
+                                  entry.transport === opt.value
+                                    ? 'bg-indigo-500 text-white shadow-sm'
+                                    : 'bg-gray-50 text-gray-600 border border-gray-200'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* 迎え希望時刻 */}
+                          {(entry.transport === 'pickup_only' || entry.transport === 'both') && (
+                            <div className="mt-3">
+                              <label className="text-[10px] text-gray-400 mb-1 block">
+                                お迎え希望時刻（自宅・学校へ迎えに行く時間）
+                              </label>
+                              <input
+                                type="time"
+                                value={entry.pickupTime}
+                                onChange={(e) => updateEntry(child.id, { pickupTime: e.target.value })}
+                                className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                              />
+                            </div>
+                          )}
+
+                          {/* 送り希望時刻 */}
+                          {(entry.transport === 'dropoff_only' || entry.transport === 'both') && (
+                            <div className="mt-3">
+                              <label className="text-[10px] text-gray-400 mb-1 block">
+                                お送り希望時刻（自宅へ送り届ける時間）
+                              </label>
+                              <input
+                                type="time"
+                                value={entry.dropoffTime}
+                                onChange={(e) => updateEntry(child.id, { dropoffTime: e.target.value })}
+                                className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </>
                     )}
 
                     {/* 備考 */}
