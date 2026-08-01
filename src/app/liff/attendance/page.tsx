@@ -40,9 +40,46 @@ const TRANSPORT_OPTIONS: { value: TransportType; label: string }[] = [
   { value: 'dropoff_only', label: '送りのみ' },
 ]
 
-/** DBの time 型（HH:MM:SS）を input[type=time] 用の HH:MM に切り詰める */
+/** DBの time 型（HH:MM:SS）を HH:MM に切り詰める */
 function toTimeInput(v: string | null): string {
   return v ? v.slice(0, 5) : ''
+}
+
+// 6:00〜21:00 を15分刻みで選択肢にする。
+// input[type=time] のネイティブピッカーは端末により現在時刻より前を選びにくいため、
+// 端末差の出ないプルダウンで時刻を選ばせる。
+const TIME_OPTIONS = Array.from({ length: (21 - 6) * 4 + 1 }, (_, i) => {
+  const total = 6 * 60 + i * 15
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+})
+
+function TimeSelect({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: string
+  onChange: (v: string) => void
+  ariaLabel: string
+}) {
+  // 選択肢の刻みに載らない既存データ（例: 15:20）も失わずに表示する
+  const options = value && !TIME_OPTIONS.includes(value)
+    ? [...TIME_OPTIONS, value].sort()
+    : TIME_OPTIONS
+
+  return (
+    <select
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+    >
+      <option value="">指定なし</option>
+      {options.map((t) => (
+        <option key={t} value={t}>{t}</option>
+      ))}
+    </select>
+  )
 }
 
 const DOW = ['日', '月', '火', '水', '木', '金', '土']
@@ -485,20 +522,18 @@ export default function LiffAttendancePage() {
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label className="text-[10px] text-gray-400 mb-1 block">開始</label>
-                              <input
-                                type="time"
+                              <TimeSelect
+                                ariaLabel={`${child.name}の利用開始時刻`}
                                 value={entry.serviceStart}
-                                onChange={(e) => updateEntry(child.id, { serviceStart: e.target.value })}
-                                className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                onChange={(v) => updateEntry(child.id, { serviceStart: v })}
                               />
                             </div>
                             <div>
                               <label className="text-[10px] text-gray-400 mb-1 block">終了</label>
-                              <input
-                                type="time"
+                              <TimeSelect
+                                ariaLabel={`${child.name}の利用終了時刻`}
                                 value={entry.serviceEnd}
-                                onChange={(e) => updateEntry(child.id, { serviceEnd: e.target.value })}
-                                className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                onChange={(v) => updateEntry(child.id, { serviceEnd: v })}
                               />
                             </div>
                           </div>
@@ -532,11 +567,10 @@ export default function LiffAttendancePage() {
                               <label className="text-[10px] text-gray-400 mb-1 block">
                                 お迎え希望時刻（自宅・学校へ迎えに行く時間）
                               </label>
-                              <input
-                                type="time"
+                              <TimeSelect
+                                ariaLabel={`${child.name}のお迎え希望時刻`}
                                 value={entry.pickupTime}
-                                onChange={(e) => updateEntry(child.id, { pickupTime: e.target.value })}
-                                className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                onChange={(v) => updateEntry(child.id, { pickupTime: v })}
                               />
                             </div>
                           )}
@@ -547,11 +581,10 @@ export default function LiffAttendancePage() {
                               <label className="text-[10px] text-gray-400 mb-1 block">
                                 お送り希望時刻（自宅へ送り届ける時間）
                               </label>
-                              <input
-                                type="time"
+                              <TimeSelect
+                                ariaLabel={`${child.name}のお送り希望時刻`}
                                 value={entry.dropoffTime}
-                                onChange={(e) => updateEntry(child.id, { dropoffTime: e.target.value })}
-                                className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                onChange={(v) => updateEntry(child.id, { dropoffTime: v })}
                               />
                             </div>
                           )}
