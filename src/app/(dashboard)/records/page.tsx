@@ -1,21 +1,32 @@
 import { createClient } from '@/lib/supabase/server'
-import Link from 'next/link'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { BookOpen, ChevronRight, CheckCircle, Flag } from 'lucide-react'
-import { formatDate, getTodayJST } from '@/lib/utils'
-import { DateNav } from '@/components/ui/date-nav'
+import { getTodayJST } from '@/lib/utils'
+import { RecordsListBoard } from '@/components/records/records-list-board'
 
 type AttendedChild = {
   id: string
   child_id: string
   unit_id: string
   status: string
+  basic_service: boolean
   service_start_time: string | null
   service_end_time: string | null
   daytime_support: boolean
-  daytime_support_start_time: string | null
-  daytime_support_end_time: string | null
+  pickup_departure_time: string | null
+  pickup_arrival_time: string | null
+  pickup_driver_member_id: string | null
+  pickup_vehicle_id: string | null
+  dropoff_departure_time: string | null
+  dropoff_arrival_time: string | null
+  dropoff_driver_member_id: string | null
+  dropoff_vehicle_id: string | null
+  daytime_pickup_departure_time: string | null
+  daytime_pickup_arrival_time: string | null
+  daytime_pickup_driver_member_id: string | null
+  daytime_pickup_vehicle_id: string | null
+  daytime_dropoff_departure_time: string | null
+  daytime_dropoff_arrival_time: string | null
+  daytime_dropoff_driver_member_id: string | null
+  daytime_dropoff_vehicle_id: string | null
   children: { id: string; name: string; name_kana: string | null } | null
   units: { id: string; name: string } | null
 }
@@ -36,16 +47,35 @@ export default async function RecordsPage({
 
   const targetDate = params.date ?? getTodayJST()
 
-  // 当日の出席記録
-  const { data: attendedRaw } = await supabase
-    .from('daily_attendance')
-    .select('id, child_id, unit_id, status, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time, children(id, name, name_kana), units(id, name)')
-    .eq('date', targetDate)
-    .in('status', ['attended', 'absent'])
-    .order('created_at')
+  const [
+    { data: attendedRaw },
+    { data: staffMembersRaw },
+    { data: vehiclesRaw },
+    { data: facilityRaw },
+  ] = await Promise.all([
+    supabase
+      .from('daily_attendance')
+      .select(`
+        id, child_id, unit_id, status, basic_service,
+        service_start_time, service_end_time,
+        daytime_support,
+        pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id,
+        dropoff_departure_time, dropoff_arrival_time, dropoff_driver_member_id, dropoff_vehicle_id,
+        daytime_pickup_departure_time, daytime_pickup_arrival_time, daytime_pickup_driver_member_id, daytime_pickup_vehicle_id,
+        daytime_dropoff_departure_time, daytime_dropoff_arrival_time, daytime_dropoff_driver_member_id, daytime_dropoff_vehicle_id,
+        children(id, name, name_kana), units(id, name)
+      `)
+      .eq('date', targetDate)
+      .in('status', ['attended', 'absent'])
+      .order('created_at'),
+    supabase.from('staff_members').select('id, name').order('name'),
+    supabase.from('transport_vehicles').select('id, name').order('name'),
+    supabase.from('facilities').select('id').limit(1).single(),
+  ])
+
   const attended = (attendedRaw ?? []) as unknown as AttendedChild[]
 
-  // 既存の記録がある出席ID
+  // 既存の記録
   const attendanceIds = attended.map((a) => a.id)
   const { data: recordsRaw } = attendanceIds.length > 0
     ? await supabase
@@ -54,10 +84,18 @@ export default async function RecordsPage({
         .in('attendance_id', attendanceIds)
     : { data: [] }
   const records = (recordsRaw ?? []) as unknown as DailyRecord[]
+  const recordByAttendanceId = Object.fromEntries(records.map((r) => [r.attendance_id, r]))
 
-  const recordByAttendanceId = Object.fromEntries(
-    records.map((r) => [r.attendance_id, r])
-  )
+  // デフォルト終了時間
+  const { data: notifSettings } = facilityRaw
+    ? await supabase
+        .from('notification_settings')
+        .select('default_service_end_time')
+        .eq('facility_id', facilityRaw.id)
+        .limit(1)
+        .single()
+    : { data: null }
+  const defaultServiceEndTime = (notifSettings?.default_service_end_time as string | null)?.slice(0, 5) ?? '16:30'
 
   // ユニットでグループ
   const byUnit: Record<string, { unitName: string; items: AttendedChild[] }> = {}
@@ -79,102 +117,17 @@ export default async function RecordsPage({
   const totalCount = attended.filter((a) => a.status === 'attended').length
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">日々の記録</h1>
-        <p className="text-sm text-gray-500 mt-0.5">児童ごとの日報・活動記録・連絡帳</p>
-      </div>
-
-      {/* 日付ナビ */}
-      <div className="flex items-center gap-3">
-        <DateNav
-          targetDate={targetDate}
-          prevDate={prevDate.toISOString().slice(0, 10)}
-          nextDate={nextDate.toISOString().slice(0, 10)}
-          basePath="/records"
-        />
-        <span className="text-sm text-gray-500">{formatDate(targetDate, 'yyyy年MM月dd日')}</span>
-        <span className="ml-auto text-sm text-gray-500">
-          記録済 {writtenCount} / {totalCount} 名
-        </span>
-      </div>
-
-      {attended.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 text-sm">
-          この日の出席記録がありません
-        </div>
-      ) : (
-        Object.entries(byUnit).map(([unitId, { unitName, items }]) => (
-          <div key={unitId}>
-            <h2 className="text-sm font-semibold text-gray-500 mb-2 px-1">{unitName}</h2>
-            <div className="space-y-2">
-              {items.map((a) => {
-                const record = recordByAttendanceId[a.id]
-                const hasRecord = !!record
-                const isAbsent = a.status === 'absent'
-
-                return (
-                  <Link
-                    key={a.id}
-                    href={`/records/${a.child_id}?date=${targetDate}&unit=${unitId}`}
-                  >
-                    <Card className={`hover:bg-gray-50 transition-colors cursor-pointer ${isAbsent ? 'opacity-60' : ''}`}>
-                      <CardContent className="p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                            hasRecord ? 'bg-green-100' : isAbsent ? 'bg-gray-100' : 'bg-orange-100'
-                          }`}>
-                            <BookOpen className={`h-4 w-4 ${
-                              hasRecord ? 'text-green-600' : isAbsent ? 'text-gray-400' : 'text-orange-500'
-                            }`} />
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{a.children?.name ?? '—'}</p>
-                            {a.children?.name_kana && (
-                              <p className="text-xs text-gray-400">{a.children.name_kana}</p>
-                            )}
-                            {!isAbsent && (
-                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                                {(a.service_start_time || a.service_end_time) && (
-                                  <p className="text-xs text-indigo-600">
-                                    利用: {a.service_start_time?.slice(0, 5) ?? '—'}〜{a.service_end_time?.slice(0, 5) ?? '—'}
-                                  </p>
-                                )}
-                                {a.daytime_support && (
-                                  <p className="text-xs text-teal-600">
-                                    日中一時: {a.daytime_support_start_time?.slice(0, 5) ?? '—'}〜{a.daytime_support_end_time?.slice(0, 5) ?? '—'}
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {isAbsent && (
-                            <Badge variant="secondary" className="text-xs">欠席</Badge>
-                          )}
-                          {record?.has_notable_flag && (
-                            <Flag className="h-4 w-4 text-yellow-500" />
-                          )}
-                          {hasRecord ? (
-                            <Badge variant="success" className="text-xs">
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              記録済
-                            </Badge>
-                          ) : !isAbsent ? (
-                            <Badge variant="warning" className="text-xs">未記録</Badge>
-                          ) : null}
-                          <ChevronRight className="h-4 w-4 text-gray-400" />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
-                )
-              })}
-            </div>
-          </div>
-        ))
-      )}
-    </div>
+    <RecordsListBoard
+      targetDate={targetDate}
+      prevDate={prevDate.toISOString().slice(0, 10)}
+      nextDate={nextDate.toISOString().slice(0, 10)}
+      byUnit={byUnit}
+      staffMembers={(staffMembersRaw ?? []) as { id: string; name: string }[]}
+      vehicles={(vehiclesRaw ?? []) as { id: string; name: string }[]}
+      recordByAttendanceId={recordByAttendanceId}
+      writtenCount={writtenCount}
+      totalCount={totalCount}
+      defaultServiceEndTime={defaultServiceEndTime}
+    />
   )
 }

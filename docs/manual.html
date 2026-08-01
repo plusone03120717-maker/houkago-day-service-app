@@ -211,7 +211,7 @@
         <li>LINE送迎通知</li>
       </ul>
     </li>
-    <li><a href="#ch11">シフト管理・勤務時間集計</a></li>
+    <li><a href="#ch11">シフト管理・勤務時間集計・スタッフスケジュール</a></li>
     <li><a href="#ch11b">タイムカード（LINE打刻）</a></li>
     <li><a href="#ch11c">有給管理</a></li>
     <li><a href="#ch11d">スタッフ申請（LIFF通知）</a></li>
@@ -344,19 +344,31 @@
     <p>児童ごとの活動記録・特記事項</p>
   </div>
 
-  <h3>記録の作成</h3>
-  <div class="step"><span class="step-num">1</span> サイドバーの「日々の記録」をクリック</div>
-  <div class="step"><span class="step-num">2</span> 対象日付・児童を選択</div>
-  <div class="step"><span class="step-num">3</span> 記録内容を入力して保存</div>
+  <h3>送迎入力（一覧から）</h3>
+  <p>一覧画面で各児童カードの下部にある「送迎入力 ▼」をタップすると、インラインで送迎情報を入力できます。</p>
+  <table>
+    <tr><th>入力項目</th><th>内容</th></tr>
+    <tr><td>お迎え</td><td>出発時間・到着時間・ドライバー・車種</td></tr>
+    <tr><td>送り</td><td>出発時間・到着時間・ドライバー・車種</td></tr>
+    <tr><td>提供時間</td><td>開始・終了（お迎え到着時間から自動入力）</td></tr>
+    <tr><td>日中一時利用（送迎）</td><td>出席記録に日中一時利用がある場合に表示</td></tr>
+  </table>
+  <div class="tip"><strong>💡 ヒント：</strong> お迎えの出発時間を入力すると到着時間が10分後で自動入力され、提供開始時間にも反映されます。入力後は「送迎を保存」ボタンで保存してください。</div>
+
+  <h3>記録の作成（詳細画面）</h3>
+  <div class="step"><span class="step-num">1</span> 一覧で児童名をタップして詳細画面へ移動</div>
+  <div class="step"><span class="step-num">2</span> 活動記録・日常記録・連絡帳を入力</div>
+  <div class="step"><span class="step-num">3</span> 「記録を保存」ボタンで保存</div>
 
   <h4>記録の種別</h4>
   <table>
     <tr><th>種別</th><th>説明</th></tr>
     <tr><td>日常記録</td><td>その日の活動・様子の記録</td></tr>
     <tr><td>特記事項</td><td>重要事項・保護者への報告事項</td></tr>
+    <tr><td>日中一時利用</td><td>日中一時利用の提供時間（チェックで有効化）</td></tr>
   </table>
 
-  <div class="tip"><strong>💡 ヒント：</strong> 特記事項フラグを立てると、ダッシュボードで目立つ形で表示されます。</div>
+  <div class="tip"><strong>💡 ヒント：</strong> 特記事項フラグを立てると、ダッシュボードで目立つ形で表示されます。送迎時間の入力は一覧画面の「送迎入力」から行ってください。</div>
 </div>
 
 <!-- Chapter 5 -->
@@ -675,6 +687,18 @@
 
   <h3>出勤実績の入力</h3>
   <p>シフト管理画面から実際の出退勤時刻（actual_start_time / actual_end_time）を入力し、「出勤確認済み」にチェックを入れると実績が確定します。</p>
+
+  <h3>スタッフスケジュール</h3>
+  <p>サイドバーの「スタッフスケジュール」から、日付ごとにスタッフ一覧とその日の送迎担当を確認できます。</p>
+  <div class="step"><span class="step-num">1</span> 確認したい日付を日付ナビで選択</div>
+  <div class="step"><span class="step-num">2</span> スタッフカードをタップして個別スケジュールを展開</div>
+  <div class="step"><span class="step-num">3</span> シフト情報と送迎担当（日々の記録と連動）を確認</div>
+  <table>
+    <tr><th>表示内容</th><th>説明</th></tr>
+    <tr><td>シフト</td><td>その日の勤務区分（全日/午前/午後/休み/有休）と時間</td></tr>
+    <tr><td>送迎担当</td><td>日々の記録でドライバーに設定された児童・方向（お迎え/送り）・時間・車種</td></tr>
+  </table>
+  <div class="tip"><strong>💡 ヒント：</strong> 送迎情報は「日々の記録」一覧の送迎入力から登録した内容がリアルタイムで反映されます。</div>
 </div>
 
 <!-- Chapter 11b -->

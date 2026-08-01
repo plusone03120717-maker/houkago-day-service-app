@@ -18,7 +18,6 @@ import {
   Pill,
   Car,
   Bot,
-  Trash2,
 } from 'lucide-react'
 import { MedicationLogForm } from '@/components/medications/medication-log-form'
 import { formatDate } from '@/lib/utils'
@@ -39,28 +38,12 @@ type Attendance = {
   check_out_time: string | null
   body_temperature: number | null
   pickup_type: string
-  pickup_departure_time: string | null
-  pickup_arrival_time: string | null
-  dropoff_departure_time: string | null
-  dropoff_arrival_time: string | null
   service_start_time: string | null
   service_end_time: string | null
   basic_service: boolean
   daytime_support: boolean
   daytime_support_start_time: string | null
   daytime_support_end_time: string | null
-  daytime_pickup_departure_time: string | null
-  daytime_pickup_arrival_time: string | null
-  daytime_dropoff_departure_time: string | null
-  daytime_dropoff_arrival_time: string | null
-  daytime_pickup_driver_member_id: string | null
-  daytime_pickup_vehicle_id: string | null
-  daytime_dropoff_driver_member_id: string | null
-  daytime_dropoff_vehicle_id: string | null
-  pickup_driver_member_id: string | null
-  pickup_vehicle_id: string | null
-  dropoff_driver_member_id: string | null
-  dropoff_vehicle_id: string | null
 }
 
 type Program = {
@@ -109,17 +92,6 @@ type MedicationLog = {
   administered_at: string | null
 }
 
-type StaffMember = {
-  id: string
-  name: string
-  role: string
-}
-
-type Vehicle = {
-  id: string
-  name: string
-}
-
 interface Props {
   child: Child
   attendance: Attendance | null
@@ -135,9 +107,6 @@ interface Props {
   isSchoolHoliday: boolean
   defaultServiceEndTime: string
   holidayServiceEndTime: string
-  staffMembers?: StaffMember[]
-  vehicles?: Vehicle[]
-  transportScheduleByDirection?: Record<string, { vehicle_id: string | null; driver_member_id: string | null }>
 }
 
 
@@ -156,9 +125,6 @@ export function DailyRecordForm({
   isSchoolHoliday,
   defaultServiceEndTime,
   holidayServiceEndTime,
-  staffMembers = [],
-  vehicles = [],
-  transportScheduleByDirection = {},
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -185,10 +151,14 @@ export function DailyRecordForm({
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  // 日常記録AI生成
   const [bulletPoints, setBulletPoints] = useState('')
   const [generatingDaily, setGeneratingDaily] = useState(false)
   const [refiningNotable, setRefiningNotable] = useState(false)
+
+  // 日中一時利用
+  const [daytimeSupport, setDaytimeSupport] = useState(attendance?.daytime_support ?? false)
+  const [daytimeSupportStartTime, setDaytimeSupportStartTime] = useState(attendance?.daytime_support_start_time?.slice(0, 5) ?? '')
+  const [daytimeSupportEndTime, setDaytimeSupportEndTime] = useState(attendance?.daytime_support_end_time?.slice(0, 5) ?? '')
 
   const generateDailyRecord = async () => {
     if (!bulletPoints.trim()) return
@@ -227,89 +197,6 @@ export function DailyRecordForm({
     } finally {
       setRefiningNotable(false)
     }
-  }
-
-  // "HH:MM" を表示用に正規化（00:00 は未入力と同じため空文字に変換）
-  const fmtTime = (t: string | null | undefined): string => {
-    if (!t) return ''
-    const hhmm = t.slice(0, 5)
-    return hhmm === '00:00' ? '' : hhmm
-  }
-
-  // 放課後等デイサービス提供フラグ（デフォルト true）
-  const [basicService, setBasicService] = useState(attendance?.basic_service ?? true)
-
-  // 送迎時間
-  const [pickupDepartureTime, setPickupDepartureTime] = useState(fmtTime(attendance?.pickup_departure_time))
-  const [pickupArrivalTime, setPickupArrivalTime] = useState(fmtTime(attendance?.pickup_arrival_time))
-  const [dropoffDepartureTime, setDropoffDepartureTime] = useState(fmtTime(attendance?.dropoff_departure_time))
-  const [dropoffArrivalTime, setDropoffArrivalTime] = useState(fmtTime(attendance?.dropoff_arrival_time))
-
-  // ドライバー・車種（attendance に保存済みの値を優先、なければ送迎管理スケジュールから初期値）
-  const [pickupDriverId, setPickupDriverId] = useState(
-    attendance?.pickup_driver_member_id ?? transportScheduleByDirection['pickup']?.driver_member_id ?? ''
-  )
-  const [pickupVehicleId, setPickupVehicleId] = useState(
-    attendance?.pickup_vehicle_id ?? transportScheduleByDirection['pickup']?.vehicle_id ?? ''
-  )
-  const [dropoffDriverId, setDropoffDriverId] = useState(
-    attendance?.dropoff_driver_member_id ?? transportScheduleByDirection['dropoff']?.driver_member_id ?? ''
-  )
-  const [dropoffVehicleId, setDropoffVehicleId] = useState(
-    attendance?.dropoff_vehicle_id ?? transportScheduleByDirection['dropoff']?.vehicle_id ?? ''
-  )
-
-  // 提供時間
-  const [serviceStartTime, setServiceStartTime] = useState(attendance?.service_start_time?.slice(0, 5) ?? '')
-  const [serviceEndTime, setServiceEndTime] = useState(attendance?.service_end_time?.slice(0, 5) ?? '')
-
-  // 日中一時利用
-  const [daytimeSupport, setDaytimeSupport] = useState(attendance?.daytime_support ?? false)
-  const [daytimeSupportStartTime, setDaytimeSupportStartTime] = useState(attendance?.daytime_support_start_time?.slice(0, 5) ?? '')
-  const [daytimeSupportEndTime, setDaytimeSupportEndTime] = useState(attendance?.daytime_support_end_time?.slice(0, 5) ?? '')
-
-  // 日中一時利用 送迎時間・ドライバー・車種
-  const [daytimePickupDepartureTime, setDaytimePickupDepartureTime] = useState(fmtTime(attendance?.daytime_pickup_departure_time))
-  const [daytimePickupArrivalTime, setDaytimePickupArrivalTime] = useState(fmtTime(attendance?.daytime_pickup_arrival_time))
-  const [daytimeDropoffDepartureTime, setDaytimeDropoffDepartureTime] = useState(fmtTime(attendance?.daytime_dropoff_departure_time))
-  const [daytimeDropoffArrivalTime, setDaytimeDropoffArrivalTime] = useState(fmtTime(attendance?.daytime_dropoff_arrival_time))
-  const [daytimePickupDriverId, setDaytimePickupDriverId] = useState(attendance?.daytime_pickup_driver_member_id ?? '')
-  const [daytimePickupVehicleId, setDaytimePickupVehicleId] = useState(attendance?.daytime_pickup_vehicle_id ?? '')
-  const [daytimeDropoffDriverId, setDaytimeDropoffDriverId] = useState(attendance?.daytime_dropoff_driver_member_id ?? '')
-  const [daytimeDropoffVehicleId, setDaytimeDropoffVehicleId] = useState(attendance?.daytime_dropoff_vehicle_id ?? '')
-
-  // 休日かどうかによって使うデフォルト終了時間を決定
-  const serviceEndDefault = isSchoolHoliday ? holidayServiceEndTime : defaultServiceEndTime
-
-  // "HH:MM" に分を加減算して "HH:MM" を返す
-  const addMinutes = (hhmm: string, minutes: number): string => {
-    const [h, m] = hhmm.split(':').map(Number)
-    const total = h * 60 + m + minutes
-    const hh = Math.floor(((total % 1440) + 1440) % 1440 / 60)
-    const mm = ((total % 1440) + 1440) % 1440 % 60
-    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-  }
-
-  const handlePickupArrivalChange = (val: string) => {
-    setPickupArrivalTime(val)
-    if (val) {
-      setServiceStartTime(val)
-      if (!serviceEndTime) setServiceEndTime(serviceEndDefault)
-    }
-  }
-
-  const handlePickupDepartureChange = (val: string) => {
-    setPickupDepartureTime(val)
-    if (val && !pickupArrivalTime) {
-      const arrival = addMinutes(val, 10)
-      setPickupArrivalTime(arrival)
-      setServiceStartTime(arrival)
-      if (!serviceEndTime) setServiceEndTime(serviceEndDefault)
-    }
-  }
-
-  const handleDropoffArrivalConfirm = (val: string) => {
-    if (val) setDropoffDepartureTime(addMinutes(val, -10))
   }
 
   const toggleProgram = (programId: string) => {
@@ -369,7 +256,6 @@ export function DailyRecordForm({
     if (!attendance) return
     setSaving(true)
 
-    // 日常記録を保存
     const existingDaily = dailyRecords.find((r) => r.record_type === 'daily_record')
     if (dailyContent) {
       if (existingDaily) {
@@ -388,7 +274,6 @@ export function DailyRecordForm({
       }
     }
 
-    // 特記事項を保存
     const existingNotable = dailyRecords.find((r) => r.record_type === 'notable')
     if (hasNotable && notableContent) {
       if (existingNotable) {
@@ -407,7 +292,6 @@ export function DailyRecordForm({
       }
     }
 
-    // 活動記録を保存
     for (const programId of selectedPrograms) {
       const existing = activities.find((a) => a.program_id === programId)
       if (existing) {
@@ -430,36 +314,16 @@ export function DailyRecordForm({
       }
     }
 
-    // 送迎時間・提供時間・日中一時利用を保存
+    // 日中一時利用の提供時間のみ保存（送迎は一覧側で管理）
     await supabase
       .from('daily_attendance')
       .update({
-        basic_service: basicService,
-        pickup_departure_time: (pickupDepartureTime && pickupDepartureTime !== '00:00') ? pickupDepartureTime : null,
-        pickup_arrival_time: (pickupArrivalTime && pickupArrivalTime !== '00:00') ? pickupArrivalTime : null,
-        dropoff_departure_time: (dropoffDepartureTime && dropoffDepartureTime !== '00:00') ? dropoffDepartureTime : null,
-        dropoff_arrival_time: (dropoffArrivalTime && dropoffArrivalTime !== '00:00') ? dropoffArrivalTime : null,
-        service_start_time: serviceStartTime || null,
-        service_end_time: serviceEndTime || null,
         daytime_support: daytimeSupport,
         daytime_support_start_time: daytimeSupport ? (daytimeSupportStartTime || null) : null,
         daytime_support_end_time: daytimeSupport ? (daytimeSupportEndTime || null) : null,
-        daytime_pickup_departure_time: daytimeSupport ? (daytimePickupDepartureTime || null) : null,
-        daytime_pickup_arrival_time: daytimeSupport ? (daytimePickupArrivalTime || null) : null,
-        daytime_dropoff_departure_time: daytimeSupport ? (daytimeDropoffDepartureTime || null) : null,
-        daytime_dropoff_arrival_time: daytimeSupport ? (daytimeDropoffArrivalTime || null) : null,
-        daytime_pickup_driver_member_id: daytimeSupport ? (daytimePickupDriverId || null) : null,
-        daytime_pickup_vehicle_id: daytimeSupport ? (daytimePickupVehicleId || null) : null,
-        daytime_dropoff_driver_member_id: daytimeSupport ? (daytimeDropoffDriverId || null) : null,
-        daytime_dropoff_vehicle_id: daytimeSupport ? (daytimeDropoffVehicleId || null) : null,
-        pickup_driver_member_id: pickupDriverId || null,
-        pickup_vehicle_id: pickupVehicleId || null,
-        dropoff_driver_member_id: dropoffDriverId || null,
-        dropoff_vehicle_id: dropoffVehicleId || null,
       })
       .eq('id', attendance.id)
 
-    // 連絡帳を保存
     if (contactNoteContent) {
       if (initialContactNote) {
         await supabase
@@ -484,7 +348,6 @@ export function DailyRecordForm({
     startTransition(() => router.refresh())
   }
 
-  // プログラムをカテゴリごとにグルーピング
   const programsByCategory = programs.reduce<Record<string, Program[]>>((acc, p) => {
     const cat = p.category ?? 'その他'
     if (!acc[cat]) acc[cat] = []
@@ -497,7 +360,7 @@ export function DailyRecordForm({
       {/* 戻るボタン・ヘッダー */}
       <div className="flex items-center gap-3">
         <Link
-          href={`/attendance?date=${date}&unit=${unitId}`}
+          href={`/records?date=${date}`}
           className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
         >
           <ChevronLeft className="h-5 w-5" />
@@ -531,213 +394,7 @@ export function DailyRecordForm({
         </div>
       )}
 
-      {/* 送迎時間（放課後等デイサービス） */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={basicService}
-                onChange={(e) => setBasicService(e.target.checked)}
-                className="w-4 h-4 accent-teal-600"
-                disabled={!attendance}
-              />
-              <Car className="h-5 w-5 text-teal-500" />
-              送迎時間
-              <span className="text-xs font-normal text-gray-400 ml-1">（放課後等デイサービス）</span>
-            </label>
-          </CardTitle>
-        </CardHeader>
-        {basicService && (
-          <CardContent className="space-y-4">
-          {/* お迎え */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-gray-500">お迎え</p>
-              {(pickupDepartureTime || pickupArrivalTime || pickupDriverId || pickupVehicleId) && (
-                <button
-                  type="button"
-                  onClick={() => { setPickupDepartureTime(''); setPickupArrivalTime(''); setPickupDriverId(''); setPickupVehicleId('') }}
-                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  クリア
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">お迎えに行った時間</label>
-                <input
-                  type="time"
-                  value={pickupDepartureTime}
-                  onChange={(e) => handlePickupDepartureChange(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">事務所に到着した時間</label>
-                <input
-                  type="time"
-                  value={pickupArrivalTime}
-                  onChange={(e) => handlePickupArrivalChange(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
-              </div>
-              {staffMembers.length > 0 && (
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">ドライバー</label>
-                  <select
-                    value={pickupDriverId}
-                    onChange={(e) => setPickupDriverId(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
-                  >
-                    <option value="">未選択</option>
-                    {staffMembers.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {vehicles.length > 0 && (
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">車種</label>
-                  <select
-                    value={pickupVehicleId}
-                    onChange={(e) => setPickupVehicleId(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
-                  >
-                    <option value="">未選択</option>
-                    {vehicles.map((v) => (
-                      <option key={v.id} value={v.id}>{v.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-            <p className="text-xs text-gray-400 mt-1">※ お迎え時間を入力すると事務所到着時間を10分後で自動入力します</p>
-          </div>
-
-          {/* 送り */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-gray-500">送り</p>
-              {(dropoffDepartureTime || dropoffArrivalTime || dropoffDriverId || dropoffVehicleId) && (
-                <button
-                  type="button"
-                  onClick={() => { setDropoffDepartureTime(''); setDropoffArrivalTime(''); setDropoffDriverId(''); setDropoffVehicleId('') }}
-                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  クリア
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">事務所を出た時間</label>
-                <input
-                  type="time"
-                  value={dropoffDepartureTime}
-                  onChange={(e) => setDropoffDepartureTime(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">自宅に到着した時間</label>
-                <input
-                  type="time"
-                  value={dropoffArrivalTime}
-                  onChange={(e) => setDropoffArrivalTime(e.target.value)}
-                  onBlur={(e) => handleDropoffArrivalConfirm(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleDropoffArrivalConfirm(dropoffArrivalTime) }}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
-              </div>
-              {staffMembers.length > 0 && (
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">ドライバー</label>
-                  <select
-                    value={dropoffDriverId}
-                    onChange={(e) => setDropoffDriverId(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
-                  >
-                    <option value="">未選択</option>
-                    {staffMembers.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {vehicles.length > 0 && (
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">車種</label>
-                  <select
-                    value={dropoffVehicleId}
-                    onChange={(e) => setDropoffVehicleId(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
-                  >
-                    <option value="">未選択</option>
-                    {vehicles.map((v) => (
-                      <option key={v.id} value={v.id}>{v.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-            <p className="text-xs text-gray-400 mt-1">※ 自宅到着時間を入力すると事務所出発時間を10分前で自動入力します</p>
-          </div>
-
-          {/* 提供時間 */}
-          <div className="border-t border-gray-100 pt-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-gray-500">
-                提供時間
-                {isSchoolHoliday && (
-                  <span className="ml-2 text-blue-500 font-normal">（学校休日）</span>
-                )}
-              </p>
-              {(serviceStartTime || serviceEndTime) && (
-                <button
-                  type="button"
-                  onClick={() => { setServiceStartTime(''); setServiceEndTime('') }}
-                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  クリア
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">開始時間</label>
-                <input
-                  type="time"
-                  value={serviceStartTime}
-                  onChange={(e) => setServiceStartTime(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">終了時間</label>
-                <input
-                  type="time"
-                  value={serviceEndTime}
-                  onChange={(e) => setServiceEndTime(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
-              </div>
-            </div>
-            <p className="text-xs text-gray-400 mt-1">
-              ※ 事務所到着時間を入力すると提供時間の開始時間に自動反映します（終了は{isSchoolHoliday ? holidayServiceEndTime : defaultServiceEndTime}がデフォルト）
-            </p>
-          </div>
-          </CardContent>
-        )}
-      </Card>
-
-      {/* 日中一時利用 */}
+      {/* 日中一時利用（提供時間のみ） */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -755,165 +412,31 @@ export function DailyRecordForm({
           </CardTitle>
         </CardHeader>
         {daytimeSupport && (
-          <CardContent className="space-y-4">
-            {/* 提供時間 */}
-            <div>
-              <p className="text-xs font-semibold text-gray-500 mb-2">提供時間</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">開始時間</label>
-                  <input
-                    type="time"
-                    value={daytimeSupportStartTime}
-                    onChange={(e) => setDaytimeSupportStartTime(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">終了時間</label>
-                  <input
-                    type="time"
-                    value={daytimeSupportEndTime}
-                    onChange={(e) => setDaytimeSupportEndTime(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  />
-                </div>
+          <CardContent className="space-y-3">
+            <p className="text-xs font-semibold text-gray-500">提供時間</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">開始時間</label>
+                <input
+                  type="time"
+                  value={daytimeSupportStartTime}
+                  onChange={(e) => setDaytimeSupportStartTime(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">終了時間</label>
+                <input
+                  type="time"
+                  value={daytimeSupportEndTime}
+                  onChange={(e) => setDaytimeSupportEndTime(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                />
               </div>
             </div>
-
-            {/* 日中一時 お迎え */}
-            <div className="border-t border-gray-100 pt-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-gray-500">お迎え（日中一時）</p>
-                {(daytimePickupDepartureTime || daytimePickupArrivalTime || daytimePickupDriverId || daytimePickupVehicleId) && (
-                  <button
-                    type="button"
-                    onClick={() => { setDaytimePickupDepartureTime(''); setDaytimePickupArrivalTime(''); setDaytimePickupDriverId(''); setDaytimePickupVehicleId('') }}
-                    className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    クリア
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">お迎えに行った時間</label>
-                  <input
-                    type="time"
-                    value={daytimePickupDepartureTime}
-                    onChange={(e) => setDaytimePickupDepartureTime(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">事務所に到着した時間</label>
-                  <input
-                    type="time"
-                    value={daytimePickupArrivalTime}
-                    onChange={(e) => setDaytimePickupArrivalTime(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  />
-                </div>
-                {staffMembers.length > 0 && (
-                  <div>
-                    <label className="text-xs text-gray-600 mb-1 block">ドライバー</label>
-                    <select
-                      value={daytimePickupDriverId}
-                      onChange={(e) => setDaytimePickupDriverId(e.target.value)}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white"
-                    >
-                      <option value="">未選択</option>
-                      {staffMembers.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {vehicles.length > 0 && (
-                  <div>
-                    <label className="text-xs text-gray-600 mb-1 block">車種</label>
-                    <select
-                      value={daytimePickupVehicleId}
-                      onChange={(e) => setDaytimePickupVehicleId(e.target.value)}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white"
-                    >
-                      <option value="">未選択</option>
-                      {vehicles.map((v) => (
-                        <option key={v.id} value={v.id}>{v.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 日中一時 送り */}
-            <div className="border-t border-gray-100 pt-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-gray-500">送り（日中一時）</p>
-                {(daytimeDropoffDepartureTime || daytimeDropoffArrivalTime || daytimeDropoffDriverId || daytimeDropoffVehicleId) && (
-                  <button
-                    type="button"
-                    onClick={() => { setDaytimeDropoffDepartureTime(''); setDaytimeDropoffArrivalTime(''); setDaytimeDropoffDriverId(''); setDaytimeDropoffVehicleId('') }}
-                    className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    クリア
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">事務所を出た時間</label>
-                  <input
-                    type="time"
-                    value={daytimeDropoffDepartureTime}
-                    onChange={(e) => setDaytimeDropoffDepartureTime(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">自宅に到着した時間</label>
-                  <input
-                    type="time"
-                    value={daytimeDropoffArrivalTime}
-                    onChange={(e) => setDaytimeDropoffArrivalTime(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  />
-                </div>
-                {staffMembers.length > 0 && (
-                  <div>
-                    <label className="text-xs text-gray-600 mb-1 block">ドライバー</label>
-                    <select
-                      value={daytimeDropoffDriverId}
-                      onChange={(e) => setDaytimeDropoffDriverId(e.target.value)}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white"
-                    >
-                      <option value="">未選択</option>
-                      {staffMembers.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {vehicles.length > 0 && (
-                  <div>
-                    <label className="text-xs text-gray-600 mb-1 block">車種</label>
-                    <select
-                      value={daytimeDropoffVehicleId}
-                      onChange={(e) => setDaytimeDropoffVehicleId(e.target.value)}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white"
-                    >
-                      <option value="">未選択</option>
-                      {vehicles.map((v) => (
-                        <option key={v.id} value={v.id}>{v.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            </div>
+            <p className="text-xs text-gray-400">
+              ※ 送迎時間の入力は「日々の記録」一覧の送迎入力から行ってください
+            </p>
           </CardContent>
         )}
       </Card>
@@ -979,7 +502,6 @@ export function DailyRecordForm({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {/* 箇条書きAI生成エリア */}
           <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 space-y-2">
             <p className="text-xs font-medium text-indigo-700 flex items-center gap-1.5">
               <Bot className="h-3.5 w-3.5" />
@@ -1012,7 +534,6 @@ export function DailyRecordForm({
             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
           />
 
-          {/* 特記事項 */}
           <div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
