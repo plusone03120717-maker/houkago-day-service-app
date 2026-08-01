@@ -13,6 +13,8 @@ import {
   AlertCircle,
   BellRing,
   CalendarDays,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react'
 
 type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
@@ -31,8 +33,11 @@ type Contact = {
   note: string | null
   reported_at: string
   is_new: boolean
+  approval_status: ApprovalStatus
   children: { id: string; name: string } | null
 }
+
+type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 
 const TRANSPORT_LABELS: Record<TransportType, string> = {
   none: '送迎なし',
@@ -50,6 +55,11 @@ function fmtTime(v: string | null) {
 
 function hasTransport(c: Contact) {
   return c.status === 'attending' && c.transport_type !== 'none'
+}
+
+/** 承認の対象は「利用（予約）」の連絡のみ。お休みは確認済み操作だけ行う */
+function needsApproval(c: Contact) {
+  return c.status === 'attending'
 }
 
 function addDays(dateStr: string, days: number) {
@@ -87,13 +97,17 @@ type Props = {
 function ContactCard({
   contact: c,
   unread,
+  approval,
   reviewing,
   onReviewed,
+  onApproval,
 }: {
   contact: Contact
   unread: boolean
+  approval: ApprovalStatus
   reviewing: boolean
   onReviewed: (id: string) => void
+  onApproval: (id: string, next: ApprovalStatus) => void
 }) {
   return (
     <div
@@ -132,6 +146,22 @@ function ContactCard({
               {TRANSPORT_LABELS[c.transport_type]}
             </span>
           )}
+          {/* 承認状態（利用予約のみ） */}
+          {needsApproval(c) && approval !== 'pending' && (
+            <span
+              className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-bold ${
+                approval === 'approved'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-gray-500 text-white'
+              }`}
+            >
+              {approval === 'approved' ? (
+                <><ThumbsUp className="h-3 w-3" />承認済み</>
+              ) : (
+                <><ThumbsDown className="h-3 w-3" />非承認</>
+              )}
+            </span>
+          )}
         </div>
 
         {/* 利用時間・送迎時間 */}
@@ -166,14 +196,44 @@ function ContactCard({
           })}{' '}
           受信
         </p>
-        {unread && (
-          <button
-            onClick={() => onReviewed(c.id)}
-            disabled={reviewing}
-            className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-          >
-            確認済み
-          </button>
+        {/* 利用予約：承認する / 承認しない。お休み：確認するのみ */}
+        {needsApproval(c) ? (
+          approval === 'pending' ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => onApproval(c.id, 'approved')}
+                disabled={reviewing}
+                className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                承認する
+              </button>
+              <button
+                onClick={() => onApproval(c.id, 'rejected')}
+                disabled={reviewing}
+                className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                承認しない
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => onApproval(c.id, 'pending')}
+              disabled={reviewing}
+              className="text-xs text-gray-400 underline hover:text-gray-600 disabled:opacity-50"
+            >
+              取り消す
+            </button>
+          )
+        ) : (
+          unread && (
+            <button
+              onClick={() => onReviewed(c.id)}
+              disabled={reviewing}
+              className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
+              確認する
+            </button>
+          )
         )}
       </div>
     </div>
@@ -190,12 +250,17 @@ export function ParentContactsBoard({
   const router = useRouter()
   const pathname = usePathname()
   const [, startTransition] = useTransition()
-  // 確認済みにした行をその場で反映する（再取得を待たずバッジ表示と揃える）
+  // 確認済み・承認操作をその場で反映する（再取得を待たずバッジ表示と揃える）
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set())
+  const [approvalOverrides, setApprovalOverrides] = useState<Record<string, ApprovalStatus>>({})
   const [reviewing, setReviewing] = useState(false)
 
   const today = getTodayJST()
-  const isUnread = (c: Contact) => c.is_new && !reviewedIds.has(c.id)
+  const approvalOf = (c: Contact): ApprovalStatus => approvalOverrides[c.id] ?? c.approval_status
+  const isUnread = (c: Contact) => {
+    if (approvalOverrides[c.id]) return approvalOverrides[c.id] === 'pending'
+    return c.is_new && !reviewedIds.has(c.id)
+  }
   const unread = unconfirmedContacts.filter(isUnread)
 
   // 未確認連絡を日付ごとにまとめる（元データが日付昇順なのでキー順も昇順になる）
@@ -217,6 +282,26 @@ export function ParentContactsBoard({
     setReviewedIds((prev) => new Set([...prev, ...ids]))
     setReviewing(false)
     startTransition(() => router.refresh())
+  }
+
+  async function setApproval(id: string, next: ApprovalStatus) {
+    setReviewing(true)
+    await fetch('/api/parent-contacts/approval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, approvalStatus: next }),
+    })
+    setApprovalOverrides((prev) => ({ ...prev, [id]: next }))
+    setReviewing(false)
+    startTransition(() => router.refresh())
+  }
+
+  /** 「すべて確認済みにする」: お休みは確認済み、利用予約は承認としてまとめて処理する */
+  async function reviewAll(list: Contact[]) {
+    const absents = list.filter((c) => !needsApproval(c))
+    const reservations = list.filter(needsApproval)
+    if (absents.length > 0) await markReviewed(absents.map((c) => c.id))
+    for (const c of reservations) await setApproval(c.id, 'approved')
   }
 
   function navigate(newDate: string, newFilter?: string) {
@@ -260,11 +345,11 @@ export function ParentContactsBoard({
           </div>
           {unread.length > 0 && (
             <button
-              onClick={() => markReviewed(unread.map((c) => c.id))}
+              onClick={() => reviewAll(unread)}
               disabled={reviewing}
               className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
             >
-              {reviewing ? '処理中...' : 'すべて確認済みにする'}
+              {reviewing ? '処理中...' : 'すべて承認・確認する'}
             </button>
           )}
         </div>
@@ -310,8 +395,10 @@ export function ParentContactsBoard({
                         key={c.id}
                         contact={c}
                         unread
+                        approval={approvalOf(c)}
                         reviewing={reviewing}
                         onReviewed={(id) => markReviewed([id])}
+                        onApproval={setApproval}
                       />
                     ))}
                   </div>
@@ -420,8 +507,10 @@ export function ParentContactsBoard({
                 key={c.id}
                 contact={c}
                 unread={isUnread(c)}
+                approval={approvalOf(c)}
                 reviewing={reviewing}
                 onReviewed={(id) => markReviewed([id])}
+                onApproval={setApproval}
               />
             ))}
           </div>

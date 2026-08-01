@@ -110,7 +110,7 @@ export default async function ChildDetailPage({
     // LINEの利用連絡（今日以降の予定を新しい順に）
     supabase
       .from('parent_attendance_contacts')
-      .select('id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at')
+      .select('id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, approval_status')
       .eq('child_id', id)
       .gte('date', getTodayJST())
       .order('date')
@@ -144,6 +144,7 @@ export default async function ChildDetailPage({
     dropoff_time: string | null
     note: string | null
     reported_at: string
+    approval_status: 'pending' | 'approved' | 'rejected'
   }
   const parentContacts = (parentContactsRaw ?? []) as unknown as ParentContactRow[]
   const transportLabels: Record<ParentContactRow['transport_type'], string> = {
@@ -431,6 +432,17 @@ export default async function ChildDetailPage({
                           {!isAbsent && pc.transport_type !== 'none' && (
                             <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">
                               {transportLabels[pc.transport_type]}
+                            </span>
+                          )}
+                          {!isAbsent && (
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                              pc.approval_status === 'approved' ? 'bg-emerald-600 text-white'
+                              : pc.approval_status === 'rejected' ? 'bg-gray-500 text-white'
+                              : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {pc.approval_status === 'approved' ? '承認済み'
+                                : pc.approval_status === 'rejected' ? '非承認'
+                                : '承認待ち'}
                             </span>
                           )}
                         </div>

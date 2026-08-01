@@ -50,6 +50,7 @@ export type ParentContact = {
   dropoff_time: string | null
   note: string | null
   reported_at: string
+  approval_status: 'pending' | 'approved' | 'rejected'
 }
 
 const PARENT_TRANSPORT_LABELS: Record<ParentContact['transport_type'], string> = {
@@ -876,6 +877,18 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                       contact.transport_type !== 'none' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
                     )}>
                       {PARENT_TRANSPORT_LABELS[contact.transport_type]}
+                    </span>
+                  )}
+                  {contact.status === 'attending' && (
+                    <span className={cn(
+                      'text-[10px] px-1.5 py-0.5 rounded-full font-bold',
+                      contact.approval_status === 'approved' ? 'bg-emerald-600 text-white'
+                      : contact.approval_status === 'rejected' ? 'bg-gray-500 text-white'
+                      : 'bg-amber-100 text-amber-700'
+                    )}>
+                      {contact.approval_status === 'approved' ? '承認済み'
+                        : contact.approval_status === 'rejected' ? '非承認'
+                        : '承認待ち'}
                     </span>
                   )}
                 </div>

@@ -13,7 +13,7 @@ export default async function ParentContactsPage({
   const filter = params.filter ?? 'all'
 
   const contactColumns =
-    'id, child_id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, is_new, children (id, name)'
+    'id, child_id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, is_new, approval_status, children (id, name)'
 
   // 選択日の連絡と、日付をまたいだ未確認の連絡を並列取得
   const [{ data: contactsRaw }, { data: unconfirmedRaw }] = await Promise.all([
@@ -45,6 +45,7 @@ export default async function ParentContactsPage({
     note: string | null
     reported_at: string
     is_new: boolean
+    approval_status: 'pending' | 'approved' | 'rejected'
     children: { id: string; name: string } | null
   }
   const contacts = (contactsRaw ?? []) as unknown as ContactRow[]

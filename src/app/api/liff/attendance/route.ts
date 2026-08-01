@@ -131,8 +131,10 @@ export async function POST(req: NextRequest) {
         note: e.note ?? null,
         reported_via: 'line',
         reported_at: new Date().toISOString(),
-        // 新規・再送信いずれもスタッフ未確認として通知する
+        // 新規・再送信いずれもスタッフ未確認として通知し、
+        // 内容が変わるため承認状態も未承認に戻す
         is_new: true,
+        approval_status: 'pending',
       }
     })
 
