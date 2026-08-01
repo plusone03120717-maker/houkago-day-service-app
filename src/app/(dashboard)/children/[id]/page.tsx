@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays, Building2, Users } from 'lucide-react'
-import { formatDate, getAge, formatWareki } from '@/lib/utils'
+import { formatDate, getAge, formatWareki, getTodayJST } from '@/lib/utils'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 import { ParentInviteButton } from '@/components/children/parent-invite-button'
 
@@ -75,6 +75,7 @@ export default async function ChildDetailPage({
     { data: addressesRaw },
     { data: phonesRaw },
     { data: limitManagementsRaw },
+    { data: parentContactsRaw },
   ] = await Promise.all([
     supabase
       .from('children')
@@ -106,6 +107,14 @@ export default async function ChildDetailPage({
       .select('id, start_date, facility_name')
       .eq('child_id', id)
       .order('start_date', { ascending: false }),
+    // LINEの利用連絡（今日以降の予定を新しい順に）
+    supabase
+      .from('parent_attendance_contacts')
+      .select('id, date, status, service_type, pickup_required, note, reported_at')
+      .eq('child_id', id)
+      .gte('date', getTodayJST())
+      .order('date')
+      .limit(10),
   ])
 
   if (!childRaw) notFound()
@@ -122,6 +131,17 @@ export default async function ChildDetailPage({
   const childPhones = (phonesRaw ?? []) as unknown as ChildPhone[]
 
   const limitManagements = (limitManagementsRaw ?? []) as unknown as LimitManagement[]
+
+  type ParentContactRow = {
+    id: string
+    date: string
+    status: 'attending' | 'absent'
+    service_type: 'regular' | 'daytime_support'
+    pickup_required: boolean
+    note: string | null
+    reported_at: string
+  }
+  const parentContacts = (parentContactsRaw ?? []) as unknown as ParentContactRow[]
 
   return (
     <div className="space-y-5 max-w-4xl">
@@ -357,6 +377,65 @@ export default async function ChildDetailPage({
                     </Link>
                   </div>
                 ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 保護者からのLINE利用連絡 */}
+        <Card className="md:col-span-2">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-green-600" />
+                保護者からの利用連絡（LINE）
+              </CardTitle>
+              <Link href={`/children/${id}/schedule`}>
+                <Button variant="outline" size="sm">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  カレンダーで見る
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {parentContacts.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-4">今後の利用連絡はありません</p>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {parentContacts.map((pc) => {
+                  const isAbsent = pc.status === 'absent'
+                  const isDaytime = !isAbsent && pc.service_type === 'daytime_support'
+                  return (
+                    <div key={pc.id} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-gray-900">
+                            {formatDate(pc.date, 'MM月dd日')}
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            isAbsent ? 'bg-red-100 text-red-600'
+                            : isDaytime ? 'bg-orange-100 text-orange-600'
+                            : 'bg-green-100 text-green-700'
+                          }`}>
+                            {isAbsent ? 'お休み' : isDaytime ? '日中一時' : '放デイ'}
+                          </span>
+                          {!isAbsent && pc.pickup_required && (
+                            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">
+                              送迎あり
+                            </span>
+                          )}
+                        </div>
+                        {pc.note && (
+                          <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{pc.note}</p>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-400 shrink-0">
+                        {formatDate(pc.reported_at, 'MM/dd')} 受信
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </CardContent>

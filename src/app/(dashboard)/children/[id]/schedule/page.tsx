@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { ArrowLeft, CalendarDays } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChildSchedulePlanner } from '@/components/children/child-schedule-planner'
-import { ChildAttendanceCalendar, type AttendanceRecord } from '@/components/children/child-attendance-calendar'
+import { ChildAttendanceCalendar, type AttendanceRecord, type ParentContact } from '@/components/children/child-attendance-calendar'
 
 export default async function ChildSchedulePage({
   params,
@@ -207,7 +207,7 @@ export default async function ChildSchedulePage({
     cancelledPlanDates[ov.date] = { planId: ov.plan_id, overrideId: ov.id, unitId: plan.unit_id }
   }
 
-  const [{ data: attendancesRaw }, { data: staffMembersRaw }, { data: vehiclesRaw }] = await Promise.all([
+  const [{ data: attendancesRaw }, { data: staffMembersRaw }, { data: vehiclesRaw }, { data: parentContactsRaw }] = await Promise.all([
     supabase
       .from('daily_attendance')
       .select(`
@@ -236,10 +236,19 @@ export default async function ChildSchedulePage({
       .from('transport_vehicles')
       .select('id, name')
       .order('name'),
+    // LINEの利用連絡（保護者からの申告）
+    supabase
+      .from('parent_attendance_contacts')
+      .select('date, status, service_type, pickup_required, note, reported_at')
+      .eq('child_id', childId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date'),
   ])
   const attendances = (attendancesRaw ?? []) as unknown as AttendanceRecord[]
   const staffMembers = (staffMembersRaw ?? []) as { id: string; name: string }[]
   const vehicles = (vehiclesRaw ?? []) as { id: string; name: string }[]
+  const parentContacts = (parentContactsRaw ?? []) as unknown as ParentContact[]
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -284,6 +293,7 @@ export default async function ChildSchedulePage({
             month={month}
             childId={childId}
             attendances={attendances}
+            parentContacts={parentContacts}
             units={units.map((u) => ({ id: u.id, name: u.name }))}
             plannedDates={Array.from(plannedDates)}
             plannedDateUnitId={plannedDateUnitId}

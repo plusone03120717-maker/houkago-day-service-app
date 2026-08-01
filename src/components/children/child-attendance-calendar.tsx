@@ -38,11 +38,29 @@ export type AttendanceRecord = {
   units: { name: string } | null
 }
 
+/** LINEの利用連絡（保護者からの申告）。読み取り専用で出席カレンダーに重ねて表示する。 */
+export type ParentContact = {
+  date: string
+  status: 'attending' | 'absent'
+  service_type: 'regular' | 'daytime_support'
+  pickup_required: boolean
+  note: string | null
+  reported_at: string
+}
+
+/** 保護者連絡の区分ごとの色・ラベル */
+function parentContactMeta(c: ParentContact) {
+  if (c.status === 'absent') return { color: 'bg-red-400', label: 'お休み', text: 'text-red-700', bg: 'bg-red-50', border: 'border-red-100' }
+  if (c.service_type === 'daytime_support') return { color: 'bg-orange-400', label: '日中一時', text: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-100' }
+  return { color: 'bg-green-500', label: '放デイ', text: 'text-green-700', bg: 'bg-green-50', border: 'border-green-100' }
+}
+
 interface Props {
   year: number
   month: number
   childId: string
   attendances: AttendanceRecord[]
+  parentContacts?: ParentContact[]
   units?: Array<{ id: string; name: string }>
   plannedDates?: string[]
   plannedDateUnitId?: Record<string, string>
@@ -85,7 +103,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [] }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, parentContacts = [], units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [] }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -123,6 +141,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
   const [daytimeDropoffVehicleId, setDaytimeDropoffVehicleId] = useState('')
 
   const attendanceMap = Object.fromEntries(attendances.map((a) => [a.date, a]))
+  const parentContactMap = Object.fromEntries(parentContacts.map((c) => [c.date, c]))
   const plannedSet = new Set(plannedDates)
 
   // 単一選択時のみ有効な派生値
@@ -563,16 +582,24 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
             const isScheduled = att?.status === 'scheduled'
             const isPlanned = plannedSet.has(date) && !att
             const isCancelledPlan = !!cancelledPlanDates[date] && !att && !plannedSet.has(date)
+            const contact = parentContactMap[date]
 
             return (
               <button
                 key={date}
                 onClick={(e) => handleDateClick(date, e.ctrlKey || e.metaKey)}
                 className={cn(
-                  'h-12 border-b border-r border-gray-50 p-1 flex flex-col items-center transition-colors hover:bg-indigo-50',
+                  'relative h-12 border-b border-r border-gray-50 p-1 flex flex-col items-center transition-colors hover:bg-indigo-50',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
                 )}
               >
+                {/* 保護者からのLINE利用連絡（右上の四角マーカー） */}
+                {contact && (
+                  <span
+                    className={cn('absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-sm', parentContactMeta(contact).color)}
+                    title={`保護者連絡: ${parentContactMeta(contact).label}`}
+                  />
+                )}
                 <div
                   className={cn(
                     'text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full',
@@ -617,6 +644,20 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
         </div>
         <div className="flex items-center gap-1.5 text-gray-400">
           Ctrl+クリックで複数選択
+        </div>
+      </div>
+
+      {/* 保護者連絡（LINE）の凡例：マス目右上の四角マーカー */}
+      <div className="flex gap-4 text-xs text-gray-500 flex-wrap items-center">
+        <span className="text-gray-400">保護者連絡（右上の■）:</span>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-sm bg-green-500" />放デイ
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-sm bg-orange-400" />日中一時
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-sm bg-red-400" />お休み
         </div>
       </div>
 
@@ -797,6 +838,42 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, uni
               <span className="text-xs text-gray-400">記録なし（新規追加）</span>
             )}
           </div>
+
+          {/* 保護者からのLINE利用連絡 */}
+          {(() => {
+            const contact = parentContactMap[selectedDate]
+            if (!contact) return null
+            const meta = parentContactMeta(contact)
+            return (
+              <div className={cn('rounded-lg border p-3 space-y-1.5', meta.bg, meta.border)}>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className={cn('w-2 h-2 rounded-sm shrink-0', meta.color)} />
+                    <span className="text-xs font-semibold text-gray-600">保護者からの連絡（LINE）</span>
+                  </div>
+                  <span className="text-[10px] text-gray-400">
+                    {new Date(contact.reported_at).toLocaleString('ja-JP', {
+                      month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                    })} 受信
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap pl-4">
+                  <span className={cn('text-sm font-semibold', meta.text)}>{meta.label}</span>
+                  {contact.status === 'attending' && (
+                    <span className={cn(
+                      'text-[10px] px-1.5 py-0.5 rounded-full font-medium',
+                      contact.pickup_required ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                    )}>
+                      {contact.pickup_required ? '送迎希望あり' : '送迎なし'}
+                    </span>
+                  )}
+                </div>
+                {contact.note && (
+                  <p className="text-xs text-gray-600 pl-4 whitespace-pre-wrap">{contact.note}</p>
+                )}
+              </div>
+            )
+          })()}
 
           {/* ユニット表示 or 選択 */}
           {selected ? (
