@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     dailyRecord?: string
     notableRecord?: string
     activities?: { name: string; achievementLevel: number; notes: string }[]
-    attendance?: { checkInTime: string | null; checkOutTime: string | null; bodyTemperature: number | null } | null
+    attendance?: { checkInTime: string | null; checkOutTime: string | null } | null
   }
 
   if (!childId || !date) {
@@ -53,18 +53,16 @@ export async function POST(request: NextRequest) {
   // 出席情報
   let checkIn = bodyAttendance?.checkInTime ?? null
   let checkOut = bodyAttendance?.checkOutTime ?? null
-  let bodyTemp = bodyAttendance?.bodyTemperature ?? null
 
   if (bodyAttendance === undefined) {
     const { data: att } = await supabase
       .from('attendance')
-      .select('check_in_time, check_out_time, body_temperature')
+      .select('check_in_time, check_out_time')
       .eq('child_id', childId)
       .eq('date', date)
       .maybeSingle()
     checkIn = att?.check_in_time ?? null
     checkOut = att?.check_out_time ?? null
-    bodyTemp = att?.body_temperature ?? null
   }
 
   // 活動記録
@@ -89,7 +87,6 @@ export async function POST(request: NextRequest) {
 ・日付: ${date}
 ・来所時刻: ${checkIn ?? '記録なし'}
 ・帰所時刻: ${checkOut ?? '記録なし'}
-・体温: ${bodyTemp ? `${bodyTemp}℃` : '記録なし'}
 ${disabilityType ? `・障害特性: ${disabilityType}` : ''}
 
 【本日の活動】

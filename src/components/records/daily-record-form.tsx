@@ -36,7 +36,6 @@ type Attendance = {
   id: string
   check_in_time: string | null
   check_out_time: string | null
-  body_temperature: number | null
   pickup_type: string
   service_start_time: string | null
   service_end_time: string | null
@@ -241,7 +240,6 @@ export function DailyRecordForm({
           attendance: attendance ? {
             checkInTime: attendance.check_in_time,
             checkOutTime: attendance.check_out_time,
-            bodyTemperature: attendance.body_temperature,
           } : null,
         }),
       })

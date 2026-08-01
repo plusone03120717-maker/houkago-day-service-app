@@ -34,7 +34,7 @@ export default async function RecordPage({
       .single(),
     supabase
       .from('daily_attendance')
-      .select('id, check_in_time, check_out_time, body_temperature, pickup_type, service_start_time, service_end_time, basic_service, daytime_support, daytime_support_start_time, daytime_support_end_time')
+      .select('id, check_in_time, check_out_time, pickup_type, service_start_time, service_end_time, basic_service, daytime_support, daytime_support_start_time, daytime_support_end_time')
       .eq('child_id', childId)
       .eq('unit_id', unit)
       .eq('date', date)

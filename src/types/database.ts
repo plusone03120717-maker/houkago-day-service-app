@@ -179,7 +179,6 @@ export interface Database {
           check_in_time: string | null
           check_out_time: string | null
           pickup_type: PickupType
-          body_temperature: number | null
           health_condition: string | null
           created_by: string | null
           created_at: string

@@ -55,7 +55,6 @@ export type Attendance = {
   check_in_time: string | null
   check_out_time: string | null
   pickup_type: string
-  body_temperature: number | null
   health_condition: string | null
   pickup_departure_time: string | null
   pickup_arrival_time: string | null
