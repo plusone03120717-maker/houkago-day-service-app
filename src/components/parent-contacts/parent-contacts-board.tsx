@@ -1,16 +1,13 @@
 'use client'
 
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { formatDate, getTodayJST } from '@/lib/utils'
 import {
-  ChevronLeft,
-  ChevronRight,
   Car,
   Clock,
   CheckCircle2,
   XCircle,
-  AlertCircle,
   BellRing,
   CalendarDays,
   ThumbsUp,
@@ -18,6 +15,7 @@ import {
 } from 'lucide-react'
 
 type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
+type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 
 type Contact = {
   id: string
@@ -36,8 +34,6 @@ type Contact = {
   approval_status: ApprovalStatus
   children: { id: string; name: string } | null
 }
-
-type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 
 const TRANSPORT_LABELS: Record<TransportType, string> = {
   none: '送迎なし',
@@ -82,39 +78,27 @@ function relativeLabel(dateStr: string, today: string): string | null {
   return null
 }
 
-type UncontactedChild = { id: string; name: string }
-
 type Props = {
-  date: string
-  filter: string
-  contacts: Contact[]
   /** 全日付の未確認連絡（日付昇順） */
   unconfirmedContacts: Contact[]
-  uncontactedChildren: UncontactedChild[]
 }
 
-/** 連絡1件分のカード。未確認セクション・日別セクションで共用する */
+/** 連絡1件分のカード */
 function ContactCard({
   contact: c,
-  unread,
   approval,
   reviewing,
   onReviewed,
   onApproval,
 }: {
   contact: Contact
-  unread: boolean
   approval: ApprovalStatus
   reviewing: boolean
   onReviewed: (id: string) => void
   onApproval: (id: string, next: ApprovalStatus) => void
 }) {
   return (
-    <div
-      className={`rounded-xl px-4 py-3 shadow-sm border flex items-start gap-3 ${
-        unread ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100'
-      }`}
-    >
+    <div className="rounded-xl px-4 py-3 shadow-sm border bg-amber-50 border-amber-200 flex items-start gap-3">
       <div className="mt-0.5">
         {c.status === 'attending' ? (
           <CheckCircle2 className="h-5 w-5 text-green-500" />
@@ -225,50 +209,40 @@ function ContactCard({
             </button>
           )
         ) : (
-          unread && (
-            <button
-              onClick={() => onReviewed(c.id)}
-              disabled={reviewing}
-              className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-            >
-              確認する
-            </button>
-          )
+          <button
+            onClick={() => onReviewed(c.id)}
+            disabled={reviewing}
+            className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            確認する
+          </button>
         )}
       </div>
     </div>
   )
 }
 
-export function ParentContactsBoard({
-  date,
-  filter,
-  contacts,
-  unconfirmedContacts,
-  uncontactedChildren,
-}: Props) {
+export function ParentContactsBoard({ unconfirmedContacts }: Props) {
   const router = useRouter()
-  const pathname = usePathname()
   const [, startTransition] = useTransition()
-  // 確認済み・承認操作をその場で反映する（再取得を待たずバッジ表示と揃える）
-  const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set())
+  // 処理した行をその場で反映する（再取得を待たずベルバッジと揃える）
+  const [handledIds, setHandledIds] = useState<Set<string>>(new Set())
   const [approvalOverrides, setApprovalOverrides] = useState<Record<string, ApprovalStatus>>({})
   const [reviewing, setReviewing] = useState(false)
 
   const today = getTodayJST()
   const approvalOf = (c: Contact): ApprovalStatus => approvalOverrides[c.id] ?? c.approval_status
-  const isUnread = (c: Contact) => {
-    if (approvalOverrides[c.id]) return approvalOverrides[c.id] === 'pending'
-    return c.is_new && !reviewedIds.has(c.id)
-  }
-  const unread = unconfirmedContacts.filter(isUnread)
+  // 承認待ちに戻した行は再び未処理として扱う
+  const isPending = (c: Contact) =>
+    approvalOverrides[c.id] === 'pending' || !handledIds.has(c.id)
+  const pending = unconfirmedContacts.filter(isPending)
 
   // 未確認連絡を日付ごとにまとめる（元データが日付昇順なのでキー順も昇順になる）
-  const unreadByDate = new Map<string, Contact[]>()
-  for (const c of unread) {
-    const arr = unreadByDate.get(c.date) ?? []
+  const pendingByDate = new Map<string, Contact[]>()
+  for (const c of pending) {
+    const arr = pendingByDate.get(c.date) ?? []
     arr.push(c)
-    unreadByDate.set(c.date, arr)
+    pendingByDate.set(c.date, arr)
   }
 
   async function markReviewed(ids: string[]) {
@@ -279,7 +253,7 @@ export function ParentContactsBoard({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
     })
-    setReviewedIds((prev) => new Set([...prev, ...ids]))
+    setHandledIds((prev) => new Set([...prev, ...ids]))
     setReviewing(false)
     startTransition(() => router.refresh())
   }
@@ -292,11 +266,17 @@ export function ParentContactsBoard({
       body: JSON.stringify({ id, approvalStatus: next }),
     })
     setApprovalOverrides((prev) => ({ ...prev, [id]: next }))
+    setHandledIds((prev) => {
+      const nextSet = new Set(prev)
+      if (next === 'pending') nextSet.delete(id)
+      else nextSet.add(id)
+      return nextSet
+    })
     setReviewing(false)
     startTransition(() => router.refresh())
   }
 
-  /** 「すべて確認済みにする」: お休みは確認済み、利用予約は承認としてまとめて処理する */
+  /** 「すべて承認・確認する」: お休みは確認済み、利用予約は承認としてまとめて処理する */
   async function reviewAll(list: Contact[]) {
     const absents = list.filter((c) => !needsApproval(c))
     const reservations = list.filter(needsApproval)
@@ -304,48 +284,26 @@ export function ParentContactsBoard({
     for (const c of reservations) await setApproval(c.id, 'approved')
   }
 
-  function navigate(newDate: string, newFilter?: string) {
-    const f = newFilter ?? filter
-    startTransition(() => {
-      router.push(`${pathname}?date=${newDate}&filter=${f}`)
-    })
-  }
-
-  const dateObj = new Date(date + 'T00:00:00')
-
-  const filtered =
-    filter === 'pickup'
-      ? contacts.filter(hasTransport)
-      : filter === 'daytime'
-        ? contacts.filter((c) => c.status === 'attending' && c.service_type === 'daytime_support')
-        : contacts
-
-  const attendingCount = contacts.filter((c) => c.status === 'attending').length
-  const daytimeCount = contacts.filter((c) => c.status === 'attending' && c.service_type === 'daytime_support').length
-  const absentCount = contacts.filter((c) => c.status === 'absent').length
-  const pickupCount = contacts.filter(hasTransport).length
-
   return (
     <div className="max-w-3xl mx-auto space-y-5">
       <h1 className="text-xl font-bold text-gray-900">保護者連絡一覧</h1>
 
-      {/* ===== 未確認の連絡（全日付・日付ごとにグループ表示） ===== */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-b border-gray-100 bg-amber-50/60">
           <div className="flex items-center gap-2">
             <BellRing className="h-4 w-4 text-amber-500" />
             <p className="text-sm font-bold text-gray-900">
               未確認の連絡
-              {unread.length > 0 && (
+              {pending.length > 0 && (
                 <span className="ml-1.5 rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-bold text-white">
-                  {unread.length}
+                  {pending.length}
                 </span>
               )}
             </p>
           </div>
-          {unread.length > 0 && (
+          {pending.length > 0 && (
             <button
-              onClick={() => reviewAll(unread)}
+              onClick={() => reviewAll(pending)}
               disabled={reviewing}
               className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
             >
@@ -354,24 +312,20 @@ export function ParentContactsBoard({
           )}
         </div>
 
-        {unread.length === 0 ? (
-          <p className="px-4 py-5 text-center text-sm text-gray-400">
+        {pending.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-gray-400">
             未確認の連絡はありません
           </p>
         ) : (
           <div className="divide-y divide-gray-100">
-            {[...unreadByDate.entries()].map(([d, dayContacts]) => {
+            {[...pendingByDate.entries()].map(([d, dayContacts]) => {
               const rel = relativeLabel(d, today)
               return (
                 <div key={d} className="px-4 py-3">
-                  {/* 日付ヘッダー：クリックで下の日別ビューをその日に切り替え */}
-                  <button
-                    onClick={() => navigate(d)}
-                    className="flex items-center gap-2 mb-2 group"
-                    title="この日の連絡一覧を表示"
-                  >
+                  {/* 日付ヘッダー */}
+                  <div className="flex items-center gap-2 mb-2">
                     <CalendarDays className="h-4 w-4 text-indigo-500" />
-                    <span className="text-sm font-bold text-gray-900 group-hover:text-indigo-600 group-hover:underline">
+                    <span className="text-sm font-bold text-gray-900">
                       {formatDateLabel(d)}
                     </span>
                     {rel && (
@@ -388,13 +342,12 @@ export function ParentContactsBoard({
                       </span>
                     )}
                     <span className="text-xs text-gray-400">{dayContacts.length}件</span>
-                  </button>
+                  </div>
                   <div className="space-y-2">
                     {dayContacts.map((c) => (
                       <ContactCard
                         key={c.id}
                         contact={c}
-                        unread
                         approval={approvalOf(c)}
                         reviewing={reviewing}
                         onReviewed={(id) => markReviewed([id])}
@@ -409,135 +362,9 @@ export function ParentContactsBoard({
         )}
       </div>
 
-      {/* ===== 日別の連絡 ===== */}
-      <div className="pt-2 space-y-4">
-        <h2 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-          <CalendarDays className="h-4 w-4 text-gray-400" />
-          日別の連絡
-        </h2>
-
-        {/* 日付ナビ */}
-        <div className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100">
-          <button
-            onClick={() => navigate(addDays(date, -1))}
-            className="p-1 text-gray-400 hover:text-gray-700"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <div className="flex-1 text-center">
-            <span className="font-bold text-gray-900">
-              {dateObj.getFullYear()}年{formatDateLabel(date)}
-            </span>
-            {date === today && (
-              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-indigo-600 text-white">
-                今日
-              </span>
-            )}
-          </div>
-          <button
-            onClick={() => navigate(addDays(date, 1))}
-            className="p-1 text-gray-400 hover:text-gray-700"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
-        </div>
-
-        {date !== today && (
-          <div className="text-center">
-            <button
-              onClick={() => navigate(today)}
-              className="text-xs text-indigo-600 underline"
-            >
-              今日に戻る
-            </button>
-          </div>
-        )}
-
-        {/* サマリーカード */}
-        <div className="grid grid-cols-4 gap-2">
-          <div className="bg-green-50 rounded-xl p-3 text-center border border-green-100">
-            <p className="text-2xl font-bold text-green-700">{attendingCount}</p>
-            <p className="text-xs text-green-600">利用する</p>
-          </div>
-          <div className="bg-orange-50 rounded-xl p-3 text-center border border-orange-100">
-            <p className="text-2xl font-bold text-orange-500">{daytimeCount}</p>
-            <p className="text-xs text-orange-500">日中一時</p>
-          </div>
-          <div className="bg-red-50 rounded-xl p-3 text-center border border-red-100">
-            <p className="text-2xl font-bold text-red-500">{absentCount}</p>
-            <p className="text-xs text-red-500">お休み</p>
-          </div>
-          <div className="bg-blue-50 rounded-xl p-3 text-center border border-blue-100">
-            <p className="text-2xl font-bold text-blue-600">{pickupCount}</p>
-            <p className="text-xs text-blue-500">送迎あり</p>
-          </div>
-        </div>
-
-        {/* フィルタ */}
-        <div className="flex gap-2">
-          {[
-            { value: 'all', label: 'すべて' },
-            { value: 'pickup', label: '送迎あり' },
-            // 送り/迎えの内訳は各カードのバッジで確認できる
-            { value: 'daytime', label: '日中一時' },
-          ].map((f) => (
-            <button
-              key={f.value}
-              onClick={() => navigate(date, f.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                filter === f.value
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        {/* 連絡一覧 */}
-        {filtered.length === 0 ? (
-          <div className="bg-white rounded-xl p-8 text-center text-gray-400 border border-gray-100">
-            <p className="text-sm">この日の連絡はありません</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {filtered.map((c) => (
-              <ContactCard
-                key={c.id}
-                contact={c}
-                unread={isUnread(c)}
-                approval={approvalOf(c)}
-                reviewing={reviewing}
-                onReviewed={(id) => markReviewed([id])}
-                onApproval={setApproval}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* 未連絡の児童 */}
-        {uncontactedChildren.length > 0 && (
-          <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-100">
-            <div className="flex items-center gap-2 mb-3">
-              <AlertCircle className="h-4 w-4 text-yellow-600" />
-              <p className="text-sm font-semibold text-yellow-800">
-                まだ連絡が来ていない児童（{uncontactedChildren.length}名）
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {uncontactedChildren.map((c) => (
-                <span
-                  key={c.id}
-                  className="text-xs bg-yellow-100 text-yellow-800 px-2.5 py-1 rounded-full font-medium"
-                >
-                  {c.name}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <p className="text-xs text-gray-400 text-center">
+        処理済みの連絡は、児童ごとの詳細ページと利用スケジュールで確認できます
+      </p>
     </div>
   )
 }

@@ -1,35 +1,18 @@
 import { createClient } from '@/lib/supabase/server'
-import { getTodayJST } from '@/lib/utils'
 import { ParentContactsBoard } from '@/components/parent-contacts/parent-contacts-board'
 
-export default async function ParentContactsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ date?: string; filter?: string }>
-}) {
-  const params = await searchParams
+export default async function ParentContactsPage() {
   const supabase = await createClient()
-  const today = params.date ?? getTodayJST()
-  const filter = params.filter ?? 'all'
 
-  const contactColumns =
-    'id, child_id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, is_new, approval_status, children (id, name)'
-
-  // 選択日の連絡と、日付をまたいだ未確認の連絡を並列取得
-  const [{ data: contactsRaw }, { data: unconfirmedRaw }] = await Promise.all([
-    supabase
-      .from('parent_attendance_contacts')
-      .select(contactColumns)
-      .eq('date', today)
-      .order('reported_at', { ascending: false }),
-    // ベル通知から開いたとき「どの日付の連絡か」を一覧できるよう全日付から集める
-    supabase
-      .from('parent_attendance_contacts')
-      .select(contactColumns)
-      .eq('is_new', true)
-      .order('date', { ascending: true })
-      .order('reported_at', { ascending: false }),
-  ])
+  // 未確認の連絡のみを日付順に取得する
+  const { data: unconfirmedRaw } = await supabase
+    .from('parent_attendance_contacts')
+    .select(
+      'id, child_id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, is_new, approval_status, children (id, name)'
+    )
+    .eq('is_new', true)
+    .order('date', { ascending: true })
+    .order('reported_at', { ascending: false })
 
   type ContactRow = {
     id: string
@@ -48,29 +31,7 @@ export default async function ParentContactsPage({
     approval_status: 'pending' | 'approved' | 'rejected'
     children: { id: string; name: string } | null
   }
-  const contacts = (contactsRaw ?? []) as unknown as ContactRow[]
   const unconfirmedContacts = (unconfirmedRaw ?? []) as unknown as ContactRow[]
 
-  // その日の全登録児童を取得（連絡が来ていない児童を把握するため）
-  const { data: allChildrenRaw } = await supabase
-    .from('guardian_children')
-    .select('children (id, name)')
-
-  type GcRow = { children: { id: string; name: string } | null }
-  const allChildren = ((allChildrenRaw ?? []) as unknown as GcRow[])
-    .flatMap((r) => (r.children ? [r.children] : []))
-    .filter((c, i, arr) => arr.findIndex((x) => x.id === c.id) === i)
-
-  const contactedChildIds = new Set(contacts.map((c) => c.child_id))
-  const uncontactedChildren = allChildren.filter((c) => !contactedChildIds.has(c.id))
-
-  return (
-    <ParentContactsBoard
-      date={today}
-      filter={filter}
-      contacts={contacts}
-      unconfirmedContacts={unconfirmedContacts}
-      uncontactedChildren={uncontactedChildren}
-    />
-  )
+  return <ParentContactsBoard unconfirmedContacts={unconfirmedContacts} />
 }
