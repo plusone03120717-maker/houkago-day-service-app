@@ -1,9 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { BookOpen, Calendar, ChevronRight, ClipboardList, MessageSquare, Receipt } from 'lucide-react'
-import { formatDate, getTodayJST } from '@/lib/utils'
+import { BookOpen, ChevronRight, ClipboardList, MessageSquare, Receipt } from 'lucide-react'
+import { formatDate } from '@/lib/utils'
 
 type Child = {
   id: string
@@ -17,13 +16,6 @@ type Announcement = {
   title: string
   content: string
   published_at: string
-}
-
-type Reservation = {
-  id: string
-  date: string
-  status: string
-  units: { name: string } | null
 }
 
 type ContactNote = {
@@ -48,28 +40,12 @@ export default async function ParentHomePage() {
 
   const childIds = children.map((c) => c.id)
 
-  // 予約・お知らせ・連絡帳・未読数は互いに独立しているため並列取得
-  const today = getTodayJST()
-  const nextWeek = new Date()
-  nextWeek.setDate(nextWeek.getDate() + 7)
+  // お知らせ・連絡帳・未読数は互いに独立しているため並列取得
   const [
-    { data: reservationsRaw },
     { data: announcementsRaw },
     { data: contactNotesRaw },
     { count: unreadCount },
   ] = await Promise.all([
-    // 今後1週間の利用予約
-    childIds.length > 0
-      ? supabase
-          .from('usage_reservations')
-          .select('id, date, status, units(name)')
-          .in('child_id', childIds)
-          .gte('date', today)
-          .lte('date', formatDate(nextWeek, 'yyyy-MM-dd'))
-          .in('status', ['confirmed', 'reserved'])
-          .order('date')
-          .limit(5)
-      : Promise.resolve({ data: [] }),
     // 最新のお知らせ（3件）
     supabase
       .from('announcements')
@@ -95,7 +71,6 @@ export default async function ParentHomePage() {
       .eq('receiver_id', user.id)
       .is('read_at', null),
   ])
-  const upcomingReservations = (reservationsRaw ?? []) as unknown as Reservation[]
   const announcements = (announcementsRaw ?? []) as unknown as Announcement[]
   const contactNotes = (contactNotesRaw ?? []) as unknown as ContactNote[]
 
@@ -153,17 +128,6 @@ export default async function ParentHomePage() {
             </div>
           </div>
         </Link>
-        <Link href="/parent/calendar">
-          <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
-            <div className="p-2 bg-teal-100 rounded-lg">
-              <Calendar className="h-5 w-5 text-teal-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">利用予約</p>
-              <p className="text-xs text-gray-400">申し込み・確認</p>
-            </div>
-          </div>
-        </Link>
         <Link href="/parent/messages">
           <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow relative">
             <div className="p-2 bg-purple-100 rounded-lg">
@@ -192,31 +156,6 @@ export default async function ParentHomePage() {
           </div>
         </Link>
       </div>
-
-      {/* 今週の予定 */}
-      {upcomingReservations.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-900">今後の予定</h2>
-            <Link href="/parent/calendar" className="text-xs text-indigo-600">すべて見る</Link>
-          </div>
-          <Card>
-            <CardContent className="p-0 divide-y divide-gray-100">
-              {upcomingReservations.map((res) => (
-                <div key={res.id} className="flex items-center justify-between px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{formatDate(res.date, 'MM月dd日')}</p>
-                    <p className="text-xs text-gray-400">{res.units?.name}</p>
-                  </div>
-                  <Badge variant={res.status === 'confirmed' ? 'success' : 'secondary'} className="text-xs">
-                    {res.status === 'confirmed' ? '確定' : '予約済'}
-                  </Badge>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </section>
-      )}
 
       {/* 最新連絡帳 */}
       {contactNotes.length > 0 && (
