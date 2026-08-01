@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { KeyRound, Copy, Check, Loader2, Plus } from 'lucide-react'
+import { KeyRound, Copy, Check, Loader2, Plus, Trash2 } from 'lucide-react'
 
 type CodeRow = {
   code: string
@@ -31,6 +31,9 @@ export function RegistrationCodesManager({ codes, children }: Props) {
   const [creating, setCreating] = useState(false)
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 誤削除を防ぐため、1度目のクリックで確認状態にする
+  const [confirmDeleteCode, setConfirmDeleteCode] = useState<string | null>(null)
+  const [deletingCode, setDeletingCode] = useState<string | null>(null)
 
   async function handleCreate() {
     if (!selectedChildId) return
@@ -53,6 +56,26 @@ export function RegistrationCodesManager({ codes, children }: Props) {
       startTransition(() => router.refresh())
     }
     setCreating(false)
+  }
+
+  async function handleDelete(code: string) {
+    setDeletingCode(code)
+    setError(null)
+
+    const res = await fetch('/api/liff/registration-codes', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+    const json = await res.json() as { error?: string }
+
+    if (!res.ok) {
+      setError(json.error ?? '削除に失敗しました')
+    } else {
+      startTransition(() => router.refresh())
+    }
+    setDeletingCode(null)
+    setConfirmDeleteCode(null)
   }
 
   async function handleCopy(code: string) {
@@ -134,19 +157,55 @@ export function RegistrationCodesManager({ codes, children }: Props) {
                   {row.children?.name ?? '不明'} ·{' '}
                   {new Date(row.created_at).toLocaleDateString('ja-JP')}
                 </p>
+                {confirmDeleteCode === row.code && (
+                  <p className="text-xs text-red-600 mt-1">
+                    {row.used
+                      ? 'このコードを削除します。登録済みの保護者との紐付けは解除されません。'
+                      : 'このコードを削除します。保護者に伝えている場合は登録できなくなります。'}
+                  </p>
+                )}
               </div>
-              {!row.used && (
-                <button
-                  onClick={() => handleCopy(row.code)}
-                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                  title="コードをコピー"
-                >
-                  {copiedCode === row.code ? (
-                    <Check className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
+              {confirmDeleteCode === row.code ? (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => handleDelete(row.code)}
+                    disabled={deletingCode === row.code}
+                    className="flex items-center gap-1 rounded-lg bg-red-500 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    {deletingCode === row.code && <Loader2 className="h-3 w-3 animate-spin" />}
+                    削除する
+                  </button>
+                  <button
+                    onClick={() => setConfirmDeleteCode(null)}
+                    disabled={deletingCode === row.code}
+                    className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    やめる
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 shrink-0">
+                  {!row.used && (
+                    <button
+                      onClick={() => handleCopy(row.code)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                      title="コードをコピー"
+                    >
+                      {copiedCode === row.code ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </button>
                   )}
-                </button>
+                  <button
+                    onClick={() => { setConfirmDeleteCode(row.code); setError(null) }}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    title="このコードを削除"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               )}
             </div>
           ))
