@@ -9,16 +9,12 @@ import { Button } from '@/components/ui/button'
 import {
   BookOpen, ChevronRight, CheckCircle, Flag,
   Car, ChevronDown, ChevronUp, Trash2, Check,
-  UserCheck, UserX,
+  UserCheck, UserX, Copy, CalendarClock,
 } from 'lucide-react'
 import { DateNav } from '@/components/ui/date-nav'
 import { formatDate } from '@/lib/utils'
 
-type AttendedChild = {
-  id: string
-  child_id: string
-  unit_id: string
-  status: string
+type TransportRow = {
   basic_service: boolean
   service_start_time: string | null
   service_end_time: string | null
@@ -41,8 +37,31 @@ type AttendedChild = {
   daytime_dropoff_arrival_time: string | null
   daytime_dropoff_driver_member_id: string | null
   daytime_dropoff_vehicle_id: string | null
+}
+
+type AttendedChild = TransportRow & {
+  id: string
+  child_id: string
+  unit_id: string
+  status: string
   children: { id: string; name: string; name_kana: string | null } | null
   units: { id: string; name: string } | null
+}
+
+type PrevAttendanceRow = TransportRow & {
+  child_id: string
+  date: string
+}
+
+type ScheduleDefaults = {
+  transportType: string
+  pickupTime: string | null
+  dropoffTime: string | null
+  serviceStartTime: string | null
+  serviceEndTime: string | null
+  daytimeSupport: boolean
+  daytimeSupportStartTime: string | null
+  daytimeSupportEndTime: string | null
 }
 
 type DailyRecord = {
@@ -90,6 +109,8 @@ interface Props {
   writtenCount: number
   totalCount: number
   defaultServiceEndTime: string
+  prevByChildId: Record<string, PrevAttendanceRow>
+  scheduleDefaultsByAttendanceId: Record<string, ScheduleDefaults>
 }
 
 function fmtTime(t: string | null | undefined): string {
@@ -105,7 +126,7 @@ function addMinutes(hhmm: string, minutes: number): string {
   return `${String(Math.floor(norm / 60)).padStart(2, '0')}:${String(norm % 60).padStart(2, '0')}`
 }
 
-function initFields(a: AttendedChild, defaultEnd: string): TransportFields {
+function initFields(a: TransportRow, defaultEnd: string): TransportFields {
   return {
     basicService: a.basic_service ?? true,
     pickupDepartureTime: fmtTime(a.pickup_departure_time),
@@ -139,6 +160,33 @@ function hasTransportData(f: TransportFields): boolean {
   )
 }
 
+// DB上の入力が実質空か（serviceEndTimeはデフォルト補完されるため除外）
+function isBlankFields(f: TransportFields): boolean {
+  return !(
+    f.pickupDepartureTime || f.pickupArrivalTime || f.pickupDriverId || f.pickupVehicleId ||
+    f.dropoffDepartureTime || f.dropoffArrivalTime || f.dropoffDriverId || f.dropoffVehicleId ||
+    f.serviceStartTime || f.daytimeSupport ||
+    f.daytimeSupportStartTime || f.daytimeSupportEndTime
+  )
+}
+
+// 利用スケジュールの内容を初期値として反映
+function applyScheduleDefaults(f: TransportFields, s: ScheduleDefaults, defaultEnd: string): TransportFields {
+  const showPickup = s.transportType === 'pickup_only' || s.transportType === 'both'
+  const showDropoff = s.transportType === 'dropoff_only' || s.transportType === 'both'
+  const pickupTime = fmtTime(s.pickupTime)
+  return {
+    ...f,
+    pickupArrivalTime: showPickup ? pickupTime : '',
+    dropoffDepartureTime: showDropoff ? fmtTime(s.dropoffTime) : '',
+    serviceStartTime: fmtTime(s.serviceStartTime) || (showPickup ? pickupTime : ''),
+    serviceEndTime: fmtTime(s.serviceEndTime) || defaultEnd,
+    daytimeSupport: s.daytimeSupport,
+    daytimeSupportStartTime: s.daytimeSupport ? fmtTime(s.daytimeSupportStartTime) : '',
+    daytimeSupportEndTime: s.daytimeSupport ? fmtTime(s.daytimeSupportEndTime) : '',
+  }
+}
+
 export function RecordsListBoard({
   targetDate,
   prevDate,
@@ -150,6 +198,8 @@ export function RecordsListBoard({
   writtenCount,
   totalCount,
   defaultServiceEndTime,
+  prevByChildId,
+  scheduleDefaultsByAttendanceId,
 }: Props) {
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -163,8 +213,34 @@ export function RecordsListBoard({
 
   const allItems = Object.values(byUnit).flatMap((u) => u.items)
 
+  // DBの値が空の場合は利用スケジュールの初期値を自動セット
+  const buildInitialFields = (a: AttendedChild): TransportFields => {
+    const base = initFields(a, defaultServiceEndTime)
+    const sched = scheduleDefaultsByAttendanceId[a.id]
+    if (sched && isBlankFields(base)) {
+      return applyScheduleDefaults(base, sched, defaultServiceEndTime)
+    }
+    return base
+  }
+
+  // このセッションで保存済みのID（保存後はプリセット表示を解除するため）
+  const [savedOnce, setSavedOnce] = useState<Set<string>>(new Set())
+
+  // スケジュール初期値が表示中（未保存）かどうか
+  const isSchedulePreset = (a: AttendedChild): boolean => {
+    const sched = scheduleDefaultsByAttendanceId[a.id]
+    return !!sched && !savedOnce.has(a.id) && isBlankFields(initFields(a, defaultServiceEndTime))
+  }
+
   const getFields = (a: AttendedChild): TransportFields =>
-    fieldStates[a.id] ?? initFields(a, defaultServiceEndTime)
+    fieldStates[a.id] ?? buildInitialFields(a)
+
+  // 前回（直近の出席日）の入力内容をまるごと複写
+  const handleCopyPrevious = (a: AttendedChild) => {
+    const prev = prevByChildId[a.child_id]
+    if (!prev) return
+    setFieldStates((s) => ({ ...s, [a.id]: initFields(prev, defaultServiceEndTime) }))
+  }
 
   const getStatus = (a: AttendedChild): string =>
     localStatus[a.id] ?? a.status
@@ -172,7 +248,7 @@ export function RecordsListBoard({
   const setField = (attendanceId: string, patch: Partial<TransportFields>, a: AttendedChild) => {
     setFieldStates((prev) => ({
       ...prev,
-      [attendanceId]: { ...(prev[attendanceId] ?? initFields(a, defaultServiceEndTime)), ...patch },
+      [attendanceId]: { ...(prev[attendanceId] ?? buildInitialFields(a)), ...patch },
     }))
   }
 
@@ -243,6 +319,7 @@ export function RecordsListBoard({
     }).eq('id', a.id)
 
     setSaving(null)
+    setSavedOnce((prev) => new Set(prev).add(a.id))
     setSavedIds((prev) => new Set(prev).add(a.id))
     setTimeout(() => setSavedIds((prev) => { const s = new Set(prev); s.delete(a.id); return s }), 2000)
     startTransition(() => {})
@@ -425,7 +502,11 @@ export function RecordsListBoard({
                             <Car className="h-3.5 w-3.5 text-teal-500" />
                             送迎・日中一時入力
                             {(hasTransportData(f) || f.daytimeSupport) && (
-                              <span className="text-teal-600 font-medium">・入力済</span>
+                              isSchedulePreset(a) ? (
+                                <span className="text-indigo-600 font-medium">・予定から自動入力（未保存）</span>
+                              ) : (
+                                <span className="text-teal-600 font-medium">・入力済</span>
+                              )
                             )}
                           </span>
                           {isExpanded
@@ -439,6 +520,30 @@ export function RecordsListBoard({
                     {isExpanded && !isAbsent && (
                       <Card className="rounded-t-none border-t-0">
                         <CardContent className="p-4 space-y-5">
+
+                          {/* ── スケジュール自動入力の表示・前回コピー ── */}
+                          {(isSchedulePreset(a) || prevByChildId[a.child_id]) && (
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              {isSchedulePreset(a) ? (
+                                <p className="flex items-center gap-1 text-xs text-indigo-600">
+                                  <CalendarClock className="h-3.5 w-3.5" />
+                                  利用スケジュールから初期値を自動入力
+                                </p>
+                              ) : (
+                                <span />
+                              )}
+                              {prevByChildId[a.child_id] && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyPrevious(a)}
+                                  className="flex items-center gap-1.5 text-xs font-medium text-teal-700 border border-teal-300 rounded-full px-3 py-1.5 hover:bg-teal-50 transition-colors ml-auto"
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                  前回（{formatDate(prevByChildId[a.child_id].date, 'MM月dd日')}）の内容をコピー
+                                </button>
+                              )}
+                            </div>
+                          )}
 
                           {/* ── 放課後等デイサービス ── */}
                           <div className="space-y-4">
