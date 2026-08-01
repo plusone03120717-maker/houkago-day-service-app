@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { formatDate, getTodayJST } from '@/lib/utils'
+import { getTodayJST } from '@/lib/utils'
 import { ParentContactsBoard } from '@/components/parent-contacts/parent-contacts-board'
 
 export default async function ParentContactsPage({
@@ -12,12 +12,24 @@ export default async function ParentContactsPage({
   const today = params.date ?? getTodayJST()
   const filter = params.filter ?? 'all'
 
-  // その日の保護者連絡を取得
-  const { data: contactsRaw } = await supabase
-    .from('parent_attendance_contacts')
-    .select('id, child_id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, is_new, children (id, name)')
-    .eq('date', today)
-    .order('reported_at', { ascending: false })
+  const contactColumns =
+    'id, child_id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, is_new, children (id, name)'
+
+  // 選択日の連絡と、日付をまたいだ未確認の連絡を並列取得
+  const [{ data: contactsRaw }, { data: unconfirmedRaw }] = await Promise.all([
+    supabase
+      .from('parent_attendance_contacts')
+      .select(contactColumns)
+      .eq('date', today)
+      .order('reported_at', { ascending: false }),
+    // ベル通知から開いたとき「どの日付の連絡か」を一覧できるよう全日付から集める
+    supabase
+      .from('parent_attendance_contacts')
+      .select(contactColumns)
+      .eq('is_new', true)
+      .order('date', { ascending: true })
+      .order('reported_at', { ascending: false }),
+  ])
 
   type ContactRow = {
     id: string
@@ -36,6 +48,7 @@ export default async function ParentContactsPage({
     children: { id: string; name: string } | null
   }
   const contacts = (contactsRaw ?? []) as unknown as ContactRow[]
+  const unconfirmedContacts = (unconfirmedRaw ?? []) as unknown as ContactRow[]
 
   // その日の全登録児童を取得（連絡が来ていない児童を把握するため）
   const { data: allChildrenRaw } = await supabase
@@ -55,6 +68,7 @@ export default async function ParentContactsPage({
       date={today}
       filter={filter}
       contacts={contacts}
+      unconfirmedContacts={unconfirmedContacts}
       uncontactedChildren={uncontactedChildren}
     />
   )
