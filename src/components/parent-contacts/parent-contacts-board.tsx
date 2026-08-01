@@ -10,6 +10,7 @@ type Contact = {
   child_id: string
   date: string
   status: 'attending' | 'absent'
+  service_type: 'regular' | 'daytime_support'
   pickup_required: boolean
   note: string | null
   reported_at: string
@@ -49,9 +50,12 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
   const filtered =
     filter === 'pickup'
       ? contacts.filter((c) => c.status === 'attending' && c.pickup_required)
-      : contacts
+      : filter === 'daytime'
+        ? contacts.filter((c) => c.status === 'attending' && c.service_type === 'daytime_support')
+        : contacts
 
   const attendingCount = contacts.filter((c) => c.status === 'attending').length
+  const daytimeCount = contacts.filter((c) => c.status === 'attending' && c.service_type === 'daytime_support').length
   const absentCount = contacts.filter((c) => c.status === 'absent').length
   const pickupCount = contacts.filter((c) => c.status === 'attending' && c.pickup_required).length
 
@@ -81,10 +85,14 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
       </div>
 
       {/* サマリーカード */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-2">
         <div className="bg-green-50 rounded-xl p-3 text-center border border-green-100">
           <p className="text-2xl font-bold text-green-700">{attendingCount}</p>
           <p className="text-xs text-green-600">利用する</p>
+        </div>
+        <div className="bg-orange-50 rounded-xl p-3 text-center border border-orange-100">
+          <p className="text-2xl font-bold text-orange-500">{daytimeCount}</p>
+          <p className="text-xs text-orange-500">日中一時</p>
         </div>
         <div className="bg-red-50 rounded-xl p-3 text-center border border-red-100">
           <p className="text-2xl font-bold text-red-500">{absentCount}</p>
@@ -101,6 +109,7 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
         {[
           { value: 'all', label: 'すべて' },
           { value: 'pickup', label: '送迎あり' },
+          { value: 'daytime', label: '日中一時' },
         ].map((f) => (
           <button
             key={f.value}
@@ -149,6 +158,11 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
                   >
                     {c.status === 'attending' ? '利用する' : 'お休み'}
                   </span>
+                  {c.status === 'attending' && c.service_type === 'daytime_support' && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 font-medium">
+                      日中一時
+                    </span>
+                  )}
                   {c.status === 'attending' && c.pickup_required && (
                     <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
                       <Car className="h-3 w-3" />

@@ -9,9 +9,11 @@ const adminClient = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { accessToken } = await req.json() as { accessToken?: string }
-    if (!accessToken) {
-      return NextResponse.json({ error: 'accessToken が必要です' }, { status: 400 })
+    const { accessToken, year, month } = await req.json() as {
+      accessToken?: string; year?: number; month?: number
+    }
+    if (!accessToken || !year || !month || month < 1 || month > 12) {
+      return NextResponse.json({ error: 'パラメータが不足しています' }, { status: 400 })
     }
 
     const lineUserId = await verifyLineAccessToken(accessToken)
@@ -23,7 +25,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle()
 
     if (!guardian) {
-      return NextResponse.json({ children: [] })
+      return NextResponse.json({ children: [], contacts: [] })
     }
 
     const { data: rows } = await adminClient
@@ -35,9 +37,22 @@ export async function POST(req: NextRequest) {
       .flatMap((r) => (Array.isArray(r.children) ? r.children : r.children ? [r.children] : []))
       .filter((c): c is { id: string; name: string } => c !== null && typeof c.id === 'string')
 
-    return NextResponse.json({ children })
+    if (children.length === 0) {
+      return NextResponse.json({ children: [], contacts: [] })
+    }
+
+    const mm = String(month).padStart(2, '0')
+    const lastDay = new Date(year, month, 0).getDate()
+    const { data: contacts } = await adminClient
+      .from('parent_attendance_contacts')
+      .select('child_id, date, status, service_type, pickup_required, note')
+      .in('child_id', children.map((c) => c.id))
+      .gte('date', `${year}-${mm}-01`)
+      .lte('date', `${year}-${mm}-${String(lastDay).padStart(2, '0')}`)
+
+    return NextResponse.json({ children, contacts: contacts ?? [] })
   } catch (err) {
-    console.error('[liff/children]', err)
+    console.error('[liff/attendance/month]', err)
     return NextResponse.json({ error: 'サーバーエラーが発生しました' }, { status: 500 })
   }
 }

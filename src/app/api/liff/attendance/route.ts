@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
+import { getTodayJST } from '@/lib/utils'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,6 +11,7 @@ const adminClient = createClient(
 type Entry = {
   childId: string
   status: 'attending' | 'absent'
+  serviceType?: 'regular' | 'daytime_support'
   pickupRequired: boolean
   note: string
 }
@@ -29,6 +31,25 @@ export async function POST(req: NextRequest) {
     // 日付フォーマット検証
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return NextResponse.json({ error: '日付の形式が正しくありません' }, { status: 400 })
+    }
+
+    // 過去日への連絡は不可（当日は可）
+    if (date < getTodayJST()) {
+      return NextResponse.json({ error: '過去の日付には連絡できません' }, { status: 400 })
+    }
+
+    // 内容の検証
+    for (const entry of entries) {
+      if (entry.status !== 'attending' && entry.status !== 'absent') {
+        return NextResponse.json({ error: '連絡内容が正しくありません' }, { status: 400 })
+      }
+      if (
+        entry.serviceType !== undefined &&
+        entry.serviceType !== 'regular' &&
+        entry.serviceType !== 'daytime_support'
+      ) {
+        return NextResponse.json({ error: 'サービス区分が正しくありません' }, { status: 400 })
+      }
     }
 
     const lineUserId = await verifyLineAccessToken(accessToken)
@@ -67,6 +88,7 @@ export async function POST(req: NextRequest) {
       child_id: e.childId,
       date,
       status: e.status,
+      service_type: e.status === 'attending' ? (e.serviceType ?? 'regular') : 'regular',
       pickup_required: e.status === 'attending' ? e.pickupRequired : false,
       note: e.note ?? null,
       reported_via: 'line',

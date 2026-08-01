@@ -15,7 +15,7 @@ export default async function ParentContactsPage({
   // その日の保護者連絡を取得
   const { data: contactsRaw } = await supabase
     .from('parent_attendance_contacts')
-    .select('id, child_id, date, status, pickup_required, note, reported_at, children (id, name)')
+    .select('id, child_id, date, status, service_type, pickup_required, note, reported_at, children (id, name)')
     .eq('date', today)
     .order('reported_at', { ascending: false })
 
@@ -24,6 +24,7 @@ export default async function ParentContactsPage({
     child_id: string
     date: string
     status: 'attending' | 'absent'
+    service_type: 'regular' | 'daytime_support'
     pickup_required: boolean
     note: string | null
     reported_at: string
