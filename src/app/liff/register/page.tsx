@@ -18,11 +18,16 @@ export default function LiffRegisterPage() {
     setResult(null)
 
     try {
-      const idToken = liffState.liff.getIDToken()
+      const accessToken = liffState.liff.getAccessToken()
+      if (!accessToken) {
+        setErrorMessage('LINEの認証情報を取得できませんでした。LINEアプリから開き直してください')
+        setResult('error')
+        return
+      }
       const res = await fetch('/api/liff/verify-and-register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, code: code.trim().toUpperCase() }),
+        body: JSON.stringify({ accessToken, code: code.trim().toUpperCase() }),
       })
       const json = await res.json() as { error?: string }
       if (!res.ok) {

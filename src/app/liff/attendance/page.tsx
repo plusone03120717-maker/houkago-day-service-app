@@ -34,12 +34,13 @@ export default function LiffAttendancePage() {
 
   useEffect(() => {
     if (liffState.status !== 'ready') return
+    const accessToken = liffState.liff.getAccessToken()
     setLoadingChildren(true)
 
     fetch('/api/liff/children', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken: liffState.liff.getIDToken() }),
+      body: JSON.stringify({ accessToken }),
     })
       .then((r) => r.json())
       .then((json: { children?: Child[]; error?: string }) => {
@@ -80,11 +81,16 @@ export default function LiffAttendancePage() {
     setErrorMessage('')
 
     try {
-      const idToken = liffState.liff.getIDToken()
+      const accessToken = liffState.liff.getAccessToken()
+      if (!accessToken) {
+        setErrorMessage('LINEの認証情報を取得できませんでした。LINEアプリから開き直してください')
+        setSubmitStatus('error')
+        return
+      }
       const res = await fetch('/api/liff/attendance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, date, entries }),
+        body: JSON.stringify({ accessToken, date, entries }),
       })
       const json = await res.json() as { error?: string }
       if (!res.ok) {

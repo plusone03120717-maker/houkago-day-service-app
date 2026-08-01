@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyLineIdToken } from '@/lib/line/verify-id-token'
+import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,12 +9,12 @@ const adminClient = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { idToken, code } = await req.json() as { idToken?: string; code?: string }
-    if (!idToken || !code) {
-      return NextResponse.json({ error: 'idToken と code が必要です' }, { status: 400 })
+    const { accessToken, code } = await req.json() as { accessToken?: string; code?: string }
+    if (!accessToken || !code) {
+      return NextResponse.json({ error: 'accessToken と code が必要です' }, { status: 400 })
     }
 
-    const lineUserId = await verifyLineIdToken(idToken)
+    const lineUserId = await verifyLineAccessToken(accessToken)
 
     // 登録コードを確認
     const { data: regCode } = await adminClient

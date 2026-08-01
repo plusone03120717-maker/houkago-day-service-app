@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyLineIdToken } from '@/lib/line/verify-id-token'
+import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,13 +16,13 @@ type Entry = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { idToken, date, entries } = await req.json() as {
-      idToken?: string
+    const { accessToken, date, entries } = await req.json() as {
+      accessToken?: string
       date?: string
       entries?: Entry[]
     }
 
-    if (!idToken || !date || !entries || entries.length === 0) {
+    if (!accessToken || !date || !entries || entries.length === 0) {
       return NextResponse.json({ error: 'パラメータが不足しています' }, { status: 400 })
     }
 
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '日付の形式が正しくありません' }, { status: 400 })
     }
 
-    const lineUserId = await verifyLineIdToken(idToken)
+    const lineUserId = await verifyLineAccessToken(accessToken)
 
     // 保護者を取得
     const { data: guardian } = await adminClient
