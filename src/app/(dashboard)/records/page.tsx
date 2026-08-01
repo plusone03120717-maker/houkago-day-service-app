@@ -77,26 +77,26 @@ export default async function RecordsPage({
 
   const attended = (attendedRaw ?? []) as unknown as AttendedChild[]
 
-  // 既存の記録
+  // 既存の記録とデフォルト終了時間は独立しているため並列取得
   const attendanceIds = attended.map((a) => a.id)
-  const { data: recordsRaw } = attendanceIds.length > 0
-    ? await supabase
-        .from('daily_records')
-        .select('id, attendance_id, has_notable_flag')
-        .in('attendance_id', attendanceIds)
-    : { data: [] }
+  const [{ data: recordsRaw }, { data: notifSettings }] = await Promise.all([
+    attendanceIds.length > 0
+      ? supabase
+          .from('daily_records')
+          .select('id, attendance_id, has_notable_flag')
+          .in('attendance_id', attendanceIds)
+      : Promise.resolve({ data: [] }),
+    facilityRaw
+      ? supabase
+          .from('notification_settings')
+          .select('default_service_end_time')
+          .eq('facility_id', facilityRaw.id)
+          .limit(1)
+          .single()
+      : Promise.resolve({ data: null }),
+  ])
   const records = (recordsRaw ?? []) as unknown as DailyRecord[]
   const recordByAttendanceId = Object.fromEntries(records.map((r) => [r.attendance_id, r]))
-
-  // デフォルト終了時間
-  const { data: notifSettings } = facilityRaw
-    ? await supabase
-        .from('notification_settings')
-        .select('default_service_end_time')
-        .eq('facility_id', facilityRaw.id)
-        .limit(1)
-        .single()
-    : { data: null }
   const defaultServiceEndTime = (notifSettings?.default_service_end_time as string | null)?.slice(0, 5) ?? '16:30'
 
   // ユニットでグループ

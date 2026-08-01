@@ -60,24 +60,24 @@ export default async function ParentAttendancePage({
     )
   }
 
-  // 出席記録
-  const { data: attendanceRaw } = await supabase
-    .from('daily_attendance')
-    .select('id, date, status, check_in_time, check_out_time, units(name), children(name)')
-    .in('child_id', childIds)
-    .gte('date', monthStart)
-    .lte('date', monthEnd)
-    .eq('status', 'attended')
-    .order('date')
+  // 出席記録と受給者証は独立しているため並列取得
+  const [{ data: attendanceRaw }, { data: certsRaw }] = await Promise.all([
+    supabase
+      .from('daily_attendance')
+      .select('id, date, status, check_in_time, check_out_time, units(name), children(name)')
+      .in('child_id', childIds)
+      .gte('date', monthStart)
+      .lte('date', monthEnd)
+      .eq('status', 'attended')
+      .order('date'),
+    supabase
+      .from('benefit_certificates')
+      .select('max_days_per_month, start_date, end_date')
+      .in('child_id', childIds)
+      .lte('start_date', monthEnd)
+      .gte('end_date', monthStart),
+  ])
   const attendances = (attendanceRaw ?? []) as unknown as AttendanceRecord[]
-
-  // 受給者証（今月有効なもの）
-  const { data: certsRaw } = await supabase
-    .from('benefit_certificates')
-    .select('max_days_per_month, start_date, end_date')
-    .in('child_id', childIds)
-    .lte('start_date', monthEnd)
-    .gte('end_date', monthStart)
   const certs = (certsRaw ?? []) as unknown as BenefitCert[]
   const maxDays = certs.length > 0 ? Math.max(...certs.map((c) => c.max_days_per_month)) : null
 

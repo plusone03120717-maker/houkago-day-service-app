@@ -48,51 +48,56 @@ export default async function ParentHomePage() {
 
   const childIds = children.map((c) => c.id)
 
-  // 今後1週間の利用予約
+  // 予約・お知らせ・連絡帳・未読数は互いに独立しているため並列取得
   const today = getTodayJST()
   const nextWeek = new Date()
   nextWeek.setDate(nextWeek.getDate() + 7)
-  const { data: reservationsRaw } = childIds.length > 0
-    ? await supabase
-        .from('usage_reservations')
-        .select('id, date, status, units(name)')
-        .in('child_id', childIds)
-        .gte('date', today)
-        .lte('date', formatDate(nextWeek, 'yyyy-MM-dd'))
-        .in('status', ['confirmed', 'reserved'])
-        .order('date')
-        .limit(5)
-    : { data: [] }
+  const [
+    { data: reservationsRaw },
+    { data: announcementsRaw },
+    { data: contactNotesRaw },
+    { count: unreadCount },
+  ] = await Promise.all([
+    // 今後1週間の利用予約
+    childIds.length > 0
+      ? supabase
+          .from('usage_reservations')
+          .select('id, date, status, units(name)')
+          .in('child_id', childIds)
+          .gte('date', today)
+          .lte('date', formatDate(nextWeek, 'yyyy-MM-dd'))
+          .in('status', ['confirmed', 'reserved'])
+          .order('date')
+          .limit(5)
+      : Promise.resolve({ data: [] }),
+    // 最新のお知らせ（3件）
+    supabase
+      .from('announcements')
+      .select('id, title, content, published_at')
+      .not('published_at', 'is', null)
+      .lte('published_at', new Date().toISOString())
+      .order('published_at', { ascending: false })
+      .limit(3),
+    // 未読の連絡帳
+    childIds.length > 0
+      ? supabase
+          .from('contact_notes')
+          .select('id, date, content, published_at, children(name)')
+          .in('child_id', childIds)
+          .not('published_at', 'is', null)
+          .order('date', { ascending: false })
+          .limit(3)
+      : Promise.resolve({ data: [] }),
+    // メッセージ未読数
+    supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('receiver_id', user.id)
+      .is('read_at', null),
+  ])
   const upcomingReservations = (reservationsRaw ?? []) as unknown as Reservation[]
-
-  // 最新のお知らせ（3件）
-  const { data: announcementsRaw } = await supabase
-    .from('announcements')
-    .select('id, title, content, published_at')
-    .not('published_at', 'is', null)
-    .lte('published_at', new Date().toISOString())
-    .order('published_at', { ascending: false })
-    .limit(3)
   const announcements = (announcementsRaw ?? []) as unknown as Announcement[]
-
-  // 未読の連絡帳
-  const { data: contactNotesRaw } = childIds.length > 0
-    ? await supabase
-        .from('contact_notes')
-        .select('id, date, content, published_at, children(name)')
-        .in('child_id', childIds)
-        .not('published_at', 'is', null)
-        .order('date', { ascending: false })
-        .limit(3)
-    : { data: [] }
   const contactNotes = (contactNotesRaw ?? []) as unknown as ContactNote[]
-
-  // メッセージ未読数
-  const { count: unreadCount } = await supabase
-    .from('messages')
-    .select('*', { count: 'exact', head: true })
-    .eq('receiver_id', user.id)
-    .is('read_at', null)
 
   return (
     <div className="space-y-5 pb-20 sm:pb-5">

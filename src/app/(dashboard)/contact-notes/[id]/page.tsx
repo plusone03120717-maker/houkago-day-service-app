@@ -36,21 +36,24 @@ export default async function ContactNoteDetailPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const { data: noteRaw } = await supabase
-    .from('contact_notes')
-    .select('id, child_id, date, content, published_at, parent_comment, parent_commented_at, ai_generated, ai_draft, children(name, name_kana), units(name)')
-    .eq('id', id)
-    .single()
+  // 本文と写真一覧は独立しているため並列取得
+  const [{ data: noteRaw }, { data: photosRaw }] = await Promise.all([
+    supabase
+      .from('contact_notes')
+      .select('id, child_id, date, content, published_at, parent_comment, parent_commented_at, ai_generated, ai_draft, children(name, name_kana), units(name)')
+      .eq('id', id)
+      .single(),
+    supabase
+      .from('contact_note_photos')
+      .select('id, file_name, file_size, storage_path, created_at')
+      .eq('note_id', id)
+      .order('created_at', { ascending: true }),
+  ])
   const note = noteRaw as unknown as ContactNote | null
 
   if (!note) return <div className="p-4 text-gray-500">連絡帳が見つかりません</div>
 
-  // 写真一覧取得 + 署名付きURL生成
-  const { data: photosRaw } = await supabase
-    .from('contact_note_photos')
-    .select('id, file_name, file_size, storage_path, created_at')
-    .eq('note_id', id)
-    .order('created_at', { ascending: true })
+  // 署名付きURL生成
   const photosMeta = (photosRaw ?? []) as unknown as Photo[]
 
   const signedUrlResults = photosMeta.length > 0

@@ -9,10 +9,11 @@ import Link from 'next/link'
 interface HeaderProps {
   userName?: string
   facilityName?: string
-  pendingCount?: number
+  /** 未確認申請バッジ（サーバー側でストリーミング描画されるノード） */
+  pendingBadge?: React.ReactNode
 }
 
-export function Header({ userName, facilityName, pendingCount }: HeaderProps) {
+export function Header({ userName, facilityName, pendingBadge }: HeaderProps) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -32,11 +33,7 @@ export function Header({ userName, facilityName, pendingCount }: HeaderProps) {
         <Link href="/staff-requests">
           <Button variant="ghost" size="icon" className="relative">
             <Bell className="h-5 w-5" />
-            {pendingCount != null && pendingCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                {pendingCount > 9 ? '9+' : pendingCount}
-              </span>
-            )}
+            {pendingBadge}
           </Button>
         </Link>
         <div className="flex items-center gap-2 text-sm text-gray-700">

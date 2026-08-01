@@ -1,7 +1,9 @@
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
+import { PendingRequestsBadge } from '@/components/layout/pending-requests-badge'
 
 // 認証ユーザーごとにデータが異なるため、サーバーキャッシュ・ルーターキャッシュを完全に無効化
 export const dynamic = 'force-dynamic'
@@ -32,19 +34,19 @@ export default async function DashboardLayout({
 
   const role = userData?.role ?? 'staff'
 
-  // スタッフ申請の未確認件数
-  const [{ count: overtimeCount }, { count: leaveCount }, { count: breakCount }] = await Promise.all([
-    supabase.from('overtime_requests').select('id', { count: 'exact', head: true }).eq('is_new', true),
-    supabase.from('paid_leave_usages').select('id', { count: 'exact', head: true }).eq('is_new', true),
-    supabase.from('time_records').select('id', { count: 'exact', head: true }).eq('type', 'break_start').eq('is_new', true),
-  ])
-  const pendingCount = (overtimeCount ?? 0) + (leaveCount ?? 0) + (breakCount ?? 0)
-
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <Sidebar role={role} />
       <div className="flex flex-col flex-1 overflow-hidden">
-        <Header userName={userData?.name} pendingCount={pendingCount} />
+        {/* 未確認件数バッジはページ表示をブロックせず後から流し込む */}
+        <Header
+          userName={userData?.name}
+          pendingBadge={
+            <Suspense fallback={null}>
+              <PendingRequestsBadge />
+            </Suspense>
+          }
+        />
         <main className="flex-1 overflow-y-auto p-6">
           {children}
         </main>

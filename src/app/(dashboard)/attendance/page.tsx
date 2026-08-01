@@ -13,17 +13,19 @@ export default async function AttendancePage({
   const today = params.date ?? getTodayJST()
   const todayDow = new Date(today).getDay()
 
-  const { data: { user } } = await supabase.auth.getUser()
-
-  const { data: unitsRaw } = await supabase
-    .from('units')
-    .select('id, name, service_type, capacity, facilities (id, name)')
-    .order('name')
+  // 認証ユーザーとユニット一覧は独立しているため並列取得
+  const [{ data: { user } }, { data: unitsRaw }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from('units')
+      .select('id, name, service_type, capacity, facilities (id, name)')
+      .order('name'),
+  ])
   const units = (unitsRaw ?? []) as unknown as Unit[]
 
   const selectedUnitId = params.unit ?? units[0]?.id ?? ''
 
-  const [{ data: reservationsRaw }, { data: plansRaw }] = await Promise.all([
+  const [{ data: reservationsRaw }, { data: plansRaw }, { data: attendancesRaw }] = await Promise.all([
     selectedUnitId
       ? supabase
           .from('usage_reservations')
@@ -41,7 +43,17 @@ export default async function AttendancePage({
           .eq('unit_id', selectedUnitId)
           .eq('is_active', true)
       : { data: [] },
+
+    // daily_attendance を全件取得（予約・計画の有無に関わらず）
+    selectedUnitId
+      ? supabase
+          .from('daily_attendance')
+          .select('*')
+          .eq('unit_id', selectedUnitId)
+          .eq('date', today)
+      : { data: [] },
   ])
+  const attendances = (attendancesRaw ?? []) as unknown as Attendance[]
 
   type PlanRow = { id: string; child_id: string; start_date: string; end_date: string | null; day_of_week: number[]; children: Reservation['children'] }
   const planRows = ((plansRaw ?? []) as unknown as PlanRow[]).filter((p) => {
@@ -91,16 +103,6 @@ export default async function AttendancePage({
       children: p.children,
     }))
   const allReservations = [...reservations, ...planReservations]
-
-  // daily_attendance を全件取得（予約・計画の有無に関わらず）
-  const { data: attendancesRaw } = selectedUnitId
-    ? await supabase
-        .from('daily_attendance')
-        .select('*')
-        .eq('unit_id', selectedUnitId)
-        .eq('date', today)
-    : { data: [] }
-  const attendances = (attendancesRaw ?? []) as unknown as Attendance[]
 
   // daily_attendance に記録があるが allReservations に含まれない子ども（子ども管理から直接登録）を追加
   const existingChildIds = new Set(allReservations.map((r) => r.child_id))

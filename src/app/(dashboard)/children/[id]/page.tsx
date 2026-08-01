@@ -68,50 +68,59 @@ export default async function ChildDetailPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const { data: childRaw } = await supabase
-    .from('children')
-    .select(`
-      id, name, name_kana, birth_date, gender, address, school_name, grade,
-      disability_type, allergy_info, medical_info, notes,
-      benefit_certificates (id, certificate_number, service_type, start_date, end_date, max_days_per_month, copay_limit, copay_category, municipality),
-      children_units (units (id, name, service_type, facilities (name)))
-    `)
-    .eq('id', id)
-    .single()
+  // 直列だった5クエリを並列実行に変更（表示内容は同じ）
+  const [
+    { data: childRaw },
+    { data: emergencyContactsRaw },
+    { data: addressesRaw },
+    { data: phonesRaw },
+    { data: limitManagementsRaw },
+  ] = await Promise.all([
+    supabase
+      .from('children')
+      .select(`
+        id, name, name_kana, birth_date, gender, address, school_name, grade,
+        disability_type, allergy_info, medical_info, notes,
+        benefit_certificates (id, certificate_number, service_type, start_date, end_date, max_days_per_month, copay_limit, copay_category, municipality),
+        children_units (units (id, name, service_type, facilities (name)))
+      `)
+      .eq('id', id)
+      .single(),
+    supabase
+      .from('emergency_contacts')
+      .select('id, name, relationship, phone_primary, phone_secondary, is_primary_guardian, can_pickup, notes, sort_order')
+      .eq('child_id', id)
+      .order('sort_order'),
+    supabase
+      .from('child_addresses')
+      .select('id, label, postal_code, address, is_default')
+      .eq('child_id', id)
+      .order('sort_order'),
+    supabase
+      .from('child_phone_numbers')
+      .select('id, label, phone_number')
+      .eq('child_id', id)
+      .order('sort_order'),
+    supabase
+      .from('child_limit_management')
+      .select('id, start_date, facility_name')
+      .eq('child_id', id)
+      .order('start_date', { ascending: false }),
+  ])
 
   if (!childRaw) notFound()
   const child = childRaw as unknown as Child
 
   const today = new Date()
 
-  const { data: emergencyContactsRaw } = await supabase
-    .from('emergency_contacts')
-    .select('id, name, relationship, phone_primary, phone_secondary, is_primary_guardian, can_pickup, notes, sort_order')
-    .eq('child_id', id)
-    .order('sort_order')
   const emergencyContacts = (emergencyContactsRaw ?? []) as unknown as EmergencyContact[]
 
-  const { data: addressesRaw } = await supabase
-    .from('child_addresses')
-    .select('id, label, postal_code, address, is_default')
-    .eq('child_id', id)
-    .order('sort_order')
   type ChildAddress = { id: string; label: string; postal_code: string | null; address: string; is_default: boolean }
   const childAddresses = (addressesRaw ?? []) as unknown as ChildAddress[]
 
-  const { data: phonesRaw } = await supabase
-    .from('child_phone_numbers')
-    .select('id, label, phone_number')
-    .eq('child_id', id)
-    .order('sort_order')
   type ChildPhone = { id: string; label: string; phone_number: string }
   const childPhones = (phonesRaw ?? []) as unknown as ChildPhone[]
 
-  const { data: limitManagementsRaw } = await supabase
-    .from('child_limit_management')
-    .select('id, start_date, facility_name')
-    .eq('child_id', id)
-    .order('start_date', { ascending: false })
   const limitManagements = (limitManagementsRaw ?? []) as unknown as LimitManagement[]
 
   return (

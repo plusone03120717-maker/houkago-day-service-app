@@ -24,10 +24,14 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return response
+  // getUser() は毎回 Supabase Auth サーバーへの往復が発生するため、
+  // JWT をローカル検証する getClaims() を使う（非対称鍵ならネットワーク往復なし。
+  // 期限切れセッションのリフレッシュとクッキー書き込みは従来どおり行われる）
+  const { data } = await supabase.auth.getClaims()
+  const claims = data?.claims
+  if (!claims) return response
 
-  const role = user.user_metadata?.role as string | undefined
+  const role = claims.user_metadata?.role as string | undefined
   if (!role) return response
 
   if (role === 'staff') {

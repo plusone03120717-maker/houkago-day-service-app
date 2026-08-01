@@ -34,16 +34,51 @@ export default async function TimecardPage({
   const members = (membersRaw ?? []) as MemberRow[]
   const memberIds = members.map((m) => m.id)
 
-  // 選択月に有効な時給を取得
-  const { data: ratesRaw } = memberIds.length > 0
-    ? await supabase
-        .from('staff_hourly_rates')
-        .select('id, staff_member_id, hourly_rate, effective_from, effective_to')
-        .in('staff_member_id', memberIds)
-        .lte('effective_from', rateMonthEnd)
-        .or(`effective_to.is.null,effective_to.gte.${rateMonthStart}`)
-        .order('effective_from', { ascending: true })
-    : { data: [] }
+  // 選択スタッフはスタッフ一覧から決まるため先に確定し、残りの4クエリは並列実行する
+  const selectedStaffId = params.staff ?? members[0]?.id ?? ''
+  const selectedMember = members.find((s) => s.id === selectedStaffId)
+  const userId = selectedMember?.user_id ?? null
+
+  const [{ data: ratesRaw }, { data: recordsRaw }, { data: shiftsRaw }, { data: overtimeRaw }] = await Promise.all([
+    // 選択月に有効な時給を取得
+    memberIds.length > 0
+      ? supabase
+          .from('staff_hourly_rates')
+          .select('id, staff_member_id, hourly_rate, effective_from, effective_to')
+          .in('staff_member_id', memberIds)
+          .lte('effective_from', rateMonthEnd)
+          .or(`effective_to.is.null,effective_to.gte.${rateMonthStart}`)
+          .order('effective_from', { ascending: true })
+      : Promise.resolve({ data: [] }),
+    // 選択スタッフの当月打刻を取得
+    selectedStaffId
+      ? supabase
+          .from('time_records')
+          .select('id, staff_member_id, type, recorded_at, note, edited_at')
+          .eq('staff_member_id', selectedStaffId)
+          .gte('recorded_at', recordsStart)
+          .lt('recorded_at', recordsEnd)
+          .order('recorded_at')
+      : Promise.resolve({ data: [] }),
+    // 選択スタッフの当月シフト（user_id 経由）
+    userId
+      ? supabase
+          .from('staff_shifts')
+          .select('id, date, shift_type, start_time, end_time')
+          .eq('staff_id', userId)
+          .gte('date', rateMonthStart)
+          .lte('date', rateMonthEnd)
+      : Promise.resolve({ data: [] }),
+    // 選択スタッフの当月残業申請
+    userId
+      ? supabase
+          .from('overtime_requests')
+          .select('id, date, scheduled_end_time, actual_end_time, overtime_minutes, request_type, status, note')
+          .eq('staff_id', userId)
+          .gte('date', rateMonthStart)
+          .lte('date', rateMonthEnd)
+      : Promise.resolve({ data: [] }),
+  ])
 
   type RateRow = { id: string; staff_member_id: string; hourly_rate: number }
   const rateMap = new Map<string, { id: string; hourly_rate: number }>()
@@ -59,42 +94,8 @@ export default async function TimecardPage({
     hourly_rate_id: rateMap.get(m.id)?.id ?? null,
   }))
 
-  const selectedStaffId = params.staff ?? staffMembers[0]?.id ?? ''
-  const selectedMember = staffMembers.find((s) => s.id === selectedStaffId)
-
-  // 選択スタッフの当月打刻を取得
-  const { data: recordsRaw } = selectedStaffId
-    ? await supabase
-        .from('time_records')
-        .select('id, staff_member_id, type, recorded_at, note, edited_at')
-        .eq('staff_member_id', selectedStaffId)
-        .gte('recorded_at', recordsStart)
-        .lt('recorded_at', recordsEnd)
-        .order('recorded_at')
-    : { data: [] }
   const records = (recordsRaw ?? []) as TimeRecord[]
-
-  // 選択スタッフの当月シフト（user_id 経由）
-  const userId = selectedMember?.user_id ?? null
-  const { data: shiftsRaw } = userId
-    ? await supabase
-        .from('staff_shifts')
-        .select('id, date, shift_type, start_time, end_time')
-        .eq('staff_id', userId)
-        .gte('date', rateMonthStart)
-        .lte('date', rateMonthEnd)
-    : { data: [] }
   const shifts = (shiftsRaw ?? []) as ShiftEntry[]
-
-  // 選択スタッフの当月残業申請
-  const { data: overtimeRaw } = userId
-    ? await supabase
-        .from('overtime_requests')
-        .select('id, date, scheduled_end_time, actual_end_time, overtime_minutes, request_type, status, note')
-        .eq('staff_id', userId)
-        .gte('date', rateMonthStart)
-        .lte('date', rateMonthEnd)
-    : { data: [] }
   const overtimeRequests = (overtimeRaw ?? []) as OvertimeRequest[]
 
   return (

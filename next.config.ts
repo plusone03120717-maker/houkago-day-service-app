@@ -78,11 +78,16 @@ const withPWA = require('next-pwa')({
 })
 
 const nextConfig: NextConfig = {
+  // 既定の .next ディレクトリがファイルシステム破損で削除不能になったため出力先を変更
+  // （ドライブを chkdsk で修復後は .next に戻してよい）
+  distDir: 'build',
   turbopack: {},
   experimental: {
-    // クライアントサイドのルーターキャッシュを無効化（動的ページは常に再取得）
+    // クライアントサイドのルーターキャッシュ。
+    // 動的ページも30秒はキャッシュを再利用し「戻る」等の遷移を高速化する。
+    // データ更新時は各フォームの router.refresh() / revalidatePath で即時破棄されるため安全。
     staleTimes: {
-      dynamic: 0,
+      dynamic: 30,
       static: 180,
     },
   },

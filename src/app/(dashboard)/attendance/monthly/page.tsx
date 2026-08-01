@@ -35,20 +35,29 @@ export default async function MonthlyBenefitPage({
   const monthLabel = `${year}年${month}月`
   const monthValue = `${year}-${String(month).padStart(2, '0')}`
 
-  // 全ユニット取得（フィルタ用）
-  const { data: unitsRaw } = await supabase
-    .from('units')
-    .select('id, name')
-    .order('name')
+  // ユニット・受給者証・出席集計は独立しているため並列取得
+  const [{ data: unitsRaw }, { data: certsRaw }, { data: attendanceRaw }] = await Promise.all([
+    // 全ユニット取得（フィルタ用）
+    supabase
+      .from('units')
+      .select('id, name')
+      .order('name'),
+    // 有効な受給者証を持つ児童を取得（今月の範囲に重なるもの）
+    supabase
+      .from('benefit_certificates')
+      .select('id, child_id, max_days_per_month, children(id, name, children_units(unit_id, units(name)))')
+      .lte('start_date', nextMonthStart)
+      .gte('end_date', monthStart)
+      .order('child_id'),
+    // 今月の出席済み日数の集計元データ
+    supabase
+      .from('daily_attendance')
+      .select('child_id')
+      .gte('date', monthStart)
+      .lt('date', nextMonthStart)
+      .eq('status', 'attended'),
+  ])
   const units = (unitsRaw ?? []) as { id: string; name: string }[]
-
-  // 有効な受給者証を持つ児童を取得（今月の範囲に重なるもの）
-  const { data: certsRaw } = await supabase
-    .from('benefit_certificates')
-    .select('id, child_id, max_days_per_month, children(id, name, children_units(unit_id, units(name)))')
-    .lte('start_date', nextMonthStart)
-    .gte('end_date', monthStart)
-    .order('child_id')
 
   type CertRow = {
     id: string
@@ -63,13 +72,6 @@ export default async function MonthlyBenefitPage({
   const certs = (certsRaw ?? []) as unknown as CertRow[]
 
   // 今月の出席済み日数を児童ごとに集計
-  const { data: attendanceRaw } = await supabase
-    .from('daily_attendance')
-    .select('child_id')
-    .gte('date', monthStart)
-    .lt('date', nextMonthStart)
-    .eq('status', 'attended')
-
   const usedDaysMap = new Map<string, number>()
   for (const row of (attendanceRaw ?? [])) {
     const r = row as { child_id: string }
