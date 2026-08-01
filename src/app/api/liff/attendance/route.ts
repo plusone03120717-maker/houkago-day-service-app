@@ -131,6 +131,8 @@ export async function POST(req: NextRequest) {
         note: e.note ?? null,
         reported_via: 'line',
         reported_at: new Date().toISOString(),
+        // 新規・再送信いずれもスタッフ未確認として通知する
+        is_new: true,
       }
     })
 

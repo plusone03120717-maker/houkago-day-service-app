@@ -38,7 +38,7 @@ export default async function DashboardLayout({
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <Sidebar role={role} />
       <div className="flex flex-col flex-1 overflow-hidden">
-        {/* 未確認件数バッジはページ表示をブロックせず後から流し込む */}
+        {/* お知らせベルはページ表示をブロックせず後から流し込む */}
         <Header
           userName={userData?.name}
           pendingBadge={

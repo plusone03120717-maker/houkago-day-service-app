@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter, usePathname } from 'next/navigation'
-import { useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { formatDate } from '@/lib/utils'
 import { ChevronLeft, ChevronRight, Car, Clock, CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
 
@@ -18,6 +18,7 @@ type Contact = {
   dropoff_time: string | null
   note: string | null
   reported_at: string
+  is_new: boolean
   children: { id: string; name: string } | null
 }
 
@@ -58,6 +59,25 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
   const router = useRouter()
   const pathname = usePathname()
   const [, startTransition] = useTransition()
+  // 確認済みにした行をその場で反映する（再取得を待たずバッジ表示と揃える）
+  const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set())
+  const [reviewing, setReviewing] = useState(false)
+
+  const isUnread = (c: Contact) => c.is_new && !reviewedIds.has(c.id)
+  const unreadContacts = contacts.filter(isUnread)
+
+  async function markReviewed(ids: string[]) {
+    if (ids.length === 0) return
+    setReviewing(true)
+    await fetch('/api/parent-contacts/reviewed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    })
+    setReviewedIds((prev) => new Set([...prev, ...ids]))
+    setReviewing(false)
+    startTransition(() => router.refresh())
+  }
 
   function navigate(newDate: string, newFilter?: string) {
     const f = newFilter ?? filter
@@ -83,7 +103,18 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
-      <h1 className="text-xl font-bold text-gray-900">保護者連絡一覧</h1>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h1 className="text-xl font-bold text-gray-900">保護者連絡一覧</h1>
+        {unreadContacts.length > 0 && (
+          <button
+            onClick={() => markReviewed(unreadContacts.map((c) => c.id))}
+            disabled={reviewing}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {reviewing ? '処理中...' : `未確認${unreadContacts.length}件をすべて確認済みにする`}
+          </button>
+        )}
+      </div>
 
       {/* 日付ナビ */}
       <div className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100">
@@ -158,7 +189,11 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
           {filtered.map((c) => (
             <div
               key={c.id}
-              className="bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100 flex items-start gap-3"
+              className={`rounded-xl px-4 py-3 shadow-sm border flex items-start gap-3 ${
+                isUnread(c)
+                  ? 'bg-amber-50 border-amber-200'
+                  : 'bg-white border-gray-100'
+              }`}
             >
               <div className="mt-0.5">
                 {c.status === 'attending' ? (
@@ -169,6 +204,11 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
+                  {isUnread(c) && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-500 text-white">
+                      未確認
+                    </span>
+                  )}
                   <span className="font-semibold text-gray-900 text-sm">
                     {c.children?.name ?? '不明'}
                   </span>
@@ -216,12 +256,23 @@ export function ParentContactsBoard({ date, filter, contacts, uncontactedChildre
                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">{c.note}</p>
                 )}
               </div>
-              <p className="text-xs text-gray-400 shrink-0 mt-0.5">
-                {new Date(c.reported_at).toLocaleTimeString('ja-JP', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </p>
+              <div className="shrink-0 flex flex-col items-end gap-1.5">
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {new Date(c.reported_at).toLocaleTimeString('ja-JP', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </p>
+                {isUnread(c) && (
+                  <button
+                    onClick={() => markReviewed([c.id])}
+                    disabled={reviewing}
+                    className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    確認済み
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

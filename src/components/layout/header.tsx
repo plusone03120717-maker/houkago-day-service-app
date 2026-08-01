@@ -4,12 +4,11 @@ import { Bell, LogOut, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 
 interface HeaderProps {
   userName?: string
   facilityName?: string
-  /** 未確認申請バッジ（サーバー側でストリーミング描画されるノード） */
+  /** お知らせベル（サーバー側でストリーミング描画されるノード） */
   pendingBadge?: React.ReactNode
 }
 
@@ -30,12 +29,12 @@ export function Header({ userName, facilityName, pendingBadge }: HeaderProps) {
         )}
       </div>
       <div className="flex items-center gap-3">
-        <Link href="/staff-requests">
-          <Button variant="ghost" size="icon" className="relative">
+        {/* 件数取得中はアイコンだけ先に描画し、取得後にベル本体へ差し替える */}
+        {pendingBadge ?? (
+          <Button variant="ghost" size="icon" className="relative" disabled>
             <Bell className="h-5 w-5" />
-            {pendingBadge}
           </Button>
-        </Link>
+        )}
         <div className="flex items-center gap-2 text-sm text-gray-700">
           <User className="h-4 w-4" />
           <span>{userName || 'ユーザー'}</span>
