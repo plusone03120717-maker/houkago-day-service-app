@@ -2,10 +2,9 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// スタッフ（staff ロール）がアクセスできないパス（前方一致）
 const STAFF_BLOCKED_PREFIX = ['/shifts', '/settings', '/billing']
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -28,9 +27,8 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return response
 
-  // DBクエリを使わず JWT の user_metadata.role を直接使用（RLS の影響を受けない）
   const role = user.user_metadata?.role as string | undefined
-  if (!role) return response // metadataにroleがない場合は通す（管理者等）
+  if (!role) return response
 
   if (role === 'staff') {
     const pathname = request.nextUrl.pathname
@@ -45,6 +43,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon\\.ico|login|auth|set-password).*)',
+    '/((?!api|_next/static|_next/image|favicon\\.ico|login|auth|set-password|liff).*)',
   ],
 }
