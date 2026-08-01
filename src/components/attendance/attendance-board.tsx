@@ -7,7 +7,6 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import {
   CheckCircle,
   XCircle,
@@ -15,7 +14,8 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertTriangle,
-  Thermometer,
+  Car,
+  Sun,
   ClipboardEdit,
   LayoutList,
   CalendarDays,
@@ -57,7 +57,17 @@ export type Attendance = {
   pickup_type: string
   body_temperature: number | null
   health_condition: string | null
+  pickup_departure_time: string | null
+  pickup_arrival_time: string | null
+  dropoff_departure_time: string | null
+  dropoff_arrival_time: string | null
+  daytime_support: boolean | null
+  daytime_support_start_time: string | null
+  daytime_support_end_time: string | null
 }
+
+/** 児童ID → 当日の日中一時の利用予定時間（利用スケジュール由来） */
+export type PlannedDaytimeMap = Record<string, { start_time: string | null; end_time: string | null }>
 
 interface Props {
   date: string
@@ -65,15 +75,30 @@ interface Props {
   selectedUnitId: string
   reservations: Reservation[]
   attendances: Attendance[]
+  plannedDaytime: PlannedDaytimeMap
   staffId: string
 }
 
-export function AttendanceBoard({ date, units, selectedUnitId, reservations, attendances, staffId }: Props) {
+/** "16:30:00" → "16:30"。未設定・00:00 は空文字として扱う */
+function fmtTime(t: string | null | undefined): string {
+  if (!t) return ''
+  const hhmm = t.slice(0, 5)
+  return hhmm === '00:00' ? '' : hhmm
+}
+
+/** 開始・終了を "9:00〜16:00" 形式に。片方だけでも表示する */
+function fmtRange(start: string | null | undefined, end: string | null | undefined): string {
+  const s = fmtTime(start)
+  const e = fmtTime(end)
+  if (!s && !e) return ''
+  return `${s || '—'}〜${e || '—'}`
+}
+
+export function AttendanceBoard({ date, units, selectedUnitId, reservations, attendances, plannedDaytime, staffId }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [saving, setSaving] = useState<string | null>(null)
-  const [tempInput, setTempInput] = useState<Record<string, string>>({})
   const [view, setView] = useState<'day' | 'week'>('day')
 
   const attendanceMap = Object.fromEntries(attendances.map((a) => [a.child_id, a]))
@@ -280,7 +305,7 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">出席管理</h1>
-          <p className="text-sm text-gray-500 mt-0.5">出席・欠席・入退室時間の記録</p>
+          <p className="text-sm text-gray-500 mt-0.5">出席・欠席・利用時間の記録</p>
         </div>
         {view === 'day' && unrecorded.length > 0 && (
           <Button onClick={markAllPresent} disabled={saving === 'all'}>
@@ -417,6 +442,23 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
                 const isAbsent = att?.status === 'absent' || res.status === 'cancel_waiting'
                 const isUnrecorded = !att && res.status !== 'cancel_waiting'
 
+                // 送迎時間（記録済みの実績のみ。入力は「日々の記録」から行う）
+                const pickupRange = fmtRange(att?.pickup_departure_time, att?.pickup_arrival_time)
+                const dropoffRange = fmtRange(att?.dropoff_departure_time, att?.dropoff_arrival_time)
+
+                // 日中一時：実績が入力されていればそれを、なければ利用スケジュールの予定を表示
+                const planned = plannedDaytime[child.id]
+                const hasDaytimeRecord = att?.daytime_support === true
+                const daytimeRange = hasDaytimeRecord
+                  ? fmtRange(att?.daytime_support_start_time, att?.daytime_support_end_time)
+                  : planned
+                    ? fmtRange(planned.start_time, planned.end_time)
+                    : ''
+                const showDaytime = hasDaytimeRecord || !!planned
+                const isDaytimePlanOnly = showDaytime && !hasDaytimeRecord
+
+                const showInfo = isPresent || !!pickupRange || !!dropoffRange || showDaytime
+
                 return (
                   <div
                     key={res.id}
@@ -451,43 +493,54 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
                       </div>
                     </div>
 
-                    {/* 体温入力（出席時のみ） */}
-                    {isPresent && (
-                      <div className="flex items-center gap-1.5 text-sm">
-                        <Thermometer className="h-4 w-4 text-orange-400" />
-                        <Input
-                          type="number"
-                          step="0.1"
-                          min="35"
-                          max="42"
-                          placeholder="体温"
-                          defaultValue={att?.body_temperature?.toString() ?? ''}
-                          className="w-20 h-7 text-xs"
-                          onBlur={(e) => {
-                            const val = parseFloat(e.target.value)
-                            if (!isNaN(val)) upsertAttendance(child.id, { body_temperature: val })
-                          }}
-                        />
-                      </div>
-                    )}
+                    {/* 利用時間・送迎時間・日中一時 */}
+                    {showInfo && (
+                      <div className="flex flex-col gap-1 text-xs">
+                        {/* 利用時間（出席時のみ編集可） */}
+                        {isPresent && (
+                          <div className="flex items-center gap-1.5">
+                            <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                            <span className="text-gray-500 w-16 flex-shrink-0">利用時間</span>
+                            <input
+                              type="time"
+                              defaultValue={fmtTime(att?.check_in_time)}
+                              className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
+                              onBlur={(e) => upsertAttendance(child.id, { check_in_time: e.target.value || null })}
+                            />
+                            <span className="text-gray-400">〜</span>
+                            <input
+                              type="time"
+                              defaultValue={fmtTime(att?.check_out_time)}
+                              className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
+                              onBlur={(e) => upsertAttendance(child.id, { check_out_time: e.target.value || null })}
+                            />
+                          </div>
+                        )}
 
-                    {/* 入退室時間（出席時のみ） */}
-                    {isPresent && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Clock className="h-4 w-4 text-gray-400" />
-                        <input
-                          type="time"
-                          defaultValue={att?.check_in_time ?? ''}
-                          className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
-                          onBlur={(e) => upsertAttendance(child.id, { check_in_time: e.target.value || null })}
-                        />
-                        <span className="text-gray-400">〜</span>
-                        <input
-                          type="time"
-                          defaultValue={att?.check_out_time ?? ''}
-                          className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
-                          onBlur={(e) => upsertAttendance(child.id, { check_out_time: e.target.value || null })}
-                        />
+                        {/* 送迎時間（表示のみ・入力は「日々の記録」から） */}
+                        {(pickupRange || dropoffRange) && (
+                          <div className="flex items-center gap-1.5">
+                            <Car className="h-4 w-4 text-teal-500 flex-shrink-0" />
+                            <span className="text-gray-500 w-16 flex-shrink-0">送迎時間</span>
+                            <span className="text-gray-700">
+                              {pickupRange && `迎 ${pickupRange}`}
+                              {pickupRange && dropoffRange && <span className="text-gray-300 mx-1.5">/</span>}
+                              {dropoffRange && `送 ${dropoffRange}`}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* 日中一時（実績がなければ利用予定を表示） */}
+                        {showDaytime && (
+                          <div className="flex items-center gap-1.5">
+                            <Sun className="h-4 w-4 text-purple-500 flex-shrink-0" />
+                            <span className="text-gray-500 w-16 flex-shrink-0">日中一時</span>
+                            <span className="text-gray-700">{daytimeRange || '時間未設定'}</span>
+                            {isDaytimePlanOnly && (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">予定</Badge>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 

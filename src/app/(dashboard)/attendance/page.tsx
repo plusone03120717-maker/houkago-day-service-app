@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { formatDate, getTodayJST } from '@/lib/utils'
 import { AttendanceBoard } from '@/components/attendance/attendance-board'
-import type { Unit, Reservation, Attendance } from '@/components/attendance/attendance-board'
+import type { Unit, Reservation, Attendance, PlannedDaytimeMap } from '@/components/attendance/attendance-board'
 
 export default async function AttendancePage({
   searchParams,
@@ -39,7 +39,7 @@ export default async function AttendancePage({
     selectedUnitId
       ? supabase
           .from('usage_plans')
-          .select('id, child_id, start_date, end_date, day_of_week, children (id, name, name_kana, photo_url, allergy_info, medical_info)')
+          .select('id, child_id, start_date, end_date, day_of_week, daytime_support, daytime_support_start_time, daytime_support_end_time, children (id, name, name_kana, photo_url, allergy_info, medical_info)')
           .eq('unit_id', selectedUnitId)
           .eq('is_active', true)
       : { data: [] },
@@ -55,7 +55,17 @@ export default async function AttendancePage({
   ])
   const attendances = (attendancesRaw ?? []) as unknown as Attendance[]
 
-  type PlanRow = { id: string; child_id: string; start_date: string; end_date: string | null; day_of_week: number[]; children: Reservation['children'] }
+  type PlanRow = {
+    id: string
+    child_id: string
+    start_date: string
+    end_date: string | null
+    day_of_week: number[]
+    daytime_support: boolean
+    daytime_support_start_time: string | null
+    daytime_support_end_time: string | null
+    children: Reservation['children']
+  }
   const planRows = ((plansRaw ?? []) as unknown as PlanRow[]).filter((p) => {
     if (p.start_date > today) return false
     if (p.end_date !== null && p.end_date < today) return false
@@ -79,6 +89,18 @@ export default async function AttendancePage({
   const childHasValidPlan = new Set<string>(
     planRows.filter((p) => !cancelledPlanIds.has(p.id)).map((p) => p.child_id)
   )
+
+  // 当日の日中一時の利用予定（キャンセルされていない計画のみ）。
+  // 実績が未入力でも一覧に予定時間を表示するために使う。
+  const plannedDaytime: PlannedDaytimeMap = {}
+  for (const p of planRows) {
+    if (cancelledPlanIds.has(p.id) || !p.daytime_support) continue
+    if (plannedDaytime[p.child_id]) continue
+    plannedDaytime[p.child_id] = {
+      start_time: p.daytime_support_start_time,
+      end_time: p.daytime_support_end_time,
+    }
+  }
 
   // 予約フィルタリング:
   // - 有効な計画あり → 常に表示
@@ -134,6 +156,7 @@ export default async function AttendancePage({
       selectedUnitId={selectedUnitId}
       reservations={finalReservations}
       attendances={attendances}
+      plannedDaytime={plannedDaytime}
       staffId={user?.id ?? ''}
     />
   )
