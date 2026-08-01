@@ -11,6 +11,8 @@ type AttendedChild = {
   service_start_time: string | null
   service_end_time: string | null
   daytime_support: boolean
+  daytime_support_start_time: string | null
+  daytime_support_end_time: string | null
   pickup_departure_time: string | null
   pickup_arrival_time: string | null
   pickup_driver_member_id: string | null
@@ -58,7 +60,7 @@ export default async function RecordsPage({
       .select(`
         id, child_id, unit_id, status, basic_service,
         service_start_time, service_end_time,
-        daytime_support,
+        daytime_support, daytime_support_start_time, daytime_support_end_time,
         pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id,
         dropoff_departure_time, dropoff_arrival_time, dropoff_driver_member_id, dropoff_vehicle_id,
         daytime_pickup_departure_time, daytime_pickup_arrival_time, daytime_pickup_driver_member_id, daytime_pickup_vehicle_id,

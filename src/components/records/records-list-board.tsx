@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import {
   BookOpen, ChevronRight, CheckCircle, Flag,
   Car, ChevronDown, ChevronUp, Trash2, Check,
+  UserCheck, UserX,
 } from 'lucide-react'
 import { DateNav } from '@/components/ui/date-nav'
 import { formatDate } from '@/lib/utils'
@@ -22,6 +23,8 @@ type AttendedChild = {
   service_start_time: string | null
   service_end_time: string | null
   daytime_support: boolean
+  daytime_support_start_time: string | null
+  daytime_support_end_time: string | null
   pickup_departure_time: string | null
   pickup_arrival_time: string | null
   pickup_driver_member_id: string | null
@@ -63,6 +66,9 @@ type TransportFields = {
   dropoffVehicleId: string
   serviceStartTime: string
   serviceEndTime: string
+  daytimeSupport: boolean
+  daytimeSupportStartTime: string
+  daytimeSupportEndTime: string
   daytimePickupDepartureTime: string
   daytimePickupArrivalTime: string
   daytimePickupDriverId: string
@@ -112,6 +118,9 @@ function initFields(a: AttendedChild, defaultEnd: string): TransportFields {
     dropoffVehicleId: a.dropoff_vehicle_id ?? '',
     serviceStartTime: fmtTime(a.service_start_time),
     serviceEndTime: fmtTime(a.service_end_time) || defaultEnd,
+    daytimeSupport: a.daytime_support ?? false,
+    daytimeSupportStartTime: fmtTime(a.daytime_support_start_time),
+    daytimeSupportEndTime: fmtTime(a.daytime_support_end_time),
     daytimePickupDepartureTime: fmtTime(a.daytime_pickup_departure_time),
     daytimePickupArrivalTime: fmtTime(a.daytime_pickup_arrival_time),
     daytimePickupDriverId: a.daytime_pickup_driver_member_id ?? '',
@@ -148,17 +157,33 @@ export function RecordsListBoard({
   const [fieldStates, setFieldStates] = useState<Record<string, TransportFields>>({})
   const [saving, setSaving] = useState<string | null>(null)
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  // 出席状態のローカルオーバーライド（楽観的更新）
+  const [localStatus, setLocalStatus] = useState<Record<string, string>>({})
+  const [statusSaving, setStatusSaving] = useState<Set<string>>(new Set())
 
   const allItems = Object.values(byUnit).flatMap((u) => u.items)
 
   const getFields = (a: AttendedChild): TransportFields =>
     fieldStates[a.id] ?? initFields(a, defaultServiceEndTime)
 
+  const getStatus = (a: AttendedChild): string =>
+    localStatus[a.id] ?? a.status
+
   const setField = (attendanceId: string, patch: Partial<TransportFields>, a: AttendedChild) => {
     setFieldStates((prev) => ({
       ...prev,
       [attendanceId]: { ...(prev[attendanceId] ?? initFields(a, defaultServiceEndTime)), ...patch },
     }))
+  }
+
+  const handleToggleStatus = async (a: AttendedChild) => {
+    const current = getStatus(a)
+    const next = current === 'attended' ? 'absent' : 'attended'
+    setLocalStatus((prev) => ({ ...prev, [a.id]: next }))
+    setStatusSaving((prev) => new Set(prev).add(a.id))
+    await supabase.from('daily_attendance').update({ status: next }).eq('id', a.id)
+    setStatusSaving((prev) => { const s = new Set(prev); s.delete(a.id); return s })
+    startTransition(() => {})
   }
 
   const handlePickupDepartureChange = (val: string, a: AttendedChild) => {
@@ -204,14 +229,17 @@ export function RecordsListBoard({
       dropoff_vehicle_id: f.dropoffVehicleId || null,
       service_start_time: n(f.serviceStartTime),
       service_end_time: n(f.serviceEndTime),
-      daytime_pickup_departure_time: a.daytime_support ? n(f.daytimePickupDepartureTime) : null,
-      daytime_pickup_arrival_time: a.daytime_support ? n(f.daytimePickupArrivalTime) : null,
-      daytime_pickup_driver_member_id: a.daytime_support ? (f.daytimePickupDriverId || null) : null,
-      daytime_pickup_vehicle_id: a.daytime_support ? (f.daytimePickupVehicleId || null) : null,
-      daytime_dropoff_departure_time: a.daytime_support ? n(f.daytimeDropoffDepartureTime) : null,
-      daytime_dropoff_arrival_time: a.daytime_support ? n(f.daytimeDropoffArrivalTime) : null,
-      daytime_dropoff_driver_member_id: a.daytime_support ? (f.daytimeDropoffDriverId || null) : null,
-      daytime_dropoff_vehicle_id: a.daytime_support ? (f.daytimeDropoffVehicleId || null) : null,
+      daytime_support: f.daytimeSupport,
+      daytime_support_start_time: f.daytimeSupport ? n(f.daytimeSupportStartTime) : null,
+      daytime_support_end_time: f.daytimeSupport ? n(f.daytimeSupportEndTime) : null,
+      daytime_pickup_departure_time: f.daytimeSupport ? n(f.daytimePickupDepartureTime) : null,
+      daytime_pickup_arrival_time: f.daytimeSupport ? n(f.daytimePickupArrivalTime) : null,
+      daytime_pickup_driver_member_id: f.daytimeSupport ? (f.daytimePickupDriverId || null) : null,
+      daytime_pickup_vehicle_id: f.daytimeSupport ? (f.daytimePickupVehicleId || null) : null,
+      daytime_dropoff_departure_time: f.daytimeSupport ? n(f.daytimeDropoffDepartureTime) : null,
+      daytime_dropoff_arrival_time: f.daytimeSupport ? n(f.daytimeDropoffArrivalTime) : null,
+      daytime_dropoff_driver_member_id: f.daytimeSupport ? (f.daytimeDropoffDriverId || null) : null,
+      daytime_dropoff_vehicle_id: f.daytimeSupport ? (f.daytimeDropoffVehicleId || null) : null,
     }).eq('id', a.id)
 
     setSaving(null)
@@ -313,16 +341,18 @@ export function RecordsListBoard({
               {items.map((a) => {
                 const record = recordByAttendanceId[a.id]
                 const hasRecord = !!record
-                const isAbsent = a.status === 'absent'
+                const currentStatus = getStatus(a)
+                const isAbsent = currentStatus === 'absent'
                 const isExpanded = expanded === a.id
                 const f = getFields(a)
                 const isSaving = saving === a.id
                 const isSaved = savedIds.has(a.id)
+                const isStatusSaving = statusSaving.has(a.id)
 
                 return (
                   <div key={a.id}>
-                    {/* カードの上部: 名前・ステータス → 詳細へのリンク */}
-                    <Card className={`${isAbsent ? 'opacity-60' : ''} ${isExpanded ? 'rounded-b-none border-b-0' : ''} overflow-hidden`}>
+                    <Card className={`${isAbsent ? 'opacity-70' : ''} ${isExpanded ? 'rounded-b-none border-b-0' : ''} overflow-hidden`}>
+                      {/* 名前・記録状態 → 詳細ページへのリンク */}
                       <Link href={`/records/${a.child_id}?date=${targetDate}&unit=${unitId}`}>
                         <CardContent className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer">
                           <div className="flex items-center gap-3">
@@ -341,7 +371,6 @@ export function RecordsListBoard({
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            {isAbsent && <Badge variant="secondary" className="text-xs">欠席</Badge>}
                             {record?.has_notable_flag && <Flag className="h-4 w-4 text-yellow-500" />}
                             {hasRecord ? (
                               <Badge variant="success" className="text-xs">
@@ -355,7 +384,37 @@ export function RecordsListBoard({
                         </CardContent>
                       </Link>
 
-                      {/* 送迎入力トグル */}
+                      {/* 出席・欠席トグル */}
+                      <div className="border-t border-gray-100 px-4 py-2 flex items-center gap-2">
+                        <span className="text-xs text-gray-500 mr-1">出席状態：</span>
+                        <button
+                          type="button"
+                          disabled={isStatusSaving}
+                          onClick={() => { if (isAbsent) handleToggleStatus(a) }}
+                          className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                            !isAbsent
+                              ? 'bg-green-100 text-green-700 border-green-300'
+                              : 'bg-white text-gray-400 border-gray-200 hover:bg-green-50 hover:text-green-600'
+                          }`}
+                        >
+                          <UserCheck className="h-3.5 w-3.5" />出席
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isStatusSaving}
+                          onClick={() => !isAbsent && handleToggleStatus(a)}
+                          className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                            isAbsent
+                              ? 'bg-gray-200 text-gray-600 border-gray-300'
+                              : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-100 hover:text-gray-600'
+                          }`}
+                        >
+                          <UserX className="h-3.5 w-3.5" />欠席
+                        </button>
+                        {isStatusSaving && <span className="text-xs text-gray-400 ml-1">更新中...</span>}
+                      </div>
+
+                      {/* 送迎・日中一時入力トグル */}
                       {!isAbsent && (
                         <button
                           type="button"
@@ -364,8 +423,8 @@ export function RecordsListBoard({
                         >
                           <span className="flex items-center gap-1.5 text-xs text-gray-600">
                             <Car className="h-3.5 w-3.5 text-teal-500" />
-                            送迎入力
-                            {hasTransportData(f) && (
+                            送迎・日中一時入力
+                            {(hasTransportData(f) || f.daytimeSupport) && (
                               <span className="text-teal-600 font-medium">・入力済</span>
                             )}
                           </span>
@@ -376,100 +435,131 @@ export function RecordsListBoard({
                       )}
                     </Card>
 
-                    {/* 展開された送迎入力エリア */}
+                    {/* 展開された入力エリア */}
                     {isExpanded && !isAbsent && (
                       <Card className="rounded-t-none border-t-0">
-                        <CardContent className="p-4 space-y-4">
+                        <CardContent className="p-4 space-y-5">
 
-                          {/* 放課後等デイサービス チェック */}
-                          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-teal-700">
-                            <input
-                              type="checkbox"
-                              checked={f.basicService}
-                              onChange={(e) => setField(a.id, { basicService: e.target.checked }, a)}
-                              className="w-4 h-4 accent-teal-600"
-                            />
-                            放課後等デイサービス
-                          </label>
+                          {/* ── 放課後等デイサービス ── */}
+                          <div className="space-y-4">
+                            <label className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-teal-700">
+                              <input
+                                type="checkbox"
+                                checked={f.basicService}
+                                onChange={(e) => setField(a.id, { basicService: e.target.checked }, a)}
+                                className="w-4 h-4 accent-teal-600"
+                              />
+                              放課後等デイサービス
+                            </label>
 
-                          {f.basicService && (
-                            <div className="space-y-4 pl-1">
-                              {/* お迎え */}
-                              {renderTransportDirection(
-                                'お迎え',
-                                f.pickupDepartureTime, (v) => handlePickupDepartureChange(v, a),
-                                f.pickupArrivalTime, (v) => handlePickupArrivalChange(v, a),
-                                f.pickupDriverId, (v) => setField(a.id, { pickupDriverId: v }, a),
-                                f.pickupVehicleId, (v) => setField(a.id, { pickupVehicleId: v }, a),
-                                () => setField(a.id, { pickupDepartureTime: '', pickupArrivalTime: '', pickupDriverId: '', pickupVehicleId: '' }, a),
-                              )}
+                            {f.basicService && (
+                              <div className="space-y-4 pl-1">
+                                {renderTransportDirection(
+                                  'お迎え',
+                                  f.pickupDepartureTime, (v) => handlePickupDepartureChange(v, a),
+                                  f.pickupArrivalTime, (v) => handlePickupArrivalChange(v, a),
+                                  f.pickupDriverId, (v) => setField(a.id, { pickupDriverId: v }, a),
+                                  f.pickupVehicleId, (v) => setField(a.id, { pickupVehicleId: v }, a),
+                                  () => setField(a.id, { pickupDepartureTime: '', pickupArrivalTime: '', pickupDriverId: '', pickupVehicleId: '' }, a),
+                                )}
 
-                              {/* 送り */}
-                              {renderTransportDirection(
-                                '送り',
-                                f.dropoffDepartureTime, (v) => setField(a.id, { dropoffDepartureTime: v }, a),
-                                f.dropoffArrivalTime, (v) => setField(a.id, { dropoffArrivalTime: v }, a),
-                                f.dropoffDriverId, (v) => setField(a.id, { dropoffDriverId: v }, a),
-                                f.dropoffVehicleId, (v) => setField(a.id, { dropoffVehicleId: v }, a),
-                                () => setField(a.id, { dropoffDepartureTime: '', dropoffArrivalTime: '', dropoffDriverId: '', dropoffVehicleId: '' }, a),
-                                (v) => handleDropoffArrivalBlur(v, a),
-                              )}
+                                {renderTransportDirection(
+                                  '送り',
+                                  f.dropoffDepartureTime, (v) => setField(a.id, { dropoffDepartureTime: v }, a),
+                                  f.dropoffArrivalTime, (v) => setField(a.id, { dropoffArrivalTime: v }, a),
+                                  f.dropoffDriverId, (v) => setField(a.id, { dropoffDriverId: v }, a),
+                                  f.dropoffVehicleId, (v) => setField(a.id, { dropoffVehicleId: v }, a),
+                                  () => setField(a.id, { dropoffDepartureTime: '', dropoffArrivalTime: '', dropoffDriverId: '', dropoffVehicleId: '' }, a),
+                                  (v) => handleDropoffArrivalBlur(v, a),
+                                )}
 
-                              {/* 提供時間 */}
-                              <div className="border-t border-gray-100 pt-3">
-                                <p className="text-xs font-semibold text-teal-700 mb-2">提供時間</p>
-                                <div className="grid grid-cols-2 gap-2">
-                                  <div>
-                                    <label className="text-xs text-gray-500 mb-1 block">開始</label>
-                                    <input type="time" value={f.serviceStartTime}
-                                      onChange={(e) => setField(a.id, { serviceStartTime: e.target.value }, a)}
-                                      className={inputCls} />
+                                {/* 提供時間 */}
+                                <div className="border-t border-gray-100 pt-3">
+                                  <p className="text-xs font-semibold text-teal-700 mb-2">提供時間</p>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="text-xs text-gray-500 mb-1 block">開始</label>
+                                      <input type="time" value={f.serviceStartTime}
+                                        onChange={(e) => setField(a.id, { serviceStartTime: e.target.value }, a)}
+                                        className={inputCls} />
+                                    </div>
+                                    <div>
+                                      <label className="text-xs text-gray-500 mb-1 block">終了</label>
+                                      <input type="time" value={f.serviceEndTime}
+                                        onChange={(e) => setField(a.id, { serviceEndTime: e.target.value }, a)}
+                                        className={inputCls} />
+                                    </div>
                                   </div>
-                                  <div>
-                                    <label className="text-xs text-gray-500 mb-1 block">終了</label>
-                                    <input type="time" value={f.serviceEndTime}
-                                      onChange={(e) => setField(a.id, { serviceEndTime: e.target.value }, a)}
-                                      className={inputCls} />
+                                  <p className="text-xs text-gray-400 mt-1">
+                                    ※ お迎え到着時間を入力すると開始時間に自動反映
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* ── 日中一時利用 ── */}
+                          <div className="border-t border-gray-100 pt-4 space-y-4">
+                            <label className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-purple-700">
+                              <input
+                                type="checkbox"
+                                checked={f.daytimeSupport}
+                                onChange={(e) => setField(a.id, { daytimeSupport: e.target.checked }, a)}
+                                className="w-4 h-4 accent-purple-600"
+                              />
+                              日中一時利用
+                            </label>
+
+                            {f.daytimeSupport && (
+                              <div className="space-y-4 pl-1">
+                                {/* 利用時間 */}
+                                <div>
+                                  <p className="text-xs font-semibold text-purple-700 mb-2">利用時間</p>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="text-xs text-gray-500 mb-1 block">開始</label>
+                                      <input type="time" value={f.daytimeSupportStartTime}
+                                        onChange={(e) => setField(a.id, { daytimeSupportStartTime: e.target.value }, a)}
+                                        className={inputCls.replace('teal', 'purple')} />
+                                    </div>
+                                    <div>
+                                      <label className="text-xs text-gray-500 mb-1 block">終了</label>
+                                      <input type="time" value={f.daytimeSupportEndTime}
+                                        onChange={(e) => setField(a.id, { daytimeSupportEndTime: e.target.value }, a)}
+                                        className={inputCls.replace('teal', 'purple')} />
+                                    </div>
                                   </div>
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1">
-                                  ※ お迎え到着時間を入力すると開始時間に自動反映
-                                </p>
+
+                                {/* 日中一時 お迎え */}
+                                {renderTransportDirection(
+                                  'お迎え（日中一時）',
+                                  f.daytimePickupDepartureTime, (v) => setField(a.id, { daytimePickupDepartureTime: v }, a),
+                                  f.daytimePickupArrivalTime, (v) => setField(a.id, { daytimePickupArrivalTime: v }, a),
+                                  f.daytimePickupDriverId, (v) => setField(a.id, { daytimePickupDriverId: v }, a),
+                                  f.daytimePickupVehicleId, (v) => setField(a.id, { daytimePickupVehicleId: v }, a),
+                                  () => setField(a.id, { daytimePickupDepartureTime: '', daytimePickupArrivalTime: '', daytimePickupDriverId: '', daytimePickupVehicleId: '' }, a),
+                                  undefined,
+                                  'purple',
+                                )}
+
+                                {/* 日中一時 送り */}
+                                {renderTransportDirection(
+                                  '送り（日中一時）',
+                                  f.daytimeDropoffDepartureTime, (v) => setField(a.id, { daytimeDropoffDepartureTime: v }, a),
+                                  f.daytimeDropoffArrivalTime, (v) => setField(a.id, { daytimeDropoffArrivalTime: v }, a),
+                                  f.daytimeDropoffDriverId, (v) => setField(a.id, { daytimeDropoffDriverId: v }, a),
+                                  f.daytimeDropoffVehicleId, (v) => setField(a.id, { daytimeDropoffVehicleId: v }, a),
+                                  () => setField(a.id, { daytimeDropoffDepartureTime: '', daytimeDropoffArrivalTime: '', daytimeDropoffDriverId: '', daytimeDropoffVehicleId: '' }, a),
+                                  undefined,
+                                  'purple',
+                                )}
                               </div>
-                            </div>
-                          )}
-
-                          {/* 日中一時利用 送迎 */}
-                          {a.daytime_support && (
-                            <div className="border-t border-gray-100 pt-4 space-y-4">
-                              <p className="text-xs font-semibold text-purple-700">日中一時利用 送迎</p>
-
-                              {renderTransportDirection(
-                                'お迎え（日中一時）',
-                                f.daytimePickupDepartureTime, (v) => setField(a.id, { daytimePickupDepartureTime: v }, a),
-                                f.daytimePickupArrivalTime, (v) => setField(a.id, { daytimePickupArrivalTime: v }, a),
-                                f.daytimePickupDriverId, (v) => setField(a.id, { daytimePickupDriverId: v }, a),
-                                f.daytimePickupVehicleId, (v) => setField(a.id, { daytimePickupVehicleId: v }, a),
-                                () => setField(a.id, { daytimePickupDepartureTime: '', daytimePickupArrivalTime: '', daytimePickupDriverId: '', daytimePickupVehicleId: '' }, a),
-                                undefined,
-                                'purple',
-                              )}
-
-                              {renderTransportDirection(
-                                '送り（日中一時）',
-                                f.daytimeDropoffDepartureTime, (v) => setField(a.id, { daytimeDropoffDepartureTime: v }, a),
-                                f.daytimeDropoffArrivalTime, (v) => setField(a.id, { daytimeDropoffArrivalTime: v }, a),
-                                f.daytimeDropoffDriverId, (v) => setField(a.id, { daytimeDropoffDriverId: v }, a),
-                                f.daytimeDropoffVehicleId, (v) => setField(a.id, { daytimeDropoffVehicleId: v }, a),
-                                () => setField(a.id, { daytimeDropoffDepartureTime: '', daytimeDropoffArrivalTime: '', daytimeDropoffDriverId: '', daytimeDropoffVehicleId: '' }, a),
-                                undefined,
-                                'purple',
-                              )}
-                            </div>
-                          )}
+                            )}
+                          </div>
 
                           {/* 保存ボタン */}
-                          <div className="flex justify-end pt-2">
+                          <div className="flex justify-end pt-1">
                             <Button
                               size="sm"
                               onClick={() => handleSave(a)}
@@ -478,7 +568,7 @@ export function RecordsListBoard({
                             >
                               {isSaved ? (
                                 <><Check className="h-3.5 w-3.5" />保存しました</>
-                              ) : isSaving ? '保存中...' : '送迎を保存'}
+                              ) : isSaving ? '保存中...' : '保存'}
                             </Button>
                           </div>
                         </CardContent>
