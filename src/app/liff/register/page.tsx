@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useLiff } from '@/hooks/use-liff'
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 
@@ -10,6 +10,37 @@ export default function LiffRegisterPage() {
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<'success' | 'error' | null>(null)
   const [errorMessage, setErrorMessage] = useState('')
+  // 登録済み判定が終わるまでフォームを出さない（登録済みなら利用連絡ページへ転送する）
+  const [checking, setChecking] = useState(true)
+
+  // 登録済みかを確認し、済んでいれば利用連絡ページへ転送する。
+  // ?add=1 が付いている場合は兄弟の追加登録なので転送しない。
+  const checkRegistered = useCallback(async () => {
+    if (liffState.status !== 'ready') return
+    const accessToken = liffState.liff.getAccessToken()
+    if (!accessToken) { setChecking(false); return }
+
+    const isAdding = new URLSearchParams(window.location.search).get('add') === '1'
+    if (isAdding) { setChecking(false); return }
+
+    try {
+      const res = await fetch('/api/liff/guardian-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken }),
+      })
+      const json = await res.json() as { registered?: boolean }
+      if (res.ok && json.registered) {
+        window.location.replace('/liff/attendance')
+        return
+      }
+    } catch {
+      // 判定に失敗した場合は登録フォームを表示する
+    }
+    setChecking(false)
+  }, [liffState])
+
+  useEffect(() => { checkRegistered() }, [checkRegistered])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -45,7 +76,7 @@ export default function LiffRegisterPage() {
     }
   }
 
-  if (liffState.status === 'loading') {
+  if (liffState.status === 'loading' || (liffState.status === 'ready' && checking)) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />

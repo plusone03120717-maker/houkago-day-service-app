@@ -346,7 +346,13 @@ export default function LiffAttendancePage() {
         </div>
       </div>
 
-      <p className="text-center text-xs text-gray-400 mt-3 mb-6">日付をタップして利用連絡</p>
+      <p className="text-center text-xs text-gray-400 mt-3">日付をタップして利用連絡</p>
+
+      <div className="text-center mt-4 mb-6">
+        <a href="/liff/register?add=1" className="text-xs text-indigo-600 underline">
+          お子さまを追加登録する
+        </a>
+      </div>
 
       {/* 日付詳細シート */}
       {selectedDate && selectedDateObj && (
