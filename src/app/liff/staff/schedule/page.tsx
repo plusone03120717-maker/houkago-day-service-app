@@ -58,11 +58,22 @@ type FetchResult =
   | { key: string; kind: 'notRegistered' }
   | { key: string; kind: 'apiError'; message: string }
 
-/** 月カレンダー用（/api/liff/staff/month-data のレスポンス） */
+/** 月カレンダー用（/api/liff/staff/schedule/month のレスポンス） */
+type MonthDay = {
+  date: string
+  shiftType: string | null
+  startTime: string | null
+  endTime: string | null
+  transportCount: number
+  eventCount: number
+}
+
 type MonthData = {
+  days: MonthDay[]
   overtimeRequests: { id: string; date: string; actual_end_time: string | null; status: string }[]
   leaveUsages: { id: string; date: string; days_used: number }[]
   breakRecords: { date: string; break_start: string | null; break_end: string | null }[]
+  summary: { workDays: number; transportCount: number; leaveDays: number }
 }
 
 type MonthResult = { key: string; data: MonthData | null }
@@ -120,6 +131,15 @@ function buildCells(year: number, month: number): (number | null)[] {
   for (let d = 1; d <= lastDay; d++) cells.push(d)
   while (cells.length % 7 !== 0) cells.push(null)
   return cells
+}
+
+/** 月カレンダーのマスに出すシフトの1文字表記 */
+const SHIFT_MARKS: Record<string, { char: string; color: string }> = {
+  full:      { char: '全', color: 'bg-indigo-100 text-indigo-700' },
+  morning:   { char: '前', color: 'bg-blue-100 text-blue-700' },
+  afternoon: { char: '後', color: 'bg-teal-100 text-teal-700' },
+  off:       { char: '休', color: 'bg-gray-100 text-gray-400' },
+  holiday:   { char: '有', color: 'bg-orange-100 text-orange-700' },
 }
 
 const OVERTIME_STATUS: Record<string, { label: string; text: string; dot: string }> = {
@@ -196,7 +216,7 @@ export default function StaffSchedulePage() {
     if (!accessToken || view !== 'month') return
     let cancelled = false
 
-    fetch('/api/liff/staff/month-data', {
+    fetch('/api/liff/staff/schedule/month', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accessToken, year: cal.year, month: cal.month }),
@@ -411,8 +431,10 @@ export default function StaffSchedulePage() {
             ) : (
               <div className="grid grid-cols-7 p-1">
                 {buildCells(cal.year, cal.month).map((day, idx) => {
-                  if (day === null) return <div key={idx} className="h-12" />
+                  if (day === null) return <div key={idx} className="h-16" />
                   const dateStr = toDateStr(cal.year, cal.month, day)
+                  const dayInfo = monthData?.days.find((d) => d.date === dateStr)
+                  const mark = dayInfo?.shiftType ? SHIFT_MARKS[dayInfo.shiftType] : null
                   const leave = monthData?.leaveUsages.find((l) => l.date === dateStr)
                   const overtime = monthData?.overtimeRequests.find((o) => o.date === dateStr)
                   const breaks = monthData?.breakRecords.filter((b) => b.date === dateStr) ?? []
@@ -423,7 +445,7 @@ export default function StaffSchedulePage() {
                     <button
                       key={idx}
                       onClick={() => { setDate(dateStr); setView('day') }}
-                      className={`relative flex flex-col items-center justify-start pt-1.5 h-12 rounded-xl mx-0.5 mb-0.5 transition-colors ${
+                      className={`relative flex flex-col items-center justify-start pt-1.5 h-16 rounded-xl mx-0.5 mb-0.5 transition-colors ${
                         isSelected ? 'bg-indigo-100' : isTodayCell ? 'bg-indigo-50' : 'active:bg-gray-100'
                       }`}
                     >
@@ -438,7 +460,18 @@ export default function StaffSchedulePage() {
                           <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-xs">{day}</span>
                         ) : day}
                       </span>
+
+                      {/* シフト（1文字） */}
+                      <span className={`mt-1 h-4 min-w-4 px-1 rounded text-[10px] font-medium leading-4 ${
+                        mark ? mark.color : 'text-transparent'
+                      }`}>
+                        {mark?.char ?? '・'}
+                      </span>
+
+                      {/* 送迎・予定・申請のドット */}
                       <div className="flex gap-0.5 mt-1">
+                        {(dayInfo?.transportCount ?? 0) > 0 && <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />}
+                        {(dayInfo?.eventCount ?? 0) > 0 && <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />}
                         {leave && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
                         {overtime && <span className={`w-1.5 h-1.5 rounded-full ${overtimeStyle(overtime.status).dot}`} />}
                         {breaks.length > 0 && <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />}
@@ -450,21 +483,59 @@ export default function StaffSchedulePage() {
             )}
 
             {/* 凡例 */}
-            <div className="flex gap-4 justify-center py-3 border-t border-gray-100">
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-xs text-gray-400">有給</span>
+            <div className="border-t border-gray-100 py-3 px-3 space-y-2">
+              <div className="flex gap-2 justify-center flex-wrap">
+                {Object.entries(SHIFT_MARKS).map(([key, m]) => (
+                  <span key={key} className="flex items-center gap-1">
+                    <span className={`h-4 px-1 rounded text-[10px] font-medium leading-4 ${m.color}`}>{m.char}</span>
+                    <span className="text-xs text-gray-400">
+                      {key === 'full' ? '全日' : key === 'morning' ? '午前' : key === 'afternoon' ? '午後' : key === 'off' ? '休み' : '有休'}
+                    </span>
+                  </span>
+                ))}
               </div>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-orange-300" />
-                <span className="text-xs text-gray-400">残業</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-sky-400" />
-                <span className="text-xs text-gray-400">中抜け</span>
+              <div className="flex gap-3 justify-center flex-wrap">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-teal-500" />
+                  <span className="text-xs text-gray-400">送迎</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-violet-500" />
+                  <span className="text-xs text-gray-400">予定</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                  <span className="text-xs text-gray-400">有給</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-orange-300" />
+                  <span className="text-xs text-gray-400">残業</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-sky-400" />
+                  <span className="text-xs text-gray-400">中抜け</span>
+                </span>
               </div>
             </div>
           </div>
+
+          {/* 月のサマリー */}
+          {monthData && (
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-white rounded-2xl shadow-sm py-3 text-center">
+                <p className="text-xs text-gray-400 mb-0.5">勤務日</p>
+                <p className="text-lg font-bold text-gray-800">{monthData.summary.workDays}<span className="text-xs font-normal text-gray-400 ml-0.5">日</span></p>
+              </div>
+              <div className="bg-white rounded-2xl shadow-sm py-3 text-center">
+                <p className="text-xs text-gray-400 mb-0.5">送迎担当</p>
+                <p className="text-lg font-bold text-gray-800">{monthData.summary.transportCount}<span className="text-xs font-normal text-gray-400 ml-0.5">件</span></p>
+              </div>
+              <div className="bg-white rounded-2xl shadow-sm py-3 text-center">
+                <p className="text-xs text-gray-400 mb-0.5">有給取得</p>
+                <p className="text-lg font-bold text-gray-800">{monthData.summary.leaveDays}<span className="text-xs font-normal text-gray-400 ml-0.5">日</span></p>
+              </div>
+            </div>
+          )}
 
           {monthResult && !monthData ? (
             <div className="bg-white rounded-2xl shadow-sm px-4 py-3.5 text-sm text-gray-400 text-center">
