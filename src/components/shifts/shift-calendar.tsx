@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight, X, Check, Layers, CalendarClock, Repeat, Trash2, User, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
+import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanese-holidays'
 
 type Staff = {
   id: string
@@ -898,7 +898,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
                           'border-b border-gray-100 px-0 py-1 font-medium min-w-[30px] w-[30px]',
                           dow === 0 || holiday ? 'text-red-500 bg-red-50' : dow === 6 ? 'text-blue-500 bg-blue-50' : 'text-gray-500'
                         )}
-                        title={holiday ? '祝日' : undefined}
+                        title={getJapaneseHolidayName(date) ?? undefined}
                       >
                         <div className="leading-tight">{d.getDate()}</div>
                         <div className="text-[10px] font-normal opacity-70">{DAY_LABELS[dow]}</div>
@@ -1062,25 +1062,31 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
             const shiftInfo = shift ? SHIFT_TYPES.find((t) => t.value === shift.shift_type) : null
             const count = dailyCount[date] ?? 0
             const overtimeMinutes = currentStaffOvertime[date] ?? 0
+            const holidayName = getJapaneseHolidayName(date)
 
             return (
               <button
                 key={date}
                 onClick={() => handleCellClick(date)}
+                title={holidayName ?? undefined}
                 className={cn(
                   'h-16 border-b border-r border-gray-50 p-1 text-left transition-colors hover:bg-indigo-50',
+                  holidayName && !isSelected && 'bg-red-50/60',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
                 )}
               >
                 <div
                   className={cn(
-                    'text-xs font-medium mb-0.5',
-                    dayOfWeek === 0 && 'text-red-500',
-                    dayOfWeek === 6 && 'text-blue-500',
-                    dayOfWeek > 0 && dayOfWeek < 6 && 'text-gray-700'
+                    'text-xs font-medium mb-0.5 flex items-baseline gap-1',
+                    (dayOfWeek === 0 || holidayName) && 'text-red-500',
+                    dayOfWeek === 6 && !holidayName && 'text-blue-500',
+                    dayOfWeek > 0 && dayOfWeek < 6 && !holidayName && 'text-gray-700'
                   )}
                 >
                   {new Date(date).getDate()}
+                  {holidayName && (
+                    <span className="text-[9px] font-normal truncate">{holidayName}</span>
+                  )}
                 </div>
                 {shiftInfo && (
                   <div className={cn('text-xs px-1 rounded truncate', shiftInfo.color)}>

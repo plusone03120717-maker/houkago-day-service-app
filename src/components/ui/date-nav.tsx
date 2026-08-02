@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useTransition } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 
 type Props = {
   targetDate: string
@@ -15,6 +16,8 @@ type Props = {
 export function DateNav({ targetDate, prevDate, nextDate, basePath, extraParams = '' }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
+
+  const holidayName = getJapaneseHolidayName(targetDate)
 
   const navigate = (date: string) => {
     startTransition(() => {
@@ -43,6 +46,11 @@ export function DateNav({ targetDate, prevDate, nextDate, basePath, extraParams 
       >
         <ChevronRight className="h-4 w-4" />
       </button>
+      {holidayName && (
+        <span className="ml-1 text-xs font-medium px-2 py-1 rounded bg-red-50 text-red-600 border border-red-100 whitespace-nowrap">
+          祝日・{holidayName}
+        </span>
+      )}
     </div>
   )
 }

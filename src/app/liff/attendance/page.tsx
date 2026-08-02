@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useLiff } from '@/hooks/use-liff'
+import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { Loader2, AlertCircle, ChevronLeft, ChevronRight, X, Car, Clock } from 'lucide-react'
 
 type Child = { id: string; name: string }
@@ -343,6 +344,7 @@ export default function LiffAttendancePage() {
   }
 
   const selectedDateObj = selectedDate ? new Date(selectedDate + 'T00:00:00') : null
+  const selectedHolidayName = selectedDate ? getJapaneseHolidayName(selectedDate) : null
 
   return (
     <div className="max-w-sm mx-auto min-h-screen bg-gray-50">
@@ -390,22 +392,25 @@ export default function LiffAttendancePage() {
               const isPast = dateStr < today
               const isSelected = dateStr === selectedDate
               const dow = idx % 7
+              const holidayName = getJapaneseHolidayName(dateStr)
               return (
                 <button
                   key={idx}
                   onClick={() => openDate(dateStr)}
                   disabled={isPast}
+                  title={holidayName ?? undefined}
                   className={`relative flex flex-col items-center justify-start pt-1.5 h-12 rounded-xl mx-0.5 mb-0.5 transition-colors ${
                     isSelected ? 'bg-indigo-100' :
                     isToday ? 'bg-indigo-50' :
-                    isPast ? '' : 'hover:bg-gray-50 active:bg-gray-100'
+                    isPast ? '' :
+                    holidayName ? 'bg-red-50/60 hover:bg-gray-50 active:bg-gray-100' : 'hover:bg-gray-50 active:bg-gray-100'
                   }`}
                 >
                   <span className={`text-sm font-medium leading-none ${
                     isSelected ? 'text-indigo-700' :
                     isToday ? 'text-indigo-600' :
                     isPast ? 'text-gray-300' :
-                    dow === 0 ? 'text-red-500' :
+                    dow === 0 || holidayName ? 'text-red-500' :
                     dow === 6 ? 'text-blue-500' :
                     'text-gray-700'
                   }`}>
@@ -458,9 +463,12 @@ export default function LiffAttendancePage() {
 
             {/* 日付タイトル */}
             <div className="flex items-center justify-between px-5 pb-3 border-b border-gray-100">
-              <p className="font-bold text-gray-900">
+              <p className={`font-bold ${selectedHolidayName || selectedDateObj.getDay() === 0 ? 'text-red-500' : 'text-gray-900'}`}>
                 {selectedDateObj.getMonth() + 1}月{selectedDateObj.getDate()}日
                 <span className="ml-1 font-normal text-gray-400 text-sm">（{DOW[selectedDateObj.getDay()]}）</span>
+                {selectedHolidayName && (
+                  <span className="ml-2 text-xs font-medium text-red-500">{selectedHolidayName}</span>
+                )}
               </p>
               <button onClick={closeSheet} className="p-1.5 text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />

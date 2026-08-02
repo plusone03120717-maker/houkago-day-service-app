@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Edit2, Check, X, ChevronLeft, ChevronRight, Plus, Pencil, AlertTriangle, CheckCircle, CalendarClock, Trash2 } from 'lucide-react'
@@ -669,6 +670,9 @@ export function TimecardBoard({
 
                     const shift = shiftsMap.get(day.date)
                     const preOT = (overtimeMap.get(day.date) ?? []).find((o) => o.request_type === 'pre')
+                    const dowLabel = ['日', '月', '火', '水', '木', '金', '土'][new Date(day.date + 'T00:00:00').getDay()]
+                    const holidayName = getJapaneseHolidayName(day.date)
+                    const isRestDay = dowLabel === '日' || holidayName !== null
 
                     return (
                       <tr key={day.date} className={`border-b hover:bg-opacity-80 ${
@@ -681,8 +685,16 @@ export function TimecardBoard({
                           <div className="flex items-center gap-1">
                             {missingClockOut && <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />}
                             {missingClockIn && <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />}
-                            <span className={missingClockOut ? 'text-red-700' : missingClockIn ? 'text-amber-700' : 'text-gray-700'}>
-                              {day.date.slice(5).replace('-', '/')}
+                            <span
+                              className={
+                                missingClockOut ? 'text-red-700' :
+                                missingClockIn ? 'text-amber-700' :
+                                isRestDay ? 'text-red-500' :
+                                dowLabel === '土' ? 'text-blue-500' : 'text-gray-700'
+                              }
+                              title={holidayName ?? undefined}
+                            >
+                              {day.date.slice(5).replace('-', '/')}（{holidayName ? '祝' : dowLabel}）
                             </span>
                             {day.clock_in?.edited_at || day.clock_out?.edited_at ? <span className="text-xs text-amber-500">*</span> : null}
                           </div>

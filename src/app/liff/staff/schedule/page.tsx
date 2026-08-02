@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useLiff } from '@/hooks/use-liff'
 import { getTodayJST } from '@/lib/utils'
+import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import {
   Loader2, AlertCircle, ChevronLeft, ChevronRight, Clock, Car, CalendarDays,
   ArrowRight, User, FileText, RotateCw,
@@ -297,6 +298,7 @@ export default function StaffSchedulePage() {
   const isOff = data?.shift?.shiftType === 'off' || data?.shift?.shiftType === 'holiday'
   const isToday = date === today
   const isTomorrow = date === addDays(today, 1)
+  const dayHolidayName = getJapaneseHolidayName(date)
   const hasAnything =
     !!data?.shift || (data?.transport.length ?? 0) > 0 || (data?.events.length ?? 0) > 0
 
@@ -353,9 +355,18 @@ export default function StaffSchedulePage() {
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <span className="font-semibold text-gray-800 text-sm">
-            {view === 'day' ? formatHeaderDate(date) : `${cal.year}年${cal.month}月`}
-          </span>
+          <div className="flex flex-col items-center">
+            <span className={`font-semibold text-sm ${
+              view === 'day' && (isJapaneseNationalHoliday(date) || new Date(date + 'T00:00:00').getDay() === 0)
+                ? 'text-red-500'
+                : 'text-gray-800'
+            }`}>
+              {view === 'day' ? formatHeaderDate(date) : `${cal.year}年${cal.month}月`}
+            </span>
+            {view === 'day' && dayHolidayName && (
+              <span className="text-[10px] text-red-500 leading-tight">{dayHolidayName}（祝日）</span>
+            )}
+          </div>
           <button
             onClick={() => view === 'day' ? setDate(addDays(date, 1)) : setCal(shiftMonth(cal, 1))}
             className="p-2 text-gray-400 hover:text-gray-700"
@@ -441,18 +452,20 @@ export default function StaffSchedulePage() {
                   const isTodayCell = dateStr === today
                   const isSelected = dateStr === date
                   const dow = idx % 7
+                  const holidayName = getJapaneseHolidayName(dateStr)
                   return (
                     <button
                       key={idx}
                       onClick={() => { setDate(dateStr); setView('day') }}
+                      title={holidayName ?? undefined}
                       className={`relative flex flex-col items-center justify-start pt-1.5 h-16 rounded-xl mx-0.5 mb-0.5 transition-colors ${
-                        isSelected ? 'bg-indigo-100' : isTodayCell ? 'bg-indigo-50' : 'active:bg-gray-100'
+                        isSelected ? 'bg-indigo-100' : isTodayCell ? 'bg-indigo-50' : holidayName ? 'bg-red-50/60 active:bg-gray-100' : 'active:bg-gray-100'
                       }`}
                     >
                       <span className={`text-sm font-medium leading-none ${
                         isSelected ? 'text-indigo-700' :
                         isTodayCell ? 'text-indigo-600' :
-                        dow === 0 ? 'text-red-500' :
+                        dow === 0 || holidayName ? 'text-red-500' :
                         dow === 6 ? 'text-blue-500' :
                         'text-gray-700'
                       }`}>
@@ -613,10 +626,19 @@ export default function StaffSchedulePage() {
               )}
             </div>
           ) : (
-            <div className="bg-white rounded-2xl shadow-sm px-4 py-3.5 text-sm text-gray-400">
-              {data?.hasLoginAccount === false
-                ? 'シフト管理の対象外です（ログインアカウント未作成）'
-                : 'シフトは登録されていません'}
+            <div className="bg-white rounded-2xl shadow-sm px-4 py-3.5 text-sm">
+              {dayHolidayName ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs px-2 py-0.5 rounded font-medium bg-red-100 text-red-600">祝日</span>
+                  <span className="text-gray-600">{dayHolidayName}・基本的にお休みです</span>
+                </div>
+              ) : (
+                <span className="text-gray-400">
+                  {data?.hasLoginAccount === false
+                    ? 'シフト管理の対象外です（ログインアカウント未作成）'
+                    : 'シフトは登録されていません'}
+                </span>
+              )}
             </div>
           )}
         </div>

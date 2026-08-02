@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/require-admin'
+import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -492,13 +493,17 @@ export default async function ShiftSummaryPage({
                     const tc = tcByDate.get(date)
                     const isWork = shift ? !['off', 'holiday'].includes(shift.shift_type) : true
                     const dow = ['日', '月', '火', '水', '木', '金', '土'][new Date(date + 'T00:00:00').getDay()]
-                    const isWeekend = dow === '日' || dow === '土'
+                    const holidayName = getJapaneseHolidayName(date)
+                    const isWeekend = dow === '日' || dow === '土' || holidayName !== null
 
                     return (
                       <div key={date} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm">
                         {/* 日付 */}
-                        <span className={`text-xs w-20 flex-shrink-0 ${isWeekend ? 'text-red-500' : 'text-gray-500'}`}>
-                          {date.slice(5).replace('-', '/')}（{dow}）
+                        <span
+                          className={`text-xs w-20 flex-shrink-0 ${isWeekend ? 'text-red-500' : 'text-gray-500'}`}
+                          title={holidayName ?? undefined}
+                        >
+                          {date.slice(5).replace('-', '/')}（{holidayName ? '祝' : dow}）
                         </span>
 
                         {/* シフト種別 */}

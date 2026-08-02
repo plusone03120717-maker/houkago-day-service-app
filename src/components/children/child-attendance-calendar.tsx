@@ -9,7 +9,7 @@ import { ChevronLeft, ChevronRight, Car, Clock, CalendarDays, Save, CheckCircle,
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils' 
-import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
+import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanese-holidays'
 
 export type AttendanceRecord = {
   id: string
@@ -600,8 +600,10 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
               <button
                 key={date}
                 onClick={(e) => handleDateClick(date, e.ctrlKey || e.metaKey)}
+                title={getJapaneseHolidayName(date) ?? undefined}
                 className={cn(
                   'relative h-12 border-b border-r border-gray-50 p-1 flex flex-col items-center transition-colors hover:bg-indigo-50',
+                  getJapaneseHolidayName(date) && !isSelected && 'bg-red-50/60',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
                 )}
               >

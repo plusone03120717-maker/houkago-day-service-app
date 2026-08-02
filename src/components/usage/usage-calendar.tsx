@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight, Check, CheckCheck, X, Plus, AlertTriangle, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 
 type Unit = { id: string; name: string; capacity: number }
 type Reservation = {
@@ -333,24 +334,30 @@ export function UsageCalendar({
             const isSelected = date === selectedDate
             const dayOfWeek = new Date(date).getDay()
             const hasPending = pendingCount > 0
+            const holidayName = getJapaneseHolidayName(date)
 
             return (
               <button
                 key={date}
                 onClick={() => setSelectedDate(date === selectedDate ? null : date)}
+                title={holidayName ?? undefined}
                 className={cn(
                   'h-16 border-b border-r border-gray-50 p-1 text-left transition-colors hover:bg-indigo-50',
+                  holidayName && !isSelected && !hasPending && 'bg-red-50/60',
                   hasPending && !isSelected && 'bg-yellow-50',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
                 )}
               >
                 <div className={cn(
-                  'text-xs font-medium mb-0.5',
-                  dayOfWeek === 0 && 'text-red-500',
-                  dayOfWeek === 6 && 'text-blue-500',
-                  dayOfWeek > 0 && dayOfWeek < 6 && 'text-gray-700'
+                  'text-xs font-medium mb-0.5 flex items-baseline gap-1',
+                  (dayOfWeek === 0 || holidayName) && 'text-red-500',
+                  dayOfWeek === 6 && !holidayName && 'text-blue-500',
+                  dayOfWeek > 0 && dayOfWeek < 6 && !holidayName && 'text-gray-700'
                 )}>
                   {new Date(date).getDate()}
+                  {holidayName && (
+                    <span className="text-[9px] font-normal truncate">{holidayName}</span>
+                  )}
                 </div>
                 {activeCount > 0 && (
                   <div className={cn(
