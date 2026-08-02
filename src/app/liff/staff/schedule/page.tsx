@@ -58,6 +58,15 @@ type FetchResult =
   | { key: string; kind: 'notRegistered' }
   | { key: string; kind: 'apiError'; message: string }
 
+/** 月カレンダー用（/api/liff/staff/month-data のレスポンス） */
+type MonthData = {
+  overtimeRequests: { id: string; date: string; actual_end_time: string | null; status: string }[]
+  leaveUsages: { id: string; date: string; days_used: number }[]
+  breakRecords: { date: string; break_start: string | null; break_end: string | null }[]
+}
+
+type MonthResult = { key: string; data: MonthData | null }
+
 const DOW = ['日', '月', '火', '水', '木', '金', '土']
 
 const SHIFT_LABELS: Record<string, { label: string; color: string }> = {
@@ -94,6 +103,35 @@ function formatHeaderDate(dateStr: string): string {
   return `${y}年${m}月${d}日（${dow}）`
 }
 
+function shiftMonth(cal: { year: number; month: number }, diff: number) {
+  const dt = new Date(cal.year, cal.month - 1 + diff, 1)
+  return { year: dt.getFullYear(), month: dt.getMonth() + 1 }
+}
+
+function toDateStr(y: number, m: number, d: number): string {
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+/** 月カレンダーのマス目（前後の空白を null で埋める） */
+function buildCells(year: number, month: number): (number | null)[] {
+  const firstDow = new Date(year, month - 1, 1).getDay()
+  const lastDay = new Date(year, month, 0).getDate()
+  const cells: (number | null)[] = Array(firstDow).fill(null)
+  for (let d = 1; d <= lastDay; d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+  return cells
+}
+
+const OVERTIME_STATUS: Record<string, { label: string; text: string; dot: string }> = {
+  approved: { label: '承認済',   text: 'text-orange-600', dot: 'bg-orange-500' },
+  rejected: { label: '却下',     text: 'text-red-600',    dot: 'bg-red-400' },
+  pending:  { label: '承認待ち', text: 'text-gray-400',   dot: 'bg-orange-300' },
+}
+
+function overtimeStyle(status: string) {
+  return OVERTIME_STATUS[status] ?? OVERTIME_STATUS.pending
+}
+
 function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 mb-2 px-1">
@@ -108,14 +146,23 @@ export default function StaffSchedulePage() {
 
   const today = getTodayJST()
   const [date, setDate] = useState(today)
+  const [view, setView] = useState<'day' | 'month'>('day')
+  const [cal, setCal] = useState(() => {
+    const [y, m] = today.split('-').map(Number)
+    return { year: y, month: m }
+  })
   const [reloadKey, setReloadKey] = useState(0)
   const [result, setResult] = useState<FetchResult | null>(null)
+  const [monthResult, setMonthResult] = useState<MonthResult | null>(null)
 
   const accessToken = liffState.status === 'ready' ? liffState.liff.getAccessToken() : null
   const requestKey = `${date}#${reloadKey}`
+  const monthKey = `${cal.year}-${cal.month}#${reloadKey}`
   // 取得済みデータのキーが現在のリクエストと一致しない間はローディング扱い
   const loadingDay = result?.key !== requestKey
+  const loadingMonth = monthResult?.key !== monthKey
   const data = result?.kind === 'ok' ? result.data : null
+  const monthData = monthResult?.data ?? null
 
   useEffect(() => {
     if (!accessToken) return
@@ -143,6 +190,28 @@ export default function StaffSchedulePage() {
 
     return () => { cancelled = true }
   }, [accessToken, date, requestKey])
+
+  // 月カレンダー用データ（月表示のときだけ取得）
+  useEffect(() => {
+    if (!accessToken || view !== 'month') return
+    let cancelled = false
+
+    fetch('/api/liff/staff/month-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken, year: cal.year, month: cal.month }),
+    })
+      .then(async (r) => {
+        const json = await r.json() as MonthData
+        if (cancelled) return
+        setMonthResult({ key: monthKey, data: r.ok ? json : null })
+      })
+      .catch(() => {
+        if (!cancelled) setMonthResult({ key: monthKey, data: null })
+      })
+
+    return () => { cancelled = true }
+  }, [accessToken, view, cal.year, cal.month, monthKey])
 
   // ローディング
   if (liffState.status === 'loading' || (!result && liffState.status === 'ready' && accessToken)) {
@@ -211,6 +280,41 @@ export default function StaffSchedulePage() {
   const hasAnything =
     !!data?.shift || (data?.transport.length ?? 0) > 0 || (data?.events.length ?? 0) > 0
 
+  // 月表示の下に出す、その月の申請一覧（日付順）
+  const monthEntries: {
+    key: string
+    date: string
+    label: string
+    dot: string
+    status: string | null
+    statusColor: string
+  }[] = [
+    ...(monthData?.leaveUsages ?? []).map((l) => ({
+      key: `leave-${l.id}`,
+      date: l.date,
+      label: `有給${l.days_used === 0.5 ? '（半日）' : '（1日）'}`,
+      dot: 'bg-green-500',
+      status: null,
+      statusColor: '',
+    })),
+    ...(monthData?.overtimeRequests ?? []).map((o) => ({
+      key: `overtime-${o.id}`,
+      date: o.date,
+      label: `残業${o.actual_end_time ? ` ${o.actual_end_time.slice(0, 5)}まで` : ''}`,
+      dot: overtimeStyle(o.status).dot,
+      status: overtimeStyle(o.status).label,
+      statusColor: overtimeStyle(o.status).text,
+    })),
+    ...(monthData?.breakRecords ?? []).map((b, i) => ({
+      key: `break-${b.date}-${i}`,
+      date: b.date,
+      label: `中抜け ${b.break_start ?? '?'}〜${b.break_end ?? '?'}`,
+      dot: 'bg-sky-400',
+      status: null,
+      statusColor: '',
+    })),
+  ].sort((a, b) => a.date.localeCompare(b.date))
+
   return (
     <div className="max-w-sm mx-auto min-h-screen bg-gray-50 pb-10">
       {/* ヘッダー */}
@@ -219,54 +323,198 @@ export default function StaffSchedulePage() {
         <h1 className="text-xl font-bold">{data?.staff.name}さん</h1>
       </div>
 
-      {/* 日付ナビゲーション */}
+      {/* 日付・月ナビゲーション */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm">
         <div className="flex items-center justify-between px-2 py-2.5">
           <button
-            onClick={() => setDate(addDays(date, -1))}
+            onClick={() => view === 'day' ? setDate(addDays(date, -1)) : setCal(shiftMonth(cal, -1))}
             className="p-2 text-gray-400 hover:text-gray-700"
-            aria-label="前の日"
+            aria-label={view === 'day' ? '前の日' : '前の月'}
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <span className="font-semibold text-gray-800 text-sm">{formatHeaderDate(date)}</span>
+          <span className="font-semibold text-gray-800 text-sm">
+            {view === 'day' ? formatHeaderDate(date) : `${cal.year}年${cal.month}月`}
+          </span>
           <button
-            onClick={() => setDate(addDays(date, 1))}
+            onClick={() => view === 'day' ? setDate(addDays(date, 1)) : setCal(shiftMonth(cal, 1))}
             className="p-2 text-gray-400 hover:text-gray-700"
-            aria-label="次の日"
+            aria-label={view === 'day' ? '次の日' : '次の月'}
           >
             <ChevronRight className="h-5 w-5" />
           </button>
         </div>
         <div className="flex gap-2 px-3 pb-2.5">
           <button
-            onClick={() => setDate(today)}
+            onClick={() => { setDate(today); setView('day') }}
             className={`flex-1 rounded-full py-1.5 text-xs font-medium transition-colors ${
-              isToday ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
+              view === 'day' && isToday ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
             }`}
           >
             今日
           </button>
           <button
-            onClick={() => setDate(addDays(today, 1))}
+            onClick={() => { setDate(addDays(today, 1)); setView('day') }}
             className={`flex-1 rounded-full py-1.5 text-xs font-medium transition-colors ${
-              isTomorrow ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
+              view === 'day' && isTomorrow ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
             }`}
           >
             明日
           </button>
           <button
-            onClick={() => setReloadKey((k) => k + 1)}
-            disabled={loadingDay}
-            className="rounded-full px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-600 disabled:opacity-50 flex items-center gap-1"
+            onClick={() => {
+              const [y, m] = date.split('-').map(Number)
+              setCal({ year: y, month: m })
+              setView('month')
+            }}
+            className={`flex-1 rounded-full py-1.5 text-xs font-medium transition-colors flex items-center justify-center gap-1 ${
+              view === 'month' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
+            }`}
           >
-            {loadingDay
+            <CalendarDays className="h-3.5 w-3.5" />
+            月表示
+          </button>
+          <button
+            onClick={() => setReloadKey((k) => k + 1)}
+            disabled={view === 'day' ? loadingDay : loadingMonth}
+            className="rounded-full px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-600 disabled:opacity-50 flex items-center gap-1"
+            aria-label="更新"
+          >
+            {(view === 'day' ? loadingDay : loadingMonth)
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
               : <RotateCw className="h-3.5 w-3.5" />}
-            更新
           </button>
         </div>
       </div>
+
+      {/* 月カレンダー（有給・残業・中抜けの申請状況） */}
+      {view === 'month' && (
+        <div className="px-3 pt-4 space-y-5">
+          <div className={`bg-white rounded-2xl shadow-sm overflow-hidden transition-opacity ${loadingMonth ? 'opacity-50' : ''}`}>
+            <div className="grid grid-cols-7 border-b border-gray-100">
+              {DOW.map((d, i) => (
+                <div
+                  key={d}
+                  className={`py-2 text-center text-xs font-medium ${
+                    i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-400'
+                  }`}
+                >
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            {loadingMonth && !monthData ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-5 w-5 animate-spin text-indigo-400" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-7 p-1">
+                {buildCells(cal.year, cal.month).map((day, idx) => {
+                  if (day === null) return <div key={idx} className="h-12" />
+                  const dateStr = toDateStr(cal.year, cal.month, day)
+                  const leave = monthData?.leaveUsages.find((l) => l.date === dateStr)
+                  const overtime = monthData?.overtimeRequests.find((o) => o.date === dateStr)
+                  const breaks = monthData?.breakRecords.filter((b) => b.date === dateStr) ?? []
+                  const isTodayCell = dateStr === today
+                  const isSelected = dateStr === date
+                  const dow = idx % 7
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => { setDate(dateStr); setView('day') }}
+                      className={`relative flex flex-col items-center justify-start pt-1.5 h-12 rounded-xl mx-0.5 mb-0.5 transition-colors ${
+                        isSelected ? 'bg-indigo-100' : isTodayCell ? 'bg-indigo-50' : 'active:bg-gray-100'
+                      }`}
+                    >
+                      <span className={`text-sm font-medium leading-none ${
+                        isSelected ? 'text-indigo-700' :
+                        isTodayCell ? 'text-indigo-600' :
+                        dow === 0 ? 'text-red-500' :
+                        dow === 6 ? 'text-blue-500' :
+                        'text-gray-700'
+                      }`}>
+                        {isTodayCell ? (
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-xs">{day}</span>
+                        ) : day}
+                      </span>
+                      <div className="flex gap-0.5 mt-1">
+                        {leave && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                        {overtime && <span className={`w-1.5 h-1.5 rounded-full ${overtimeStyle(overtime.status).dot}`} />}
+                        {breaks.length > 0 && <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* 凡例 */}
+            <div className="flex gap-4 justify-center py-3 border-t border-gray-100">
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="text-xs text-gray-400">有給</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-orange-300" />
+                <span className="text-xs text-gray-400">残業</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-sky-400" />
+                <span className="text-xs text-gray-400">中抜け</span>
+              </div>
+            </div>
+          </div>
+
+          {monthResult && !monthData ? (
+            <div className="bg-white rounded-2xl shadow-sm px-4 py-3.5 text-sm text-gray-400 text-center">
+              申請状況を取得できませんでした
+            </div>
+          ) : (
+            <div>
+              <SectionTitle icon={<FileText className="h-3.5 w-3.5" />}>
+                {cal.month}月の申請一覧
+              </SectionTitle>
+              {monthEntries.length === 0 ? (
+                <div className="bg-white rounded-2xl shadow-sm px-4 py-3.5 text-sm text-gray-400">
+                  この月の申請はありません
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {monthEntries.map((entry) => (
+                    <button
+                      key={entry.key}
+                      onClick={() => { setDate(entry.date); setView('day') }}
+                      className="w-full text-left bg-white rounded-2xl shadow-sm px-4 py-3 flex items-center gap-3 active:bg-gray-50"
+                    >
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${entry.dot}`} />
+                      <span className="text-sm font-medium text-gray-800 w-14 shrink-0">
+                        {Number(entry.date.slice(5, 7))}/{Number(entry.date.slice(8, 10))}
+                      </span>
+                      <span className="text-sm text-gray-700 flex-1">{entry.label}</span>
+                      {entry.status && (
+                        <span className={`text-xs shrink-0 ${entry.statusColor}`}>{entry.status}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <p className="text-center text-xs text-gray-400">日付をタップすると、その日の詳細を表示します</p>
+
+          <Link
+            href="/liff/staff"
+            className="block w-full text-center bg-white border border-indigo-200 text-indigo-600 rounded-2xl py-3.5 text-sm font-semibold shadow-sm active:opacity-80"
+          >
+            有給・残業・中抜けを申請する
+          </Link>
+        </div>
+      )}
+
+      {view === 'day' && (
+      <>
 
       <div className={`px-3 pt-4 space-y-5 transition-opacity ${loadingDay ? 'opacity-50' : ''}`}>
         {/* シフト */}
@@ -444,6 +692,8 @@ export default function StaffSchedulePage() {
           有給・残業・中抜けを申請する
         </Link>
       </div>
+      </>
+      )}
     </div>
   )
 }
