@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -503,14 +503,15 @@ export function AttendanceBoard({
       )}
 
       {/* 児童一覧 */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">利用予定児童一覧</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="divide-y divide-gray-100">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-500 mb-2 px-1">利用予定児童一覧</h2>
+        <div className="space-y-3">
             {reservations.length === 0 ? (
-              <p className="p-6 text-sm text-gray-500 text-center">この日の利用予定はありません</p>
+              <Card>
+                <CardContent className="p-6 text-sm text-gray-500 text-center">
+                  この日の利用予定はありません
+                </CardContent>
+              </Card>
             ) : (
               reservations.map((res) => {
                 const child = res.children
@@ -530,11 +531,13 @@ export function AttendanceBoard({
                 const usageRange = usageStart || usageEnd ? `${usageStart || '—'}〜${usageEnd || '—'}` : ''
 
                 return (
-                  <div
-                    key={res.id}
-                    className={isUnrecorded ? 'bg-yellow-50' : ''}
+                  <div key={res.id}>
+                  <Card
+                    className={`overflow-hidden ${isUnrecorded ? 'bg-yellow-50' : ''} ${
+                      isAbsent ? 'opacity-70' : ''
+                    } ${isTransportExpanded ? 'rounded-b-none border-b-0' : ''}`}
                   >
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4">
+                  <CardContent className="flex flex-col sm:flex-row sm:items-center gap-3 p-4">
                     {/* 児童情報 */}
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div
@@ -618,43 +621,45 @@ export function AttendanceBoard({
                         </Link>
                       )}
                     </div>
-                  </div>
+                  </CardContent>
 
-                    {/* 送迎・日中一時入力（日々の記録と同じUI） */}
+                    {/* 送迎・日中一時入力トグル（日々の記録と同じUI） */}
                     {isPresent && att && fields && (
-                      <>
-                        <TransportDaytimeToggle
-                          expanded={isTransportExpanded}
-                          onToggle={() => setExpanded(isTransportExpanded ? null : att.id)}
-                          fields={fields}
-                          isSchedulePreset={isSchedulePreset(att)}
-                        />
-                        {isTransportExpanded && (
-                          <div className="border-t border-gray-100 bg-gray-50 px-4 py-4">
-                            <TransportDaytimePanel
-                              fields={fields}
-                              onChange={(patch) => setField(att, patch)}
-                              staffMembers={staffMembers}
-                              vehicles={vehicles}
-                              defaultServiceEndTime={defaultServiceEndTime}
-                              isSchedulePreset={isSchedulePreset(att)}
-                              previousDate={prevByChildId[child.id]?.date ?? null}
-                              onCopyPrevious={() => handleCopyPrevious(att)}
-                              onSave={() => handleSaveTransport(att)}
-                              saving={transportSaving === att.id}
-                              saved={transportSavedIds.has(att.id)}
-                            />
-                          </div>
-                        )}
-                      </>
+                      <TransportDaytimeToggle
+                        expanded={isTransportExpanded}
+                        onToggle={() => setExpanded(isTransportExpanded ? null : att.id)}
+                        fields={fields}
+                        isSchedulePreset={isSchedulePreset(att)}
+                      />
                     )}
+                  </Card>
+
+                  {/* 展開された入力エリア */}
+                  {isTransportExpanded && att && fields && (
+                    <Card className="rounded-t-none border-t-0">
+                      <CardContent className="p-4">
+                        <TransportDaytimePanel
+                          fields={fields}
+                          onChange={(patch) => setField(att, patch)}
+                          staffMembers={staffMembers}
+                          vehicles={vehicles}
+                          defaultServiceEndTime={defaultServiceEndTime}
+                          isSchedulePreset={isSchedulePreset(att)}
+                          previousDate={prevByChildId[child.id]?.date ?? null}
+                          onCopyPrevious={() => handleCopyPrevious(att)}
+                          onSave={() => handleSaveTransport(att)}
+                          saving={transportSaving === att.id}
+                          saved={transportSavedIds.has(att.id)}
+                        />
+                      </CardContent>
+                    </Card>
+                  )}
                   </div>
                 )
               })
             )}
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
         </>
       )}
     </div>
