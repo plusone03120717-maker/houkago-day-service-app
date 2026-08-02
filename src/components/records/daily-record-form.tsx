@@ -312,7 +312,7 @@ export function DailyRecordForm({
       }
     }
 
-    // 日中一時利用の提供時間のみ保存（送迎は一覧側で管理）
+    // 日中一時利用の利用時間のみ保存（送迎は一覧側で管理）
     await supabase
       .from('daily_attendance')
       .update({
@@ -392,7 +392,7 @@ export function DailyRecordForm({
         </div>
       )}
 
-      {/* 日中一時利用（提供時間のみ） */}
+      {/* 日中一時利用（利用時間のみ） */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -411,7 +411,7 @@ export function DailyRecordForm({
         </CardHeader>
         {daytimeSupport && (
           <CardContent className="space-y-3">
-            <p className="text-xs font-semibold text-gray-500">提供時間</p>
+            <p className="text-xs font-semibold text-gray-500">利用時間</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-gray-600 mb-1 block">開始時間</label>

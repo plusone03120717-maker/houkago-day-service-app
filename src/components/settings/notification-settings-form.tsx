@@ -152,11 +152,11 @@ export function NotificationSettingsForm({ facilityId, initial }: Props) {
         </div>
       ))}
 
-      {/* 提供時間デフォルト */}
+      {/* 利用時間デフォルト */}
       <div className="p-3 rounded-lg border border-gray-200 bg-gray-50 space-y-3">
         <div>
-          <p className="text-sm font-medium text-gray-900">提供時間デフォルト設定</p>
-          <p className="text-xs text-gray-500">日々の記録でお迎え到着時間を入力したときの提供終了時間の初期値</p>
+          <p className="text-sm font-medium text-gray-900">利用時間デフォルト設定</p>
+          <p className="text-xs text-gray-500">日々の記録・出席管理でお迎え到着時間を入力したときの利用終了時間の初期値</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>

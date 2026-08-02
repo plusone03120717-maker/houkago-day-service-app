@@ -695,11 +695,11 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
             </div>
           </div>
 
-          {/* 提供時間 */}
+          {/* 利用時間 */}
           <div className="space-y-2">
             <div className="flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5 text-indigo-500" />
-              <span className="text-xs font-semibold text-gray-600">提供時間</span>
+              <span className="text-xs font-semibold text-gray-600">利用時間</span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <TimeField label="開始時間" value={serviceStart} onChange={setServiceStart} />
@@ -951,11 +951,11 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
             </div>
           </div>
 
-          {/* 提供時間 */}
+          {/* 利用時間 */}
           <div className="space-y-2">
             <div className="flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5 text-indigo-500" />
-              <span className="text-xs font-semibold text-gray-600">提供時間</span>
+              <span className="text-xs font-semibold text-gray-600">利用時間</span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <TimeField label="開始時間" value={serviceStart} onChange={setServiceStart} />
