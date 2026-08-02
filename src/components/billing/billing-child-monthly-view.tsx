@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, ChevronRight, Loader2, Plus, Settings } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, Plus, Settings, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
@@ -189,6 +189,7 @@ export function BillingChildMonthlyView({
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
 
   const [attendances, setAttendances] = useState<DailyAttendance[]>([])
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([])
@@ -528,6 +529,58 @@ export function BillingChildMonthlyView({
     setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, [field]: value || null } : a))
   }
 
+  // ── Delete a day's record (誤登録した実績を未記録に戻す) ────
+  const deleteDayRecord = async (dateStr: string) => {
+    const att = attendances.find((a) => a.date === dateStr)
+    if (!att) return
+    const dayNum = parseInt(dateStr.slice(8))
+    const ok = confirm(
+      `${dayNum}日の実績を削除します。\n\n` +
+      '・出席管理の出席／欠席記録も削除され、未記録に戻ります\n' +
+      '・この日の支援記録・活動記録も一緒に削除されます\n' +
+      '・請求（国保連）の対象からも外れます\n\n' +
+      'よろしいですか？'
+    )
+    if (!ok) return
+
+    setDeleting(dateStr)
+    // 請求側の上書きレコードを先に削除
+    await supabase
+      .from('billing_daily_records')
+      .delete()
+      .eq('child_id', childId)
+      .eq('unit_id', unitId)
+      .eq('date', dateStr)
+
+    const { error } = await supabase.from('daily_attendance').delete().eq('id', att.id)
+    if (error) {
+      alert(`削除できませんでした: ${error.message}`)
+      setDeleting(null)
+      return
+    }
+
+    setAttendances((prev) => prev.filter((a) => a.id !== att.id))
+    setManualRecords((prev) => prev.filter((r) => r.date !== dateStr))
+    setDeleting(null)
+    router.refresh()
+  }
+
+  const renderDeleteCell = (dateStr: string) => (
+    <td className="border border-gray-200 px-1 py-1 text-center">
+      <button
+        type="button"
+        onClick={() => deleteDayRecord(dateStr)}
+        disabled={deleting === dateStr}
+        title="この日の実績を削除（未記録に戻す）"
+        className="p-1 rounded text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+      >
+        {deleting === dateStr
+          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          : <Trash2 className="h-3.5 w-3.5" />}
+      </button>
+    </td>
+  )
+
   // ── Add default service items ───────────────────────────────
   const addDefaultItems = async () => {
     const defaults: Omit<ServiceItem, 'id' | 'billing_code'>[] = [
@@ -788,6 +841,7 @@ export function BillingChildMonthlyView({
                     {hasExtensionItems && (
                       <th className="border border-gray-300 px-1 py-2 text-center font-medium text-gray-600 bg-green-50 w-16">延長加算</th>
                     )}
+                    <th className="border border-gray-300 px-1 py-2 text-center font-medium text-gray-600 w-12">操作</th>
                   </tr>
                   <tr className="bg-[#f5f0e8] text-[10px]">
                     <th className="border border-gray-300" />
@@ -808,6 +862,7 @@ export function BillingChildMonthlyView({
                     )}
                     {hasAbsentItems && <th className="border border-gray-300 bg-yellow-50" />}
                     {hasExtensionItems && <th className="border border-gray-300 px-0 py-1 text-center text-gray-500 bg-green-50">時間</th>}
+                    <th className="border border-gray-300" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -868,6 +923,7 @@ export function BillingChildMonthlyView({
                           {hasExtensionItems && (
                             <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-green-50/30">—</td>
                           )}
+                          {renderDeleteCell(dateStr)}
                         </tr>
                       )
                     }
@@ -1027,12 +1083,13 @@ export function BillingChildMonthlyView({
                             )}
                           </td>
                         )}
+                        {renderDeleteCell(dateStr)}
                       </tr>
                     )
                   })}
                   {attendedDays.length === 0 && (
                     <tr>
-                      <td colSpan={(hasDaytimeItems ? 12 : 7) + (hasAbsentItems ? 1 : 0) + (hasExtensionItems ? 1 : 0)} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+                      <td colSpan={(hasDaytimeItems ? 12 : 7) + (hasAbsentItems ? 1 : 0) + (hasExtensionItems ? 1 : 0) + 1} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
                         この月の実績記録がありません
                       </td>
                     </tr>
@@ -1077,6 +1134,7 @@ export function BillingChildMonthlyView({
                           {attendedDays.reduce((sum, d) => sum + d.extensionHours, 0)}h
                         </td>
                       )}
+                      <td className="border border-gray-300" />
                     </tr>
                   </tfoot>
                 )}
@@ -1153,6 +1211,7 @@ export function BillingChildMonthlyView({
               算定区分② 1時間30分超〜3時間以下
             </span>
             <span className="text-gray-400">※ 月次グリッドのセルをクリックでチェックのオン/オフが切り替えられます</span>
+            <span className="text-gray-400">※ 日別表の「操作」列のゴミ箱で、誤って登録した日の実績をまとめて削除できます</span>
           </div>
         </>
       )}
