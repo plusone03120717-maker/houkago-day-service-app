@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Building2, Users } from 'lucide-react'
+import { FacilityBillingForm } from '@/components/settings/facility-billing-form'
 
 type Unit = {
   id: string
@@ -21,6 +22,8 @@ type Facility = {
   address: string | null
   phone: string | null
   is_active: boolean
+  region_code: string | null
+  unit_price: number | null
   units: Unit[]
 }
 
@@ -35,7 +38,7 @@ export default async function SettingsFacilitiesPage() {
 
   const { data: facilitiesRaw } = await supabase
     .from('facilities')
-    .select('id, name, facility_number, postal_code, address, phone, is_active, units(id, name, service_type, capacity, is_active)')
+    .select('id, name, facility_number, postal_code, address, phone, is_active, region_code, unit_price, units(id, name, service_type, capacity, is_active)')
     .order('name')
   const facilities = (facilitiesRaw ?? []) as unknown as Facility[]
 
@@ -78,6 +81,12 @@ export default async function SettingsFacilitiesPage() {
                 {facility.postal_code && <div>〒 {facility.postal_code}</div>}
                 {facility.phone && <div>📞 {facility.phone}</div>}
               </div>
+
+              <FacilityBillingForm
+                facilityId={facility.id}
+                initialRegionCode={facility.region_code ?? '20'}
+                initialUnitPrice={Number(facility.unit_price ?? 10)}
+              />
 
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">ユニット</p>

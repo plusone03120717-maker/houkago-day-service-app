@@ -20,6 +20,11 @@ interface Props {
     copay_category?: string
     municipality?: string
     upper_limit_manager?: string
+    decision_service_code?: string
+    contract_amount?: number
+    contract_start_date?: string
+    contract_end_date?: string
+    contract_line_number?: number
   }
 }
 
@@ -40,6 +45,11 @@ export function CertificateForm({ childId, initial }: Props) {
     copay_category: initial?.copay_category ?? '',
     municipality: initial?.municipality ?? '',
     upper_limit_manager: initial?.upper_limit_manager ?? '',
+    decision_service_code: initial?.decision_service_code ?? '631000',
+    contract_amount: initial?.contract_amount != null ? String(initial.contract_amount) : '',
+    contract_start_date: initial?.contract_start_date ?? '',
+    contract_end_date: initial?.contract_end_date ?? '',
+    contract_line_number: String(initial?.contract_line_number ?? 1),
   })
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -65,6 +75,11 @@ export function CertificateForm({ childId, initial }: Props) {
       copay_category: form.copay_category || null,
       municipality: form.municipality || null,
       upper_limit_manager: form.upper_limit_manager || null,
+      decision_service_code: form.decision_service_code || '631000',
+      contract_amount: form.contract_amount ? parseInt(form.contract_amount) : null,
+      contract_start_date: form.contract_start_date || null,
+      contract_end_date: form.contract_end_date || null,
+      contract_line_number: parseInt(form.contract_line_number) || 1,
     }
 
     if (initial?.id) {
@@ -182,6 +197,66 @@ export function CertificateForm({ childId, initial }: Props) {
           placeholder="例: ○○放課後デイサービス"
         />
         <p className="text-xs text-gray-400 mt-1">上限管理を行う事業所名を入力してください（任意）</p>
+      </div>
+
+      <div className="pt-4 border-t border-gray-100">
+        <p className="text-sm font-semibold text-gray-900 mb-1">契約情報（国保連請求用）</p>
+        <p className="text-xs text-gray-400 mb-3">
+          受給者証の事業者記入欄の内容を入力してください。国保連請求CSVの契約情報レコードに使用されます。
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-medium text-gray-700 mb-1 block">決定サービスコード</label>
+            <Input
+              value={form.decision_service_code}
+              onChange={set('decision_service_code')}
+              placeholder="631000"
+              maxLength={6}
+            />
+            <p className="text-xs text-gray-400 mt-1">631000=放デイ基本決定 / 632000=重心 / 633000〜=医ケア児</p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-700 mb-1 block">契約支給量（日数）</label>
+            <Input
+              type="number"
+              value={form.contract_amount}
+              onChange={set('contract_amount')}
+              min={1}
+              max={31}
+              placeholder="未入力時は月の給付量を使用"
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+          <div>
+            <label className="text-xs font-medium text-gray-700 mb-1 block">契約開始日</label>
+            <input
+              type="date"
+              value={form.contract_start_date}
+              onChange={set('contract_start_date')}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-700 mb-1 block">契約終了日</label>
+            <input
+              type="date"
+              value={form.contract_end_date}
+              onChange={set('contract_end_date')}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-700 mb-1 block">事業者記入欄番号</label>
+            <Input
+              type="number"
+              value={form.contract_line_number}
+              onChange={set('contract_line_number')}
+              min={1}
+              max={99}
+            />
+          </div>
+        </div>
       </div>
 
       <Button type="submit" disabled={saving}>

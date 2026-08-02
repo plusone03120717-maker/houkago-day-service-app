@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, AlertCircle } from 'lucide-react'
 import { BillingExportButton } from '@/components/billing/billing-export-button'
+import { KokuhorenExportButton } from '@/components/billing/kokuhoren-export-button'
 import { AiCheckButton } from '@/components/billing/ai-check-button'
 import { ActualCostForm } from '@/components/billing/actual-cost-form'
 import { BillingDetailsTable } from '@/components/billing/billing-details-table'
@@ -287,17 +288,23 @@ export default async function BillingDetailPage({
               />
 
               {/* CSV出力 */}
-              <div className="flex gap-2 flex-wrap pt-2 border-t border-gray-100">
-                <BillingExportButton
-                  billingMonthlyId={billing.id}
-                  exportType="service_record"
-                  label="サービス提供実績CSV"
-                />
-                <BillingExportButton
-                  billingMonthlyId={billing.id}
-                  exportType="billing"
-                  label="請求情報CSV"
-                />
+              <div className="space-y-3 pt-2 border-t border-gray-100">
+                <KokuhorenExportButton billingMonthlyId={billing.id} />
+                <div className="flex gap-2 flex-wrap">
+                  <BillingExportButton
+                    billingMonthlyId={billing.id}
+                    exportType="service_record"
+                    label="サービス提供実績CSV（参考）"
+                  />
+                  <BillingExportButton
+                    billingMonthlyId={billing.id}
+                    exportType="billing"
+                    label="請求情報CSV（参考）"
+                  />
+                </div>
+                <p className="text-xs text-gray-400">
+                  国保連取込用CSVはインタフェース仕様書（K112請求書・K122明細書）準拠。取込送信ソフトへ取り込んで伝送してください。参考CSVは事業所内確認用です。
+                </p>
               </div>
             </CardContent>
           </Card>
