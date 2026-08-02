@@ -9,7 +9,6 @@ import Encoding from 'encoding-japanese'
 // ダブルコーテーションで囲む（共通編 1.2.2 (4) 特記事項）
 export function quoteField(value: string): string {
   if (value === '') return ''
-  // eslint-disable-next-line no-control-regex
   const needsQuote = /[", ]|[^\x00-\x7F]/.test(value)
   if (!needsQuote) return value
   return `"${value.replace(/"/g, '""')}"`
