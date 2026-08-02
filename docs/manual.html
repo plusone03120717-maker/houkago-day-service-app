@@ -222,6 +222,7 @@
     <li><a href="#ch11b">タイムカード（LINE打刻）</a></li>
     <li><a href="#ch11c">有給管理</a></li>
     <li><a href="#ch11d">スタッフ申請（LIFF通知）</a></li>
+    <li><a href="#ch11f">スタッフ マイスケジュール（LINE）</a></li>
     <li><a href="#ch11e">保護者利用連絡（LINE）</a></li>
     <li><a href="#ch12">国保連請求</a></li>
     <li><a href="#ch13">帳票出力</a></li>
@@ -912,6 +913,52 @@
 
   <h3>サイドバーからのアクセス</h3>
   <p>サイドバーの「支援・管理」グループ内「スタッフ申請」リンクからも直接アクセスできます（管理者のみ表示）。</p>
+</div>
+
+<!-- Chapter 11f -->
+<div class="chapter" id="ch11f">
+  <div class="chapter-header">
+    <div class="num">Chapter 11f</div>
+    <h2>スタッフ マイスケジュール（LINE）</h2>
+    <p>スタッフがLINEから自分のシフト・送迎担当・予定を確認する</p>
+  </div>
+
+  <h3>概要</h3>
+  <p>スタッフがLINEアプリからURLを開くと、<strong>自分の分だけ</strong>のスケジュールが表示されます。LINEアカウントで本人を自動判定するため、他のスタッフのスケジュールは表示されません。管理画面の「全体スケジュール」で各スタッフを開いたときと同じ内容を、スタッフ本人がスマホから確認できます。</p>
+
+  <h3>URL</h3>
+  <p>スタッフ申請と同じLIFFアプリを使うため、LINE Developersでの新規登録は不要です。以下のURLをリッチメニューやトークで配布します。</p>
+  <table>
+    <tr><th>用途</th><th>URL</th></tr>
+    <tr><td>マイスケジュール</td><td><code>https://liff.line.me/【スタッフ用LIFF ID】/schedule</code></td></tr>
+    <tr><td>スタッフ申請（従来）</td><td><code>https://liff.line.me/【スタッフ用LIFF ID】</code></td></tr>
+  </table>
+  <div class="tip"><strong>💡 スタッフ用LIFF IDの確認方法：</strong> Vercelの環境変数 <code>NEXT_PUBLIC_LIFF_STAFF_ID</code> に設定されている値です。LINE Developersコンソール → 該当チャネル → LIFFタブでも確認できます（エンドポイントURLが <code>https://【アプリのURL】/liff/staff</code> のもの）。</div>
+
+  <h3>表示される内容</h3>
+  <table>
+    <tr><th>セクション</th><th>内容</th><th>元になるデータ</th></tr>
+    <tr><td>シフト</td><td>勤務区分（全日／午前／午後／休み／有休）・勤務時間・休憩時間・備考</td><td>シフト管理で登録したシフト</td></tr>
+    <tr><td>予定・行事</td><td>会議・モニタリング・外部・その他の予定と対象児童</td><td>スケジュールイベント</td></tr>
+    <tr><td>送迎担当</td><td>お迎え／送り（日中一時を含む）・児童名・車両・出発／到着時刻</td><td>日々の記録の送迎欄</td></tr>
+    <tr><td>申請状況</td><td>その日の有給・残業・中抜けの申請状況と承認状態</td><td>スタッフ申請（LIFF）</td></tr>
+  </table>
+
+  <h3>使い方（スタッフ側）</h3>
+  <div class="step"><span class="step-num">1</span> LINEのリッチメニューまたは配布されたURLをタップ</div>
+  <div class="step"><span class="step-num">2</span> 初回は「LINEログイン」の許可画面が出るので許可する</div>
+  <div class="step"><span class="step-num">3</span> 開くと当日のスケジュールが表示される</div>
+  <div class="step"><span class="step-num">4</span> 上部の「今日」「明日」ボタン、または左右の矢印で日付を切り替える</div>
+  <div class="step"><span class="step-num">5</span> 「更新」ボタンで最新の内容を再読み込みできる</div>
+  <div class="step"><span class="step-num">6</span> 画面下部の「有給・残業・中抜けを申請する」から申請ページへ移動できる</div>
+
+  <h3>事前準備（管理者）</h3>
+  <div class="step"><span class="step-num">1</span> 「設定 → スタッフ管理」で該当スタッフの <strong>LINE User ID</strong> を登録しておく</div>
+  <div class="step"><span class="step-num">2</span> シフトを表示するには、そのスタッフに<strong>ログインアカウント</strong>が作成されている必要がある（シフト管理はログインアカウント単位で登録されるため）</div>
+  <div class="step"><span class="step-num">3</span> リッチメニューにURLを設定する場合は、LINE Official Account Managerで上記のLIFF URLをリンク先に指定する</div>
+
+  <p class="note">LINE User IDが未登録のスタッフが開くと「スタッフ登録が必要です」と表示され、画面にそのスタッフのLINE User IDが出ます。その値を「設定 → スタッフ管理」に登録すれば閲覧できるようになります。</p>
+  <p class="note">予定・行事は「担当スタッフに自分が指定されている予定」と「担当スタッフが設定されていない予定（全員向け）」が表示されます。後者には「全体」バッジが付きます。他のスタッフだけが担当の予定は表示されません。</p>
 </div>
 
 <!-- Chapter 11e -->

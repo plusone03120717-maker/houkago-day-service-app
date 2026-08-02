@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { useLiff } from '@/hooks/use-liff'
 import { Loader2, AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
@@ -273,8 +274,18 @@ export default function StaffLiffPage() {
     <div className="max-w-sm mx-auto min-h-screen bg-gray-50">
       {/* ヘッダー */}
       <div className="bg-indigo-600 text-white px-5 pt-10 pb-5">
-        <p className="text-xs text-indigo-300 mb-0.5">スタッフ申請</p>
-        <h1 className="text-xl font-bold">{staff?.name}さん</h1>
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-xs text-indigo-300 mb-0.5">スタッフ申請</p>
+            <h1 className="text-xl font-bold">{staff?.name}さん</h1>
+          </div>
+          <Link
+            href="/liff/staff/schedule"
+            className="shrink-0 rounded-full bg-white/15 px-3 py-1.5 text-xs font-medium active:opacity-80"
+          >
+            マイスケジュール
+          </Link>
+        </div>
       </div>
 
       {/* 月ナビゲーション */}
