@@ -69,6 +69,18 @@ export async function generateBilling(formData: FormData): Promise<void> {
   const additionSettings = (additionSettingsRaw ?? []) as AdditionSetting[]
   const enabledAdditions = additionSettings.filter((a) => a.enabled)
 
+  // 国保連サービスコード（設定 > 国保連サービスコード設定 の基本報酬項目から取得）
+  const { data: basicItem } = await supabase
+    .from('billing_service_items')
+    .select('billing_code')
+    .eq('unit_id', unitId)
+    .eq('trigger_field', 'basic')
+    .eq('is_active', true)
+    .not('billing_code', 'is', null)
+    .limit(1)
+    .maybeSingle()
+  const serviceCode = basicItem?.billing_code ?? null
+
   // 出席記録を取得
   const { data: attendances, error: attError } = await supabase
     .from('daily_attendance')
@@ -164,12 +176,14 @@ export async function generateBilling(formData: FormData): Promise<void> {
       certificate_id: entry.certificateId,
       total_days: entry.totalDays,
       total_units: totalUnits,
-      service_code: 'H43',
+      service_code: serviceCode,
       unit_price: BASE_UNIT_PRICE,
       additions: appliedAdditions,
       copay_amount: copayAmount,
       billed_amount: billedAmount - copayAmount,
-      errors: entry.errors,
+      errors: serviceCode
+        ? entry.errors
+        : [...entry.errors, '国保連サービスコードが未設定です（設定 > 国保連サービスコード設定）'],
     }
   })
 

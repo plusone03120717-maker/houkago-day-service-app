@@ -88,7 +88,9 @@ export function buildKokuhorenCsv(
       errors.push(`${label}: 市町村番号（6桁）が未設定または不正です: 「${c.municipalityCode}」（受給者証編集画面で入力）`)
     }
     if (!/^[0-9A-Z]{6}$/.test(c.serviceCode)) {
-      errors.push(`${label}: サービスコードが6桁の英数字ではありません: 「${c.serviceCode}」（請求明細で修正）`)
+      errors.push(
+        `${label}: サービスコードが6桁の英数字ではありません: 「${c.serviceCode}」（設定 > 国保連サービスコード設定 で基本報酬のコードを登録し、請求データを再生成してください）`,
+      )
     }
     if (!/^[0-9A-Z]{6}$/.test(c.decisionServiceCode)) {
       errors.push(`${label}: 決定サービスコードが6桁の英数字ではありません: 「${c.decisionServiceCode}」（受給者証編集画面で入力）`)

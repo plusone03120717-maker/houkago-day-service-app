@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen } from 'lucide-react'
+import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash } from 'lucide-react'
 import { requireAdmin } from '@/lib/require-admin'
 
 const sections = [
@@ -21,6 +21,12 @@ const sections = [
     icon: PlusCircle,
     label: '処遇改善加算設定',
     description: 'ユニット別の加算区分・算定率を設定',
+  },
+  {
+    href: '/settings/service-codes',
+    icon: Hash,
+    label: '国保連サービスコード設定',
+    description: 'サービス項目ごとの6桁コード登録（請求CSVに必須）',
   },
   {
     href: '/settings/addition-requirements',
