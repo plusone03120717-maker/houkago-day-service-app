@@ -6,7 +6,7 @@ import type { ScheduleDefaults } from '@/components/transport/transport-daytime-
 
 const TRANSPORT_COLUMNS = `
   basic_service,
-  service_start_time, service_end_time,
+  service_start_time, service_end_time, check_in_time, check_out_time,
   daytime_support, daytime_support_start_time, daytime_support_end_time,
   pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id,
   dropoff_departure_time, dropoff_arrival_time, dropoff_driver_member_id, dropoff_vehicle_id,

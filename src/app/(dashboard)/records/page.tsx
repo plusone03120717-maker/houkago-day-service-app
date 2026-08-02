@@ -10,6 +10,8 @@ type AttendedChild = {
   basic_service: boolean
   service_start_time: string | null
   service_end_time: string | null
+  check_in_time: string | null
+  check_out_time: string | null
   daytime_support: boolean
   daytime_support_start_time: string | null
   daytime_support_end_time: string | null
@@ -45,6 +47,8 @@ type PrevAttendanceRow = {
   basic_service: boolean
   service_start_time: string | null
   service_end_time: string | null
+  check_in_time: string | null
+  check_out_time: string | null
   daytime_support: boolean
   daytime_support_start_time: string | null
   daytime_support_end_time: string | null
@@ -117,7 +121,7 @@ type ScheduleDefaults = {
 
 const TRANSPORT_COLUMNS = `
   basic_service,
-  service_start_time, service_end_time,
+  service_start_time, service_end_time, check_in_time, check_out_time,
   daytime_support, daytime_support_start_time, daytime_support_end_time,
   pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id,
   dropoff_departure_time, dropoff_arrival_time, dropoff_driver_member_id, dropoff_vehicle_id,
@@ -156,7 +160,7 @@ export default async function RecordsPage({
       .from('daily_attendance')
       .select(`
         id, child_id, unit_id, status, basic_service,
-        service_start_time, service_end_time,
+        service_start_time, service_end_time, check_in_time, check_out_time,
         daytime_support, daytime_support_start_time, daytime_support_end_time,
         pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id,
         dropoff_departure_time, dropoff_arrival_time, dropoff_driver_member_id, dropoff_vehicle_id,

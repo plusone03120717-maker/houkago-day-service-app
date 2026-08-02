@@ -63,8 +63,6 @@ export type Attendance = TransportRow & {
   unit_id: string
   date: string
   status: string
-  check_in_time: string | null
-  check_out_time: string | null
   pickup_type: string
   health_condition: string | null
 }
@@ -181,8 +179,16 @@ export function AttendanceBoard({
     router.push(`/attendance?date=${date}&unit=${unitId}`)
   }
 
+  /** 利用時間の更新は service_* と check_*_time の両方に同じ値を書き込む */
+  type UsageTimes = {
+    service_start_time?: string
+    service_end_time?: string
+    check_in_time?: string
+    check_out_time?: string
+  }
+
   // 利用スケジュールから当日の利用時間を取得（特定日上書き > 曜日別設定 > プランのデフォルト）
-  const fetchScheduledTimes = async (childId: string): Promise<{ check_in_time?: string; check_out_time?: string }> => {
+  const fetchScheduledTimes = async (childId: string): Promise<UsageTimes> => {
     const dow = new Date(date).getDay()
     const { data: plans } = await supabase
       .from('usage_plans')
@@ -222,9 +228,15 @@ export function AttendanceBoard({
       if (daySetting?.dropoff_time) dropoffTime = daySetting.dropoff_time as string
     }
 
-    const result: { check_in_time?: string; check_out_time?: string } = {}
-    if (pickupTime) result.check_in_time = pickupTime.slice(0, 5)
-    if (dropoffTime) result.check_out_time = dropoffTime.slice(0, 5)
+    const result: UsageTimes = {}
+    if (pickupTime) {
+      result.service_start_time = pickupTime.slice(0, 5)
+      result.check_in_time = result.service_start_time
+    }
+    if (dropoffTime) {
+      result.service_end_time = dropoffTime.slice(0, 5)
+      result.check_out_time = result.service_end_time
+    }
     return result
   }
 
@@ -235,11 +247,9 @@ export function AttendanceBoard({
 
     // 出席マーク時に利用スケジュールの時間を自動同期
     // すでに出席済み（手動で時間編集済みの可能性あり）の場合は上書きしない
-    let scheduledTimes: { check_in_time?: string; check_out_time?: string } = {}
+    let scheduledTimes: UsageTimes = {}
     if (updates.status === 'attended' && existing?.status !== 'attended') {
-      const times = await fetchScheduledTimes(childId)
-      if (times.check_in_time) scheduledTimes.check_in_time = times.check_in_time
-      if (times.check_out_time) scheduledTimes.check_out_time = times.check_out_time
+      scheduledTimes = await fetchScheduledTimes(childId)
     }
 
     const mergedUpdates = { ...scheduledTimes, ...updates }
@@ -251,7 +261,7 @@ export function AttendanceBoard({
         .eq('id', existing.id)
       if (error) { alert(`更新エラー: ${error.message}`); setSaving(null); return }
 
-      // 欠席になった場合、送迎時間・提供時間をすべてクリア
+      // 欠席になった場合、送迎時間・利用時間をすべてクリア
       if (updates.status === 'absent') {
         await supabase
           .from('daily_attendance')
@@ -262,6 +272,8 @@ export function AttendanceBoard({
             dropoff_arrival_time: null,
             service_start_time: null,
             service_end_time: null,
+            check_in_time: null,
+            check_out_time: null,
             daytime_support: false,
             daytime_support_start_time: null,
             daytime_support_end_time: null,
@@ -512,6 +524,11 @@ export function AttendanceBoard({
                 const fields = att ? getFields(att) : null
                 const isTransportExpanded = !!att && expanded === att.id
 
+                // 利用時間の表示（service_* を正とし、旧データは check_*_time にフォールバック）
+                const usageStart = fmtTime(att?.service_start_time) || fmtTime(att?.check_in_time)
+                const usageEnd = fmtTime(att?.service_end_time) || fmtTime(att?.check_out_time)
+                const usageRange = usageStart || usageEnd ? `${usageStart || '—'}〜${usageEnd || '—'}` : ''
+
                 return (
                   <div
                     key={res.id}
@@ -545,26 +562,12 @@ export function AttendanceBoard({
                       </div>
                     </div>
 
-                    {/* 利用時間（出席時のみ編集可） */}
-                    {isPresent && (
-                      <div className="flex flex-col gap-1 text-xs">
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                          <span className="text-gray-500 w-16 flex-shrink-0">利用時間</span>
-                          <input
-                            type="time"
-                            defaultValue={fmtTime(att?.check_in_time)}
-                            className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
-                            onBlur={(e) => upsertAttendance(child.id, { check_in_time: e.target.value || null })}
-                          />
-                          <span className="text-gray-400">〜</span>
-                          <input
-                            type="time"
-                            defaultValue={fmtTime(att?.check_out_time)}
-                            className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
-                            onBlur={(e) => upsertAttendance(child.id, { check_out_time: e.target.value || null })}
-                          />
-                        </div>
+                    {/* 利用時間（表示のみ・入力は下の「送迎・日中一時入力」から） */}
+                    {isPresent && usageRange && (
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                        <span className="text-gray-500 w-16 flex-shrink-0">利用時間</span>
+                        <span className="text-gray-700">{usageRange}</span>
                       </div>
                     )}
 

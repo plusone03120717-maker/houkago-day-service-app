@@ -7,8 +7,11 @@ import { formatDate } from '@/lib/utils'
 /** daily_attendance のうち送迎・日中一時に関わるカラム */
 export type TransportRow = {
   basic_service: boolean
+  /** 利用時間。check_in_time / check_out_time は同じ値を同期保存する（旧データ互換） */
   service_start_time: string | null
   service_end_time: string | null
+  check_in_time: string | null
+  check_out_time: string | null
   daytime_support: boolean
   daytime_support_start_time: string | null
   daytime_support_end_time: string | null
@@ -95,8 +98,9 @@ export function initFields(a: TransportRow, defaultEnd: string): TransportFields
     dropoffArrivalTime: fmtTime(a.dropoff_arrival_time),
     dropoffDriverId: a.dropoff_driver_member_id ?? '',
     dropoffVehicleId: a.dropoff_vehicle_id ?? '',
-    serviceStartTime: fmtTime(a.service_start_time),
-    serviceEndTime: fmtTime(a.service_end_time) || defaultEnd,
+    // 利用時間。旧データでは check_in_time / check_out_time にしか値がないことがある
+    serviceStartTime: fmtTime(a.service_start_time) || fmtTime(a.check_in_time),
+    serviceEndTime: fmtTime(a.service_end_time) || fmtTime(a.check_out_time) || defaultEnd,
     daytimeSupport: a.daytime_support ?? false,
     daytimeSupportStartTime: fmtTime(a.daytime_support_start_time),
     daytimeSupportEndTime: fmtTime(a.daytime_support_end_time),
@@ -158,8 +162,11 @@ export function buildTransportUpdate(f: TransportFields) {
     dropoff_arrival_time: n(f.dropoffArrivalTime),
     dropoff_driver_member_id: f.dropoffDriverId || null,
     dropoff_vehicle_id: f.dropoffVehicleId || null,
+    // 利用時間は service_* を正とし、check_in/out_time にも同じ値を同期
     service_start_time: n(f.serviceStartTime),
     service_end_time: n(f.serviceEndTime),
+    check_in_time: n(f.serviceStartTime),
+    check_out_time: n(f.serviceEndTime),
     daytime_support: f.daytimeSupport,
     daytime_support_start_time: f.daytimeSupport ? n(f.daytimeSupportStartTime) : null,
     daytime_support_end_time: f.daytimeSupport ? n(f.daytimeSupportEndTime) : null,
@@ -384,9 +391,9 @@ export function TransportDaytimePanel({
               (v) => { if (v) onChange({ dropoffDepartureTime: addMinutes(v, -10) }) },
             )}
 
-            {/* 提供時間 */}
+            {/* 利用時間 */}
             <div className="border-t border-gray-100 pt-3">
-              <p className="text-xs font-semibold text-teal-700 mb-2">提供時間</p>
+              <p className="text-xs font-semibold text-teal-700 mb-2">利用時間</p>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">開始</label>
