@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useLiff } from '@/hooks/use-liff'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { Loader2, AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react'
@@ -42,8 +43,29 @@ function todayStr(): string {
   return toDateStr(n.getFullYear(), n.getMonth() + 1, n.getDate())
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/** useSearchParams はプリレンダリング時に Suspense 境界を必要とするため、中身を分離する */
 export default function StaffLiffPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+        </div>
+      }
+    >
+      <StaffLiffContent />
+    </Suspense>
+  )
+}
+
+function StaffLiffContent() {
   const liffState = useLiff(process.env.NEXT_PUBLIC_LIFF_STAFF_ID)
+
+  // マイスケジュールから ?date=YYYY-MM-DD 付きで来た場合は、その日を開いた状態で表示する
+  const dateParam = useSearchParams().get('date')
+  const initialDate = dateParam && DATE_RE.test(dateParam) ? dateParam : null
 
   const [staff, setStaff] = useState<StaffInfo | null>(null)
   const [pageStatus, setPageStatus] = useState<'loading' | 'noToken' | 'notRegistered' | 'apiError' | 'ready'>('loading')
@@ -51,15 +73,15 @@ export default function StaffLiffPage() {
   const [serverLineId, setServerLineId] = useState<string | null>(null)
 
   const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
+  const [year, setYear] = useState(initialDate ? Number(initialDate.slice(0, 4)) : now.getFullYear())
+  const [month, setMonth] = useState(initialDate ? Number(initialDate.slice(5, 7)) : now.getMonth() + 1)
 
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeReq[]>([])
   const [leaveUsages, setLeaveUsages] = useState<LeaveUsage[]>([])
   const [breakRecords, setBreakRecords] = useState<BreakRecord[]>([])
   const [loadingMonth, setLoadingMonth] = useState(false)
 
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [selectedDate, setSelectedDate] = useState<string | null>(initialDate)
   const [activeForm, setActiveForm] = useState<'leave' | 'overtime' | 'break' | null>(null)
 
   const [leaveDays, setLeaveDays] = useState<0.5 | 1.0>(1.0)

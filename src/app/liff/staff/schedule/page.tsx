@@ -120,6 +120,12 @@ function shiftMonth(cal: { year: number; month: number }, diff: number) {
   return { year: dt.getFullYear(), month: dt.getMonth() + 1 }
 }
 
+/** '2026-08-02' → '8/2（日）' */
+function formatMonthDay(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return `${m}/${d}（${DOW[new Date(y, m - 1, d).getDay()]}）`
+}
+
 function toDateStr(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
@@ -589,10 +595,10 @@ export default function StaffSchedulePage() {
           <p className="text-center text-xs text-gray-400">日付をタップすると、その日の詳細を表示します</p>
 
           <Link
-            href="/liff/staff"
+            href={`/liff/staff?date=${date}`}
             className="block w-full text-center bg-white border border-indigo-200 text-indigo-600 rounded-2xl py-3.5 text-sm font-semibold shadow-sm active:opacity-80"
           >
-            有給・残業・中抜けを申請する
+            {formatMonthDay(date)}の申請をする
           </Link>
         </div>
       )}
@@ -777,12 +783,12 @@ export default function StaffSchedulePage() {
           <p className="text-center text-xs text-gray-400 pt-2">この日の予定は登録されていません</p>
         )}
 
-        {/* 申請ページへ */}
+        {/* 申請ページへ（表示中の日付をそのまま開く） */}
         <Link
-          href="/liff/staff"
+          href={`/liff/staff?date=${date}`}
           className="block w-full text-center bg-white border border-indigo-200 text-indigo-600 rounded-2xl py-3.5 text-sm font-semibold shadow-sm active:opacity-80"
         >
-          有給・残業・中抜けを申請する
+          {formatMonthDay(date)}の有給・残業・中抜けを申請する
         </Link>
       </div>
       </>
