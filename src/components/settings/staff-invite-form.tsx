@@ -173,7 +173,7 @@ export function StaffInviteForm() {
             </div>
             {!needsPhone && selectedRoles.size > 0 && (
               <p className="text-xs text-gray-400 mt-1.5">
-                ログイン不要のスタッフとして登録されます。LINE User IDを設定することで送迎通知を受け取れます。
+                ログイン不要のスタッフとして登録されます。LINE User IDを設定すると、LINEからマイスケジュールの確認や各種申請ができます。
               </p>
             )}
             {needsPhone && (

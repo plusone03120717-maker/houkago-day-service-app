@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft } from 'lucide-react'
 import { NotificationSettingsForm } from '@/components/settings/notification-settings-form'
-import { LineTestButton } from '@/components/settings/line-test-button'
 
 type NotificationSettings = {
   id: string
@@ -73,15 +72,6 @@ export default async function NotificationsSettingsPage() {
               holiday_service_end_time: (settings.holiday_service_end_time as string | null)?.slice(0, 5) ?? '16:00',
             } : null}
           />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">LINE送迎通知テスト</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <LineTestButton />
         </CardContent>
       </Card>
     </div>

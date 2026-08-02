@@ -166,7 +166,7 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  自宅以外の場所（祖父母宅など）をお迎えする場合に入力してください。LINE通知にこの名前が表示されます。
+                  自宅以外の場所（祖父母宅など）をお迎えする場合に入力してください。送迎スケジュールにこの名前が表示されます。
                 </p>
               </div>
             )}

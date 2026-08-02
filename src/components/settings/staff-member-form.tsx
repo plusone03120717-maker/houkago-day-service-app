@@ -114,7 +114,7 @@ export function StaffMemberForm({
       <div>
         <label className="text-xs font-medium text-gray-700 mb-1 block">
           LINE User ID
-          <span className="ml-1 text-gray-400 font-normal">（送迎通知・タイムカードに必要）</span>
+          <span className="ml-1 text-gray-400 font-normal">（LINE連携・タイムカード打刻に必要）</span>
         </label>
         <input
           type="text"
