@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, ChevronRight, Loader2, Plus, Settings, Trash2 } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Plus, Settings, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
@@ -190,6 +190,7 @@ export function BillingChildMonthlyView({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [confirmDate, setConfirmDate] = useState<string | null>(null)
 
   const [attendances, setAttendances] = useState<DailyAttendance[]>([])
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([])
@@ -530,18 +531,10 @@ export function BillingChildMonthlyView({
   }
 
   // ── Delete a day's record (誤登録した実績を未記録に戻す) ────
+  // 「欠席」にする操作ではなく、利用予定そのものを消して未記録に戻す
   const deleteDayRecord = async (dateStr: string) => {
     const att = attendances.find((a) => a.date === dateStr)
     if (!att) return
-    const dayNum = parseInt(dateStr.slice(8))
-    const ok = confirm(
-      `${dayNum}日の実績を削除します。\n\n` +
-      '・出席管理の出席／欠席記録も削除され、未記録に戻ります\n' +
-      '・この日の支援記録・活動記録も一緒に削除されます\n' +
-      '・請求（国保連）の対象からも外れます\n\n' +
-      'よろしいですか？'
-    )
-    if (!ok) return
 
     setDeleting(dateStr)
     // 請求側の上書きレコードを先に削除
@@ -559,8 +552,22 @@ export function BillingChildMonthlyView({
       return
     }
 
+    // 利用予定（予約）も削除して、その日をなかったことにする
+    await supabase
+      .from('usage_reservations')
+      .delete()
+      .eq('child_id', childId)
+      .eq('unit_id', unitId)
+      .eq('date', dateStr)
+
     setAttendances((prev) => prev.filter((a) => a.id !== att.id))
     setManualRecords((prev) => prev.filter((r) => r.date !== dateStr))
+    setCancelledDates((prev) => {
+      const next = new Set(prev)
+      next.delete(dateStr)
+      return next
+    })
+    setConfirmDate(null)
     setDeleting(null)
     router.refresh()
   }
@@ -569,9 +576,9 @@ export function BillingChildMonthlyView({
     <td className="border border-gray-200 px-1 py-1 text-center">
       <button
         type="button"
-        onClick={() => deleteDayRecord(dateStr)}
+        onClick={() => setConfirmDate(dateStr)}
         disabled={deleting === dateStr}
-        title="この日の実績を削除（未記録に戻す）"
+        title="この日の実績を削除（利用予定ごと未記録に戻す）"
         className="p-1 rounded text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
       >
         {deleting === dateStr
@@ -1211,10 +1218,78 @@ export function BillingChildMonthlyView({
               算定区分② 1時間30分超〜3時間以下
             </span>
             <span className="text-gray-400">※ 月次グリッドのセルをクリックでチェックのオン/オフが切り替えられます</span>
-            <span className="text-gray-400">※ 日別表の「操作」列のゴミ箱で、誤って登録した日の実績をまとめて削除できます</span>
+            <span className="text-gray-400">※ 日別表の「操作」列のゴミ箱は、欠席にする操作ではなく利用予定ごと削除して未記録に戻す操作です</span>
           </div>
         </>
       )}
+
+      {/* ── 削除確認ダイアログ ───────────────────────────────── */}
+      {confirmDate && (() => {
+        const dow = new Date(confirmDate + 'T00:00:00').getDay()
+        const dayLabel = `${parseInt(confirmDate.slice(8))}日（${DAY_LABELS[dow]}）`
+        const isDeleting = deleting === confirmDate
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => { if (!isDeleting) setConfirmDate(null) }}
+          >
+            <div
+              className="bg-white rounded-xl shadow-xl max-w-md w-full p-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-full bg-red-50 flex-shrink-0">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-gray-900">
+                    {ey}年{em}月{dayLabel}の実績を削除します
+                  </h3>
+                  <p className="text-sm text-red-700 font-medium mt-2 leading-relaxed">
+                    これは「欠席」にする操作ではありません。<br />
+                    この日の<span className="underline">利用予定そのものが削除され</span>、記録がなかった状態に戻ります。
+                  </p>
+                </div>
+              </div>
+
+              <ul className="mt-3 space-y-1 text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
+                <li>・利用予定（予約）を削除します</li>
+                <li>・出席管理の出席／欠席記録を削除します</li>
+                <li>・この日の支援記録・活動記録も削除されます</li>
+                <li>・国保連請求の対象からも外れます</li>
+              </ul>
+
+              <p className="mt-3 text-xs text-gray-500 leading-relaxed">
+                削除すると元に戻せません。欠席として記録を残したい場合（欠席時対応加算を算定する場合など）は「いいえ」を選び、出席管理で「欠席」に変更してください。
+              </p>
+
+              <p className="mt-4 text-sm font-semibold text-gray-900 text-center">
+                削除してもよろしいですか？
+              </p>
+
+              <div className="mt-3 flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  disabled={isDeleting}
+                  onClick={() => setConfirmDate(null)}
+                >
+                  いいえ
+                </Button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => deleteDayRecord(confirmDate)}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  {isDeleting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  はい、削除する
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
