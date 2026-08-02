@@ -4,8 +4,9 @@ import { useState, useEffect, useRef, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, X, Check, Layers, CalendarClock } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Check, Layers, CalendarClock, Repeat, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
 type Staff = {
   id: string
@@ -58,8 +59,151 @@ const SHIFT_TYPES = [
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
+/** 利用者スケジュールと同じ曜日ボタンの配色 */
+const DAY_COLORS: Record<number, string> = {
+  0: 'bg-red-100 text-red-700 border-red-300',
+  1: 'bg-indigo-100 text-indigo-700 border-indigo-300',
+  2: 'bg-indigo-100 text-indigo-700 border-indigo-300',
+  3: 'bg-indigo-100 text-indigo-700 border-indigo-300',
+  4: 'bg-indigo-100 text-indigo-700 border-indigo-300',
+  5: 'bg-indigo-100 text-indigo-700 border-indigo-300',
+  6: 'bg-blue-100 text-blue-700 border-blue-300',
+}
+
 function formatDateLabel(date: string) {
   return new Date(date).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })
+}
+
+function toDateString(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 勤務内容（種別・時間・中抜け・ユニット）の入力フォーム。単日編集と曜日一括登録で共用 */
+type ShiftForm = {
+  shiftType: string
+  startTime: string
+  endTime: string
+  hasBreak: boolean
+  breakStartTime: string
+  breakEndTime: string
+  unitId: string
+}
+
+function isOffType(shiftType: string): boolean {
+  return shiftType === 'off' || shiftType === 'holiday'
+}
+
+/** ShiftForm → staff_shifts の保存用ペイロード */
+function toShiftPayload(f: ShiftForm) {
+  const off = isOffType(f.shiftType)
+  return {
+    shift_type:       f.shiftType,
+    start_time:       off ? null : f.startTime,
+    end_time:         off ? null : f.endTime,
+    unit_id:          off ? null : (f.unitId || null),
+    break_start_time: (!off && f.hasBreak) ? f.breakStartTime : null,
+    break_end_time:   (!off && f.hasBreak) ? f.breakEndTime   : null,
+  }
+}
+
+function ShiftFields({
+  form,
+  onChange,
+  units,
+  accent = 'indigo',
+}: {
+  form: ShiftForm
+  onChange: (patch: Partial<ShiftForm>) => void
+  units: Unit[]
+  accent?: 'indigo' | 'teal'
+}) {
+  const ring = accent === 'teal' ? 'focus:ring-teal-500' : 'focus:ring-indigo-500'
+  const active = accent === 'teal'
+    ? 'border-teal-500 bg-teal-50 text-teal-700'
+    : 'border-indigo-500 bg-indigo-50 text-indigo-700'
+  const inputCls = `w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 ${ring}`
+  const off = isOffType(form.shiftType)
+
+  return (
+    <>
+      <div>
+        <label className="text-xs font-medium text-gray-700 mb-2 block">シフト種別</label>
+        <div className="flex gap-2 flex-wrap">
+          {SHIFT_TYPES.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => onChange({ shiftType: t.value })}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors',
+                form.shiftType === t.value ? active : 'border-gray-200 text-gray-600 hover:border-gray-300'
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!off && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">開始時間</label>
+              <input type="time" value={form.startTime}
+                onChange={(e) => onChange({ startTime: e.target.value })} className={inputCls} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">終了時間</label>
+              <input type="time" value={form.endTime}
+                onChange={(e) => onChange({ endTime: e.target.value })} className={inputCls} />
+            </div>
+          </div>
+
+          {/* 中抜け */}
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer w-fit">
+              <input
+                type="checkbox"
+                checked={form.hasBreak}
+                onChange={(e) => onChange({ hasBreak: e.target.checked })}
+                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-xs font-medium text-gray-700">中抜けあり</span>
+            </label>
+            {form.hasBreak && (
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">中抜け開始</label>
+                  <input type="time" value={form.breakStartTime}
+                    onChange={(e) => onChange({ breakStartTime: e.target.value })} className={inputCls} />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">中抜け終了</label>
+                  <input type="time" value={form.breakEndTime}
+                    onChange={(e) => onChange({ breakEndTime: e.target.value })} className={inputCls} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {units.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">担当ユニット</label>
+              <select
+                value={form.unitId}
+                onChange={(e) => onChange({ unitId: e.target.value })}
+                className={inputCls}
+              >
+                <option value="">未割当</option>
+                {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  )
 }
 
 export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeRequests = [] }: Props) {
@@ -97,6 +241,36 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
   const [breakEndTime, setBreakEnd]     = useState('13:00')
   const [unitId, setUnitId]             = useState(units[0]?.id ?? '')
   const [saving, setSaving]             = useState(false)
+
+  // 曜日パターンでの一括登録（利用者スケジュールと同じ曜日選択）
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+  const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
+  const [showPattern, setShowPattern] = useState(false)
+  const [patternDays, setPatternDays] = useState<number[]>([1, 2, 3, 4, 5])
+  const [patternStart, setPatternStart] = useState(monthStart)
+  const [patternEnd, setPatternEnd] = useState(monthEnd)
+  const [patternSkipHolidays, setPatternSkipHolidays] = useState(true)
+  const [patternOverwrite, setPatternOverwrite] = useState(true)
+  const [patternForm, setPatternForm] = useState<ShiftForm>({
+    shiftType: 'full',
+    startTime: '09:00',
+    endTime: '18:00',
+    hasBreak: false,
+    breakStartTime: '12:00',
+    breakEndTime: '13:00',
+    unitId: units[0]?.id ?? '',
+  })
+  const [patternSaving, setPatternSaving] = useState(false)
+  const [patternResult, setPatternResult] = useState<string | null>(null)
+
+  // 表示月が変わったら対象期間を新しい月に合わせる（レンダー中に調整する公式パターン）
+  const [patternMonthKey, setPatternMonthKey] = useState(monthStart)
+  if (patternMonthKey !== monthStart) {
+    setPatternMonthKey(monthStart)
+    setPatternStart(monthStart)
+    setPatternEnd(monthEnd)
+    setPatternResult(null)
+  }
 
   // 残業申請フォーム（事前・事後共用）
   const [showOTForm, setShowOTForm] = useState(false)
@@ -195,15 +369,9 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
     if (selectedDates.size === 0 || !selectedStaff) return
     setSaving(true)
 
-    const isOff = shiftType === 'off' || shiftType === 'holiday'
-    const payload = {
-      shift_type:       shiftType,
-      start_time:       isOff ? null : startTime,
-      end_time:         isOff ? null : endTime,
-      unit_id:          isOff ? null : (unitId || null),
-      break_start_time: (!isOff && hasBreak) ? breakStartTime : null,
-      break_end_time:   (!isOff && hasBreak) ? breakEndTime   : null,
-    }
+    const payload = toShiftPayload({
+      shiftType, startTime, endTime, hasBreak, breakStartTime, breakEndTime, unitId,
+    })
 
     for (const date of selectedDates) {
       const existing = currentStaffShifts[date]
@@ -228,6 +396,89 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
     await supabase.from('staff_shifts').delete().in('id', ids)
     setSaving(false)
     setSelectedDates(new Set())
+    startTransition(() => router.refresh())
+  }
+
+  const togglePatternDay = (d: number) =>
+    setPatternDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort())
+
+  /** 選択した曜日・期間に該当する日付を列挙（祝日除外オプションつき） */
+  const patternDates = (() => {
+    if (!patternStart || !patternEnd || patternDays.length === 0) return []
+    const cur = new Date(`${patternStart}T00:00:00`)
+    const end = new Date(`${patternEnd}T00:00:00`)
+    if (isNaN(cur.getTime()) || isNaN(end.getTime()) || end < cur) return []
+    const out: string[] = []
+    // 1年分を上限に安全弁を設ける
+    while (cur <= end && out.length < 400) {
+      if (patternDays.includes(cur.getDay())) {
+        const ds = toDateString(cur)
+        if (!(patternSkipHolidays && isJapaneseNationalHoliday(ds))) out.push(ds)
+      }
+      cur.setDate(cur.getDate() + 1)
+    }
+    return out
+  })()
+
+  const handleApplyPattern = async () => {
+    if (patternDates.length === 0 || !selectedStaff) return
+    setPatternSaving(true)
+    setPatternResult(null)
+
+    // 既存シフトの有無を調べて、新規／上書きの件数を出す
+    const { data: existingRaw } = await supabase
+      .from('staff_shifts')
+      .select('date')
+      .eq('staff_id', selectedStaff)
+      .in('date', patternDates)
+    const existingDates = new Set((existingRaw ?? []).map((r: { date: string }) => r.date))
+
+    const targets = patternOverwrite
+      ? patternDates
+      : patternDates.filter((d) => !existingDates.has(d))
+    const newCount = patternDates.filter((d) => !existingDates.has(d)).length
+    const overwriteCount = patternOverwrite ? patternDates.length - newCount : 0
+    const skipCount = patternOverwrite ? 0 : patternDates.length - newCount
+
+    if (targets.length > 0) {
+      const payload = toShiftPayload(patternForm)
+      const { error } = await supabase
+        .from('staff_shifts')
+        .upsert(
+          targets.map((date) => ({ staff_id: selectedStaff, date, ...payload })),
+          { onConflict: 'staff_id,date' }
+        )
+      if (error) {
+        setPatternSaving(false)
+        setPatternResult(`保存に失敗しました: ${error.message}`)
+        return
+      }
+    }
+
+    setPatternSaving(false)
+    setPatternResult(
+      [
+        newCount > 0 ? `${newCount}日を新規登録` : null,
+        overwriteCount > 0 ? `${overwriteCount}日を上書き` : null,
+        skipCount > 0 ? `${skipCount}日は既存のためスキップ` : null,
+      ].filter(Boolean).join('／') + 'しました'
+    )
+    startTransition(() => router.refresh())
+  }
+
+  const handleDeletePattern = async () => {
+    if (patternDates.length === 0 || !selectedStaff) return
+    const staffName = staffList.find((s) => s.id === selectedStaff)?.name ?? ''
+    if (!confirm(`${staffName} さんの ${patternDates.length} 日分のシフトを削除します。よろしいですか？`)) return
+    setPatternSaving(true)
+    setPatternResult(null)
+    const { error } = await supabase
+      .from('staff_shifts')
+      .delete()
+      .eq('staff_id', selectedStaff)
+      .in('date', patternDates)
+    setPatternSaving(false)
+    setPatternResult(error ? `削除に失敗しました: ${error.message}` : '該当日のシフトを削除しました')
     startTransition(() => router.refresh())
   }
 
@@ -295,6 +546,23 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
           >
             <Layers className="h-4 w-4" />
             複数選択
+          </button>
+          <button
+            onClick={() => {
+              setShowPattern((v) => !v)
+              setSelectedDates(new Set())
+              setPatternResult(null)
+            }}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+              showPattern
+                ? 'bg-teal-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            )}
+            title="毎週の曜日を選んでまとめて登録"
+          >
+            <Repeat className="h-4 w-4" />
+            曜日で一括登録
           </button>
           <Button
             size="sm"
@@ -421,6 +689,152 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
           </button>
         ))}
       </div>
+
+      {/* 曜日パターンで一括登録 */}
+      {showPattern && (
+        <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-teal-800 flex items-center gap-1.5">
+              <Repeat className="h-4 w-4" />
+              曜日で一括登録 — {staffList.find((s) => s.id === selectedStaff)?.name}
+            </p>
+            <button onClick={() => setShowPattern(false)} className="p-1 rounded hover:bg-teal-100 text-gray-400">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* 繰り返す曜日 */}
+          <div>
+            <label className="text-xs font-medium text-gray-700 mb-2 block">繰り返す曜日</label>
+            <div className="flex gap-2 flex-wrap">
+              {DAY_LABELS.map((label, d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => togglePatternDay(d)}
+                  className={cn(
+                    'w-10 h-10 rounded-full text-sm font-bold border-2 transition-colors',
+                    patternDays.includes(d)
+                      ? `${DAY_COLORS[d]} border-current`
+                      : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-2">
+              <button type="button" onClick={() => setPatternDays([1, 2, 3, 4, 5])}
+                className="text-xs text-teal-700 underline hover:text-teal-900">平日のみ</button>
+              <button type="button" onClick={() => setPatternDays([0, 6])}
+                className="text-xs text-teal-700 underline hover:text-teal-900">土日のみ</button>
+              <button type="button" onClick={() => setPatternDays([0, 1, 2, 3, 4, 5, 6])}
+                className="text-xs text-teal-700 underline hover:text-teal-900">毎日</button>
+            </div>
+            {patternDays.length === 0 && (
+              <p className="text-xs text-red-500 mt-1">曜日を1つ以上選択してください</p>
+            )}
+          </div>
+
+          {/* 対象期間 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">開始日</label>
+              <input type="date" value={patternStart}
+                onChange={(e) => setPatternStart(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">終了日</label>
+              <input type="date" value={patternEnd} min={patternStart}
+                onChange={(e) => setPatternEnd(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500" />
+            </div>
+          </div>
+          <div className="flex gap-3 -mt-2">
+            <button type="button" onClick={() => { setPatternStart(monthStart); setPatternEnd(monthEnd) }}
+              className="text-xs text-teal-700 underline hover:text-teal-900">今月（{month}月）</button>
+            <button type="button"
+              onClick={() => {
+                const n = new Date(year, month, 1)
+                setPatternStart(toDateString(n))
+                setPatternEnd(toDateString(new Date(n.getFullYear(), n.getMonth() + 1, 0)))
+              }}
+              className="text-xs text-teal-700 underline hover:text-teal-900">翌月</button>
+          </div>
+
+          {/* 勤務内容 */}
+          <div className="space-y-4 border-t border-teal-200 pt-3">
+            <ShiftFields
+              form={patternForm}
+              onChange={(patch) => setPatternForm((p) => ({ ...p, ...patch }))}
+              units={units}
+              accent="teal"
+            />
+          </div>
+
+          {/* オプション */}
+          <div className="border-t border-teal-200 pt-3 space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer w-fit">
+              <input type="checkbox" checked={patternSkipHolidays}
+                onChange={(e) => setPatternSkipHolidays(e.target.checked)}
+                className="rounded border-gray-300 text-teal-600 focus:ring-teal-500" />
+              <span className="text-xs font-medium text-gray-700">祝日を除く</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer w-fit">
+              <input type="checkbox" checked={patternOverwrite}
+                onChange={(e) => setPatternOverwrite(e.target.checked)}
+                className="rounded border-gray-300 text-teal-600 focus:ring-teal-500" />
+              <span className="text-xs font-medium text-gray-700">既存のシフトを上書きする</span>
+            </label>
+          </div>
+
+          {/* 対象日プレビュー */}
+          <div className="bg-white border border-teal-200 rounded-lg px-3 py-2">
+            <p className="text-xs text-gray-500">
+              対象 <span className="font-bold text-teal-700">{patternDates.length}</span> 日
+            </p>
+            {patternDates.length > 0 && (
+              <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">
+                {patternDates.slice(0, 14).map((d) => {
+                  const dt = new Date(`${d}T00:00:00`)
+                  return `${dt.getMonth() + 1}/${dt.getDate()}(${DAY_LABELS[dt.getDay()]})`
+                }).join('・')}
+                {patternDates.length > 14 ? ` ほか${patternDates.length - 14}日` : ''}
+              </p>
+            )}
+          </div>
+
+          {patternResult && (
+            <p className="text-sm text-green-700 flex items-center gap-1">
+              <Check className="h-4 w-4" />
+              {patternResult}
+            </p>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={handleApplyPattern}
+              disabled={patternSaving || patternDates.length === 0 || !selectedStaff}
+              className="bg-teal-600 hover:bg-teal-700 text-white"
+            >
+              <Check className="h-4 w-4" />
+              {patternSaving ? '登録中...' : `${patternDates.length}日分を登録`}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleDeletePattern}
+              disabled={patternSaving || patternDates.length === 0 || !selectedStaff}
+              className="text-red-600 border-red-300 hover:bg-red-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              該当日を削除
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* カレンダー */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -561,101 +975,19 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-medium text-gray-700 mb-2 block">シフト種別</label>
-            <div className="flex gap-2 flex-wrap">
-              {SHIFT_TYPES.map((t) => (
-                <button
-                  key={t.value}
-                  onClick={() => setShiftType(t.value)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors',
-                    shiftType === t.value
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {shiftType !== 'off' && shiftType !== 'holiday' && (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-gray-700 mb-1 block">開始時間</label>
-                  <input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-700 mb-1 block">終了時間</label>
-                  <input
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-
-              {/* 中抜け */}
-              <div>
-                <label className="flex items-center gap-2 cursor-pointer w-fit">
-                  <input
-                    type="checkbox"
-                    checked={hasBreak}
-                    onChange={(e) => setHasBreak(e.target.checked)}
-                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span className="text-xs font-medium text-gray-700">中抜けあり</span>
-                </label>
-                {hasBreak && (
-                  <div className="grid grid-cols-2 gap-3 mt-2">
-                    <div>
-                      <label className="text-xs text-gray-500 mb-1 block">中抜け開始</label>
-                      <input
-                        type="time"
-                        value={breakStartTime}
-                        onChange={(e) => setBreakStart(e.target.value)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 mb-1 block">中抜け終了</label>
-                      <input
-                        type="time"
-                        value={breakEndTime}
-                        onChange={(e) => setBreakEnd(e.target.value)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {units.length > 0 && shiftType !== 'off' && shiftType !== 'holiday' && (
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">担当ユニット</label>
-              <select
-                value={unitId}
-                onChange={(e) => setUnitId(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
-                <option value="">未割当</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <ShiftFields
+            form={{ shiftType, startTime, endTime, hasBreak, breakStartTime, breakEndTime, unitId }}
+            onChange={(patch) => {
+              if (patch.shiftType !== undefined) setShiftType(patch.shiftType)
+              if (patch.startTime !== undefined) setStartTime(patch.startTime)
+              if (patch.endTime !== undefined) setEndTime(patch.endTime)
+              if (patch.hasBreak !== undefined) setHasBreak(patch.hasBreak)
+              if (patch.breakStartTime !== undefined) setBreakStart(patch.breakStartTime)
+              if (patch.breakEndTime !== undefined) setBreakEnd(patch.breakEndTime)
+              if (patch.unitId !== undefined) setUnitId(patch.unitId)
+            }}
+            units={units}
+          />
 
           <Button onClick={handleSaveShift} disabled={saving} size="sm">
             <Check className="h-4 w-4" />

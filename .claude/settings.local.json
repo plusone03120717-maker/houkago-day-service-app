@@ -58,7 +58,8 @@
       "Bash(rm -rf build_verify)",
       "Bash(git checkout *)",
       "PowerShell(npx tsc --noEmit -p tsconfig.json 2>&1)",
-      "PowerShell(npx next build 2>&1)"
+      "PowerShell(npx next build 2>&1)",
+      "PowerShell(npx eslint src/components/shifts/shift-calendar.tsx 2>&1)"
     ],
     "additionalDirectories": [
       "f:\\放課後デイサービス管理アプリ\\src\\components",
