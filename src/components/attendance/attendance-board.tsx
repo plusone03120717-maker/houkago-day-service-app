@@ -14,14 +14,25 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertTriangle,
-  Car,
-  Sun,
   ClipboardEdit,
   LayoutList,
   CalendarDays,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { WeeklyAttendanceView } from './weekly-attendance-view'
+import {
+  TransportDaytimePanel,
+  TransportDaytimeToggle,
+  initFields,
+  isBlankFields,
+  applyScheduleDefaults,
+  buildTransportUpdate,
+  type TransportRow,
+  type TransportFields,
+  type ScheduleDefaults,
+  type StaffMember,
+  type Vehicle,
+} from '@/components/transport/transport-daytime-panel'
 
 export type Unit = {
   id: string
@@ -46,7 +57,7 @@ export type Reservation = {
   } | null
 }
 
-export type Attendance = {
+export type Attendance = TransportRow & {
   id: string
   child_id: string
   unit_id: string
@@ -56,17 +67,10 @@ export type Attendance = {
   check_out_time: string | null
   pickup_type: string
   health_condition: string | null
-  pickup_departure_time: string | null
-  pickup_arrival_time: string | null
-  dropoff_departure_time: string | null
-  dropoff_arrival_time: string | null
-  daytime_support: boolean | null
-  daytime_support_start_time: string | null
-  daytime_support_end_time: string | null
 }
 
-/** 児童ID → 当日の日中一時の利用予定時間（利用スケジュール由来） */
-export type PlannedDaytimeMap = Record<string, { start_time: string | null; end_time: string | null }>
+/** 児童ID → 直近の出席日の送迎入力（前回コピー用） */
+export type PrevAttendanceRow = TransportRow & { child_id: string; date: string }
 
 interface Props {
   date: string
@@ -74,8 +78,12 @@ interface Props {
   selectedUnitId: string
   reservations: Reservation[]
   attendances: Attendance[]
-  plannedDaytime: PlannedDaytimeMap
   staffId: string
+  staffMembers: StaffMember[]
+  vehicles: Vehicle[]
+  defaultServiceEndTime: string
+  prevByChildId: Record<string, PrevAttendanceRow>
+  scheduleDefaultsByChildId: Record<string, ScheduleDefaults>
 }
 
 /** "16:30:00" → "16:30"。未設定・00:00 は空文字として扱う */
@@ -85,22 +93,81 @@ function fmtTime(t: string | null | undefined): string {
   return hhmm === '00:00' ? '' : hhmm
 }
 
-/** 開始・終了を "9:00〜16:00" 形式に。片方だけでも表示する */
-function fmtRange(start: string | null | undefined, end: string | null | undefined): string {
-  const s = fmtTime(start)
-  const e = fmtTime(end)
-  if (!s && !e) return ''
-  return `${s || '—'}〜${e || '—'}`
-}
-
-export function AttendanceBoard({ date, units, selectedUnitId, reservations, attendances, plannedDaytime, staffId }: Props) {
+export function AttendanceBoard({
+  date,
+  units,
+  selectedUnitId,
+  reservations,
+  attendances,
+  staffId,
+  staffMembers,
+  vehicles,
+  defaultServiceEndTime,
+  prevByChildId,
+  scheduleDefaultsByChildId,
+}: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [saving, setSaving] = useState<string | null>(null)
   const [view, setView] = useState<'day' | 'week'>('day')
 
+  // 送迎・日中一時入力（日々の記録と同じUI）
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [fieldStates, setFieldStates] = useState<Record<string, TransportFields>>({})
+  const [transportSaving, setTransportSaving] = useState<string | null>(null)
+  const [transportSavedIds, setTransportSavedIds] = useState<Set<string>>(new Set())
+  const [savedOnce, setSavedOnce] = useState<Set<string>>(new Set())
+
   const attendanceMap = Object.fromEntries(attendances.map((a) => [a.child_id, a]))
+
+  // DBの値が空の場合は利用スケジュールの初期値を自動セット
+  const buildInitialFields = (a: Attendance): TransportFields => {
+    const base = initFields(a, defaultServiceEndTime)
+    const sched = scheduleDefaultsByChildId[a.child_id]
+    if (sched && isBlankFields(base)) {
+      return applyScheduleDefaults(base, sched, defaultServiceEndTime)
+    }
+    return base
+  }
+
+  // スケジュール初期値が表示中（未保存）かどうか
+  const isSchedulePreset = (a: Attendance): boolean => {
+    const sched = scheduleDefaultsByChildId[a.child_id]
+    return !!sched && !savedOnce.has(a.id) && isBlankFields(initFields(a, defaultServiceEndTime))
+  }
+
+  const getFields = (a: Attendance): TransportFields =>
+    fieldStates[a.id] ?? buildInitialFields(a)
+
+  const setField = (a: Attendance, patch: Partial<TransportFields>) => {
+    setFieldStates((prev) => ({
+      ...prev,
+      [a.id]: { ...(prev[a.id] ?? buildInitialFields(a)), ...patch },
+    }))
+  }
+
+  // 前回（直近の出席日）の入力内容をまるごと複写
+  const handleCopyPrevious = (a: Attendance) => {
+    const prev = prevByChildId[a.child_id]
+    if (!prev) return
+    setFieldStates((s) => ({ ...s, [a.id]: initFields(prev, defaultServiceEndTime) }))
+  }
+
+  const handleSaveTransport = async (a: Attendance) => {
+    setTransportSaving(a.id)
+    const { error } = await supabase
+      .from('daily_attendance')
+      .update(buildTransportUpdate(getFields(a)))
+      .eq('id', a.id)
+    setTransportSaving(null)
+    if (error) { alert(`保存エラー: ${error.message}`); return }
+
+    setSavedOnce((prev) => new Set(prev).add(a.id))
+    setTransportSavedIds((prev) => new Set(prev).add(a.id))
+    setTimeout(() => setTransportSavedIds((prev) => { const s = new Set(prev); s.delete(a.id); return s }), 2000)
+    startTransition(() => router.refresh())
+  }
 
   // 日付を1日前後に移動
   const changeDate = (delta: number) => {
@@ -441,30 +508,16 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
                 const isAbsent = att?.status === 'absent' || res.status === 'cancel_waiting'
                 const isUnrecorded = !att && res.status !== 'cancel_waiting'
 
-                // 送迎時間（記録済みの実績のみ。入力は「日々の記録」から行う）
-                const pickupRange = fmtRange(att?.pickup_departure_time, att?.pickup_arrival_time)
-                const dropoffRange = fmtRange(att?.dropoff_departure_time, att?.dropoff_arrival_time)
-
-                // 日中一時：実績が入力されていればそれを、なければ利用スケジュールの予定を表示
-                const planned = plannedDaytime[child.id]
-                const hasDaytimeRecord = att?.daytime_support === true
-                const daytimeRange = hasDaytimeRecord
-                  ? fmtRange(att?.daytime_support_start_time, att?.daytime_support_end_time)
-                  : planned
-                    ? fmtRange(planned.start_time, planned.end_time)
-                    : ''
-                const showDaytime = hasDaytimeRecord || !!planned
-                const isDaytimePlanOnly = showDaytime && !hasDaytimeRecord
-
-                const showInfo = isPresent || !!pickupRange || !!dropoffRange || showDaytime
+                // 送迎・日中一時入力（出席時のみ・日々の記録と同じUI）
+                const fields = att ? getFields(att) : null
+                const isTransportExpanded = !!att && expanded === att.id
 
                 return (
                   <div
                     key={res.id}
-                    className={`flex flex-col sm:flex-row sm:items-center gap-3 p-4 ${
-                      isUnrecorded ? 'bg-yellow-50' : ''
-                    }`}
+                    className={isUnrecorded ? 'bg-yellow-50' : ''}
                   >
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4">
                     {/* 児童情報 */}
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div
@@ -492,54 +545,26 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
                       </div>
                     </div>
 
-                    {/* 利用時間・送迎時間・日中一時 */}
-                    {showInfo && (
+                    {/* 利用時間（出席時のみ編集可） */}
+                    {isPresent && (
                       <div className="flex flex-col gap-1 text-xs">
-                        {/* 利用時間（出席時のみ編集可） */}
-                        {isPresent && (
-                          <div className="flex items-center gap-1.5">
-                            <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                            <span className="text-gray-500 w-16 flex-shrink-0">利用時間</span>
-                            <input
-                              type="time"
-                              defaultValue={fmtTime(att?.check_in_time)}
-                              className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
-                              onBlur={(e) => upsertAttendance(child.id, { check_in_time: e.target.value || null })}
-                            />
-                            <span className="text-gray-400">〜</span>
-                            <input
-                              type="time"
-                              defaultValue={fmtTime(att?.check_out_time)}
-                              className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
-                              onBlur={(e) => upsertAttendance(child.id, { check_out_time: e.target.value || null })}
-                            />
-                          </div>
-                        )}
-
-                        {/* 送迎時間（表示のみ・入力は「日々の記録」から） */}
-                        {(pickupRange || dropoffRange) && (
-                          <div className="flex items-center gap-1.5">
-                            <Car className="h-4 w-4 text-teal-500 flex-shrink-0" />
-                            <span className="text-gray-500 w-16 flex-shrink-0">送迎時間</span>
-                            <span className="text-gray-700">
-                              {pickupRange && `迎 ${pickupRange}`}
-                              {pickupRange && dropoffRange && <span className="text-gray-300 mx-1.5">/</span>}
-                              {dropoffRange && `送 ${dropoffRange}`}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* 日中一時（実績がなければ利用予定を表示） */}
-                        {showDaytime && (
-                          <div className="flex items-center gap-1.5">
-                            <Sun className="h-4 w-4 text-purple-500 flex-shrink-0" />
-                            <span className="text-gray-500 w-16 flex-shrink-0">日中一時</span>
-                            <span className="text-gray-700">{daytimeRange || '時間未設定'}</span>
-                            {isDaytimePlanOnly && (
-                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">予定</Badge>
-                            )}
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          <span className="text-gray-500 w-16 flex-shrink-0">利用時間</span>
+                          <input
+                            type="time"
+                            defaultValue={fmtTime(att?.check_in_time)}
+                            className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
+                            onBlur={(e) => upsertAttendance(child.id, { check_in_time: e.target.value || null })}
+                          />
+                          <span className="text-gray-400">〜</span>
+                          <input
+                            type="time"
+                            defaultValue={fmtTime(att?.check_out_time)}
+                            className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
+                            onBlur={(e) => upsertAttendance(child.id, { check_out_time: e.target.value || null })}
+                          />
+                        </div>
                       </div>
                     )}
 
@@ -590,6 +615,36 @@ export function AttendanceBoard({ date, units, selectedUnitId, reservations, att
                         </Link>
                       )}
                     </div>
+                  </div>
+
+                    {/* 送迎・日中一時入力（日々の記録と同じUI） */}
+                    {isPresent && att && fields && (
+                      <>
+                        <TransportDaytimeToggle
+                          expanded={isTransportExpanded}
+                          onToggle={() => setExpanded(isTransportExpanded ? null : att.id)}
+                          fields={fields}
+                          isSchedulePreset={isSchedulePreset(att)}
+                        />
+                        {isTransportExpanded && (
+                          <div className="border-t border-gray-100 bg-gray-50 px-4 py-4">
+                            <TransportDaytimePanel
+                              fields={fields}
+                              onChange={(patch) => setField(att, patch)}
+                              staffMembers={staffMembers}
+                              vehicles={vehicles}
+                              defaultServiceEndTime={defaultServiceEndTime}
+                              isSchedulePreset={isSchedulePreset(att)}
+                              previousDate={prevByChildId[child.id]?.date ?? null}
+                              onCopyPrevious={() => handleCopyPrevious(att)}
+                              onSave={() => handleSaveTransport(att)}
+                              saving={transportSaving === att.id}
+                              saved={transportSavedIds.has(att.id)}
+                            />
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 )
               })
