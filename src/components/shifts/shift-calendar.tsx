@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, X, Check, Layers, CalendarClock, Repeat, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Check, Layers, CalendarClock, Repeat, Trash2, User, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
@@ -50,12 +50,17 @@ interface Props {
 }
 
 const SHIFT_TYPES = [
-  { value: 'full',     label: '全日', color: 'bg-indigo-500 text-white' },
-  { value: 'morning',  label: '午前', color: 'bg-blue-400 text-white' },
-  { value: 'afternoon',label: '午後', color: 'bg-teal-400 text-white' },
-  { value: 'off',      label: '休み', color: 'bg-gray-300 text-gray-600' },
-  { value: 'holiday',  label: '有休', color: 'bg-orange-400 text-white' },
+  { value: 'full',     label: '全日', short: '全', color: 'bg-indigo-500 text-white' },
+  { value: 'morning',  label: '午前', short: '前', color: 'bg-blue-400 text-white' },
+  { value: 'afternoon',label: '午後', short: '後', color: 'bg-teal-400 text-white' },
+  { value: 'off',      label: '休み', short: '休', color: 'bg-gray-300 text-gray-600' },
+  { value: 'holiday',  label: '有休', short: '有', color: 'bg-orange-400 text-white' },
 ]
+
+/** 勤務としてカウントするシフト種別か（休み・有休以外） */
+function isWorkingShift(shiftType: string): boolean {
+  return shiftType !== 'off' && shiftType !== 'holiday'
+}
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
@@ -211,6 +216,8 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
   const supabase = createClient()
   const [, startTransition] = useTransition()
 
+  // 個人カレンダー / 全スタッフの月間マトリクス
+  const [view, setView] = useState<'personal' | 'all'>('personal')
   const [selectedStaff, setSelectedStaff] = useState<string>(staffList[0]?.id ?? '')
   // 複数日選択: Set<dateString>
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
@@ -289,6 +296,12 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
     return `${year}-${String(month).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
   })
 
+  // マトリクス表示用: 当月の全日付
+  const monthDays = Array.from(
+    { length: lastDay.getDate() },
+    (_, i) => `${year}-${String(month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`
+  )
+
   // シフトマップ
   const shiftMap: Record<string, Record<string, ShiftEntry>> = {}
   shifts.forEach((s) => {
@@ -316,7 +329,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
   // 単一選択時のみ有効な派生値（複数選択時は null）
   const selectedDate = selectedDates.size === 1 ? [...selectedDates][0] : null
 
-  // 選択日が変わったらフォームを初期化（child-attendance-calendar と同じパターン）
+  // 選択日・対象スタッフが変わったらフォームを初期化（child-attendance-calendar と同じパターン）
   useEffect(() => {
     if (selectedDate) {
       const shift = currentStaffShifts[selectedDate]
@@ -339,7 +352,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
         setBreakEnd('13:00')
       }
     }
-  }, [selectedDate]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedDate, selectedStaff]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // クリックハンドラーは setSelectedDates のみ更新（フォーム初期化は useEffect に委譲）
   function handleCellClick(date: string) {
@@ -530,7 +543,34 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
           <h1 className="text-2xl font-bold text-gray-900">シフト管理</h1>
           <p className="text-sm text-gray-500 mt-0.5">スタッフの勤務シフト</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 表示切替 */}
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setView('personal')}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                view === 'personal' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              )}
+            >
+              <User className="h-3.5 w-3.5" />
+              個人
+            </button>
+            <button
+              onClick={() => {
+                setView('all')
+                setMultiSelectMode(false)
+              }}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                view === 'all' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              )}
+            >
+              <Users className="h-3.5 w-3.5" />
+              全員
+            </button>
+          </div>
+          {view === 'personal' && (
           <button
             onClick={() => {
               setMultiSelectMode((m) => !m)
@@ -547,6 +587,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
             <Layers className="h-4 w-4" />
             複数選択
           </button>
+          )}
           <button
             onClick={() => {
               setShowPattern((v) => !v)
@@ -836,7 +877,165 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
         </div>
       )}
 
+      {/* 全スタッフ月間マトリクス */}
+      {view === 'all' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="border-collapse text-xs">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="sticky left-0 z-20 bg-gray-50 border-b border-r border-gray-200 px-3 py-2 text-left font-medium text-gray-500 min-w-[104px]">
+                    スタッフ
+                  </th>
+                  {monthDays.map((date) => {
+                    const d = new Date(`${date}T00:00:00`)
+                    const dow = d.getDay()
+                    const holiday = isJapaneseNationalHoliday(date)
+                    return (
+                      <th
+                        key={date}
+                        className={cn(
+                          'border-b border-gray-100 px-0 py-1 font-medium min-w-[30px] w-[30px]',
+                          dow === 0 || holiday ? 'text-red-500 bg-red-50' : dow === 6 ? 'text-blue-500 bg-blue-50' : 'text-gray-500'
+                        )}
+                        title={holiday ? '祝日' : undefined}
+                      >
+                        <div className="leading-tight">{d.getDate()}</div>
+                        <div className="text-[10px] font-normal opacity-70">{DAY_LABELS[dow]}</div>
+                      </th>
+                    )
+                  })}
+                  <th className="sticky right-0 z-20 bg-gray-50 border-b border-l border-gray-200 px-2 py-2 font-medium text-gray-500 min-w-[52px]">
+                    出勤
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {staffList.map((s) => {
+                  const staffShifts = shiftMap[s.id] ?? {}
+                  const staffOvertime = overtimeMap[s.id] ?? {}
+                  const workDays = monthDays.filter((d) => staffShifts[d] && isWorkingShift(staffShifts[d].shift_type)).length
+                  return (
+                    <tr key={s.id} className="group">
+                      <td
+                        className={cn(
+                          'sticky left-0 z-10 border-b border-r border-gray-200 px-3 py-1.5 whitespace-nowrap font-medium transition-colors',
+                          selectedStaff === s.id ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-gray-700 group-hover:bg-indigo-50/60'
+                        )}
+                      >
+                        <button type="button" onClick={() => setSelectedStaff(s.id)} className="hover:underline">
+                          {s.name}
+                        </button>
+                      </td>
+                      {monthDays.map((date) => {
+                        const d = new Date(`${date}T00:00:00`)
+                        const dow = d.getDay()
+                        const holiday = isJapaneseNationalHoliday(date)
+                        const shift = staffShifts[date]
+                        const info = shift ? SHIFT_TYPES.find((t) => t.value === shift.shift_type) : null
+                        const ot = staffOvertime[date] ?? 0
+                        const isSel = selectedStaff === s.id && selectedDates.has(date)
+                        return (
+                          <td
+                            key={date}
+                            className={cn(
+                              'border-b border-gray-100 p-0 text-center',
+                              dow === 0 || holiday ? 'bg-red-50/60' : dow === 6 ? 'bg-blue-50/60' : '',
+                              isSel && 'ring-1 ring-inset ring-indigo-500'
+                            )}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => { setSelectedStaff(s.id); setSelectedDates(new Set([date])) }}
+                              title={`${s.name} ${month}/${d.getDate()}（${DAY_LABELS[dow]}）${info?.label ?? '未登録'}${
+                                shift?.start_time ? ` ${shift.start_time.slice(0, 5)}〜${shift.end_time?.slice(0, 5) ?? ''}` : ''
+                              }${ot > 0 ? ` 残業${ot}分` : ''}`}
+                              className="relative w-full h-7 flex items-center justify-center hover:bg-indigo-100 transition-colors"
+                            >
+                              {info ? (
+                                <span className={cn('inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold', info.color)}>
+                                  {info.short}
+                                </span>
+                              ) : (
+                                <span className="text-gray-200">·</span>
+                              )}
+                              {ot > 0 && (
+                                <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-red-500" />
+                              )}
+                            </button>
+                          </td>
+                        )
+                      })}
+                      <td
+                        className={cn(
+                          'sticky right-0 z-10 border-b border-l border-gray-200 px-2 py-1.5 text-center font-semibold',
+                          selectedStaff === s.id ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-gray-600 group-hover:bg-indigo-50/60'
+                        )}
+                      >
+                        {workDays > 0 ? workDays : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+                {staffList.length === 0 && (
+                  <tr>
+                    <td colSpan={monthDays.length + 2} className="px-3 py-6 text-center text-gray-400">
+                      スタッフが登録されていません
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50">
+                  <td className="sticky left-0 z-10 bg-gray-50 border-t border-r border-gray-200 px-3 py-1.5 font-medium text-gray-500 whitespace-nowrap">
+                    出勤人数
+                  </td>
+                  {monthDays.map((date) => {
+                    const count = dailyCount[date] ?? 0
+                    return (
+                      <td
+                        key={date}
+                        className={cn(
+                          'border-t border-gray-200 px-0 py-1.5 text-center font-semibold',
+                          count === 0 ? 'text-red-400' : 'text-gray-700'
+                        )}
+                      >
+                        {count > 0 ? count : '0'}
+                      </td>
+                    )
+                  })}
+                  <td className="sticky right-0 z-10 bg-gray-50 border-t border-l border-gray-200" />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {view === 'all' && (
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex gap-3 flex-wrap text-xs text-gray-500">
+            {SHIFT_TYPES.map((t) => (
+              <div key={t.value} className="flex items-center gap-1">
+                <span className={cn('inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold', t.color)}>
+                  {t.short}
+                </span>
+                {t.label}
+              </div>
+            ))}
+            <div className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+              残業あり
+            </div>
+          </div>
+          <span className="text-xs text-gray-400 ml-auto">
+            セルをクリックすると、そのスタッフ・日付の編集パネルが下に開きます
+          </span>
+        </div>
+      )}
+
       {/* カレンダー */}
+      {view === 'personal' && (
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-100">
           {DAY_LABELS.map((d, i) => (
@@ -908,8 +1107,10 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
           })}
         </div>
       </div>
+      )}
 
       {/* ヒント */}
+      {view === 'personal' && (
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex gap-3 flex-wrap text-xs text-gray-500">
           {SHIFT_TYPES.map((t) => (
@@ -924,6 +1125,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
           「複数選択」ボタン または Ctrl（Mac: ⌘）+クリックで複数日を選択
         </span>
       </div>
+      )}
 
       {/* 編集パネル */}
       {selectedDates.size > 0 && (
