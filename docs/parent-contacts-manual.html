@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>保護者の利用連絡（予約）操作マニュアル</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  @page { size: A4; margin: 14mm 12mm 16mm; }
+  body {
+    font-family:'Yu Gothic','Hiragino Kaku Gothic ProN','メイリオ','Meiryo',sans-serif;
+    font-size:10pt; line-height:1.75; color:#1a1a1a; background:#fff;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .i{width:1em;height:1em;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-0.14em;flex:none}
+
+  /* ===== 表紙 ===== */
+  .cover{display:flex;flex-direction:column;align-items:center;justify-content:center;height:250mm;text-align:center;page-break-after:always}
+  .cover-icon{width:96px;height:96px;background:linear-gradient(135deg,#4f46e5,#7c3aed);border-radius:24px;display:flex;align-items:center;justify-content:center;margin:0 auto 26px;color:#fff}
+  .cover-icon svg{width:48px;height:48px;stroke-width:1.7}
+  .cover h1{font-size:26pt;color:#1e1b4b;line-height:1.35;margin-bottom:10px}
+  .cover h2{font-size:12.5pt;color:#6366f1;font-weight:normal;margin-bottom:34px}
+  .cover .badge-role{display:inline-block;border:1.5px solid #4f46e5;color:#4f46e5;border-radius:999px;padding:5px 20px;font-size:11pt;font-weight:bold}
+  .cover .lead{margin-top:34px;font-size:10.5pt;color:#475569;line-height:2;max-width:135mm}
+  .cover .meta{color:#94a3b8;font-size:9pt;margin-top:46px}
+
+  /* ===== 目次 ===== */
+  .toc{page-break-after:always;padding-top:4mm}
+  .toc h2{font-size:16pt;color:#1e1b4b;border-bottom:3px solid #4f46e5;padding-bottom:8px;margin-bottom:20px}
+  .toc ol{list-style:none;counter-reset:c}
+  .toc>ol>li{counter-increment:c;margin:9px 0;font-size:11pt;font-weight:bold;color:#1e1b4b}
+  .toc>ol>li::before{content:"第" counter(c) "章　";color:#6366f1;font-size:9.5pt}
+  .toc .sub{list-style:none;padding-left:2.6em;margin-top:3px}
+  .toc .sub li{font-size:9.5pt;font-weight:normal;color:#475569;margin:1px 0}
+  .toc .sub li::before{content:"– ";color:#a5b4fc}
+
+  /* ===== 章 ===== */
+  .chapter{page-break-before:always}
+  .chapter-header{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;padding:16px 24px;border-radius:12px;margin-bottom:22px}
+  .chapter-header .num{font-size:9pt;opacity:.82;margin-bottom:2px;letter-spacing:.08em}
+  .chapter-header h2{font-size:17pt}
+  .chapter-header p{font-size:9.5pt;opacity:.92;margin-top:3px;line-height:1.6}
+  h3{font-size:12pt;color:#1e1b4b;border-left:4px solid #4f46e5;padding-left:11px;margin:22px 0 10px}
+  h4{font-size:10.5pt;color:#312e81;margin:16px 0 6px;font-weight:bold}
+  p{margin-bottom:9px}
+  strong{color:#1e1b4b}
+  code{background:#eef2ff;color:#4338ca;border-radius:4px;padding:1px 5px;font-family:'Consolas',monospace;font-size:9pt}
+
+  /* ===== 手順ステップ ===== */
+  .steps{counter-reset:s;margin:12px 0}
+  .step{counter-increment:s;position:relative;background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #4f46e5;border-radius:8px;padding:11px 14px 11px 46px;margin-bottom:9px;page-break-inside:avoid}
+  .step::before{content:counter(s);position:absolute;left:12px;top:11px;width:24px;height:24px;background:#4f46e5;color:#fff;border-radius:50%;font-size:10pt;font-weight:bold;display:flex;align-items:center;justify-content:center}
+  .step .t{font-weight:bold;color:#1e1b4b;font-size:10.5pt}
+  .step .d{font-size:9.5pt;color:#475569;margin-top:2px}
+
+  /* ===== 注意・ヒント ===== */
+  .note,.warn,.tip{border-radius:8px;padding:11px 14px;margin:12px 0;font-size:9.5pt;line-height:1.7;page-break-inside:avoid}
+  .note{background:#eff6ff;border-left:4px solid #3b82f6;color:#1e3a5f}
+  .warn{background:#fff7ed;border-left:4px solid #f97316;color:#7c2d12}
+  .tip{background:#f0fdf4;border-left:4px solid #22c55e;color:#14532d}
+  .note b,.warn b,.tip b{display:block;margin-bottom:2px}
+
+  /* ===== 表 ===== */
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:9.5pt;page-break-inside:avoid}
+  th{background:#4f46e5;color:#fff;padding:7px 9px;text-align:left;font-weight:bold;font-size:9pt}
+  td{border:1px solid #e2e8f0;padding:7px 9px;vertical-align:top}
+  tbody tr:nth-child(even){background:#f8fafc}
+
+  /* ===== 図（画面キャプチャ再現） ===== */
+  figure{margin:14px 0 18px;page-break-inside:avoid}
+  .shot{border:1px solid #cbd5e1;border-radius:10px;overflow:hidden;box-shadow:0 3px 10px rgba(15,23,42,.10);background:#fff}
+  .shot-bar{background:#f1f5f9;border-bottom:1px solid #e2e8f0;padding:5px 10px;font-size:7.5pt;color:#64748b;display:flex;align-items:center;gap:6px}
+  .dots{display:flex;gap:4px}
+  .dots i{width:7px;height:7px;border-radius:50%;display:block}
+  .shot-body{padding:14px;background:#f3f4f6}
+  figcaption{font-size:8.5pt;color:#64748b;text-align:center;margin-top:7px}
+  .fig-narrow{max-width:78mm;margin-left:auto;margin-right:auto}
+  .fig-half{max-width:100mm;margin-left:auto;margin-right:auto}
+
+  /* 赤枠＋番号ピン */
+  .hl{position:relative;outline:2px solid #ef4444;outline-offset:3px;border-radius:8px}
+  .pin{position:absolute;top:-11px;left:-13px;width:19px;height:19px;background:#ef4444;color:#fff;border-radius:50%;font-size:8.5pt;font-weight:bold;display:flex;align-items:center;justify-content:center;z-index:5;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .pin.r{left:auto;right:-13px}
+  /* 図の説明リスト */
+  .legend{list-style:none;margin:8px 0 0;font-size:9.5pt}
+  .legend li{display:flex;gap:8px;margin:4px 0;align-items:flex-start}
+  .legend .n{flex:none;width:18px;height:18px;background:#ef4444;color:#fff;border-radius:50%;font-size:8.5pt;font-weight:bold;display:flex;align-items:center;justify-content:center;margin-top:2px}
+
+  /* ===== フロー図 ===== */
+  .flow{display:flex;flex-direction:column;gap:0;margin:16px 0}
+  .flow-row{display:flex;align-items:stretch;gap:10px;page-break-inside:avoid}
+  .flow-who{flex:none;width:74px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:8.5pt;font-weight:bold;color:#fff;text-align:center;line-height:1.3}
+  .who-p{background:#16a34a}.who-s{background:#4f46e5}
+  .flow-box{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:9px 12px;background:#fff}
+  .flow-box .t{font-weight:bold;color:#1e1b4b;font-size:10pt}
+  .flow-box .d{font-size:9pt;color:#64748b;margin-top:1px}
+  .flow-arrow{text-align:center;color:#a5b4fc;font-size:13pt;line-height:1;margin:4px 0 4px 84px}
+
+  /* ===== アプリUI 再現パーツ ===== */
+  .ui{font-family:'Yu Gothic','Hiragino Kaku Gothic ProN',sans-serif;font-size:9pt;line-height:1.5;color:#111827}
+  .ui .row{display:flex;align-items:center}
+  .card-w{background:#fff;border-radius:12px;border:1px solid #f3f4f6;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+  .btn-i{background:#4f46e5;color:#fff;border-radius:8px;padding:5px 11px;font-size:8.5pt;font-weight:600;display:inline-flex;align-items:center;gap:5px}
+  .btn-em{background:#059669;color:#fff;border-radius:7px;padding:3px 9px;font-size:8pt;font-weight:700}
+  .btn-o{background:#fff;border:1px solid #d1d5db;color:#4b5563;border-radius:7px;padding:3px 9px;font-size:8pt;font-weight:600}
+  .tag{border-radius:999px;padding:1px 8px;font-size:7.5pt;font-weight:600;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+  .t-green{background:#dcfce7;color:#15803d}
+  .t-orange{background:#ffedd5;color:#ea580c}
+  .t-red{background:#fee2e2;color:#dc2626}
+  .t-blue{background:#dbeafe;color:#1d4ed8}
+  .t-amber{background:#fef3c7;color:#b45309}
+  .t-emerald{background:#059669;color:#fff;font-weight:700}
+  .t-gray{background:#6b7280;color:#fff;font-weight:700}
+  .t-gray-l{background:#f3f4f6;color:#6b7280}
+  .cnt{background:#ef4444;color:#fff;border-radius:999px;padding:0 6px;font-size:7.5pt;font-weight:700;display:inline-block}
+  .muted{color:#9ca3af}
+  .sub9{font-size:8pt;color:#6b7280}
+</style>
+</head>
+<body>
+
+<!-- ============ 表紙 ============ -->
+<section class="cover">
+  <div class="cover-icon">
+    <svg viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+  </div>
+  <h1>保護者の利用連絡（予約）<br>操作マニュアル</h1>
+  <h2>放課後等デイサービス管理アプリ</h2>
+  <span class="badge-role">職員向け</span>
+  <p class="lead">
+    保護者がLINEから送信した利用予定（放デイ・日中一時・お休み）を、<br>
+    職員が受け取り・承認し、利用スケジュールへ反映するまでの手順を説明します。
+  </p>
+  <p class="meta">2026年8月版</p>
+</section>
+
+<!-- ============ 目次 ============ -->
+<section class="toc">
+  <h2>目次</h2>
+  <ol>
+    <li>この機能の全体像
+      <ul class="sub">
+        <li>できること／保護者と職員の役割分担</li>
+        <li>受付から反映までの流れ</li>
+        <li>覚えておく3つのルール</li>
+      </ul>
+    </li>
+    <li>事前準備：登録コードを発行して保護者に渡す
+      <ul class="sub">
+        <li>登録コード発行画面を開く</li>
+        <li>コードを発行する／コピーして伝える</li>
+        <li>コードを削除する</li>
+        <li>保護者側の初回登録（案内用）</li>
+      </ul>
+    </li>
+    <li>保護者が送信できる内容を知る
+      <ul class="sub">
+        <li>保護者のLINE画面（カレンダー／入力シート）</li>
+        <li>送信できる項目の一覧</li>
+        <li>送信できる日・できない日</li>
+      </ul>
+    </li>
+    <li>連絡が届いたことに気づく
+      <ul class="sub">
+        <li>お知らせベルとバッジ</li>
+        <li>保護者連絡一覧を開く</li>
+      </ul>
+    </li>
+    <li>承認する／承認しない（メイン操作）
+      <ul class="sub">
+        <li>連絡カードの見方</li>
+        <li>1件ずつ処理する</li>
+        <li>まとめて処理する</li>
+        <li>処理を取り消してやり直す</li>
+      </ul>
+    </li>
+    <li>承認後に利用スケジュールへ反映する
+      <ul class="sub">
+        <li>児童詳細で連絡内容を確認する</li>
+        <li>出席カレンダーで利用予定を登録する</li>
+      </ul>
+    </li>
+    <li>運用のポイントとよくある質問</li>
+  </ol>
+</section>
+
+<!-- ============ 第1章 ============ -->
+<section class="chapter">
+  <div class="chapter-header">
+    <div class="num">CHAPTER 1</div>
+    <h2>この機能の全体像</h2>
+    <p>まず「誰が・何を・どこまでやるのか」を押さえます。ここを理解しておくと、以降の操作で迷いません。</p>
+  </div>
+
+  <h3>できること／保護者と職員の役割分担</h3>
+  <p>保護者はLINEアプリから、お子さんの<strong>利用予定（予約）</strong>を事業所へ送信できます。職員は管理画面でその連絡を受け取り、内容を確認して<strong>承認</strong>または<strong>承認しない（非承認）</strong>を記録します。</p>
+
+  <table>
+    <thead><tr><th style="width:24%">担当</th><th>やること</th></tr></thead>
+    <tbody>
+      <tr><td><strong>保護者</strong><br>（LINE）</td><td>登録コードで初回登録 → カレンダーから日付を選び、「放デイ／日中一時／お休み」・利用時間・送迎・備考を入力して送信</td></tr>
+      <tr><td><strong>職員</strong><br>（管理画面）</td><td>登録コードの発行 → 届いた連絡を「保護者連絡一覧」で確認 → 承認／非承認 → 承認したものを利用スケジュール（出席カレンダー）へ登録</td></tr>
+    </tbody>
+  </table>
+
+  <h3>受付から反映までの流れ</h3>
+  <div class="flow">
+    <div class="flow-row">
+      <div class="flow-who who-s">職員</div>
+      <div class="flow-box"><div class="t">登録コードを発行して保護者に渡す</div><div class="d">設定 &gt; 登録コード発行（初回のみ・お子さん1人につき1コード）</div></div>
+    </div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-row">
+      <div class="flow-who who-p">保護者</div>
+      <div class="flow-box"><div class="t">LINEで初回登録し、利用連絡を送信する</div><div class="d">カレンダーの日付をタップ →区分・時間・送迎を選んで「連絡を送信する」</div></div>
+    </div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-row">
+      <div class="flow-who who-s">職員</div>
+      <div class="flow-box"><div class="t">お知らせベルの赤バッジで気づく</div><div class="d">画面右上のベルに未確認件数が表示され、そこから一覧へ移動できます</div></div>
+    </div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-row">
+      <div class="flow-who who-s">職員</div>
+      <div class="flow-box"><div class="t">保護者連絡一覧で「承認する」／「承認しない」</div><div class="d">お休みの連絡は「確認する」のみ。処理するとベルの件数から外れます</div></div>
+    </div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-row">
+      <div class="flow-who who-s">職員</div>
+      <div class="flow-box"><div class="t">承認した内容を利用スケジュールへ登録する</div><div class="d">児童管理 &gt; 児童詳細 &gt; 利用スケジュール の出席カレンダーで利用予定にする</div></div>
+    </div>
+  </div>
+
+  <h3>覚えておく3つのルール</h3>
+  <div class="warn">
+    <b>① 承認しただけでは、利用予定にはなりません</b>
+    承認は「事業所として受け付けた」という記録です。出席管理・送迎管理・請求に反映されるのは、第6章の手順で<strong>利用スケジュールに登録したとき</strong>です。承認後は必ず反映まで行ってください。
+  </div>
+  <div class="warn">
+    <b>② 承認結果は保護者のLINEへ自動通知されません</b>
+    「承認しない」を選んだ場合は、電話・連絡帳・メッセージなど別の手段で保護者へ必ずお伝えください。
+  </div>
+  <div class="warn">
+    <b>③ 保護者が内容を送り直すと、承認は取り消されます</b>
+    同じお子さん・同じ日付に再送信されると内容が上書きされ、状態は「承認待ち」に戻って再びベルに表示されます。処理済みの日でも、再通知が来たら内容を見直してください。
+  </div>
+</section>
+
+<!-- ============ 第2章 ============ -->
+<section class="chapter">
+  <div class="chapter-header">
+    <div class="num">CHAPTER 2</div>
+    <h2>事前準備：登録コードを発行して保護者に渡す</h2>
+    <p>保護者がLINEから利用連絡を送るには、最初に一度だけ「登録コード」による初回登録が必要です。コードは職員が発行します。</p>
+  </div>
+
+  <h3>登録コード発行画面を開く</h3>
+  <p>左のサイドバー <strong>「LINE連携」</strong> グループにある <strong>「登録コード発行」</strong> をクリックします。</p>
+
+  <figure class="fig-narrow">
+    <div class="shot">
+      <div class="shot-bar"><span class="dots"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></span> 放デイ管理</div>
+      <div class="shot-body ui" style="background:#111827;padding:12px 0">
+        <div style="padding:2px 14px 6px;font-size:7.5pt;font-weight:700;color:#9ca3af;letter-spacing:.08em">LINE連携</div>
+        <div class="hl" style="margin:0 8px 6px;background:#4338ca;border-radius:6px">
+          <span class="pin">1</span>
+          <div class="row" style="gap:10px;padding:7px 10px;color:#fff">
+            <svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px"><rect width="12" height="20" x="6" y="2" rx="2"/><path d="M17 8a4 4 0 0 1 0 8"/></svg>
+            <span>保護者連絡一覧</span>
+          </div>
+        </div>
+        <div class="hl" style="margin:0 8px;border-radius:6px">
+          <span class="pin">2</span>
+          <div class="row" style="gap:10px;padding:7px 10px;color:#d1d5db">
+            <svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px"><path d="M2.6 17.4A2 2 0 0 0 2 18.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.2a2 2 0 0 0 1.4-.6l.8-.8a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".6" fill="currentColor"/></svg>
+            <span>登録コード発行</span>
+          </div>
+        </div>
+        <div style="padding:10px 14px 2px;font-size:7.5pt;font-weight:700;color:#9ca3af;letter-spacing:.08em">設定</div>
+        <div class="row" style="gap:10px;padding:7px 18px;color:#d1d5db">
+          <svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/></svg>
+          <span>児童管理</span>
+        </div>
+      </div>
+    </div>
+    <figcaption>図2-1　サイドバーの「LINE連携」グループ</figcaption>
+    <ul class="legend">
+      <li><span class="n">1</span><span><strong>保護者連絡一覧</strong>…届いた利用連絡を承認する画面（第5章）</span></li>
+      <li><span class="n">2</span><span><strong>登録コード発行</strong>…保護者に渡すコードを作る画面（本章）</span></li>
+    </ul>
+  </figure>
+
+  <div class="note">
+    <b>「登録コード発行」が見当たらない場合</b>
+    このメニューは管理者ロールのみに表示されます。スタッフロールでログインしている場合は表示されないため、管理者に発行を依頼してください。
+  </div>
+
+  <h3>コードを発行する／コピーして伝える</h3>
+
+  <div class="steps">
+    <div class="step"><div class="t">お子さんを選ぶ</div><div class="d">「新しいコードを発行」欄のプルダウンから、対象の児童を選択します。</div></div>
+    <div class="step"><div class="t">「発行」をクリックする</div><div class="d">6桁の英数字コード（例: <code>KJ7T2M</code>）が自動生成され、一覧の先頭に「未使用」で追加されます。</div></div>
+    <div class="step"><div class="t">コピーして保護者へ伝える</div><div class="d">コピーアイコンをクリックするとクリップボードにコピーされます。連絡帳・メッセージ・口頭などでお子さんの保護者にお伝えください。</div></div>
+    <div class="step"><div class="t">保護者が登録すると「使用済み」に変わる</div><div class="d">保護者がLINEで登録を完了すると、状態が自動で「使用済み」となり、以降そのコードは使えません。</div></div>
+  </div>
+
+  <figure>
+    <div class="shot">
+      <div class="shot-bar"><span class="dots"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></span> 登録コード発行</div>
+      <div class="shot-body ui" style="background:#f9fafb">
+        <div style="font-size:12pt;font-weight:700;color:#111827">登録コード発行</div>
+        <div class="sub9" style="margin:6px 0 12px">保護者がLINEで初回登録する際に使用するワンタイムコードを発行します。コードをお子さんの保護者にお伝えください。</div>
+
+        <div class="card-w" style="padding:14px;margin-bottom:14px">
+          <div style="font-size:9pt;font-weight:700;color:#374151;margin-bottom:8px">新しいコードを発行</div>
+          <div class="row" style="gap:10px">
+            <div class="hl" style="flex:1;border:1px solid #d1d5db;border-radius:8px;padding:6px 10px;color:#111827;background:#fff">
+              <span class="pin">1</span>田中 太郎
+              <span style="float:right;color:#9ca3af">▾</span>
+            </div>
+            <div class="hl" style="border-radius:8px">
+              <span class="pin">2</span>
+              <span class="btn-i" style="padding:7px 14px">
+                <svg class="i" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M5 12h14"/><path d="M12 5v14"/></svg>発行
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-w hl" style="padding:11px 14px;margin-bottom:8px;border-color:#e5e7eb">
+          <span class="pin">3</span>
+          <div class="row" style="gap:11px">
+            <svg class="i" viewBox="0 0 24 24" style="width:17px;height:17px;color:#818cf8"><path d="M2.6 17.4A2 2 0 0 0 2 18.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.2a2 2 0 0 0 1.4-.6l.8-.8a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".6" fill="currentColor"/></svg>
+            <div style="flex:1">
+              <div class="row" style="gap:8px">
+                <span style="font-family:Consolas,monospace;font-weight:700;letter-spacing:.16em;font-size:10.5pt">KJ7T2M</span>
+                <span class="tag t-green">未使用</span>
+              </div>
+              <div class="sub9" style="margin-top:1px">田中 太郎 · 2026/8/3</div>
+            </div>
+            <div class="row" style="gap:7px;color:#9ca3af">
+              <span class="hl" style="padding:2px;border-radius:5px"><span class="pin r">4</span>
+                <svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              </span>
+              <svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-w" style="padding:11px 14px;opacity:.6">
+          <div class="row" style="gap:11px">
+            <svg class="i" viewBox="0 0 24 24" style="width:17px;height:17px;color:#818cf8"><path d="M2.6 17.4A2 2 0 0 0 2 18.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.2a2 2 0 0 0 1.4-.6l.8-.8a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".6" fill="currentColor"/></svg>
+            <div style="flex:1">
+              <div class="row" style="gap:8px">
+                <span style="font-family:Consolas,monospace;font-weight:700;letter-spacing:.16em;font-size:10.5pt">P4XQ9B</span>
+                <span class="tag t-gray-l">使用済み</span>
+              </div>
+              <div class="sub9" style="margin-top:1px">鈴木 花子 · 2026/7/28</div>
+            </div>
+            <svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px;color:#9ca3af"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>図2-2　登録コード発行画面</figcaption>
+    <ul class="legend">
+      <li><span class="n">1</span><span>児童を選択するプルダウン</span></li>
+      <li><span class="n">2</span><span>「発行」ボタン。押すとコードが1件作られます</span></li>
+      <li><span class="n">3</span><span>発行済みコードの一覧。<span class="tag t-green">未使用</span>／<span class="tag t-gray-l">使用済み</span>で状態がわかります</span></li>
+      <li><span class="n">4</span><span>コピーアイコン。未使用のコードだけに表示され、押すとチェックマークに変わります</span></li>
+    </ul>
+  </figure>
+
+  <div class="tip">
+    <b>ごきょうだいがいる場合</b>
+    コードは<strong>お子さん1人につき1つ</strong>必要です。ごきょうだい2人なら2つ発行し、両方を保護者にお伝えください。保護者は同じLINEアカウントで続けて登録できます。
+  </div>
+
+  <h3>コードを削除する</h3>
+  <p>ゴミ箱アイコンをクリックすると確認メッセージが出て、もう一度「削除する」を押すと削除されます。誤って発行した場合などに使用します。</p>
+  <table>
+    <thead><tr><th style="width:26%">削除するコード</th><th>削除したときの影響</th></tr></thead>
+    <tbody>
+      <tr><td><strong>未使用</strong>のコード</td><td>すでに保護者に伝えている場合、そのコードでは登録できなくなります。新しいコードを発行して伝え直してください。</td></tr>
+      <tr><td><strong>使用済み</strong>のコード</td><td>登録済みの保護者とお子さんの紐付けは<strong>解除されません</strong>。保護者は引き続き利用連絡を送れます。</td></tr>
+    </tbody>
+  </table>
+
+  <h3>保護者側の初回登録（案内用）</h3>
+  <p>保護者から「どうすればいいの？」と聞かれたときは、次のように案内してください。</p>
+  <div class="steps">
+    <div class="step"><div class="t">事業所のLINE公式アカウントを友だち追加する</div><div class="d">友だち追加後、メニューから利用連絡のページを開きます。</div></div>
+    <div class="step"><div class="t">「初回登録」画面で登録コードを入力する</div><div class="d">職員から受け取った6桁のコードを入力し、「登録する」をタップします（小文字で入力しても自動で大文字に変換されます）。</div></div>
+    <div class="step"><div class="t">「登録完了しました」と表示されたら完了</div><div class="d">続けて別のお子さんのコードも入力できます。「利用連絡ページへ進む」から利用連絡を送信できるようになります。</div></div>
+  </div>
+  <div class="note">
+    <b>あとからごきょうだいを追加するとき</b>
+    保護者は利用連絡画面の下にある<strong>「お子さまを追加登録する」</strong>から、追加のコードを入力できます。
+  </div>
+</section>
+
+<!-- ============ 第3章 ============ -->
+<section class="chapter">
+  <div class="chapter-header">
+    <div class="num">CHAPTER 3</div>
+    <h2>保護者が送信できる内容を知る</h2>
+    <p>保護者の画面を職員が把握しておくと、問い合わせ対応や内容確認がスムーズになります。この章は「読んで知っておく」ための章です。</p>
+  </div>
+
+  <h3>保護者のLINE画面</h3>
+  <p>保護者は月のカレンダーから日付をタップし、下から出てくる入力シートに内容を入力して送信します。お子さんが複数登録されている場合は、シートの中に人数分の入力欄が並びます。</p>
+
+  <figure class="fig-half">
+    <div class="shot">
+      <div class="shot-bar"><span class="dots"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></span> 保護者のLINE画面①（カレンダー）</div>
+      <div class="shot-body ui" style="background:#f9fafb;padding:0">
+        <div style="background:#4f46e5;color:#fff;padding:14px 16px">
+          <div style="font-size:7.5pt;color:#c7d2fe">利用連絡</div>
+          <div style="font-size:12pt;font-weight:700">田中さん</div>
+        </div>
+        <div class="row" style="justify-content:space-between;background:#fff;border-bottom:1px solid #f3f4f6;padding:6px 12px">
+          <span class="muted">‹</span><span style="font-weight:700;font-size:9pt">2026年8月</span><span class="muted">›</span>
+        </div>
+        <div style="padding:10px">
+          <div class="card-w" style="padding:0;overflow:hidden">
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid #f3f4f6;text-align:center;font-size:7.5pt;padding:5px 0">
+              <span style="color:#ef4444">日</span><span class="muted">月</span><span class="muted">火</span><span class="muted">水</span><span class="muted">木</span><span class="muted">金</span><span style="color:#3b82f6">土</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);padding:4px;text-align:center;font-size:8pt;row-gap:2px">
+              <span></span><span></span><span></span><span></span><span></span><span></span><span style="color:#3b82f6">1</span>
+              <span style="color:#ef4444">2</span>
+              <span><span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#4f46e5;color:#fff;font-size:7.5pt">3</span></span>
+              <span>4</span>
+              <span class="hl" style="border-radius:6px"><span class="pin">1</span>5<br><span style="display:inline-block;width:4px;height:4px;border-radius:50%;background:#22c55e"></span> <span style="display:inline-block;width:4px;height:4px;border-radius:50%;background:#ef4444"></span></span>
+              <span>6<br><span style="display:inline-block;width:4px;height:4px;border-radius:50%;background:#fb923c"></span></span>
+              <span>7</span><span style="color:#3b82f6">8</span>
+              <span style="color:#ef4444">9</span><span>10</span><span style="color:#ef4444">11</span><span>12</span><span>13</span><span>14</span><span style="color:#3b82f6">15</span>
+              <span style="color:#ef4444">16</span><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span><span style="color:#3b82f6">22</span>
+            </div>
+            <div class="row hl" style="justify-content:center;gap:14px;border-top:1px solid #f3f4f6;padding:7px;margin:0 6px 6px">
+              <span class="pin">2</span>
+              <span class="row" style="gap:4px"><i style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:block"></i><span class="sub9">放デイ</span></span>
+              <span class="row" style="gap:4px"><i style="width:6px;height:6px;border-radius:50%;background:#fb923c;display:block"></i><span class="sub9">日中一時</span></span>
+              <span class="row" style="gap:4px"><i style="width:6px;height:6px;border-radius:50%;background:#f87171;display:block"></i><span class="sub9">お休み</span></span>
+            </div>
+          </div>
+          <div class="sub9" style="text-align:center;margin-top:8px">日付をタップして利用連絡</div>
+        </div>
+      </div>
+    </div>
+    <figcaption>図3-1　保護者のカレンダー画面</figcaption>
+    <ul class="legend">
+      <li><span class="n">1</span><span>送信済みの日には色付きの丸が付きます（お子さんごとに1つ）。日付をタップすると入力シートが開きます</span></li>
+      <li><span class="n">2</span><span>丸の色の凡例。<strong>緑＝放デイ／橙＝日中一時／赤＝お休み</strong></span></li>
+    </ul>
+  </figure>
+
+  <figure class="fig-half">
+    <div class="shot">
+      <div class="shot-bar"><span class="dots"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></span> 保護者のLINE画面②（入力シート）</div>
+      <div class="shot-body ui" style="background:#fff;padding:0">
+        <div class="row" style="justify-content:space-between;padding:10px 14px;border-bottom:1px solid #f3f4f6">
+          <span style="font-weight:700">8月5日<span class="muted" style="font-weight:400;font-size:8pt">（水）</span></span>
+          <span class="muted">✕</span>
+        </div>
+        <div style="padding:10px 12px 14px">
+          <div style="background:#f9fafb;border:1px solid #f3f4f6;border-radius:12px;padding:11px">
+            <div style="font-weight:700;margin-bottom:8px">田中 太郎</div>
+            <div class="hl" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;border-radius:9px">
+              <span class="pin">1</span>
+              <span style="background:#22c55e;color:#fff;border-radius:9px;padding:7px 0;text-align:center;font-size:8pt;font-weight:700">放デイ</span>
+              <span style="background:#fff;border:1px solid #e5e7eb;color:#4b5563;border-radius:9px;padding:7px 0;text-align:center;font-size:8pt;font-weight:700">日中一時</span>
+              <span style="background:#fff;border:1px solid #e5e7eb;color:#4b5563;border-radius:9px;padding:7px 0;text-align:center;font-size:8pt;font-weight:700">お休み</span>
+            </div>
+
+            <div class="hl" style="background:#fff;border:1px solid #e5e7eb;border-radius:9px;padding:9px 11px;margin-bottom:10px">
+              <span class="pin">2</span>
+              <div class="row" style="gap:5px;margin-bottom:6px">
+                <svg class="i" viewBox="0 0 24 24" style="width:11px;height:11px;color:#6366f1"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span style="font-size:8pt;font-weight:700;color:#4b5563">利用時間</span><span class="muted" style="font-size:7pt">（任意）</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                <div><div class="muted" style="font-size:7pt">開始</div><div style="border:1px solid #e5e7eb;border-radius:7px;padding:4px 7px;font-size:8.5pt">14:00 ▾</div></div>
+                <div><div class="muted" style="font-size:7pt">終了</div><div style="border:1px solid #e5e7eb;border-radius:7px;padding:4px 7px;font-size:8.5pt">17:00 ▾</div></div>
+              </div>
+            </div>
+
+            <div class="hl" style="background:#fff;border:1px solid #e5e7eb;border-radius:9px;padding:9px 11px;margin-bottom:10px">
+              <span class="pin">3</span>
+              <div class="row" style="gap:5px;margin-bottom:6px">
+                <svg class="i" viewBox="0 0 24 24" style="width:11px;height:11px;color:#6366f1"><path d="M19 17h2a1 1 0 0 0 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4a1 1 0 0 0 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
+                <span style="font-size:8pt;font-weight:700;color:#4b5563">送迎</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                <span style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:7px;padding:6px 0;text-align:center;font-size:8pt">送迎なし</span>
+                <span style="background:#6366f1;color:#fff;border-radius:7px;padding:6px 0;text-align:center;font-size:8pt;font-weight:600">送り迎え</span>
+                <span style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:7px;padding:6px 0;text-align:center;font-size:8pt">迎えのみ</span>
+                <span style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:7px;padding:6px 0;text-align:center;font-size:8pt">送りのみ</span>
+              </div>
+              <div style="margin-top:8px"><div class="muted" style="font-size:7pt">お迎え希望時刻（自宅・学校へ迎えに行く時間）</div>
+                <div style="border:1px solid #e5e7eb;border-radius:7px;padding:4px 7px;font-size:8.5pt">14:30 ▾</div></div>
+            </div>
+
+            <div class="hl" style="border:1px solid #e5e7eb;border-radius:9px;padding:7px 10px;color:#9ca3af;font-size:8.5pt">
+              <span class="pin">4</span>備考（任意）
+            </div>
+          </div>
+          <div class="hl" style="border-radius:12px;margin-top:10px">
+            <span class="pin">5</span>
+            <div style="background:#4f46e5;color:#fff;border-radius:12px;padding:11px 0;text-align:center;font-weight:700;font-size:10pt">連絡を送信する</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>図3-2　保護者の入力シート（日付をタップすると下から表示されます）</figcaption>
+    <ul class="legend">
+      <li><span class="n">1</span><span><strong>区分の選択</strong>。放デイ／日中一時／お休みのいずれか1つ。ここを選ばないと送信できません</span></li>
+      <li><span class="n">2</span><span><strong>利用時間</strong>（任意）。6:00〜21:00を15分刻みで選択。「指定なし」も可</span></li>
+      <li><span class="n">3</span><span><strong>送迎</strong>。「迎えのみ」「送り迎え」を選ぶとお迎え希望時刻、「送りのみ」「送り迎え」を選ぶとお送り希望時刻の欄が出ます</span></li>
+      <li><span class="n">4</span><span><strong>備考</strong>（任意）。連絡事項を自由に入力できます</span></li>
+      <li><span class="n">5</span><span>送信ボタン。押すと「連絡を送信しました」と表示されます</span></li>
+    </ul>
+  </figure>
+
+  <h3>送信できる項目の一覧</h3>
+  <table>
+    <thead><tr><th style="width:22%">項目</th><th style="width:12%">必須</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td>区分</td><td>必須</td><td>放デイ／日中一時／お休み のいずれか1つ</td></tr>
+      <tr><td>利用時間</td><td>任意</td><td>開始・終了を15分刻みで選択（6:00〜21:00）。終了は開始より後である必要があります</td></tr>
+      <tr><td>送迎</td><td>—</td><td>送迎なし／送り迎え／迎えのみ／送りのみ（初期値は「送迎なし」）</td></tr>
+      <tr><td>お迎え希望時刻</td><td>任意</td><td>自宅・学校へ迎えに行ってほしい時刻</td></tr>
+      <tr><td>お送り希望時刻</td><td>任意</td><td>自宅へ送り届けてほしい時刻</td></tr>
+      <tr><td>備考</td><td>任意</td><td>自由記入。「お休み」を選んだ場合も入力できます</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <b>「お休み」を選んだときの扱い</b>
+    利用時間・送迎の入力欄は表示されず、送信されても内容は保存されません（すべて「送迎なし・時刻なし」になります）。備考だけが記録されます。
+  </div>
+
+  <h3>送信できる日・できない日</h3>
+  <table>
+    <thead><tr><th style="width:26%">日付</th><th>可否</th></tr></thead>
+    <tbody>
+      <tr><td>過去の日</td><td><strong>送信できません。</strong>カレンダー上でも薄いグレーで表示され、タップできません</td></tr>
+      <tr><td>当日</td><td>送信できます（急なお休み連絡などに使えます）</td></tr>
+      <tr><td>未来の日</td><td>送信できます。翌月以降は「‹ ›」で月を移動して選択します</td></tr>
+      <tr><td>送信済みの日</td><td>同じ日をもう一度開いて内容を変更し、再送信できます（<strong>上書き</strong>されます）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">
+    <b>過去日の連絡を保護者は取り消せません</b>
+    「予約したが結局休んだ」など、日付を過ぎてしまった連絡は保護者側では変更できません。職員側で内容を読み替えて対応してください。
+  </div>
+</section>
+
+<!-- ============ 第4章 ============ -->
+<section class="chapter">
+  <div class="chapter-header">
+    <div class="num">CHAPTER 4</div>
+    <h2>連絡が届いたことに気づく</h2>
+    <p>保護者が送信すると、管理画面の右上にあるお知らせベルに未確認件数が表示されます。</p>
+  </div>
+
+  <h3>お知らせベルとバッジ</h3>
+  <p>画面右上のベルアイコンには、<strong>未確認のスタッフ申請</strong>と<strong>未確認の保護者利用連絡</strong>の合計件数が赤いバッジで表示されます（10件以上は「9+」）。クリックすると内訳が開きます。</p>
+
+  <figure class="fig-half">
+    <div class="shot">
+      <div class="shot-bar"><span class="dots"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></span> 画面右上のヘッダー</div>
+      <div class="shot-body ui" style="background:#f9fafb">
+        <div class="row" style="justify-content:flex-end;margin-bottom:10px">
+          <span class="hl" style="position:relative;padding:5px;border-radius:7px">
+            <span class="pin">1</span>
+            <svg class="i" viewBox="0 0 24 24" style="width:17px;height:17px;color:#374151"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            <span style="position:absolute;top:-3px;right:-3px;width:15px;height:15px;background:#ef4444;color:#fff;border-radius:50%;font-size:7pt;font-weight:700;display:flex;align-items:center;justify-content:center">3</span>
+          </span>
+        </div>
+        <div class="card-w" style="border:1px solid #e5e7eb;overflow:hidden;box-shadow:0 6px 16px rgba(15,23,42,.12)">
+          <div style="padding:7px 13px;border-bottom:1px solid #f3f4f6;font-size:9pt;font-weight:700">お知らせ</div>
+          <div class="hl" style="padding:9px 13px;margin:4px">
+            <span class="pin">2</span>
+            <div class="row" style="justify-content:space-between;gap:8px">
+              <span class="row" style="gap:7px;font-size:9pt;font-weight:600;color:#1f2937">
+                <svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px;color:#16a34a"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+                保護者からの利用連絡
+              </span>
+              <span class="cnt">3</span>
+            </div>
+            <div style="padding-left:21px;margin-top:4px">
+              <div class="sub9">8/5　田中 太郎　放デイ</div>
+              <div class="sub9">8/5　鈴木 花子　お休み</div>
+              <div class="sub9">8/6　佐藤 健　日中一時</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>図4-1　お知らせベルとドロップダウン</figcaption>
+    <ul class="legend">
+      <li><span class="n">1</span><span>未確認件数の赤バッジ。クリックでドロップダウンが開きます</span></li>
+      <li><span class="n">2</span><span>「保護者からの利用連絡」の行。<strong>クリックすると保護者連絡一覧へ移動</strong>します。直近5件の概要（日付・お子さん名・区分）も表示されます</span></li>
+    </ul>
+  </figure>
+
+  <h3>保護者連絡一覧を開く</h3>
+  <p>ベルのドロップダウンから移動するほか、サイドバー <strong>「LINE連携」＞「保護者連絡一覧」</strong> からも開けます（こちらはスタッフロールでも表示されます）。</p>
+  <div class="tip">
+    <b>バッジが減るタイミング</b>
+    「承認する」「承認しない」「確認する」のいずれかを行うと、その連絡はバッジの件数から外れます。処理していない連絡は日付が過ぎても残り続けるので、こまめに処理してください。
+  </div>
+</section>
+
+<!-- ============ 第5章 ============ -->
+<section class="chapter">
+  <div class="chapter-header">
+    <div class="num">CHAPTER 5</div>
+    <h2>承認する／承認しない（メイン操作）</h2>
+    <p>「保護者連絡一覧」画面で、届いた連絡を1件ずつ処理します。この章がこのマニュアルの中心です。</p>
+  </div>
+
+  <h3>連絡カードの見方</h3>
+  <p>未確認の連絡が<strong>日付ごと</strong>にまとめられ、日付の早い順に並びます。1件が1枚のカードです。</p>
+
+  <figure>
+    <div class="shot">
+      <div class="shot-bar"><span class="dots"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></span> 保護者連絡一覧</div>
+      <div class="shot-body ui" style="background:#f9fafb">
+        <div style="font-size:12pt;font-weight:700;margin-bottom:10px">保護者連絡一覧</div>
+        <div class="card-w" style="overflow:hidden;border-color:#f3f4f6">
+          <div class="row hl" style="justify-content:space-between;padding:9px 12px;background:#fef7e8;border-bottom:1px solid #f3f4f6;margin:0">
+            <span class="pin">1</span>
+            <span class="row" style="gap:7px">
+              <svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px;color:#f59e0b"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+              <span style="font-size:9.5pt;font-weight:700">未確認の連絡 <span class="cnt">3</span></span>
+            </span>
+            <span class="hl" style="border-radius:8px"><span class="pin r">2</span><span class="btn-i">すべて承認・確認する</span></span>
+          </div>
+
+          <div style="padding:10px 12px;border-bottom:1px solid #f3f4f6">
+            <div class="row hl" style="gap:7px;margin:0 0 7px">
+              <span class="pin">3</span>
+              <svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px;color:#6366f1"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+              <span style="font-size:9.5pt;font-weight:700">8月5日（水）</span>
+              <span class="tag" style="background:#e0e7ff;color:#4338ca">明日</span>
+              <span class="sub9">2件</span>
+            </div>
+
+            <!-- 利用予約カード -->
+            <div class="hl" style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 11px;margin-bottom:7px">
+              <span class="pin">4</span>
+              <div class="row" style="gap:9px;align-items:flex-start">
+                <svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px;color:#22c55e;margin-top:2px"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+                <div style="flex:1">
+                  <div class="row" style="gap:6px;flex-wrap:wrap">
+                    <span style="font-weight:700;font-size:9.5pt">田中 太郎</span>
+                    <span class="tag t-green">放デイ</span>
+                    <span class="tag t-blue">
+                      <svg class="i" viewBox="0 0 24 24" style="width:9px;height:9px"><path d="M19 17h2a1 1 0 0 0 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4a1 1 0 0 0 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
+                      送り迎え</span>
+                  </div>
+                  <div class="row" style="gap:11px;margin-top:2px;flex-wrap:wrap">
+                    <span class="sub9 row" style="gap:4px">
+                      <svg class="i" viewBox="0 0 24 24" style="width:10px;height:10px;color:#818cf8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      利用 14:00〜17:00</span>
+                    <span class="sub9">迎え 14:30</span><span class="sub9">送り 17:00</span>
+                  </div>
+                  <div class="sub9" style="margin-top:2px">学校まで迎えに来てください</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="sub9" style="color:#9ca3af">8/3 09:12 受信</div>
+                  <div class="row hl" style="gap:5px;justify-content:flex-end;margin-top:5px;border-radius:8px">
+                    <span class="pin r">5</span>
+                    <span class="btn-em">承認する</span><span class="btn-o">承認しない</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- お休みカード -->
+            <div class="hl" style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 11px">
+              <span class="pin">6</span>
+              <div class="row" style="gap:9px;align-items:flex-start">
+                <svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px;color:#f87171;margin-top:2px"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                <div style="flex:1">
+                  <div class="row" style="gap:6px;flex-wrap:wrap">
+                    <span style="font-weight:700;font-size:9.5pt">鈴木 花子</span>
+                    <span class="tag t-red">お休み</span>
+                  </div>
+                  <div class="sub9" style="margin-top:2px">発熱のためお休みします</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="sub9" style="color:#9ca3af">8/3 08:40 受信</div>
+                  <div style="margin-top:5px"><span class="btn-o">確認する</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding:10px 12px">
+            <div class="row" style="gap:7px;margin-bottom:7px">
+              <svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px;color:#6366f1"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+              <span style="font-size:9.5pt;font-weight:700">8月6日（木）</span><span class="sub9">1件</span>
+            </div>
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 11px">
+              <div class="row" style="gap:9px;align-items:flex-start">
+                <svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px;color:#22c55e;margin-top:2px"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+                <div style="flex:1">
+                  <div class="row" style="gap:6px;flex-wrap:wrap">
+                    <span style="font-weight:700;font-size:9.5pt">佐藤 健</span>
+                    <span class="tag t-orange">日中一時</span>
+                    <span class="tag t-blue">迎えのみ</span>
+                  </div>
+                  <div class="row" style="gap:11px;margin-top:2px"><span class="sub9">利用 09:00〜15:00</span><span class="sub9">迎え 08:45</span></div>
+                </div>
+                <div style="text-align:right">
+                  <div class="sub9" style="color:#9ca3af">8/2 20:05 受信</div>
+                  <div class="row" style="gap:5px;justify-content:flex-end;margin-top:5px"><span class="btn-em">承認する</span><span class="btn-o">承認しない</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="sub9" style="text-align:center;margin-top:9px;color:#9ca3af">処理済みの連絡は、児童ごとの詳細ページと利用スケジュールで確認できます</div>
+      </div>
+    </div>
+    <figcaption>図5-1　保護者連絡一覧（未確認の連絡が3件ある状態）</figcaption>
+    <ul class="legend">
+      <li><span class="n">1</span><span>未確認の合計件数。ベルの赤バッジと同じ数です</span></li>
+      <li><span class="n">2</span><span><strong>「すべて承認・確認する」</strong>…表示中の未確認をまとめて処理します（後述）</span></li>
+      <li><span class="n">3</span><span>日付の見出し。<span class="tag" style="background:#4f46e5;color:#fff">今日</span> <span class="tag" style="background:#e0e7ff;color:#4338ca">明日</span> <span class="tag t-gray-l">過去日</span> のラベルが付き、その日の件数も表示されます</span></li>
+      <li><span class="n">4</span><span>連絡カード1件。お子さん名・区分・送迎・希望時刻・備考・受信日時が並びます</span></li>
+      <li><span class="n">5</span><span><strong>利用の予約</strong>には「承認する」「承認しない」の2つのボタンが出ます</span></li>
+      <li><span class="n">6</span><span><strong>お休み</strong>の連絡は承認の対象外で、「確認する」だけが出ます</span></li>
+    </ul>
+  </figure>
+
+  <h4>カードに表示されるバッジ</h4>
+  <table>
+    <thead><tr><th style="width:26%">バッジ</th><th>意味</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag t-green">放デイ</span></td><td>放課後等デイサービスの利用予約</td></tr>
+      <tr><td><span class="tag t-orange">日中一時</span></td><td>日中一時支援の利用予約</td></tr>
+      <tr><td><span class="tag t-red">お休み</span></td><td>欠席の連絡（承認の対象外）</td></tr>
+      <tr><td><span class="tag t-blue">送り迎え／迎えのみ／送りのみ</span></td><td>希望する送迎。「送迎なし」の場合はバッジが出ません</td></tr>
+      <tr><td><span class="tag t-emerald">承認済み</span> <span class="tag t-gray">非承認</span></td><td>処理後に表示される状態バッジ</td></tr>
+    </tbody>
+  </table>
+
+  <h3>1件ずつ処理する</h3>
+  <div class="steps">
+    <div class="step"><div class="t">カードの内容を確認する</div><div class="d">お子さん名・日付・区分・利用時間・送迎・備考を読み、受け入れ可能かを判断します（定員・職員配置・送迎ルートなど）。</div></div>
+    <div class="step"><div class="t">受け入れる場合は「承認する」をクリック</div><div class="d">カードに <span class="tag t-emerald">承認済み</span> のバッジが付き、ベルの件数から外れます。</div></div>
+    <div class="step"><div class="t">受け入れられない場合は「承認しない」をクリック</div><div class="d">カードに <span class="tag t-gray">非承認</span> のバッジが付きます。<strong>保護者へは自動通知されない</strong>ため、必ず別途ご連絡ください。</div></div>
+    <div class="step"><div class="t">お休みの連絡は「確認する」をクリック</div><div class="d">承認の概念がないため、読んだことの記録として確認済みにします。</div></div>
+  </div>
+
+  <figure class="fig-half">
+    <div class="shot">
+      <div class="shot-bar"><span class="dots"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></span> 承認した直後のカード</div>
+      <div class="shot-body ui">
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 11px">
+          <div class="row" style="gap:9px;align-items:flex-start">
+            <svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px;color:#22c55e;margin-top:2px"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+            <div style="flex:1">
+              <div class="row" style="gap:6px;flex-wrap:wrap">
+                <span style="font-weight:700;font-size:9.5pt">田中 太郎</span>
+                <span class="tag t-green">放デイ</span>
+                <span class="tag t-blue">送り迎え</span>
+                <span class="hl" style="border-radius:999px"><span class="pin">1</span>
+                  <span class="tag t-emerald">
+                    <svg class="i" viewBox="0 0 24 24" style="width:9px;height:9px"><path d="M7 10v12"/><path d="M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 8a2 2 0 0 1-1.9 1.4H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.8a2 2 0 0 0 1.8-1.1L12 2a3.1 3.1 0 0 1 3 3.9Z"/></svg>
+                    承認済み</span>
+                </span>
+              </div>
+              <div class="row" style="gap:11px;margin-top:2px"><span class="sub9">利用 14:00〜17:00</span><span class="sub9">迎え 14:30</span><span class="sub9">送り 17:00</span></div>
+            </div>
+            <div style="text-align:right">
+              <div class="sub9" style="color:#9ca3af">8/3 09:12 受信</div>
+              <div class="hl" style="margin-top:5px;border-radius:5px;display:inline-block">
+                <span class="pin r">2</span>
+                <span style="font-size:8pt;color:#9ca3af;text-decoration:underline">取り消す</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>図5-2　「承認する」を押したあとの表示</figcaption>
+    <ul class="legend">
+      <li><span class="n">1</span><span><span class="tag t-emerald">承認済み</span> バッジが付きます（「承認しない」の場合は <span class="tag t-gray">非承認</span>）</span></li>
+      <li><span class="n">2</span><span>ボタンが<strong>「取り消す」</strong>に変わります</span></li>
+    </ul>
+  </figure>
+
+  <h3>まとめて処理する</h3>
+  <p>画面右上の <strong>「すべて承認・確認する」</strong> をクリックすると、表示中の未確認の連絡を一括で処理します。</p>
+  <table>
+    <thead><tr><th style="width:30%">連絡の種類</th><th>一括処理での扱い</th></tr></thead>
+    <tbody>
+      <tr><td>利用の予約（放デイ・日中一時）</td><td><strong>すべて「承認」</strong>になります</td></tr>
+      <tr><td>お休み</td><td><strong>すべて「確認済み」</strong>になります</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">
+    <b>一括処理は内容を確認してから</b>
+    「すべて承認・確認する」は、表示されているすべての予約を無条件に承認します。定員超過や送迎の都合で受けられない日が含まれていないか、必ず一覧を目で確認してから実行してください。個別に判断が必要な日がある場合は、先にその1件だけ「承認しない」で処理してから一括処理すると安全です。
+  </div>
+
+  <h3>処理を取り消してやり直す</h3>
+  <p>誤って承認・非承認した場合は、カード右下の <strong>「取り消す」</strong> をクリックします。状態が「承認待ち」に戻り、その連絡は再び未確認としてベルの件数に加算されます。もう一度「承認する」「承認しない」を選び直せます。</p>
+  <div class="note">
+    <b>処理済みの連絡はどこで見られる？</b>
+    保護者連絡一覧には<strong>未確認の連絡だけ</strong>が表示されます（処理すると画面を再読み込みしたときに消えます）。処理済みの内容は、<strong>児童詳細ページ</strong>と<strong>利用スケジュールの出席カレンダー</strong>で確認できます（第6章）。
+  </div>
+</section>
+
+<!-- ============ 第6章 ============ -->
+<section class="chapter">
+  <div class="chapter-header">
+    <div class="num">CHAPTER 6</div>
+    <h2>承認後に利用スケジュールへ反映する</h2>
+    <p>承認しただけでは出席管理・送迎管理・請求には反映されません。承認した内容を利用予定として登録するまでが1セットです。</p>
+  </div>
+
+  <h3>児童詳細で連絡内容を確認する</h3>
+  <p>サイドバー <strong>「児童管理」</strong> からお子さんを選ぶと、詳細ページに <strong>「保護者からの利用連絡（LINE）」</strong> カードが表示されます。今後の日付の連絡が、承認状態つきで一覧できます。</p>
+
+  <figure>
+    <div class="shot">
+      <div class="shot-bar"><span class="dots"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></span> 児童詳細 &gt; 保護者からの利用連絡（LINE）</div>
+      <div class="shot-body ui" style="background:#f9fafb">
+        <div class="card-w" style="padding:0;border-color:#e5e7eb">
+          <div class="row" style="justify-content:space-between;padding:11px 14px 8px">
+            <span class="row" style="gap:7px;font-size:10pt;font-weight:700">
+              <svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px;color:#16a34a"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+              保護者からの利用連絡（LINE）
+            </span>
+            <span class="hl" style="border-radius:8px"><span class="pin r">2</span>
+              <span style="border:1px solid #e5e7eb;border-radius:8px;padding:4px 10px;font-size:8.5pt;font-weight:600;color:#374151">カレンダーで見る</span>
+            </span>
+          </div>
+          <div style="padding:0 14px 12px">
+            <div class="hl" style="border-top:1px solid #f3f4f6;padding:8px 0;margin-top:0">
+              <span class="pin">1</span>
+              <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px">
+                <div>
+                  <div class="row" style="gap:6px;flex-wrap:wrap">
+                    <span style="font-size:9.5pt;font-weight:600">08月05日</span>
+                    <span class="tag t-green">放デイ</span><span class="tag t-blue">送り迎え</span>
+                    <span class="tag t-emerald">承認済み</span>
+                  </div>
+                  <div class="row" style="gap:11px;margin-top:2px"><span class="sub9">利用 14:00〜17:00</span><span class="sub9">迎え 14:30</span><span class="sub9">送り 17:00</span></div>
+                </div>
+                <span class="sub9" style="color:#9ca3af">08/03 受信</span>
+              </div>
+            </div>
+            <div style="border-top:1px solid #f3f4f6;padding:8px 0">
+              <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px">
+                <div>
+                  <div class="row" style="gap:6px;flex-wrap:wrap">
+                    <span style="font-size:9.5pt;font-weight:600">08月07日</span>
+                    <span class="tag t-orange">日中一時</span><span class="tag t-blue">迎えのみ</span>
+                    <span class="tag t-amber">承認待ち</span>
+                  </div>
+                  <div class="row" style="gap:11px;margin-top:2px"><span class="sub9">利用 09:00〜15:00</span><span class="sub9">迎え 08:45</span></div>
+                </div>
+                <span class="sub9" style="color:#9ca3af">08/03 受信</span>
+              </div>
+            </div>
+            <div style="border-top:1px solid #f3f4f6;padding:8px 0">
+              <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px">
+                <div>
+                  <div class="row" style="gap:6px;flex-wrap:wrap">
+                    <span style="font-size:9.5pt;font-weight:600">08月12日</span>
+                    <span class="tag t-red">お休み</span>
+                  </div>
+                  <div class="sub9" style="margin-top:2px">通院のためお休みします</div>
+                </div>
+                <span class="sub9" style="color:#9ca3af">08/02 受信</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>図6-1　児童詳細ページの利用連絡カード</figcaption>
+    <ul class="legend">
+      <li><span class="n">1</span><span>連絡1件。<span class="tag t-emerald">承認済み</span> <span class="tag t-gray">非承認</span> <span class="tag t-amber">承認待ち</span> の状態がひと目でわかります（お休みには付きません）</span></li>
+      <li><span class="n">2</span><span><strong>「カレンダーで見る」</strong>…利用スケジュール画面へ移動します</span></li>
+    </ul>
+  </figure>
+
+  <h3>出席カレンダーで利用予定を登録する</h3>
+  <p>利用スケジュール画面（児童詳細の「カレンダーで見る」から移動）の<strong>出席カレンダー</strong>で日付を選ぶと、その日の保護者連絡が上部に表示されます。内容を見ながら、下の入力欄で利用予定を登録します。</p>
+
+  <div class="steps">
+    <div class="step"><div class="t">利用スケジュール画面を開く</div><div class="d">児童管理 &gt; 対象のお子さん &gt;「カレンダーで見る」、または児童詳細の「利用スケジュール」から移動します。</div></div>
+    <div class="step"><div class="t">出席カレンダーで対象の日付をクリックする</div><div class="d">画面下部に、その日の詳細・編集パネルが開きます。</div></div>
+    <div class="step"><div class="t">「保護者からの連絡（LINE）」の内容を確認する</div><div class="d">区分・希望する送迎・利用希望時刻・迎え／送り希望時刻・備考・承認状態が表示されます。</div></div>
+    <div class="step"><div class="t">ユニット・送迎時間などを入力して保存する</div><div class="d">保護者の希望時刻を参考に、実際の送迎出発・到着時間やサービス提供時間を入力し、利用予定として保存します。これで出席管理・送迎管理に反映されます。</div></div>
+  </div>
+
+  <figure>
+    <div class="shot">
+      <div class="shot-bar"><span class="dots"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></span> 利用スケジュール &gt; 出席カレンダー &gt; 日付詳細</div>
+      <div class="shot-body ui" style="background:#f9fafb">
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:13px">
+          <div class="row" style="justify-content:space-between;margin-bottom:10px">
+            <span style="font-size:9.5pt;font-weight:700">8月5日(水)</span>
+            <span class="tag" style="background:#e0e7ff;color:#4338ca">利用予定</span>
+          </div>
+
+          <div class="hl" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:9px 11px;margin-bottom:12px">
+            <span class="pin">1</span>
+            <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap">
+              <span class="row" style="gap:7px">
+                <i style="width:7px;height:7px;border-radius:2px;background:#22c55e;display:block"></i>
+                <span style="font-size:8.5pt;font-weight:700;color:#4b5563">保護者からの連絡（LINE）</span>
+              </span>
+              <span class="sub9" style="color:#9ca3af">8/3 09:12 受信</span>
+            </div>
+            <div class="row" style="gap:7px;padding-left:14px;margin-top:3px;flex-wrap:wrap">
+              <span style="font-size:9.5pt;font-weight:700;color:#15803d">放デイ</span>
+              <span class="tag t-blue">送り迎え</span>
+              <span class="tag t-emerald">承認済み</span>
+            </div>
+            <div class="row" style="gap:11px;padding-left:14px;flex-wrap:wrap">
+              <span class="sub9">利用希望 14:00〜17:00</span>
+              <span class="sub9">迎え希望 14:30</span>
+              <span class="sub9">送り希望 17:00</span>
+            </div>
+            <div class="sub9" style="padding-left:14px">学校まで迎えに来てください</div>
+          </div>
+
+          <div class="hl" style="border-radius:8px;padding:2px">
+            <span class="pin">2</span>
+            <div class="row" style="gap:6px;margin-bottom:6px">
+              <svg class="i" viewBox="0 0 24 24" style="width:12px;height:12px;color:#14b8a6"><path d="M19 17h2a1 1 0 0 0 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4a1 1 0 0 0 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
+              <span style="font-size:8.5pt;font-weight:700;color:#4b5563">送迎時間</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div><div class="sub9">お迎え出発</div><div style="border:1px solid #e5e7eb;border-radius:7px;padding:4px 8px;font-size:8.5pt">14:15</div></div>
+              <div><div class="sub9">お迎え到着</div><div style="border:1px solid #e5e7eb;border-radius:7px;padding:4px 8px;font-size:8.5pt">14:30</div></div>
+              <div><div class="sub9">お送り出発</div><div style="border:1px solid #e5e7eb;border-radius:7px;padding:4px 8px;font-size:8.5pt">17:00</div></div>
+              <div><div class="sub9">お送り到着</div><div style="border:1px solid #e5e7eb;border-radius:7px;padding:4px 8px;font-size:8.5pt">17:20</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>図6-2　出席カレンダーの日付詳細パネル</figcaption>
+    <ul class="legend">
+      <li><span class="n">1</span><span>その日の保護者連絡。<strong>希望</strong>として表示されます（承認状態もここで確認できます）</span></li>
+      <li><span class="n">2</span><span>職員が入力する実際の予定。ここに入力して保存したものが出席管理・送迎管理に反映されます</span></li>
+    </ul>
+  </figure>
+
+  <div class="tip">
+    <b>「利用希望」と「送迎時間」は別物です</b>
+    緑色のボックスは保護者の<strong>希望</strong>、その下の入力欄は事業所が確定させた<strong>予定</strong>です。希望どおりにできない場合は、事業所の都合に合わせて入力し、保護者へ別途ご連絡ください。
+  </div>
+</section>
+
+<!-- ============ 第7章 ============ -->
+<section class="chapter">
+  <div class="chapter-header">
+    <div class="num">CHAPTER 7</div>
+    <h2>運用のポイントとよくある質問</h2>
+    <p>日々の運用で迷いやすい点をまとめました。</p>
+  </div>
+
+  <h3>おすすめの運用</h3>
+  <table>
+    <thead><tr><th style="width:24%">タイミング</th><th>やること</th></tr></thead>
+    <tbody>
+      <tr><td><strong>毎朝の始業時</strong></td><td>ベルの件数を確認し、保護者連絡一覧を開く。当日・翌日の連絡を最優先で処理する</td></tr>
+      <tr><td><strong>連絡を受けたら</strong></td><td>承認／非承認を記録し、承認したものはその場で利用スケジュールへ反映する</td></tr>
+      <tr><td><strong>非承認にしたとき</strong></td><td>電話・連絡帳・メッセージで保護者へ理由を伝える</td></tr>
+      <tr><td><strong>週末・月初</strong></td><td>未処理の連絡が残っていないか、ベルの件数が0になっているか確認する</td></tr>
+    </tbody>
+  </table>
+
+  <h3>よくある質問</h3>
+
+  <h4>Q. 保護者が「連絡したのに反映されていない」と言っています</h4>
+  <p>A. 次の順で確認してください。①ベル／保護者連絡一覧に未確認として残っていないか　②児童詳細の「保護者からの利用連絡（LINE）」に該当日があるか　③承認済みでも<strong>利用スケジュールへの反映（第6章）が未実施</strong>ではないか。③が最も多い原因です。</p>
+
+  <h4>Q. 一度承認した日の連絡が、また未確認に戻っています</h4>
+  <p>A. 保護者が同じ日付の内容を送り直したためです。内容が上書きされ、承認状態は「承認待ち」に戻ります。新しい内容を確認し、改めて承認してください。利用スケジュールに反映済みの場合は、変更内容に合わせて予定も修正が必要です。</p>
+
+  <h4>Q. 「承認しない」を選んだら、保護者に伝わりますか？</h4>
+  <p>A. 伝わりません。アプリから保護者への自動通知は行われないため、電話・連絡帳・メッセージなどで必ず別途お伝えください。</p>
+
+  <h4>Q. 保護者が間違えて送った連絡を、職員側で消せますか？</h4>
+  <p>A. 連絡そのものを削除する機能はありません。「承認しない」で処理し、必要に応じて保護者に正しい内容の再送信を依頼してください（保護者が同じ日を送り直せば上書きされます）。</p>
+
+  <h4>Q. 過去の日付の連絡が未確認のまま残っています</h4>
+  <p>A. 日付が過ぎても自動では消えません。日付見出しに <span class="tag t-gray-l">過去日</span> と表示されるので、内容を確認のうえ「承認する／承認しない／確認する」で処理してください。</p>
+
+  <h4>Q. 保護者が「登録できない」と言っています</h4>
+  <table>
+    <thead><tr><th style="width:44%">保護者の画面に出るメッセージ</th><th>対処</th></tr></thead>
+    <tbody>
+      <tr><td>登録コードが見つかりません</td><td>コードの打ち間違い、または職員側でコードを削除した可能性。正しいコードを確認するか、新しく発行し直す</td></tr>
+      <tr><td>このコードはすでに使用されています</td><td>そのコードは登録済み。別のお子さんの分なら新しいコードを発行する</td></tr>
+      <tr><td>登録が必要です（利用連絡画面）</td><td>まだ初回登録が済んでいない。登録コードを渡し、初回登録を案内する</td></tr>
+      <tr><td>LINEの認証情報を取得できませんでした</td><td>ブラウザなどLINE以外から開いている可能性。LINEアプリ内から開き直すよう案内する</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Q. ごきょうだいの連絡はどう表示されますか？</h4>
+  <p>A. 保護者は1つのシートで人数分をまとめて送信できますが、職員側では<strong>お子さんごとに別々のカード</strong>として届きます。それぞれ個別に承認してください。</p>
+
+  <h4>Q. 「保護者連絡一覧」に何も表示されません</h4>
+  <p>A. この画面には<strong>未確認の連絡だけ</strong>が表示されます。「未確認の連絡はありません」と出ている場合はすべて処理済みです。処理済みの内容は児童詳細ページ、または利用スケジュールの出席カレンダーで確認できます。</p>
+
+  <h3>用語のまとめ</h3>
+  <table>
+    <thead><tr><th style="width:26%">用語</th><th>意味</th></tr></thead>
+    <tbody>
+      <tr><td>利用連絡</td><td>保護者がLINEから送る、ある日の利用予定（予約）または欠席の連絡</td></tr>
+      <tr><td>登録コード</td><td>保護者がLINEで初回登録するときに使う、お子さん1人につき1つの使い捨てコード</td></tr>
+      <tr><td>承認待ち</td><td>職員がまだ処理していない利用の予約。ベルの件数に含まれます</td></tr>
+      <tr><td>承認済み／非承認</td><td>職員が受け入れの可否を記録した状態。保護者へは自動通知されません</td></tr>
+      <tr><td>確認済み</td><td>お休みの連絡を職員が読んだ状態。承認の対象外です</td></tr>
+      <tr><td>利用予定</td><td>出席カレンダーに登録された、事業所として確定した予定。出席管理・送迎管理・請求の元になります</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</body>
+</html>
