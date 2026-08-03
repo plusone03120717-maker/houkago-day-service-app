@@ -532,9 +532,9 @@ export function BillingChildMonthlyView({
 
   // ── Delete a day's record (誤登録した実績を未記録に戻す) ────
   // 「欠席」にする操作ではなく、利用予定そのものを消して未記録に戻す
+  // 出欠記録がなく加算のみチェックされている日は、その加算だけを取り消す
   const deleteDayRecord = async (dateStr: string) => {
     const att = attendances.find((a) => a.date === dateStr)
-    if (!att) return
 
     setDeleting(dateStr)
     // 請求側の上書きレコードを先に削除
@@ -545,22 +545,25 @@ export function BillingChildMonthlyView({
       .eq('unit_id', unitId)
       .eq('date', dateStr)
 
-    const { error } = await supabase.from('daily_attendance').delete().eq('id', att.id)
-    if (error) {
-      alert(`削除できませんでした: ${error.message}`)
-      setDeleting(null)
-      return
+    if (att) {
+      const { error } = await supabase.from('daily_attendance').delete().eq('id', att.id)
+      if (error) {
+        alert(`削除できませんでした: ${error.message}`)
+        setDeleting(null)
+        return
+      }
+
+      // 利用予定（予約）も削除して、その日をなかったことにする
+      await supabase
+        .from('usage_reservations')
+        .delete()
+        .eq('child_id', childId)
+        .eq('unit_id', unitId)
+        .eq('date', dateStr)
+
+      setAttendances((prev) => prev.filter((a) => a.id !== att.id))
     }
 
-    // 利用予定（予約）も削除して、その日をなかったことにする
-    await supabase
-      .from('usage_reservations')
-      .delete()
-      .eq('child_id', childId)
-      .eq('unit_id', unitId)
-      .eq('date', dateStr)
-
-    setAttendances((prev) => prev.filter((a) => a.id !== att.id))
     setManualRecords((prev) => prev.filter((r) => r.date !== dateStr))
     setCancelledDates((prev) => {
       const next = new Set(prev)
@@ -578,7 +581,11 @@ export function BillingChildMonthlyView({
         type="button"
         onClick={() => setConfirmDate(dateStr)}
         disabled={deleting === dateStr}
-        title="この日の実績を削除（利用予定ごと未記録に戻す）"
+        title={
+          attendances.some((a) => a.date === dateStr)
+            ? 'この日の実績を削除（利用予定ごと未記録に戻す）'
+            : 'この日にチェックした加算を取り消す'
+        }
         className="p-1 rounded text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
       >
         {deleting === dateStr
@@ -681,6 +688,43 @@ export function BillingChildMonthlyView({
   const hasAbsentItems = absentItem !== null
   const extensionItem = serviceItems.find((i) => i.trigger_field === 'extension') ?? null
   const hasExtensionItems = extensionItem !== null
+
+  // その日に手動チェックされているサービス項目（月次グリッドでのチェック分）
+  const getCheckedManualItems = (dateStr: string) =>
+    manualRecords
+      .filter((r) => r.date === dateStr && r.is_checked)
+      .map((r) => serviceItems.find((i) => i.id === r.service_item_id))
+      .filter((i): i is ServiceItem => i !== undefined)
+
+  // 日別明細に表示する日
+  // 出席／欠席の記録がある日に加え、月次グリッドで加算をチェックした日も表示する
+  // （出欠記録がない日に欠席時対応加算だけを付けたケースを取りこぼさないため）
+  const detailDays = days.filter((dateStr) => {
+    const d = dayDataMap.get(dateStr)!
+    return d.isAttended || d.isAbsent || getCheckedManualItems(dateStr).length > 0
+  })
+
+  // 欠席時加算セル（出席・欠席・加算のみ の全行で共通）
+  const renderAbsentAdditionCell = (dateStr: string, d: DayComputed) => {
+    if (!absentItem) return null
+    const checked = isItemChecked(absentItem, dateStr, d)
+    const isSavingAbsent = saving === `${absentItem.id}-${dateStr}`
+    return (
+      <td
+        className="border border-gray-200 px-1 py-1 text-center bg-yellow-50/40 cursor-pointer hover:bg-yellow-100/60"
+        onClick={() => toggleItem(absentItem, dateStr, !checked)}
+        title="クリックで欠席時加算を切替"
+      >
+        {isSavingAbsent ? (
+          <Loader2 className="h-3 w-3 animate-spin text-gray-400 mx-auto" />
+        ) : checked ? (
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-yellow-500 text-white text-[10px] font-bold">✓</span>
+        ) : (
+          <span className="text-gray-300 text-xs">—</span>
+        )}
+      </td>
+    )
+  }
 
   // ─────────────────────────────────────────────────────────────
   // Render
@@ -873,26 +917,37 @@ export function BillingChildMonthlyView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {days.map((dateStr) => {
+                  {detailDays.map((dateStr) => {
                     const d = dayDataMap.get(dateStr)!
-                    if (!d.isAttended && !d.isAbsent) return null
 
                     const dow = new Date(dateStr + 'T00:00:00').getDay()
                     const dayLabel = `${parseInt(dateStr.slice(8))}日（${DAY_LABELS[dow]}）`
                     const basicItem = serviceItems.find((i) => i.trigger_field === 'basic')
                     const basicRec = basicItem ? getManualRecord(basicItem.id, dateStr) : null
 
-                    // 欠席行
-                    if (d.isAbsent) {
+                    // 欠席行／加算のみ行（出欠記録がなく月次グリッドで加算だけチェックした日）
+                    if (!d.isAttended) {
+                      const checkedItems = getCheckedManualItems(dateStr)
                       return (
-                        <tr key={dateStr} className="bg-gray-50 text-gray-400">
+                        <tr key={dateStr} className={d.isAbsent ? 'bg-gray-50 text-gray-400' : 'bg-yellow-50/30 text-gray-400'}>
                           <td className="border border-gray-200 px-3 py-2 text-gray-500 font-medium">
                             {dayLabel}
+                            {!d.isAbsent && checkedItems.length > 0 && (
+                              <div className="text-[9px] text-gray-400 font-normal leading-tight mt-0.5">
+                                {checkedItems.map((i) => i.name).join('・')}
+                              </div>
+                            )}
                           </td>
                           <td className="border border-gray-200 px-2 py-2 text-center">
-                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-gray-200 text-gray-500 text-[10px] font-medium whitespace-nowrap">
-                              欠席
-                            </span>
+                            {d.isAbsent ? (
+                              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-gray-200 text-gray-500 text-[10px] font-medium whitespace-nowrap">
+                                欠席
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-[10px] font-medium whitespace-nowrap">
+                                加算のみ
+                              </span>
+                            )}
                           </td>
                           <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
                           <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
@@ -908,25 +963,7 @@ export function BillingChildMonthlyView({
                               <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-purple-50/30">—</td>
                             </>
                           )}
-                          {hasAbsentItems && absentItem && (() => {
-                            const checked = isItemChecked(absentItem, dateStr, d)
-                            const isSavingAbsent = saving === `${absentItem.id}-${dateStr}`
-                            return (
-                              <td
-                                className="border border-gray-200 px-1 py-1 text-center bg-yellow-50/40 cursor-pointer hover:bg-yellow-100/60"
-                                onClick={() => toggleItem(absentItem, dateStr, !checked)}
-                                title="クリックで欠席時加算を切替"
-                              >
-                                {isSavingAbsent ? (
-                                  <Loader2 className="h-3 w-3 animate-spin text-gray-400 mx-auto" />
-                                ) : checked ? (
-                                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-yellow-500 text-white text-[10px] font-bold">✓</span>
-                                ) : (
-                                  <span className="text-gray-300 text-xs">—</span>
-                                )}
-                              </td>
-                            )
-                          })()}
+                          {hasAbsentItems && renderAbsentAdditionCell(dateStr, d)}
                           {hasExtensionItems && (
                             <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-green-50/30">—</td>
                           )}
@@ -1075,9 +1112,7 @@ export function BillingChildMonthlyView({
                             </td>
                           </>
                         )}
-                        {hasAbsentItems && (
-                          <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs bg-yellow-50/30">—</td>
-                        )}
+                        {hasAbsentItems && renderAbsentAdditionCell(dateStr, d)}
                         {hasExtensionItems && (
                           <td className="border border-gray-200 px-1 py-1 text-center bg-green-50/30">
                             {overriddenExtensionHours > 0 ? (
@@ -1094,7 +1129,7 @@ export function BillingChildMonthlyView({
                       </tr>
                     )
                   })}
-                  {attendedDays.length === 0 && (
+                  {detailDays.length === 0 && (
                     <tr>
                       <td colSpan={(hasDaytimeItems ? 12 : 7) + (hasAbsentItems ? 1 : 0) + (hasExtensionItems ? 1 : 0) + 1} className="border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
                         この月の実績記録がありません
@@ -1102,7 +1137,7 @@ export function BillingChildMonthlyView({
                     </tr>
                   )}
                 </tbody>
-                {attendedDays.length > 0 && (
+                {detailDays.length > 0 && (
                   <tfoot>
                     <tr className="bg-[#f5f0e8]">
                       <td className="border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600">
@@ -1228,6 +1263,8 @@ export function BillingChildMonthlyView({
         const dow = new Date(confirmDate + 'T00:00:00').getDay()
         const dayLabel = `${parseInt(confirmDate.slice(8))}日（${DAY_LABELS[dow]}）`
         const isDeleting = deleting === confirmDate
+        // 出欠記録がなく加算だけチェックした日は、加算の取り消しのみ
+        const hasAttendanceRecord = attendances.some((a) => a.date === confirmDate)
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
@@ -1243,25 +1280,44 @@ export function BillingChildMonthlyView({
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-base font-bold text-gray-900">
-                    {ey}年{em}月{dayLabel}の実績を削除します
+                    {ey}年{em}月{dayLabel}の
+                    {hasAttendanceRecord ? '実績' : 'チェックした加算'}を削除します
                   </h3>
-                  <p className="text-sm text-red-700 font-medium mt-2 leading-relaxed">
-                    これは「欠席」にする操作ではありません。<br />
-                    この日の<span className="underline">利用予定そのものが削除され</span>、記録がなかった状態に戻ります。
-                  </p>
+                  {hasAttendanceRecord ? (
+                    <p className="text-sm text-red-700 font-medium mt-2 leading-relaxed">
+                      これは「欠席」にする操作ではありません。<br />
+                      この日の<span className="underline">利用予定そのものが削除され</span>、記録がなかった状態に戻ります。
+                    </p>
+                  ) : (
+                    <p className="text-sm text-gray-700 font-medium mt-2 leading-relaxed">
+                      この日は出席／欠席の記録がなく、月次グリッドでチェックした加算だけが登録されています。
+                    </p>
+                  )}
                 </div>
               </div>
 
               <ul className="mt-3 space-y-1 text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
-                <li>・利用予定（予約）を削除します</li>
-                <li>・出席管理の出席／欠席記録を削除します</li>
-                <li>・この日の支援記録・活動記録も削除されます</li>
-                <li>・国保連請求の対象からも外れます</li>
+                {hasAttendanceRecord ? (
+                  <>
+                    <li>・利用予定（予約）を削除します</li>
+                    <li>・出席管理の出席／欠席記録を削除します</li>
+                    <li>・この日の支援記録・活動記録も削除されます</li>
+                    <li>・国保連請求の対象からも外れます</li>
+                  </>
+                ) : (
+                  <>
+                    <li>・この日にチェックした加算をすべて取り消します</li>
+                    <li>・出席管理の記録には影響しません</li>
+                    <li>・月次グリッドのチェックも外れます</li>
+                  </>
+                )}
               </ul>
 
-              <p className="mt-3 text-xs text-gray-500 leading-relaxed">
-                削除すると元に戻せません。欠席として記録を残したい場合（欠席時対応加算を算定する場合など）は「いいえ」を選び、出席管理で「欠席」に変更してください。
-              </p>
+              {hasAttendanceRecord && (
+                <p className="mt-3 text-xs text-gray-500 leading-relaxed">
+                  削除すると元に戻せません。欠席として記録を残したい場合（欠席時対応加算を算定する場合など）は「いいえ」を選び、出席管理で「欠席」に変更してください。
+                </p>
+              )}
 
               <p className="mt-4 text-sm font-semibold text-gray-900 text-center">
                 削除してもよろしいですか？
