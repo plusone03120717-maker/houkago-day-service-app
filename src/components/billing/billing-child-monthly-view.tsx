@@ -124,6 +124,8 @@ function getDaysInMonth(yearMonth: string): string[] {
 }
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
+const ATTENDANCE_COLUMNS =
+  'id, date, status, check_in_time, check_out_time, service_start_time, service_end_time, pickup_type, pickup_arrival_time, dropoff_arrival_time, daytime_support, daytime_support_start_time, daytime_support_end_time, daytime_pickup_arrival_time, daytime_dropoff_arrival_time'
 const CATEGORY_COLORS: Record<ServiceItem['category'], string> = {
   '基本': 'bg-teal-100 text-teal-700',
   '加算': 'bg-indigo-100 text-indigo-700',
@@ -220,7 +222,7 @@ export function BillingChildMonthlyView({
     // Step 1: 出席レコードを取得（活動取得のためIDが必要）
     const { data: attData } = await supabase
       .from('daily_attendance')
-      .select('id, date, status, check_in_time, check_out_time, service_start_time, service_end_time, pickup_type, pickup_arrival_time, dropoff_arrival_time, daytime_support, daytime_support_start_time, daytime_support_end_time, daytime_pickup_arrival_time, daytime_dropoff_arrival_time')
+      .select(ATTENDANCE_COLUMNS)
       .eq('child_id', childId)
       .eq('unit_id', unitId)
       .gte('date', monthStart)
@@ -425,10 +427,74 @@ export function BillingChildMonthlyView({
     return 1
   }
 
+  // ── Create an attendance record from this page ──────────────
+  // 出欠記録がない日をこのページから登録する。記録がないと日別表で
+  // 時間・送迎・日中一時を入力できないため、実績入力の起点になる。
+  const createAttendance = async (
+    dateStr: string,
+    status: 'attended' | 'absent'
+  ): Promise<DailyAttendance | null> => {
+    const { data, error } = await supabase
+      .from('daily_attendance')
+      .insert({ child_id: childId, unit_id: unitId, date: dateStr, status, pickup_type: 'none' })
+      .select(ATTENDANCE_COLUMNS)
+      .single()
+    if (error || !data) {
+      alert(`この日の記録を作成できませんでした: ${error?.message ?? ''}`)
+      return null
+    }
+    // 利用予定（予約）も復元し、出席管理側と食い違わないようにする
+    await supabase
+      .from('usage_reservations')
+      .upsert(
+        { child_id: childId, unit_id: unitId, date: dateStr, status: 'confirmed' },
+        { onConflict: 'child_id,unit_id,date' }
+      )
+    const att = data as unknown as DailyAttendance
+    setAttendances((prev) => [...prev.filter((a) => a.date !== dateStr), att])
+    setCancelledDates((prev) => {
+      const next = new Set(prev)
+      next.delete(dateStr)
+      return next
+    })
+    return att
+  }
+
+  // 「加算のみ」行から出席／欠席として登録し直す
+  const registerDayAs = async (dateStr: string, status: 'attended' | 'absent') => {
+    setSaving(`register-${dateStr}`)
+    await createAttendance(dateStr, status)
+    setSaving(null)
+  }
+
   // ── Toggle item check ───────────────────────────────────────
   const toggleItem = async (item: ServiceItem, dateStr: string, newChecked: boolean) => {
     setSaving(`${item.id}-${dateStr}`)
-    const d = dayDataMap.get(dateStr)!
+    let d = dayDataMap.get(dateStr)!
+
+    // 出欠記録がない日に「放デイ基本報酬」「欠席時対応加算」をチェックしたら
+    // その日を出席／欠席として登録し、日別表で時間などを入力できるようにする
+    if (
+      newChecked &&
+      !d.isAttended &&
+      !d.isAbsent &&
+      (item.trigger_field === 'basic' || item.trigger_field === 'absent')
+    ) {
+      const status = item.trigger_field === 'absent' ? 'absent' : 'attended'
+      const created = await createAttendance(dateStr, status)
+      if (!created) {
+        setSaving(null)
+        return
+      }
+      d = {
+        ...d,
+        attendance: created,
+        isAttended: status === 'attended',
+        isAbsent: status === 'absent',
+        isCancelled: false,
+      }
+    }
+
     const autoState = isAutoTriggered(item, d)
 
     if (newChecked === autoState) {
@@ -509,6 +575,15 @@ export function BillingChildMonthlyView({
     const newValue = currentlyOn ? null : '09:00:00'
     await supabase.from('daily_attendance').update({ [field]: newValue }).eq('id', att.id)
     setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, [field]: newValue } : a))
+  }
+
+  // ── Toggle daytime support in daily_attendance ─────────────
+  const toggleDaytimeSupport = async (dateStr: string) => {
+    const att = attendances.find((a) => a.date === dateStr)
+    if (!att) return
+    const newValue = !att.daytime_support
+    await supabase.from('daily_attendance').update({ daytime_support: newValue }).eq('id', att.id)
+    setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, daytime_support: newValue } : a))
   }
 
   // ── Toggle daytime transport in daily_attendance ───────────
@@ -929,7 +1004,7 @@ export function BillingChildMonthlyView({
                     if (!d.isAttended) {
                       const checkedItems = getCheckedManualItems(dateStr)
                       return (
-                        <tr key={dateStr} className={d.isAbsent ? 'bg-gray-50 text-gray-400' : 'bg-yellow-50/30 text-gray-400'}>
+                        <tr key={`${dateStr}-${d.isAbsent ? 'absent' : 'addition'}`} className={d.isAbsent ? 'bg-gray-50 text-gray-400' : 'bg-yellow-50/30 text-gray-400'}>
                           <td className="border border-gray-200 px-3 py-2 text-gray-500 font-medium">
                             {dayLabel}
                             {!d.isAbsent && checkedItems.length > 0 && (
@@ -944,9 +1019,33 @@ export function BillingChildMonthlyView({
                                 欠席
                               </span>
                             ) : (
-                              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-[10px] font-medium whitespace-nowrap">
-                                加算のみ
-                              </span>
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-[10px] font-medium whitespace-nowrap">
+                                  加算のみ
+                                </span>
+                                {saving === `register-${dateStr}` ? (
+                                  <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
+                                ) : (
+                                  <div className="flex gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => registerDayAs(dateStr, 'attended')}
+                                      title="この日を出席として登録し、時間などを入力できるようにします"
+                                      className="px-1.5 py-0.5 rounded border border-teal-300 text-teal-700 bg-white text-[9px] font-medium hover:bg-teal-50 whitespace-nowrap"
+                                    >
+                                      出席にする
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => registerDayAs(dateStr, 'absent')}
+                                      title="この日を欠席として登録します"
+                                      className="px-1.5 py-0.5 rounded border border-gray-300 text-gray-600 bg-white text-[9px] font-medium hover:bg-gray-50 whitespace-nowrap"
+                                    >
+                                      欠席にする
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </td>
                           <td className="border border-gray-200 px-2 py-2 text-center text-gray-300 text-xs">—</td>
@@ -986,7 +1085,7 @@ export function BillingChildMonthlyView({
 
 
                     return (
-                      <tr key={dateStr} className={`hover:bg-gray-50 ${d.isSchoolHoliday ? 'bg-blue-50/30' : ''}`}>
+                      <tr key={`${dateStr}-attended`} className={`hover:bg-gray-50 ${d.isSchoolHoliday ? 'bg-blue-50/30' : ''}`}>
                         <td className="border border-gray-200 px-3 py-2 text-gray-700 font-medium">
                           {dayLabel}
                         </td>
@@ -1079,7 +1178,11 @@ export function BillingChildMonthlyView({
                               )}
                             </td>
                             {/* 日中一時 利用有無 */}
-                            <td className="border border-gray-200 px-1 py-2 text-center bg-purple-50/30">
+                            <td
+                              className="border border-gray-200 px-1 py-2 text-center bg-purple-50/30 cursor-pointer hover:bg-purple-100/50"
+                              onClick={() => toggleDaytimeSupport(dateStr)}
+                              title="クリックで日中一時支援の利用有無を切替"
+                            >
                               {d.daytimeSupport ? (
                                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-purple-500 text-white text-[10px] font-bold">✓</span>
                               ) : (
@@ -1253,6 +1356,7 @@ export function BillingChildMonthlyView({
               算定区分② 1時間30分超〜3時間以下
             </span>
             <span className="text-gray-400">※ 月次グリッドのセルをクリックでチェックのオン/オフが切り替えられます</span>
+            <span className="text-gray-400">※ 出欠記録がない日に「放デイ基本報酬」をチェックすると、その日は出席として登録され、日別表で時間・送迎・日中一時を入力できるようになります（欠席時対応加算のチェックなら欠席として登録）</span>
             <span className="text-gray-400">※ 日別表の「操作」列のゴミ箱は、欠席にする操作ではなく利用予定ごと削除して未記録に戻す操作です</span>
           </div>
         </>
