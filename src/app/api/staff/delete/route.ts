@@ -31,7 +31,16 @@ export async function DELETE(request: NextRequest) {
   )
 
   // users テーブルから削除（CASCADE で staff_profiles 等も削除される）
-  await adminClient.from('users').delete().eq('id', userId)
+  const { error: deleteError } = await adminClient
+    .from('users')
+    .delete()
+    .eq('id', userId)
+  if (deleteError) {
+    return NextResponse.json(
+      { error: `関連データが残っているため削除できません: ${deleteError.message}` },
+      { status: 500 }
+    )
+  }
 
   // Supabase Auth からも削除
   const { error: authError } = await adminClient.auth.admin.deleteUser(userId)
