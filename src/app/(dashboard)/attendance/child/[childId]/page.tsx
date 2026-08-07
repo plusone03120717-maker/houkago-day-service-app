@@ -181,6 +181,7 @@ export default async function ChildAttendanceHistoryPage({
       <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3">
         {!isEarliestMonth ? (
           <Link
+            replace
             href={`/attendance/child/${childId}?year=${prev.year}&month=${prev.month}`}
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
           >
@@ -198,6 +199,7 @@ export default async function ChildAttendanceHistoryPage({
 
         {!isFutureMonth ? (
           <Link
+            replace
             href={`/attendance/child/${childId}?year=${next.year}&month=${next.month}`}
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
           >
