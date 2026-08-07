@@ -1,13 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, GraduationCap, ClipboardList, BookOpen, CheckSquare, ChevronLeft, ChevronRight } from 'lucide-react'
+import { GraduationCap, ClipboardList, BookOpen, CheckSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
 import { SchoolHolidaySection } from '@/components/children/school-holiday-section'
 import { AttendanceStatusToggle } from '@/components/attendance/attendance-status-toggle'
 import { AttendanceTimeEditor } from '@/components/attendance/attendance-time-editor'
+import { BackButton } from '@/components/ui/back-button'
 
 function monthRange(year: number, month: number): { start: string; end: string } {
   const lastDay = new Date(year, month, 0).getDate()
@@ -169,9 +170,7 @@ export default async function ChildAttendanceHistoryPage({
     <div className="space-y-5 max-w-3xl">
       {/* ヘッダー */}
       <div className="flex items-center gap-3">
-        <Link href="/attendance" className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
+        <BackButton fallbackHref="/attendance" />
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900">出席履歴</h1>
           <p className="text-sm text-gray-500 mt-0.5">{child.name}</p>
