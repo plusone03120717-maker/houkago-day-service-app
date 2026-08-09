@@ -82,11 +82,16 @@ export default async function BillingPage({
   const billingByUnit = Object.fromEntries(billingMonthly.map((b) => [b.unit_id, b]))
 
   // unitId -> childId -> { id, is_confirmed } のルックアップ
+  // billing_details は (billing_monthly_id, child_id) に一意制約がないため、
+  // 同じ児童の行が重複しうる。重複時は確定済みの行を優先し、未確定の重複行に
+  // 上書きされて「確定したはずが未確定に見える」状態にならないようにする。
   const detailByUnitChild: Record<string, Record<string, { id: string; is_confirmed: boolean }>> = {}
   for (const b of billingMonthly) {
-    detailByUnitChild[b.unit_id] = {}
+    const byChild = detailByUnitChild[b.unit_id] ?? (detailByUnitChild[b.unit_id] = {})
     for (const d of b.billing_details) {
-      detailByUnitChild[b.unit_id][d.child_id] = { id: d.id, is_confirmed: d.is_confirmed }
+      const prev = byChild[d.child_id]
+      if (prev && (prev.is_confirmed || !d.is_confirmed)) continue
+      byChild[d.child_id] = { id: d.id, is_confirmed: d.is_confirmed }
     }
   }
 

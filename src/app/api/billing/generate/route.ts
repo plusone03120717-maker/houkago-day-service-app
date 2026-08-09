@@ -190,6 +190,18 @@ export async function POST(request: NextRequest) {
   }
 
   // 請求詳細を保存
+  // 既存行は一旦削除して入れ直すため、確定済みフラグだけは引き継ぐ
+  // （再生成のたびに確定が外れて、確定作業をやり直す羽目になるのを防ぐ）
+  const { data: prevDetails } = await supabase
+    .from('billing_details')
+    .select('child_id, is_confirmed')
+    .eq('billing_monthly_id', billingMonthlyId)
+  const confirmedChildIds = new Set(
+    (prevDetails ?? [])
+      .filter((d: { is_confirmed: boolean }) => d.is_confirmed)
+      .map((d: { child_id: string }) => d.child_id)
+  )
+
   const detailsToUpsert = Array.from(childMap.values()).map((entry) => {
     const baseUnits = entry.totalDays * BASE_UNITS_PER_DAY
     const additionUnits = Math.round(baseUnits * totalAdditionRate)
@@ -211,6 +223,7 @@ export async function POST(request: NextRequest) {
       errors: serviceCode
         ? entry.errors
         : [...entry.errors, '国保連サービスコードが未設定です（設定 > 国保連サービスコード設定）'],
+      is_confirmed: confirmedChildIds.has(entry.childId),
     }
   })
 

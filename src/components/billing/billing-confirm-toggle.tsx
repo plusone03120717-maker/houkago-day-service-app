@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { CheckCircle2, Circle, Loader2 } from 'lucide-react'
 
@@ -11,8 +12,10 @@ type Props = {
 
 export function BillingConfirmToggle({ billingDetailId, initialConfirmed }: Props) {
   const supabase = createClient()
+  const router = useRouter()
   const [confirmed, setConfirmed] = useState(initialConfirmed)
   const [saving, setSaving] = useState(false)
+  const [, startTransition] = useTransition()
 
   const toggle = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -24,8 +27,17 @@ export function BillingConfirmToggle({ billingDetailId, initialConfirmed }: Prop
       .from('billing_details')
       .update({ is_confirmed: next })
       .eq('id', billingDetailId)
-    if (!error) setConfirmed(next)
+    if (error) {
+      alert(`確定状態を保存できませんでした: ${error.message}`)
+      setSaving(false)
+      return
+    }
+    setConfirmed(next)
     setSaving(false)
+    // クライアントのルーターキャッシュを破棄する。
+    // これがないと「明細を見る」等で遷移して戻ったとき、確定前の
+    // キャッシュ済みページが再表示されて全員が未確定に見えてしまう。
+    startTransition(() => router.refresh())
   }
 
   return (

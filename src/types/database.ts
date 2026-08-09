@@ -346,10 +346,12 @@ export interface Database {
           copay_amount: number
           billed_amount: number
           errors: Json
+          is_confirmed: boolean
           created_at: string
           updated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['billing_details']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Insert: Omit<Database['public']['Tables']['billing_details']['Row'], 'id' | 'created_at' | 'updated_at' | 'is_confirmed'>
+          & { is_confirmed?: boolean }
         Update: Partial<Database['public']['Tables']['billing_details']['Insert']>
       }
       billing_actual_costs: {
