@@ -32,6 +32,28 @@ type MonthAttendance = {
   child_id: string
   date: string
   status: string
+  service_start_time: string | null
+  service_end_time: string | null
+  check_in_time: string | null
+  check_out_time: string | null
+}
+
+type PlanInfo = {
+  child_id: string
+  pickup_time: string | null
+  dropoff_time: string | null
+  service_start_time: string | null
+  service_end_time: string | null
+  day_of_week: number[]
+  start_date: string
+  end_date: string | null
+}
+
+/** "16:30:00" → "16:30"（未入力・00:00 は空扱い） */
+function fmtTime(t: string | null | undefined): string | null {
+  if (!t) return null
+  const hm = t.slice(0, 5)
+  return hm === '00:00' ? null : hm
 }
 
 export function MonthlyAttendanceView({
@@ -51,6 +73,7 @@ export function MonthlyAttendanceView({
   const [loading, setLoading] = useState(true)
   const [reservations, setReservations] = useState<MonthReservation[]>([])
   const [attendances, setAttendances] = useState<MonthAttendance[]>([])
+  const [plans, setPlans] = useState<PlanInfo[]>([])
 
   const base = new Date(baseDate + 'T00:00:00')
   const firstDay = new Date(base.getFullYear(), base.getMonth() + monthOffset, 1)
@@ -73,13 +96,31 @@ export function MonthlyAttendanceView({
         .in('status', ['confirmed', 'reserved', 'cancel_waiting']),
       supabase
         .from('daily_attendance')
-        .select('child_id, date, status')
+        .select('child_id, date, status, service_start_time, service_end_time, check_in_time, check_out_time')
         .eq('unit_id', selectedUnitId)
         .gte('date', monthStart)
         .lte('date', monthEnd),
-    ]).then(([{ data: resData }, { data: attData }]) => {
-      setReservations((resData ?? []) as unknown as MonthReservation[])
+    ]).then(async ([{ data: resData }, { data: attData }]) => {
+      const res = (resData ?? []) as unknown as MonthReservation[]
+      setReservations(res)
       setAttendances((attData ?? []) as unknown as MonthAttendance[])
+
+      // 記録がない日の利用時間は利用計画（予定）から補完する
+      const childIds = [...new Set(res.map((r) => r.child_id))]
+      if (childIds.length > 0) {
+        const { data: planData } = await supabase
+          .from('usage_plans')
+          .select('child_id, pickup_time, dropoff_time, service_start_time, service_end_time, day_of_week, start_date, end_date')
+          .eq('unit_id', selectedUnitId)
+          .eq('is_active', true)
+          .in('child_id', childIds)
+          .lte('start_date', monthEnd)
+          .or(`end_date.is.null,end_date.gte.${monthStart}`)
+        setPlans((planData ?? []) as PlanInfo[])
+      } else {
+        setPlans([])
+      }
+
       setLoading(false)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,8 +128,32 @@ export function MonthlyAttendanceView({
 
   const attMap = new Map(attendances.map((a) => [`${a.child_id}-${a.date}`, a]))
 
+  // 予定の利用時間（記録がない日のフォールバック）
+  const getPlannedTime = (childId: string, dateStr: string) => {
+    const dow = new Date(dateStr + 'T00:00:00').getDay()
+    const plan = plans.find(
+      (p) =>
+        p.child_id === childId &&
+        (p.day_of_week ?? []).includes(dow) &&
+        p.start_date <= dateStr &&
+        (p.end_date === null || p.end_date >= dateStr)
+    )
+    if (!plan) return { start: null, end: null }
+    return {
+      start: fmtTime(plan.service_start_time ?? plan.pickup_time),
+      end: fmtTime(plan.service_end_time ?? plan.dropoff_time),
+    }
+  }
+
   // 日付ごとの利用児童（キャンセル待ち・欠席記録を除いた実利用）
-  type DayEntry = { id: string; childId: string; name: string; absent: boolean }
+  type DayEntry = {
+    id: string
+    childId: string
+    name: string
+    absent: boolean
+    start: string | null
+    end: string | null
+  }
   const dayMap = new Map<string, { entries: DayEntry[]; count: number; absentCount: number }>()
 
   for (const r of reservations) {
@@ -101,18 +166,27 @@ export function MonthlyAttendanceView({
       day.absentCount += 1
       continue
     }
-    const absent = attMap.get(`${r.child_id}-${r.date}`)?.status === 'absent'
+    const att = attMap.get(`${r.child_id}-${r.date}`)
+    const absent = att?.status === 'absent'
     if (absent) day.absentCount += 1
     else day.count += 1
+
+    // 利用時間は service_* を正とし、旧データは check_*_time、記録がなければ予定にフォールバック
+    const planned = getPlannedTime(r.child_id, r.date)
     day.entries.push({
       id: r.id,
       childId: r.child_id,
       name: r.children?.name ?? '',
       absent,
+      start: fmtTime(att?.service_start_time) ?? fmtTime(att?.check_in_time) ?? planned.start,
+      end: fmtTime(att?.service_end_time) ?? fmtTime(att?.check_out_time) ?? planned.end,
     })
   }
   for (const day of dayMap.values()) {
-    day.entries.sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+    day.entries.sort(
+      (a, b) =>
+        (a.start ?? '99:99').localeCompare(b.start ?? '99:99') || a.name.localeCompare(b.name, 'ja')
+    )
   }
 
   // 月間サマリー
@@ -183,7 +257,7 @@ export function MonthlyAttendanceView({
         </div>
       ) : (
         <div className="overflow-x-auto pb-2">
-          <div className="min-w-[700px]">
+          <div className="min-w-[1000px]">
             {/* 曜日ヘッダー */}
             <div className="grid grid-cols-7 gap-1.5 mb-1.5">
               {DAY_LABELS.map((label, i) => (
@@ -257,13 +331,18 @@ export function MonthlyAttendanceView({
                             e.stopPropagation()
                             router.push(`/attendance/child/${entry.childId}?date=${dateStr}`)
                           }}
-                          className={`text-[10px] leading-relaxed mb-0.5 rounded px-0.5 cursor-pointer hover:bg-gray-100 transition-colors ${
+                          className={`text-[10px] leading-tight mb-1 rounded px-0.5 cursor-pointer hover:bg-gray-100 transition-colors ${
                             entry.absent ? 'opacity-40' : ''
                           }`}
                         >
                           <span className={`inline-block px-0.5 rounded text-[9px] mr-0.5 font-medium ${serviceBadgeClass}`}>
                             {serviceLabel}
                           </span>
+                          {(entry.start || entry.end) && (
+                            <span className="text-gray-500">
+                              {entry.start ?? '—'}-{entry.end ?? '—'}{' '}
+                            </span>
+                          )}
                           <span className={entry.absent ? 'text-gray-400 line-through' : 'text-gray-700'}>
                             {entry.name}
                           </span>
