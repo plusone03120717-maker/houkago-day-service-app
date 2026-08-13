@@ -12,8 +12,13 @@ export type ChildBillingInput = {
   copayLimit: number
   totalDays: number
   totalUnits: number
-  /** 明細情報レコード用サービスコード（6桁） */
+  /** 明細情報レコード用サービスコード（6桁）。内訳がある場合は基本報酬の代表コード */
   serviceCode: string
+  /**
+   * サービスコード別の内訳（出席実績から再集計したもの）。
+   * 空・未指定の場合は 1日あたり単位数×日数 の概算で1行だけ出力する。
+   */
+  breakdown?: Array<{ code: string; unitCount: number; count: number; units: number }>
   /** 契約情報レコード用 決定サービスコード（6桁） */
   decisionServiceCode: string
   /** 契約支給量（日数） */
@@ -134,11 +139,26 @@ export function buildKokuhorenCsv(
         `${label}: アプリの利用者負担額(${c.storedCopayAmount}円)と仕様計算値(${decidedCopay}円 = min(1割相当額, 負担上限月額))が異なります。CSVには仕様計算値を出力しました`,
       )
     }
-    const perDay = c.totalDays > 0 ? Math.round(c.totalUnits / c.totalDays) : 0
-    if (perDay * c.totalDays !== c.totalUnits) {
-      warnings.push(
-        `${label}: サービスコード別内訳が概算です（1日あたり単位数×日数がサービス単位数と一致しません）。返戻となる場合は明細の単位数を確認してください`,
-      )
+    const lines = c.breakdown ?? []
+    if (lines.length > 0) {
+      for (const line of lines) {
+        if (!/^[0-9A-Z]{6}$/.test(line.code)) {
+          errors.push(`${label}: 内訳のサービスコードが6桁の英数字ではありません: 「${line.code}」`)
+        }
+      }
+      const sum = lines.reduce((s, l) => s + l.units, 0)
+      if (sum !== c.totalUnits) {
+        warnings.push(
+          `${label}: サービスコード別内訳の合計(${sum})が単位数(${c.totalUnits})と一致しません。内訳の合計でCSVを作成しました`,
+        )
+      }
+    } else {
+      const perDay = c.totalDays > 0 ? Math.round(c.totalUnits / c.totalDays) : 0
+      if (perDay * c.totalDays !== c.totalUnits) {
+        warnings.push(
+          `${label}: サービスコード別内訳が概算です（1日あたり単位数×日数がサービス単位数と一致しません）。「出席実績から再集計」を実行すると内訳どおりに出力されます`,
+        )
+      }
     }
 
     return { ...c, totalCost, tenPercent, capAdjusted, managedCopay, decidedCopay, benefitAmount, serviceStartDate }
@@ -233,16 +253,25 @@ export function buildKokuhorenCsv(
         '', '',                                         // 入院日数・外泊日数
       ])
 
-      // K122 明細書 明細情報レコード（03）
-      const perDay = c.totalDays > 0 ? Math.round(c.totalUnits / c.totalDays) : c.totalUnits
-      rows.push([
-        'K122', '03', ym, muni, fac, c.certificateNumber,
-        c.serviceCode,
-        num(perDay),                                    // 単位数（サービスコード1回あたり）
-        num(c.totalDays),                               // 回数
-        num(c.totalUnits),                              // サービス単位数
-        '',                                             // 摘要
-      ])
+      // K122 明細書 明細情報レコード（03）: サービスコードごとに1行
+      const detailLines = c.breakdown && c.breakdown.length > 0
+        ? c.breakdown.map((l) => ({ code: l.code, unitCount: l.unitCount, count: l.count, units: l.units }))
+        : [{
+            code: c.serviceCode,
+            unitCount: c.totalDays > 0 ? Math.round(c.totalUnits / c.totalDays) : c.totalUnits,
+            count: c.totalDays,
+            units: c.totalUnits,
+          }]
+      for (const line of detailLines) {
+        rows.push([
+          'K122', '03', ym, muni, fac, c.certificateNumber,
+          line.code,
+          num(line.unitCount),                          // 単位数（サービスコード1回あたり）
+          num(line.count),                              // 回数
+          num(line.units),                              // サービス単位数
+          '',                                           // 摘要
+        ])
+      }
 
       // K122 明細書 集計情報レコード（04）
       rows.push([

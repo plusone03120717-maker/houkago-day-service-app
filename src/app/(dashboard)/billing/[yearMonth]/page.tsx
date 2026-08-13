@@ -7,6 +7,7 @@ import { ArrowLeft, AlertCircle } from 'lucide-react'
 import { BillingExportButton } from '@/components/billing/billing-export-button'
 import { KokuhorenExportButton } from '@/components/billing/kokuhoren-export-button'
 import { AiCheckButton } from '@/components/billing/ai-check-button'
+import { RecalcBillingButton } from '@/components/billing/recalc-billing-button'
 import { ActualCostForm } from '@/components/billing/actual-cost-form'
 import { BillingDetailsTable } from '@/components/billing/billing-details-table'
 
@@ -20,6 +21,7 @@ type BillingDetail = {
   copay_amount: number
   billed_amount: number
   errors: string[]
+  service_breakdown: { code: string | null; name: string; unitCount: number; count: number; units: number }[]
   children: { name: string; name_kana: string | null } | null
 }
 
@@ -84,7 +86,7 @@ export default async function BillingDetailPage({
     .select(`
       id, unit_id, year_month, status,
       units (name, service_type, facilities (name, facility_number)),
-      billing_details (id, child_id, total_days, total_units, service_code, unit_price, copay_amount, billed_amount, errors, children (name, name_kana))
+      billing_details (id, child_id, total_days, total_units, service_code, unit_price, copay_amount, billed_amount, errors, service_breakdown, children (name, name_kana))
     `)
     .eq('year_month', yearMonth)
 
@@ -235,6 +237,9 @@ export default async function BillingDetailPage({
                   ))}
                 </div>
               )}
+
+              {/* 出席実績からの再集計 */}
+              <RecalcBillingButton unitId={billing.unit_id} yearMonth={yearMonth} />
 
               {/* 児童別明細（編集可） */}
               <BillingDetailsTable initial={details} />

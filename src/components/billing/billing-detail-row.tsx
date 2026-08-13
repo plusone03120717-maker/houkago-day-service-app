@@ -4,6 +4,14 @@ import { useState, useTransition } from 'react'
 import { Pencil, Check, X, AlertCircle } from 'lucide-react'
 import { updateBillingDetail } from '@/app/actions/billing'
 
+export type BreakdownLine = {
+  code: string | null
+  name: string
+  unitCount: number
+  count: number
+  units: number
+}
+
 type Detail = {
   id: string
   child_id: string
@@ -14,6 +22,7 @@ type Detail = {
   copay_amount: number
   billed_amount: number
   errors: string[]
+  service_breakdown: BreakdownLine[]
   children: { name: string; name_kana: string | null } | null
 }
 
@@ -44,7 +53,8 @@ export function BillingDetailRow({ detail, onUpdated }: { detail: Detail; onUpda
       if (result.error) {
         setError(result.error)
       } else {
-        onUpdated({ ...detail, ...form, service_code: form.service_code || null })
+        // 手入力した時点でサーバー側の内訳も破棄されるため、表示からも消す
+        onUpdated({ ...detail, ...form, service_code: form.service_code || null, service_breakdown: [] })
         setEditing(false)
       }
     })
@@ -132,6 +142,18 @@ export function BillingDetailRow({ detail, onUpdated }: { detail: Detail; onUpda
           )}
           {detail.service_code && (
             <span className="ml-1.5 text-xs text-gray-400">({detail.service_code})</span>
+          )}
+          {/* 再集計で作られたサービスコード別内訳。CSVの明細情報レコードにそのまま出力される */}
+          {detail.service_breakdown.length > 0 && (
+            <ul className="mt-1 space-y-0.5">
+              {detail.service_breakdown.map((l, i) => (
+                <li key={i} className="text-xs text-gray-400 font-normal">
+                  {l.name}
+                  <span className="ml-1 font-mono">{l.code ?? 'コード未設定'}</span>
+                  <span className="ml-1">{l.unitCount}単位 × {l.count}回 = {l.units.toLocaleString()}</span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </td>

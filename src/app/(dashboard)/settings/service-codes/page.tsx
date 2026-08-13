@@ -3,7 +3,7 @@ import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft } from 'lucide-react'
-import { ServiceCodeForm, type ServiceItemRow } from '@/components/settings/service-code-form'
+import { ServiceCodeForm, type BasicRateRow, type ServiceItemRow } from '@/components/settings/service-code-form'
 
 type Unit = { id: string; name: string }
 
@@ -19,10 +19,15 @@ export default async function ServiceCodesSettingsPage() {
 
   const { data: itemsRaw } = await supabase
     .from('billing_service_items')
-    .select('id, unit_id, name, category, trigger_field, billing_code')
+    .select('id, unit_id, name, category, trigger_field, billing_code, unit_count')
     .eq('is_active', true)
     .order('sort_order')
   const items = (itemsRaw ?? []) as unknown as (ServiceItemRow & { unit_id: string })[]
+
+  const { data: ratesRaw } = await supabase
+    .from('billing_basic_rates')
+    .select('unit_id, service_form_type, billing_category, unit_count, billing_code')
+  const rates = (ratesRaw ?? []) as unknown as (BasicRateRow & { unit_id: string })[]
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -31,24 +36,24 @@ export default async function ServiceCodesSettingsPage() {
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">国保連サービスコード設定</h1>
-          <p className="text-sm text-gray-500 mt-0.5">サービス項目ごとの6桁コードを登録します</p>
+          <h1 className="text-2xl font-bold text-gray-900">国保連サービスコード・単位数設定</h1>
+          <p className="text-sm text-gray-500 mt-0.5">サービス項目ごとの6桁コードと単位数を登録します</p>
         </div>
       </div>
 
       <Card>
         <CardContent className="p-4 text-sm text-gray-600 space-y-1">
-          <p className="font-medium text-gray-900">サービスコードについて</p>
+          <p className="font-medium text-gray-900">サービスコード・単位数について</p>
           <p>
-            国保連へ提出する請求CSVには、サービス項目ごとの6桁のサービスコードが必要です。
-            ここで登録したコードは事業所内の控えとして保存されます。
+            ここで登録した単位数とサービスコードをもとに、国保連請求の
+            <strong>「出席実績から再集計」</strong>が児童ごとの利用日数・単位数・請求額を自動計算します。
           </p>
           <p className="text-xs text-gray-400">
-            ※ コードは厚生労働省の「障害福祉サービス費等の額の算定に関する基準」別表のサービスコード表でご確認ください。
+            ※ コード・単位数は厚生労働省の「障害福祉サービス費等の額の算定に関する基準」別表のサービスコード表でご確認ください。
             時間区分・定員規模・児童区分（重症心身障害児・医療的ケア児）により異なります。
           </p>
           <p className="text-xs text-gray-400">
-            ※ 請求明細には自動反映されません。請求明細画面で児童ごとにサービスコードを入力してください。
+            ※ 変更しても既存の請求明細は自動では変わりません。請求明細画面で「出席実績から再集計」を実行してください。
           </p>
         </CardContent>
       </Card>
@@ -59,7 +64,11 @@ export default async function ServiceCodesSettingsPage() {
             <CardTitle className="text-base">{unit.name}</CardTitle>
           </CardHeader>
           <CardContent>
-            <ServiceCodeForm items={items.filter((i) => i.unit_id === unit.id)} />
+            <ServiceCodeForm
+              unitId={unit.id}
+              items={items.filter((i) => i.unit_id === unit.id)}
+              rates={rates.filter((r) => r.unit_id === unit.id)}
+            />
           </CardContent>
         </Card>
       ))}

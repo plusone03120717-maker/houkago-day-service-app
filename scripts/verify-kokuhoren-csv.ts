@@ -26,9 +26,13 @@ const RECORD_LABEL: Record<string, string> = {
 // 擬似データ: 4パターンを網羅
 const children: ChildBillingInput[] = [
   {
-    // 通常ケース（負担上限4,600円・継続契約）
+    // 通常ケース（負担上限4,600円・継続契約）+ 出席実績から再集計したサービスコード別内訳あり
     childName: '検証 太郎', certificateNumber: '1942330391', municipalityCode: '194233',
     copayLimit: 4600, totalDays: 12, totalUnits: 7044, serviceCode: '631111',
+    breakdown: [
+      { code: '631111', unitCount: 587, count: 10, units: 5870 }, // 平日・区分2
+      { code: '631112', unitCount: 587, count: 2, units: 1174 },  // 休日・区分2
+    ],
     decisionServiceCode: '631000', contractDays: 23, contractStartDate: '2026-04-01',
     contractEndDate: null, contractLineNumber: 1, firstServiceDate: '2026-07-02',
     storedCopayAmount: 4600, upperLimit: null,
@@ -142,6 +146,20 @@ const detailSum = basic.reduce((s, f) => s + parseInt(f[27]), 0) // 請求額 �
 const invoiceSum = invoice.reduce((s, f) => s + parseInt(f[5]), 0) // 請求金額
 if (detailSum !== invoiceSum) fail.push(`請求書の請求金額(${invoiceSum}) と明細書の給付費合計(${detailSum}) が不一致`)
 else pass.push(`請求書と明細書の金額が一致（${invoiceSum}円）`)
+
+// サービスコード別内訳が明細情報レコードに1行ずつ出ているか
+const taroDetails = dataLines
+  .map((l) => l.split(',').slice(2))
+  .filter((f) => f[0] === 'K122' && f[1] === '03' && f[5] === '1942330391')
+if (taroDetails.length !== 2) {
+  fail.push(`内訳2件の児童の明細情報レコードが2行になっていない: ${taroDetails.length}行`)
+} else if (taroDetails.reduce((s, f) => s + parseInt(f[9]), 0) !== 7044) {
+  fail.push('内訳の明細情報レコードのサービス単位数合計が7044にならない')
+} else if (taroDetails[0][6] !== '631111' || taroDetails[1][6] !== '631112') {
+  fail.push('内訳のサービスコードが指定どおりに出力されていない')
+} else {
+  pass.push('サービスコード別内訳が明細情報レコードに1行ずつ出力される')
+}
 
 // 市町村ごとに請求書が分かれているか
 if (invoice.length !== 2) fail.push(`請求書が市町村数(2)ぶん作られていない: ${invoice.length}`)

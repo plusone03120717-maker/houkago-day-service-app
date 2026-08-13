@@ -1,216 +1,8 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-
-const ADDITION_RATES: Record<string, number> = {
-  welfare_improvement_1: 0.208,
-  welfare_improvement_2: 0.172,
-  welfare_improvement_3: 0.114,
-  specific_welfare_1: 0.050,
-  specific_welfare_2: 0.036,
-  base_up_support: 0.017,
-  specialist_support: 0.250,
-  intensive_support: 0.150,
-}
-
-const BASE_UNIT_PRICE = 10
-const BASE_UNITS_PER_DAY = 587
-
-type AdditionSetting = {
-  addition_type: string
-  enabled: boolean
-  custom_rate: number | null
-}
-
-export async function generateBilling(formData: FormData): Promise<void> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  const unitId = formData.get('unitId') as string
-  const yearMonth = formData.get('yearMonth') as string
-
-  if (!unitId || !yearMonth) redirect('/billing')
-
-  const year = parseInt(yearMonth.slice(0, 4))
-  const month = parseInt(yearMonth.slice(4, 6))
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01`
-  const lastDay = new Date(year, month, 0).getDate()
-  const endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-
-  // 既存の請求データを確認
-  const { data: existing } = await supabase
-    .from('billing_monthly')
-    .select('id')
-    .eq('unit_id', unitId)
-    .eq('year_month', yearMonth)
-    .maybeSingle()
-
-  let billingMonthlyId: string
-
-  if (existing) {
-    billingMonthlyId = existing.id
-  } else {
-    const { data: created, error } = await supabase
-      .from('billing_monthly')
-      .insert({ unit_id: unitId, year_month: yearMonth, status: 'draft' })
-      .select('id')
-      .single()
-    if (error || !created) redirect('/billing')
-    billingMonthlyId = created.id
-  }
-
-  // 加算設定を取得
-  const { data: additionSettingsRaw } = await supabase
-    .from('addition_settings')
-    .select('addition_type, enabled, custom_rate')
-    .eq('unit_id', unitId)
-  const additionSettings = (additionSettingsRaw ?? []) as AdditionSetting[]
-  const enabledAdditions = additionSettings.filter((a) => a.enabled)
-
-  // 国保連サービスコード（設定 > 国保連サービスコード設定 の基本報酬項目から取得）
-  const { data: basicItem } = await supabase
-    .from('billing_service_items')
-    .select('billing_code')
-    .eq('unit_id', unitId)
-    .eq('trigger_field', 'basic')
-    .eq('is_active', true)
-    .not('billing_code', 'is', null)
-    .limit(1)
-    .maybeSingle()
-  const serviceCode = basicItem?.billing_code ?? null
-
-  // 出席記録を取得
-  const { data: attendances, error: attError } = await supabase
-    .from('daily_attendance')
-    .select(`
-      id, child_id, date, status,
-      children (
-        id, name,
-        benefit_certificates (
-          id, service_type, start_date, end_date, max_days_per_month, copay_limit
-        )
-      )
-    `)
-    .eq('unit_id', unitId)
-    .eq('status', 'attended')
-    .gte('date', startDate)
-    .lte('date', endDateStr)
-
-  if (attError) redirect('/billing')
-
-  // 児童ごとに集計
-  const childMap = new Map<string, {
-    childId: string
-    childName: string
-    totalDays: number
-    certificateId: string | null
-    maxDaysPerMonth: number
-    copayLimit: number
-    errors: string[]
-  }>()
-
-  for (const att of attendances ?? []) {
-    const child = att.children as unknown as {
-      id: string
-      name: string
-      benefit_certificates: Array<{
-        id: string
-        service_type: string
-        start_date: string
-        end_date: string
-        max_days_per_month: number
-        copay_limit: number
-      }>
-    } | null
-
-    if (!child) continue
-
-    const certs = child.benefit_certificates ?? []
-    const validCert = certs.find((cert) => {
-      return att.date >= cert.start_date && att.date <= cert.end_date
-    })
-
-    if (!childMap.has(child.id)) {
-      childMap.set(child.id, {
-        childId: child.id,
-        childName: child.name,
-        totalDays: 0,
-        certificateId: validCert?.id ?? null,
-        maxDaysPerMonth: validCert?.max_days_per_month ?? 0,
-        copayLimit: validCert?.copay_limit ?? 0,
-        errors: validCert ? [] : [`${att.date}: 有効な受給者証がありません`],
-      })
-    }
-
-    const entry = childMap.get(child.id)!
-    entry.totalDays++
-
-    if (entry.maxDaysPerMonth > 0 && entry.totalDays > entry.maxDaysPerMonth) {
-      if (!entry.errors.includes('月の給付量を超過しています')) {
-        entry.errors.push('月の給付量を超過しています')
-      }
-    }
-  }
-
-  // 加算率を合計
-  let totalAdditionRate = 0
-  const appliedAdditions: string[] = []
-  for (const addition of enabledAdditions) {
-    const rate = addition.custom_rate ?? ADDITION_RATES[addition.addition_type] ?? 0
-    totalAdditionRate += rate
-    appliedAdditions.push(addition.addition_type)
-  }
-
-  // 請求詳細を保存
-  // 既存行は一旦削除して入れ直すため、確定済みフラグだけは引き継ぐ
-  // （再生成のたびに確定が外れて、確定作業をやり直す羽目になるのを防ぐ）
-  const { data: prevDetails } = await supabase
-    .from('billing_details')
-    .select('child_id, is_confirmed')
-    .eq('billing_monthly_id', billingMonthlyId)
-  const confirmedChildIds = new Set(
-    (prevDetails ?? [])
-      .filter((d: { is_confirmed: boolean }) => d.is_confirmed)
-      .map((d: { child_id: string }) => d.child_id)
-  )
-
-  const detailsToInsert = Array.from(childMap.values()).map((entry) => {
-    const baseUnits = entry.totalDays * BASE_UNITS_PER_DAY
-    const additionUnits = Math.round(baseUnits * totalAdditionRate)
-    const totalUnits = baseUnits + additionUnits
-    const billedAmount = Math.round(totalUnits * BASE_UNIT_PRICE)
-    const copayAmount = Math.min(entry.copayLimit, billedAmount)
-    return {
-      billing_monthly_id: billingMonthlyId,
-      child_id: entry.childId,
-      certificate_id: entry.certificateId,
-      total_days: entry.totalDays,
-      total_units: totalUnits,
-      service_code: serviceCode,
-      unit_price: BASE_UNIT_PRICE,
-      additions: appliedAdditions,
-      copay_amount: copayAmount,
-      billed_amount: billedAmount - copayAmount,
-      errors: serviceCode
-        ? entry.errors
-        : [...entry.errors, '国保連サービスコードが未設定です（設定 > 国保連サービスコード設定）'],
-      is_confirmed: confirmedChildIds.has(entry.childId),
-    }
-  })
-
-  await supabase.from('billing_details').delete().eq('billing_monthly_id', billingMonthlyId)
-
-  if (detailsToInsert.length > 0) {
-    const { error: insertError } = await supabase.from('billing_details').insert(detailsToInsert)
-    if (insertError) redirect('/billing')
-  }
-
-  await supabase.from('billing_monthly').update({ status: 'draft' }).eq('id', billingMonthlyId)
-
-  redirect('/billing')
-}
+import { revalidatePath } from 'next/cache'
+import { aggregateUnitMonth } from '@/lib/billing/aggregate'
 
 export async function updateBillingDetail(
   id: string,
@@ -227,11 +19,141 @@ export async function updateBillingDetail(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'ログインが必要です' }
 
+  // 手入力した時点で、再集計で作られたサービスコード別内訳は実態と合わなくなる。
+  // 古い内訳のままCSVに出力されないよう、あわせて破棄する。
   const { error } = await supabase
     .from('billing_details')
-    .update(values)
+    .update({ ...values, service_breakdown: [], recalculated_at: null })
     .eq('id', id)
 
   if (error) return { error: error.message }
   return {}
+}
+
+export type RecalcResult = {
+  error?: string
+  childCount: number
+  totalDays: number
+  totalUnits: number
+  billedAmount: number
+  /** 児童名つきのエラー（出力前に直す必要があるもの） */
+  childErrors: string[]
+  warnings: string[]
+}
+
+/**
+ * 出席実績から請求明細を作り直す。
+ * 児童別の月次サービス実績と同じ判定で単位数を積み上げるため、画面の〇と請求額が一致する。
+ * 確定チェックは引き継ぐ。手入力した値は上書きされる。
+ */
+export async function recalcBillingFromRecords(
+  unitId: string,
+  yearMonth: string,
+): Promise<RecalcResult> {
+  const emptyResult: Omit<RecalcResult, 'error'> = {
+    childCount: 0, totalDays: 0, totalUnits: 0, billedAmount: 0, childErrors: [], warnings: [],
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ...emptyResult, error: 'ログインが必要です' }
+
+  const result = await aggregateUnitMonth(supabase, unitId, yearMonth)
+  if (result.fatal) return { ...emptyResult, error: result.fatal }
+
+  const warnings = [...result.warnings]
+
+  // billing_monthly を用意
+  const { data: monthly } = await supabase
+    .from('billing_monthly')
+    .select('id, status')
+    .eq('unit_id', unitId)
+    .eq('year_month', yearMonth)
+    .maybeSingle()
+
+  let billingMonthlyId: string
+  if (monthly) {
+    billingMonthlyId = monthly.id
+    if (['exported', 'submitted', 'finalized'].includes(monthly.status)) {
+      warnings.push(`この月は「${monthly.status}」の状態です。再集計後はCSVを出力し直してください`)
+    }
+  } else {
+    const { data: created, error } = await supabase
+      .from('billing_monthly')
+      .insert({ unit_id: unitId, year_month: yearMonth, status: 'draft' })
+      .select('id')
+      .single()
+    if (error || !created) {
+      return { ...emptyResult, error: `請求データを作成できませんでした: ${error?.message ?? ''}` }
+    }
+    billingMonthlyId = created.id
+  }
+
+  // 確定チェックを引き継ぐ
+  const { data: prevDetails } = await supabase
+    .from('billing_details')
+    .select('id, child_id, is_confirmed, total_days')
+    .eq('billing_monthly_id', billingMonthlyId)
+  const prevByChild = new Map(
+    ((prevDetails ?? []) as Array<{ id: string; child_id: string; is_confirmed: boolean; total_days: number }>)
+      .map((d) => [d.child_id, d]),
+  )
+
+  const rows = result.children.map((c) => ({
+    billing_monthly_id: billingMonthlyId,
+    child_id: c.childId,
+    certificate_id: c.certificateId,
+    total_days: c.totalDays,
+    total_units: c.totalUnits,
+    service_code: c.serviceCode,
+    unit_price: c.unitPrice,
+    copay_amount: c.copayAmount,
+    billed_amount: c.billedAmount,
+    service_breakdown: c.breakdown,
+    errors: c.errors,
+    is_confirmed: prevByChild.get(c.childId)?.is_confirmed ?? false,
+    recalculated_at: new Date().toISOString(),
+  }))
+
+  if (rows.length > 0) {
+    const { error: upsertError } = await supabase
+      .from('billing_details')
+      .upsert(rows, { onConflict: 'billing_monthly_id,child_id' })
+    if (upsertError) {
+      return { ...emptyResult, error: `請求明細を保存できませんでした: ${upsertError.message}` }
+    }
+  }
+
+  // 出席実績が1日もない児童の空行は残しておいても混乱するので削除する
+  // （確定済みの行は利用者の判断を尊重して残す）
+  const aggregatedIds = new Set(result.children.map((c) => c.childId))
+  const stale = (prevDetails ?? []).filter(
+    (d: { child_id: string; is_confirmed: boolean }) => !aggregatedIds.has(d.child_id) && !d.is_confirmed,
+  )
+  if (stale.length > 0) {
+    await supabase
+      .from('billing_details')
+      .delete()
+      .in('id', stale.map((d: { id: string }) => d.id))
+  }
+  const staleConfirmed = (prevDetails ?? []).filter(
+    (d: { child_id: string; is_confirmed: boolean }) => !aggregatedIds.has(d.child_id) && d.is_confirmed,
+  )
+  if (staleConfirmed.length > 0) {
+    warnings.push(`出席実績がないのに確定済みの明細が${staleConfirmed.length}件あります（手動で確認してください）`)
+  }
+
+  const childErrors = result.children.flatMap((c) => c.errors.map((e) => `${c.childName}: ${e}`))
+
+  revalidatePath('/billing')
+  revalidatePath(`/billing/${yearMonth}`)
+
+  return {
+    childCount: result.children.length,
+    totalDays: result.children.reduce((s, c) => s + c.totalDays, 0),
+    totalUnits: result.children.reduce((s, c) => s + c.totalUnits, 0),
+    billedAmount: result.children.reduce((s, c) => s + c.billedAmount, 0),
+    childErrors,
+    warnings,
+  }
 }

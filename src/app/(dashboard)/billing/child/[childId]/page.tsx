@@ -116,7 +116,8 @@ export default async function BillingChildPage({
           total_units: 0,
           copay_amount: 0,
           billed_amount: 0,
-          service_code: 'H43',
+          // 単位数・サービスコードは「出席実績から再集計」で埋まる
+          service_code: null,
           errors: [],
         })
         .select('id, is_confirmed')

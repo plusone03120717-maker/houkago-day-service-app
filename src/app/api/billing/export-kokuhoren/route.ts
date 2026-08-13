@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   const { data: detailsRaw } = await supabase
     .from('billing_details')
     .select(`
-      id, total_days, total_units, service_code, copay_amount, billed_amount,
+      id, total_days, total_units, service_code, copay_amount, billed_amount, service_breakdown,
       upper_limit_office_number, upper_limit_result, upper_limit_result_amount,
       children (
         id, name,
@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
     total_days: number
     total_units: number
     service_code: string | null
+    service_breakdown: Array<{ code: string | null; unitCount: number; count: number; units: number }> | null
     copay_amount: number
     billed_amount: number
     upper_limit_office_number: string | null
@@ -116,6 +117,10 @@ export async function GET(request: NextRequest) {
       totalDays: d.total_days,
       totalUnits: d.total_units,
       serviceCode: d.service_code ?? '',
+      // 再集計で作られたサービスコード別内訳があれば明細情報レコードにそのまま出力する
+      breakdown: (d.service_breakdown ?? [])
+        .filter((l) => l.code != null && l.units > 0)
+        .map((l) => ({ code: l.code as string, unitCount: l.unitCount, count: l.count, units: l.units })),
       decisionServiceCode: cert?.decision_service_code ?? '',
       contractDays: cert?.contract_amount ?? cert?.max_days_per_month ?? 0,
       contractStartDate: cert?.contract_start_date ?? null,

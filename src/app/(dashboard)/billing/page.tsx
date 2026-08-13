@@ -3,8 +3,9 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { FileText, AlertCircle, Download, User } from 'lucide-react'
+import { FileText, AlertCircle, User } from 'lucide-react'
 import { BillingConfirmToggle } from '@/components/billing/billing-confirm-toggle'
+import { RecalcBillingButton } from '@/components/billing/recalc-billing-button'
 
 type BillingDetail = {
   id: string
@@ -311,6 +312,7 @@ export default async function BillingPage({
                         {errorCount}件のエラーがあります
                       </div>
                     )}
+                    <RecalcBillingButton unitId={unit.id} yearMonth={yearMonth} variant="outline" />
                     <div className="flex gap-2 flex-wrap">
                       <Link href={`/billing/${yearMonth}?unit=${unit.id}`}>
                         <Button variant="outline" size="sm">
@@ -318,16 +320,15 @@ export default async function BillingPage({
                           詳細確認
                         </Button>
                       </Link>
-                      {billing.status === 'checked' && (
-                        <Button size="sm" variant="outline">
-                          <Download className="h-4 w-4" />
-                          CSV出力
-                        </Button>
-                      )}
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-400">児童個別ページを開くと自動で作成されます</p>
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray-400">
+                      この月の請求データはまだありません。「出席実績から再集計」で出席記録から作成できます。
+                    </p>
+                    <RecalcBillingButton unitId={unit.id} yearMonth={yearMonth} variant="outline" />
+                  </div>
                 )}
               </CardContent>
             </Card>

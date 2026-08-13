@@ -6,6 +6,17 @@ import { createClient } from '@/lib/supabase/client'
 import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Plus, Settings, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
+import {
+  calcHours,
+  computeBillingDay,
+  getBillingCategory,
+  getCircleValue,
+  isAutoTriggered,
+  isHolidayDate,
+  isItemChecked as isItemCheckedShared,
+  timeToMinutes,
+  type ComputedDay,
+} from '@/lib/billing/day-computation'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -63,57 +74,15 @@ type BillingDailyRecord = {
   daytime_dropoff: boolean
 }
 
-type DayComputed = {
-  date: string
-  isAttended: boolean
-  isAbsent: boolean
+// 日別の判定結果。共通ロジック（lib/billing/day-computation）に画面固有の項目を足したもの
+type DayComputed = ComputedDay & {
   isCancelled: boolean
   attendance: DailyAttendance | null
-  isSchoolHoliday: boolean
-  serviceFormType: 1 | 2
-  startTime: string | null
-  endTime: string | null
-  durationMinutes: number
-  hoursCalculated: number
-  billingCategory: 0 | 1 | 2 | null
-  transportPickup: boolean
-  transportDropoff: boolean
-  daytimeSupport: boolean
-  daytimeTransportPickup: boolean
-  daytimeTransportDropoff: boolean
-  extensionHours: number
-  participatedActivities: Set<string>
 }
 
 // ─────────────────────────────────────────────────────────────
 // Helper functions
 // ─────────────────────────────────────────────────────────────
-
-function timeToMinutes(t: string): number {
-  const [h, m] = t.split(':').map(Number)
-  return h * 60 + m
-}
-
-function calcHours(startTime: string | null, endTime: string | null): number {
-  if (!startTime || !endTime) return 0
-  const dur = timeToMinutes(endTime) - timeToMinutes(startTime)
-  if (dur <= 0) return 0
-  return Math.floor(dur / 30) * 0.5
-}
-
-function getBillingCategory(minutes: number, hasValidTimes: boolean): 0 | 1 | 2 | null {
-  if (!hasValidTimes) return null
-  if (minutes < 30) return 0   // 30分未満
-  if (minutes <= 90) return 1  // 30分以上〜90分以下
-  return 2                     // 90分超
-}
-
-function isSchoolHolidayDate(dateStr: string, holidays: SchoolHoliday[]): boolean {
-  const d = new Date(dateStr + 'T00:00:00')
-  const dow = d.getDay()
-  if (dow === 0 || dow === 6) return true  // 土日
-  return holidays.some((h) => h.start_date <= dateStr && dateStr <= h.end_date)
-}
 
 function getDaysInMonth(yearMonth: string): string[] {
   const [y, m] = yearMonth.split('-').map(Number)
@@ -339,93 +308,29 @@ export function BillingChildMonthlyView({
   // ── Compute day data ────────────────────────────────────────
   const attMap = new Map(attendances.map((a) => [a.date, a]))
 
+  const basicItemIds = new Set(serviceItems.filter((i) => i.trigger_field === 'basic').map((i) => i.id))
+
   const computeDay = (dateStr: string): DayComputed => {
     const att = attMap.get(dateStr) ?? null
-    const isAttended = att?.status === 'attended'
-    const isAbsent = att?.status === 'absent'
-    const isCancelled = !isAttended && !isAbsent && cancelledDates.has(dateStr)
-    const isHoliday = isSchoolHolidayDate(dateStr, schoolHolidays) || publicHolidays.includes(dateStr) || isJapaneseNationalHoliday(dateStr)
-    const serviceFormType: 1 | 2 = isHoliday ? 2 : 1
-
-    // Check for billing_start_time override
-    const basicRecord = manualRecords.find((r) => {
-      const item = serviceItems.find((i) => i.id === r.service_item_id)
-      return item?.trigger_field === 'basic' && r.date === dateStr
-    })
-    const startTime = basicRecord?.billing_start_time ?? att?.service_start_time ?? att?.check_in_time ?? null
-    const endTime = basicRecord?.billing_end_time ?? att?.service_end_time ?? att?.check_out_time ?? null
-
-    const hours = calcHours(startTime, endTime)
-    const rawMinutes = startTime && endTime ? Math.max(0, timeToMinutes(endTime) - timeToMinutes(startTime)) : 0
-    const billingCategory = getBillingCategory(rawMinutes, startTime !== null && endTime !== null)
-
-    const thresholdMins = serviceFormType === 1 ? 180 : 300
-    const extensionHours = isAttended ? Math.max(0, Math.floor((rawMinutes - thresholdMins) / 60)) : 0
-
-    return {
+    const base = computeBillingDay({
       date: dateStr,
-      isAttended,
-      isAbsent,
-      isCancelled,
       attendance: att,
-      isSchoolHoliday: isHoliday,
-      serviceFormType,
-      startTime: startTime?.slice(0, 5) ?? null,
-      endTime: endTime?.slice(0, 5) ?? null,
-      durationMinutes: rawMinutes,
-      hoursCalculated: hours,
-      billingCategory,
-      // 実際の到着時刻が記録されている場合のみ送迎ありと判定（pickup_typeは計画値のため除外）
-      // "00:00:00" は時刻未入力での誤保存として送迎なしとみなす
-      transportPickup: att
-        ? (att.pickup_arrival_time != null && att.pickup_arrival_time > '00:00:00')
-        : false,
-      transportDropoff: att
-        ? (att.dropoff_arrival_time != null && att.dropoff_arrival_time > '00:00:00')
-        : false,
-      daytimeSupport: att?.daytime_support ?? false,
-      daytimeTransportPickup: att
-        ? (att.daytime_pickup_arrival_time != null && att.daytime_pickup_arrival_time > '00:00:00')
-        : false,
-      daytimeTransportDropoff: att
-        ? (att.daytime_dropoff_arrival_time != null && att.daytime_dropoff_arrival_time > '00:00:00')
-        : false,
-      extensionHours,
+      dailyRecords: manualRecords,
+      basicItemIds,
+      isHoliday: isHolidayDate(dateStr, schoolHolidays, publicHolidays),
       participatedActivities: activityMap.get(dateStr) ?? new Set(),
+    })
+    return {
+      ...base,
+      attendance: att,
+      isCancelled: !base.isAttended && !base.isAbsent && cancelledDates.has(dateStr),
     }
   }
 
   const dayDataMap = new Map(days.map((d) => [d, computeDay(d)]))
 
-  // ── Check if item is auto-triggered ────────────────────────
-  const isAutoTriggered = (item: ServiceItem, d: DayComputed): boolean => {
-    // 欠席時加算は欠席日のみ（出席チェックより先に評価）
-    if (item.trigger_field === 'absent') return d.isAbsent
-    if (!d.isAttended) return false
-    switch (item.trigger_field) {
-      case 'basic': return true
-      case 'transport_pickup': return d.transportPickup
-      case 'transport_dropoff': return d.transportDropoff
-      case 'daytime_support': return d.daytimeSupport
-      case 'daytime_pickup': return d.daytimeSupport && d.daytimeTransportPickup
-      case 'daytime_dropoff': return d.daytimeSupport && d.daytimeTransportDropoff
-      case 'extension': return d.extensionHours > 0
-      case 'manual': return d.participatedActivities.has(item.name)
-      default: return false
-    }
-  }
-
-  const isItemChecked = (item: ServiceItem, dateStr: string, d: DayComputed): boolean => {
-    const rec = getManualRecord(item.id, dateStr)
-    if (rec !== undefined) return rec.is_checked
-    return isAutoTriggered(item, d)
-  }
-
-  const getCircleValue = (item: ServiceItem, d: DayComputed): number => {
-    if (item.trigger_field === 'basic') return d.billingCategory ?? 1
-    if (item.trigger_field === 'extension') return d.extensionHours
-    return 1
-  }
+  const isItemChecked = (item: ServiceItem, dateStr: string, d: DayComputed): boolean =>
+    isItemCheckedShared(item, d, getManualRecord(item.id, dateStr))
 
   // ── Create an attendance record from this page ──────────────
   // 出欠記録がない日をこのページから登録する。記録がないと日別表で

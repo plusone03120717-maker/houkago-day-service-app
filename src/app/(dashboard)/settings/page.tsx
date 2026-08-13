@@ -25,8 +25,8 @@ const sections = [
   {
     href: '/settings/service-codes',
     icon: Hash,
-    label: '国保連サービスコード設定',
-    description: 'サービス項目ごとの6桁コード登録（請求CSVに必須）',
+    label: '国保連サービスコード・単位数設定',
+    description: 'サービス項目ごとの6桁コードと単位数（請求の自動計算に必須）',
   },
   {
     href: '/settings/addition-requirements',

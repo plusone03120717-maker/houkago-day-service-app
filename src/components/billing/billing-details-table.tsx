@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { BillingDetailRow } from './billing-detail-row'
+import { BillingDetailRow, type BreakdownLine } from './billing-detail-row'
 
 type Detail = {
   id: string
@@ -13,6 +13,7 @@ type Detail = {
   copay_amount: number
   billed_amount: number
   errors: string[]
+  service_breakdown: BreakdownLine[]
   children: { name: string; name_kana: string | null } | null
 }
 
