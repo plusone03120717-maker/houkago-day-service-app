@@ -19,7 +19,7 @@ import {
   CalendarDays,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import { WeeklyAttendanceView } from './weekly-attendance-view'
+import { MonthlyAttendanceView } from './monthly-attendance-view'
 import {
   TransportDaytimePanel,
   TransportDaytimeToggle,
@@ -108,7 +108,7 @@ export function AttendanceBoard({
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [saving, setSaving] = useState<string | null>(null)
-  const [view, setView] = useState<'day' | 'week'>('day')
+  const [view, setView] = useState<'day' | 'month'>('day')
 
   // 送迎・日中一時入力（日々の記録と同じUI）
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -441,20 +441,20 @@ export function AttendanceBoard({
             日別
           </button>
           <button
-            onClick={() => setView('week')}
+            onClick={() => setView('month')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              view === 'week' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              view === 'month' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
             <CalendarDays className="h-3.5 w-3.5" />
-            週別
+            月別
           </button>
         </div>
       </div>
 
-      {/* 週別ビュー */}
-      {view === 'week' && (
-        <WeeklyAttendanceView
+      {/* 月別ビュー */}
+      {view === 'month' && (
+        <MonthlyAttendanceView
           baseDate={date}
           selectedUnitId={selectedUnitId}
           units={units}
