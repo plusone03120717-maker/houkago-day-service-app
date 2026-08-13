@@ -64,7 +64,7 @@ export default async function AdditionsSettingsPage() {
       <Card>
         <CardContent className="p-4 text-sm text-gray-600 space-y-1">
           <p className="font-medium text-gray-900">加算について</p>
-          <p>各加算の算定率は基本報酬に対する割合です。実際の加算額は請求データ生成時に自動計算されます。</p>
+          <p>各加算の算定率は基本報酬に対する割合です。請求明細の単位数・金額には自動反映されないため、請求明細画面で入力してください。</p>
           <p className="text-xs text-gray-400">※ 算定率は法改正により変更される場合があります。最新の情報をご確認ください。</p>
         </CardContent>
       </Card>

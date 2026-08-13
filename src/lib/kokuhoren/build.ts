@@ -89,7 +89,7 @@ export function buildKokuhorenCsv(
     }
     if (!/^[0-9A-Z]{6}$/.test(c.serviceCode)) {
       errors.push(
-        `${label}: サービスコードが6桁の英数字ではありません: 「${c.serviceCode}」（設定 > 国保連サービスコード設定 で基本報酬のコードを登録し、請求データを再生成してください）`,
+        `${label}: サービスコードが6桁の英数字ではありません: 「${c.serviceCode}」（請求明細画面の児童行の鉛筆アイコンから6桁のコードを入力してください）`,
       )
     }
     if (!/^[0-9A-Z]{6}$/.test(c.decisionServiceCode)) {
