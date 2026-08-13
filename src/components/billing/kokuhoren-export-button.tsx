@@ -6,9 +6,25 @@ import { FileDown, AlertCircle, AlertTriangle } from 'lucide-react'
 
 interface Props {
   billingMonthlyId: string
+  /** 出力するCSVの種類 */
+  kind?: 'billing' | 'service_record'
 }
 
-export function KokuhorenExportButton({ billingMonthlyId }: Props) {
+const KINDS = {
+  billing: {
+    endpoint: '/api/billing/export-kokuhoren',
+    label: '国保連取込用CSV（仕様準拠）',
+    fallbackFileName: 'K112.CSV',
+  },
+  service_record: {
+    endpoint: '/api/billing/export-service-record',
+    label: 'サービス提供実績記録票CSV（仕様準拠）',
+    fallbackFileName: 'K611.CSV',
+  },
+} as const
+
+export function KokuhorenExportButton({ billingMonthlyId, kind = 'billing' }: Props) {
+  const config = KINDS[kind]
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
@@ -18,7 +34,7 @@ export function KokuhorenExportButton({ billingMonthlyId }: Props) {
     setErrors([])
     setWarnings([])
     try {
-      const res = await fetch(`/api/billing/export-kokuhoren?billingMonthlyId=${billingMonthlyId}`)
+      const res = await fetch(`${config.endpoint}?billingMonthlyId=${billingMonthlyId}`)
       if (!res.ok) {
         const body = await res.json().catch(() => null)
         setErrors(body?.errors ?? [body?.error ?? '出力に失敗しました'])
@@ -38,7 +54,7 @@ export function KokuhorenExportButton({ billingMonthlyId }: Props) {
       a.href = URL.createObjectURL(blob)
       const cd = res.headers.get('Content-Disposition') ?? ''
       const match = cd.match(/filename="(.+)"/)
-      a.download = match?.[1] ?? 'K112.CSV'
+      a.download = match?.[1] ?? config.fallbackFileName
       a.click()
       URL.revokeObjectURL(a.href)
     } finally {
@@ -50,7 +66,7 @@ export function KokuhorenExportButton({ billingMonthlyId }: Props) {
     <div className="space-y-2">
       <Button onClick={handleExport} disabled={loading} size="sm">
         <FileDown className="h-4 w-4" />
-        {loading ? '出力中...' : '国保連取込用CSV（仕様準拠）'}
+        {loading ? '出力中...' : config.label}
       </Button>
 
       {errors.length > 0 && (

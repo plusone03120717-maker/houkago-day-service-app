@@ -295,6 +295,7 @@ export default async function BillingDetailPage({
               {/* CSV出力 */}
               <div className="space-y-3 pt-2 border-t border-gray-100">
                 <KokuhorenExportButton billingMonthlyId={billing.id} />
+                <KokuhorenExportButton billingMonthlyId={billing.id} kind="service_record" />
                 <div className="flex gap-2 flex-wrap">
                   <BillingExportButton
                     billingMonthlyId={billing.id}
@@ -308,7 +309,8 @@ export default async function BillingDetailPage({
                   />
                 </div>
                 <p className="text-xs text-gray-400">
-                  国保連取込用CSVはインタフェース仕様書（K112請求書・K122明細書）準拠。取込送信ソフトへ取り込んで伝送してください。参考CSVは事業所内確認用です。
+                  国保連取込用CSVはインタフェース仕様書（K112請求書・K122明細書）、サービス提供実績記録票CSVは同仕様書（K611）に準拠。
+                  2つとも取込送信ソフトへ取り込んで伝送してください。参考CSVは事業所内確認用です。
                 </p>
               </div>
             </CardContent>

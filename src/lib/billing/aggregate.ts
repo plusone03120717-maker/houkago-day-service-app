@@ -5,6 +5,7 @@
 import type { createClient } from '@/lib/supabase/server'
 import {
   computeBillingDay,
+  extensionThresholdMinutes,
   getItemQuantity,
   isItemChecked,
   isHolidayDate,
@@ -27,10 +28,32 @@ export type BreakdownLine = {
   units: number
 }
 
+/** サービス提供実績記録票（K611）の明細情報レコード1行分 */
+export type ServiceDayRecord = {
+  date: string
+  /** 1=授業終了後（平日） 2=休業日 */
+  serviceFormType: 1 | 2
+  /** 'HH:MM'。欠席日は null */
+  startTime: string | null
+  endTime: string | null
+  /** 算定時間数（時間・30分単位） */
+  hours: number
+  transportPickup: boolean
+  transportDropoff: boolean
+  /** 欠席時対応加算を算定する欠席日 */
+  absent: boolean
+  /** 延長支援加算の区分（0=なし 1=1時間未満 2=1〜2時間 3=2時間以上） */
+  extensionLevel: 0 | 1 | 2 | 3
+}
+
 export type ChildAggregate = {
   childId: string
   childName: string
   certificateId: string | null
+  certificateNumber: string | null
+  municipalityCode: string | null
+  /** サービス提供実績記録票用の日別データ */
+  days: ServiceDayRecord[]
   totalDays: number
   totalUnits: number
   breakdown: BreakdownLine[]
@@ -70,6 +93,8 @@ type BasicRateRow = {
 type CertRow = {
   id: string
   child_id: string
+  certificate_number: string
+  municipality: string | null
   start_date: string
   end_date: string
   copay_limit: number
@@ -218,7 +243,7 @@ export async function aggregateUnitMonth(
       : Promise.resolve({ data: [] }),
     supabase
       .from('benefit_certificates')
-      .select('id, child_id, start_date, end_date, copay_limit, max_days_per_month, contract_amount')
+      .select('id, child_id, certificate_number, municipality, start_date, end_date, copay_limit, max_days_per_month, contract_amount')
       .in('child_id', childIds)
       .lte('start_date', end)
       .gte('end_date', start),
@@ -285,6 +310,7 @@ export async function aggregateUnitMonth(
     const tooShortDates: string[] = []
     const missingRates = new Set<string>()
     const missingItemUnits = new Set<string>()
+    const dayRecords: ServiceDayRecord[] = []
     let totalDays = 0
 
     const addLine = (code: string | null, name: string, unitCount: number, count: number) => {
@@ -312,12 +338,21 @@ export async function aggregateUnitMonth(
         participatedActivities: activityMap.get(`${childId}|${date}`) ?? new Set(),
       })
 
+      // 実績記録票に出力する当日のチェック状態
+      const checked = { basic: false, absent: false, pickup: false, dropoff: false, extension: false }
+
       for (const item of serviceItems) {
         // 保険外は給付費の対象外（実費管理で扱う）
         if (item.category === '保険外') continue
 
         const manual = dailyRecords.find((r) => r.date === date && r.service_item_id === item.id)
         if (!isItemChecked(item, day, manual)) continue
+
+        if (item.trigger_field === 'basic') checked.basic = true
+        else if (item.trigger_field === 'absent') checked.absent = true
+        else if (item.trigger_field === 'transport_pickup') checked.pickup = true
+        else if (item.trigger_field === 'transport_dropoff') checked.dropoff = true
+        else if (item.trigger_field === 'extension') checked.extension = true
 
         if (item.trigger_field === 'basic') {
           totalDays++
@@ -350,6 +385,27 @@ export async function aggregateUnitMonth(
           continue
         }
         addLine(item.billing_code, item.name, item.unit_count, quantity)
+      }
+
+      // 実績記録票の明細行（記録すべきことが何もない日は作らない）
+      if (checked.basic || checked.absent || checked.pickup || checked.dropoff) {
+        // 延長支援加算の区分は基準時間の超過分から決める（仕様 2.1.3.6 明細情報 項番111）
+        const overMinutes = day.durationMinutes - extensionThresholdMinutes(day.serviceFormType)
+        let extensionLevel: 0 | 1 | 2 | 3 = 0
+        if (checked.extension) {
+          extensionLevel = overMinutes >= 120 ? 3 : overMinutes >= 60 ? 2 : 1
+        }
+        dayRecords.push({
+          date,
+          serviceFormType: day.serviceFormType,
+          startTime: checked.basic ? day.startTime : null,
+          endTime: checked.basic ? day.endTime : null,
+          hours: checked.basic ? day.hoursCalculated : 0,
+          transportPickup: checked.pickup,
+          transportDropoff: checked.dropoff,
+          absent: !checked.basic && checked.absent,
+          extensionLevel,
+        })
       }
     }
 
@@ -397,6 +453,9 @@ export async function aggregateUnitMonth(
       childId,
       childName,
       certificateId: cert?.id ?? null,
+      certificateNumber: cert?.certificate_number ?? null,
+      municipalityCode: cert?.municipality ?? null,
+      days: dayRecords,
       totalDays,
       totalUnits,
       breakdown,
