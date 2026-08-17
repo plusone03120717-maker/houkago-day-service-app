@@ -6,9 +6,10 @@ import { createClient } from '@/lib/supabase/client'
 import { confirmReservation, confirmAllReservations } from '@/app/actions/reservation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, Check, CheckCheck, X, Plus, AlertTriangle, RotateCcw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, CheckCheck, X, Plus, AlertTriangle, RotateCcw, Trash2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
+import { deleteUsageDay } from '@/lib/usage-day'
 
 type Unit = { id: string; name: string; capacity: number }
 type Reservation = {
@@ -60,6 +61,8 @@ export function UsageCalendar({
   const [addStatus, setAddStatus] = useState<'confirmed' | 'reserved'>('confirmed')
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Reservation | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const changeMonth = (delta: number) => {
     const d = new Date(year, month - 1 + delta, 1)
@@ -179,24 +182,51 @@ export function UsageCalendar({
     startTransition(() => router.refresh())
   }
 
+  // 誤って入れた予定を「なかったこと」にする（キャンセルとは別物）
+  // 出席管理にも出てこないよう、利用計画からの自動生成もこの日だけ止める
+  const handleDelete = async (reservation: Reservation) => {
+    setDeleting(true)
+    const { error } = await deleteUsageDay(supabase, {
+      childId: reservation.child_id,
+      unitId: reservation.unit_id,
+      date: reservation.date,
+    })
+    setDeleting(false)
+    if (error) {
+      alert(`削除エラー: ${error}`)
+      return
+    }
+    setConfirmDelete(null)
+    startTransition(() => router.refresh())
+  }
+
   const handleAddReservation = async () => {
     if (!addChildId || !selectedDate) return
     setAdding(true)
     setAddError(null)
+    // requested_by を入れて「手動で追加した予約」と分かるようにする。
+    // 出席管理は計画のない自動生成予約（requested_by=null）を除外するため、
+    // これがないと追加しても出席管理に出てこない。
+    const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase.from('usage_reservations').insert({
       child_id: addChildId,
       unit_id: selectedUnitId,
       date: selectedDate,
       status: addStatus,
+      requested_by: user?.id ?? null,
+      requested_at: new Date().toISOString(),
     })
-    setAdding(false)
     if (error) {
+      setAdding(false)
       setAddError(error.code === '23505' ? 'この児童はすでにこの日に予約があります' : error.message)
-    } else {
-      setShowAddForm(false)
-      setAddChildId('')
-      startTransition(() => router.refresh())
+      return
     }
+    // 一度削除・キャンセルした日を追加し直した場合、利用計画側のキャンセルを解除する
+    await syncPlanOverride(addChildId, selectedDate, false)
+    setAdding(false)
+    setShowAddForm(false)
+    setAddChildId('')
+    startTransition(() => router.refresh())
   }
 
   return (
@@ -296,9 +326,18 @@ export function UsageCalendar({
                     <button
                       onClick={() => handleCancel(r.id)}
                       disabled={updating}
+                      title="キャンセル（記録は残す）"
                       className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-600 hover:bg-red-200 disabled:opacity-50 transition-colors"
                     >
-                      <X className="h-3 w-3" />削除
+                      <X className="h-3 w-3" />キャンセル
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(r)}
+                      disabled={updating || deleting}
+                      title="予定を削除（キャンセルではなく、なかったことにする）"
+                      className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      <Trash2 className="h-3 w-3" />削除
                     </button>
                   </div>
                 </div>
@@ -437,11 +476,19 @@ export function UsageCalendar({
                         onClick={() => handleCancel(r.id)}
                         disabled={updating}
                         className="p-1 text-red-400 hover:bg-red-50 rounded"
-                        title="キャンセル"
+                        title="キャンセル（記録は残す）"
                       >
                         <X className="h-4 w-4" />
                       </button>
                     )}
+                    <button
+                      onClick={() => setConfirmDelete(r)}
+                      disabled={updating || deleting}
+                      className="p-1 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                      title="予定を削除（キャンセルではなく、なかったことにする）"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -535,6 +582,75 @@ export function UsageCalendar({
           )}
         </div>
       )}
+
+      {/* ── 利用予定の削除確認ダイアログ ─────────────────────── */}
+      {confirmDelete && (() => {
+        const childName = confirmDelete.children?.name ?? 'この児童'
+        const [dy, dm, dd] = confirmDelete.date.split('-').map(Number)
+        const dow = DAY_LABELS[new Date(dy, dm - 1, dd).getDay()]
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => { if (!deleting) setConfirmDelete(null) }}
+          >
+            <div
+              className="bg-white rounded-xl shadow-xl max-w-md w-full p-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-full bg-red-50 flex-shrink-0">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-gray-900">
+                    {dm}月{dd}日（{dow}）の{childName}さんの利用予定を削除します
+                  </h3>
+                  <p className="text-sm text-red-700 font-medium mt-2 leading-relaxed">
+                    これは「キャンセル」ではありません。<br />
+                    <span className="underline">利用予定そのものが削除され</span>、記録がなかった状態に戻ります。
+                  </p>
+                </div>
+              </div>
+
+              <ul className="mt-3 space-y-1 text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
+                <li>・この日の利用予定（予約）を削除します</li>
+                <li>・出席／欠席の記録と、支援記録・活動記録も削除します</li>
+                <li>・毎週の利用計画がある場合も、この日だけ利用なしにします</li>
+                <li>・出席管理の「利用予定児童一覧」にも表示されなくなります</li>
+                <li>・この日の送迎予定・国保連請求の対象からも外れます</li>
+              </ul>
+
+              <p className="mt-3 text-xs text-gray-500 leading-relaxed">
+                削除すると元に戻せません。実際に利用予定があってお休みする場合（欠席時対応加算を算定する場合など）は「いいえ」を選び、「キャンセル」を使ってください。
+              </p>
+
+              <p className="mt-4 text-sm font-semibold text-gray-900 text-center">
+                削除してもよろしいですか？
+              </p>
+
+              <div className="mt-3 flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  disabled={deleting}
+                  onClick={() => setConfirmDelete(null)}
+                >
+                  いいえ
+                </Button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => handleDelete(confirmDelete)}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  はい、削除する
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

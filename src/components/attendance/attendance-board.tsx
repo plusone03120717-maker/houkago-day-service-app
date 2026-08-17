@@ -21,6 +21,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { deleteUsageDay } from '@/lib/usage-day'
 import { MonthlyAttendanceView } from './monthly-attendance-view'
 import {
   TransportDaytimePanel,
@@ -343,43 +344,16 @@ export function AttendanceBoard({
 
   // 利用予定ごと削除（そもそも利用予定がない児童を誤って入れてしまった場合）
   // 「欠席」にすると記録が残り請求にも出てくるため、なかったことにする操作を用意する
+  // 一覧の行は予約由来・利用計画由来・出欠記録由来が混在するため、
+  // 予約IDではなく児童・ユニット・日付で消す（利用状況ページと共通処理）
   const deleteReservation = async (res: Reservation) => {
-    const childId = res.child_id
-    setDeleting(childId)
-
-    // 請求側の上書きレコード
-    await supabase
-      .from('billing_daily_records')
-      .delete()
-      .eq('child_id', childId)
-      .eq('unit_id', selectedUnitId)
-      .eq('date', date)
-
-    // 出欠記録（支援記録・活動記録は ON DELETE CASCADE で一緒に消える）
-    const existing = attendanceMap[childId]
-    if (existing) {
-      const { error } = await supabase.from('daily_attendance').delete().eq('id', existing.id)
-      if (error) { alert(`削除エラー: ${error.message}`); setDeleting(null); return }
-    }
-
-    // 送迎予定
-    const { data: schedules } = await supabase
-      .from('transport_schedules')
-      .select('id')
-      .eq('unit_id', selectedUnitId)
-      .eq('date', date)
-    if (schedules && schedules.length > 0) {
-      await supabase
-        .from('transport_details')
-        .delete()
-        .eq('child_id', childId)
-        .in('schedule_id', schedules.map((s: { id: string }) => s.id))
-    }
-
-    // 利用予定そのもの
-    const { error: resError } = await supabase.from('usage_reservations').delete().eq('id', res.id)
-    if (resError) { alert(`削除エラー: ${resError.message}`); setDeleting(null); return }
-
+    setDeleting(res.child_id)
+    const { error } = await deleteUsageDay(supabase, {
+      childId: res.child_id,
+      unitId: selectedUnitId,
+      date,
+    })
+    if (error) { alert(`削除エラー: ${error}`); setDeleting(null); return }
     setDeleting(null)
     setConfirmDelete(null)
     startTransition(() => router.refresh())
@@ -755,6 +729,7 @@ export function AttendanceBoard({
               <ul className="mt-3 space-y-1 text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
                 <li>・この日の利用予定（予約）を削除します</li>
                 {hasAttendance && <li>・出席／欠席の記録と、支援記録・活動記録も削除します</li>}
+                <li>・毎週の利用計画がある場合も、この日だけ利用なしにします</li>
                 <li>・この日の送迎予定からも外します</li>
                 <li>・国保連請求の対象からも外れます</li>
               </ul>
