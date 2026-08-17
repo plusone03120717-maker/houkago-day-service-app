@@ -6,10 +6,10 @@ import { createClient } from '@/lib/supabase/client'
 import { confirmReservation, confirmAllReservations } from '@/app/actions/reservation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, Check, CheckCheck, X, Plus, AlertTriangle, RotateCcw, Trash2, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, CheckCheck, XCircle, Plus, AlertTriangle, RotateCcw, Trash2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
-import { deleteUsageDay } from '@/lib/usage-day'
+import { deleteUsageDay, markUsageDayAbsent, clearUsageDayAbsence } from '@/lib/usage-day'
 
 type Unit = { id: string; name: string; capacity: number }
 type Reservation = {
@@ -30,6 +30,8 @@ interface Props {
   reservations: Reservation[]
   childOptions: ChildOption[]
   summary: { confirmed: number; reserved: number; cancelled: number }
+  /** `${childId}_${date}` → daily_attendance.status */
+  attendanceStatusByKey: Record<string, string>
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -49,7 +51,7 @@ const STATUS_VARIANTS: Record<string, 'success' | 'default' | 'secondary' | 'war
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
 export function UsageCalendar({
-  year, month, units, selectedUnitId, reservations, childOptions, summary,
+  year, month, units, selectedUnitId, reservations, childOptions, summary, attendanceStatusByKey,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -148,23 +150,9 @@ export function UsageCalendar({
     }
   }
 
-  const handleCancel = async (reservationId: string) => {
-    const reservation = reservations.find((r) => r.id === reservationId)
-    setUpdating(true)
-    const { error } = await supabase
-      .from('usage_reservations')
-      .update({ status: 'cancelled' })
-      .eq('id', reservationId)
-    if (error) {
-      setUpdating(false)
-      alert(`キャンセルエラー: ${error.message}`)
-      return
-    }
-    if (reservation) await syncPlanOverride(reservation.child_id, reservation.date, true)
-    setUpdating(false)
-    startTransition(() => router.refresh())
-  }
-
+  // 「キャンセル」状態にする操作はこのページからは行わない。
+  // お休みは「欠席」（記録が残る）、誤登録は「削除」（なかったことにする）で使い分ける。
+  // 子ども管理などで付いた既存のキャンセルは、下の復元ボタンで戻せる。
   const handleRestore = async (reservationId: string) => {
     const reservation = reservations.find((r) => r.id === reservationId)
     setUpdating(true)
@@ -182,7 +170,30 @@ export function UsageCalendar({
     startTransition(() => router.refresh())
   }
 
-  // 誤って入れた予定を「なかったこと」にする（キャンセルとは別物）
+  const isAbsent = (r: Reservation) =>
+    attendanceStatusByKey[`${r.child_id}_${r.date}`] === 'absent'
+
+  // その日を欠席として記録する（予定は残るので出席管理にも欠席として出る）
+  // もう一度押すと欠席を取り消して未記録に戻す
+  const handleToggleAbsent = async (reservation: Reservation) => {
+    const args = {
+      childId: reservation.child_id,
+      unitId: reservation.unit_id,
+      date: reservation.date,
+    }
+    setUpdating(true)
+    const { error } = isAbsent(reservation)
+      ? await clearUsageDayAbsence(supabase, args)
+      : await markUsageDayAbsent(supabase, args)
+    setUpdating(false)
+    if (error) {
+      alert(`欠席の登録に失敗しました: ${error}`)
+      return
+    }
+    startTransition(() => router.refresh())
+  }
+
+  // 誤って入れた予定を「なかったこと」にする（欠席とは別物）
   // 出席管理にも出てこないよう、利用計画からの自動生成もこの日だけ止める
   const handleDelete = async (reservation: Reservation) => {
     setDeleting(true)
@@ -324,12 +335,12 @@ export function UsageCalendar({
                       <Check className="h-3 w-3" />確定
                     </button>
                     <button
-                      onClick={() => handleCancel(r.id)}
-                      disabled={updating}
-                      title="キャンセル（記録は残す）"
+                      onClick={() => handleToggleAbsent(r)}
+                      disabled={updating || deleting}
+                      title="この日を欠席として記録します（欠席時対応加算も算定できます）"
                       className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-600 hover:bg-red-200 disabled:opacity-50 transition-colors"
                     >
-                      <X className="h-3 w-3" />キャンセル
+                      <XCircle className="h-3 w-3" />欠席
                     </button>
                     <button
                       onClick={() => setConfirmDelete(r)}
@@ -445,7 +456,9 @@ export function UsageCalendar({
             <p className="text-sm text-gray-400">この日の予約はありません</p>
           ) : (
             <div className="space-y-2">
-              {selectedDateReservations.map((r) => (
+              {selectedDateReservations.map((r) => {
+                const absent = isAbsent(r)
+                return (
                 <div key={r.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                   <p className="text-sm font-medium text-gray-900">{r.children?.name ?? '—'}</p>
                   <div className="flex items-center gap-2">
@@ -462,7 +475,7 @@ export function UsageCalendar({
                         <Check className="h-4 w-4" />
                       </button>
                     )}
-                    {r.status === 'cancelled' ? (
+                    {r.status === 'cancelled' && (
                       <button
                         onClick={() => handleRestore(r.id)}
                         disabled={updating}
@@ -471,27 +484,36 @@ export function UsageCalendar({
                       >
                         <RotateCcw className="h-4 w-4" />
                       </button>
-                    ) : (
+                    )}
+                    {r.status !== 'cancelled' && (
                       <button
-                        onClick={() => handleCancel(r.id)}
-                        disabled={updating}
-                        className="p-1 text-red-400 hover:bg-red-50 rounded"
-                        title="キャンセル（記録は残す）"
+                        onClick={() => handleToggleAbsent(r)}
+                        disabled={updating || deleting}
+                        title={absent
+                          ? 'もう一度押すと欠席を取り消して未記録に戻します'
+                          : 'この日を欠席として記録します（記録は残り、欠席時対応加算も算定できます）'}
+                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors disabled:opacity-50 ${
+                          absent
+                            ? 'bg-red-500 text-white hover:bg-red-600'
+                            : 'bg-gray-100 text-gray-600 hover:bg-red-100 hover:text-red-700'
+                        }`}
                       >
-                        <X className="h-4 w-4" />
+                        <XCircle className="h-3.5 w-3.5" />
+                        欠席
                       </button>
                     )}
                     <button
                       onClick={() => setConfirmDelete(r)}
                       disabled={updating || deleting}
                       className="p-1 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                      title="予定を削除（キャンセルではなく、なかったことにする）"
+                      title="予定を削除（欠席ではなく、なかったことにする）"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
 

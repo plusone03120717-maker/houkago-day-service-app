@@ -12,6 +12,106 @@ type PlanRow = {
   dropoff_location_type: string
 }
 
+/** 欠席にしたときにクリアする送迎・利用時間フィールド */
+export const ABSENT_CLEARED_FIELDS = {
+  pickup_departure_time: null,
+  pickup_arrival_time: null,
+  dropoff_departure_time: null,
+  dropoff_arrival_time: null,
+  service_start_time: null,
+  service_end_time: null,
+  check_in_time: null,
+  check_out_time: null,
+  daytime_support: false,
+  daytime_support_start_time: null,
+  daytime_support_end_time: null,
+  daytime_pickup_departure_time: null,
+  daytime_pickup_arrival_time: null,
+  daytime_dropoff_departure_time: null,
+  daytime_dropoff_arrival_time: null,
+  daytime_pickup_driver_member_id: null,
+  daytime_pickup_vehicle_id: null,
+  daytime_dropoff_driver_member_id: null,
+  daytime_dropoff_vehicle_id: null,
+  pickup_driver_member_id: null,
+  pickup_vehicle_id: null,
+  dropoff_driver_member_id: null,
+  dropoff_vehicle_id: null,
+}
+
+/** その日の送迎予定から外す */
+async function removeFromTransport(supabase: Client, childId: string, unitId: string, date: string) {
+  const { data: schedules } = await supabase
+    .from('transport_schedules')
+    .select('id')
+    .eq('unit_id', unitId)
+    .eq('date', date)
+  if (schedules && schedules.length > 0) {
+    await supabase
+      .from('transport_details')
+      .delete()
+      .eq('child_id', childId)
+      .in('schedule_id', schedules.map((s: { id: string }) => s.id))
+  }
+}
+
+/**
+ * その日を「欠席」として記録する。
+ * 予約や利用計画には触らないので、出席管理には欠席として残り続け、
+ * 国保連請求でも欠席時対応加算を算定できる。
+ * （予定ごとなかったことにしたい場合は deleteUsageDay を使うこと）
+ */
+export async function markUsageDayAbsent(
+  supabase: Client,
+  { childId, unitId, date }: { childId: string; unitId: string; date: string }
+): Promise<{ error?: string }> {
+  const { data: existing } = await supabase
+    .from('daily_attendance')
+    .select('id')
+    .eq('child_id', childId)
+    .eq('unit_id', unitId)
+    .eq('date', date)
+    .maybeSingle()
+
+  if (existing) {
+    const { error } = await supabase
+      .from('daily_attendance')
+      .update({ status: 'absent', ...ABSENT_CLEARED_FIELDS })
+      .eq('id', existing.id)
+    if (error) return { error: error.message }
+  } else {
+    const { data: { user } } = await supabase.auth.getUser()
+    const { error } = await supabase.from('daily_attendance').insert({
+      child_id: childId,
+      unit_id: unitId,
+      date,
+      status: 'absent',
+      pickup_type: 'none',
+      created_by: user?.id ?? null,
+    })
+    if (error) return { error: error.message }
+  }
+
+  await removeFromTransport(supabase, childId, unitId, date)
+  return {}
+}
+
+/** 欠席を取り消して「未記録」に戻す（出席記録は消さない） */
+export async function clearUsageDayAbsence(
+  supabase: Client,
+  { childId, unitId, date }: { childId: string; unitId: string; date: string }
+): Promise<{ error?: string }> {
+  const { error } = await supabase
+    .from('daily_attendance')
+    .delete()
+    .eq('child_id', childId)
+    .eq('unit_id', unitId)
+    .eq('date', date)
+    .eq('status', 'absent')
+  if (error) return { error: error.message }
+  return {}
+}
+
 /**
  * 利用計画から自動生成される分を、その日だけキャンセル扱いにする。
  * これをやらないと、予約を消しても出席管理が利用計画から一覧を作り直すため
@@ -91,18 +191,7 @@ export async function deleteUsageDay(
   if (attError) return { error: attError.message }
 
   // 送迎予定
-  const { data: schedules } = await supabase
-    .from('transport_schedules')
-    .select('id')
-    .eq('unit_id', unitId)
-    .eq('date', date)
-  if (schedules && schedules.length > 0) {
-    await supabase
-      .from('transport_details')
-      .delete()
-      .eq('child_id', childId)
-      .in('schedule_id', schedules.map((s: { id: string }) => s.id))
-  }
+  await removeFromTransport(supabase, childId, unitId, date)
 
   // 利用計画からの自動生成を止める
   const planError = await cancelUsagePlanForDate(supabase, childId, date)

@@ -35,7 +35,7 @@ export default async function UsagePage({
 
   const selectedUnitId = params.unit ?? units[0]?.id ?? ''
 
-  const [reservationsResult, childrenResult] = await Promise.all([
+  const [reservationsResult, childrenResult, attendanceResult] = await Promise.all([
     selectedUnitId
       ? supabase
           .from('usage_reservations')
@@ -50,10 +50,26 @@ export default async function UsagePage({
       .from('children')
       .select('id, name')
       .order('name'),
+
+    // 出欠の記録（「欠席」ボタンの状態表示に使う）
+    selectedUnitId
+      ? supabase
+          .from('daily_attendance')
+          .select('child_id, date, status')
+          .eq('unit_id', selectedUnitId)
+          .gte('date', startDate)
+          .lte('date', endDate)
+      : Promise.resolve({ data: [] }),
   ])
 
   const reservations = (reservationsResult.data ?? []) as unknown as Reservation[]
   const childOptions = (childrenResult.data ?? []) as unknown as ChildOption[]
+
+  // `${childId}_${date}` → 'attended' | 'absent' | ...
+  const attendanceStatusByKey = Object.fromEntries(
+    ((attendanceResult.data ?? []) as unknown as { child_id: string; date: string; status: string }[])
+      .map((a) => [`${a.child_id}_${a.date}`, a.status])
+  )
 
   const confirmedCount = reservations.filter((r) => r.status === 'confirmed').length
   const reservedCount = reservations.filter((r) => r.status === 'reserved').length
@@ -73,6 +89,7 @@ export default async function UsagePage({
         selectedUnitId={selectedUnitId}
         reservations={reservations}
         childOptions={childOptions}
+        attendanceStatusByKey={attendanceStatusByKey}
         summary={{ confirmed: confirmedCount, reserved: reservedCount, cancelled: cancelledCount }}
       />
     </div>

@@ -21,7 +21,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import { deleteUsageDay } from '@/lib/usage-day'
+import { deleteUsageDay, ABSENT_CLEARED_FIELDS } from '@/lib/usage-day'
 import { MonthlyAttendanceView } from './monthly-attendance-view'
 import {
   TransportDaytimePanel,
@@ -270,31 +270,7 @@ export function AttendanceBoard({
       if (updates.status === 'absent') {
         await supabase
           .from('daily_attendance')
-          .update({
-            pickup_departure_time: null,
-            pickup_arrival_time: null,
-            dropoff_departure_time: null,
-            dropoff_arrival_time: null,
-            service_start_time: null,
-            service_end_time: null,
-            check_in_time: null,
-            check_out_time: null,
-            daytime_support: false,
-            daytime_support_start_time: null,
-            daytime_support_end_time: null,
-            daytime_pickup_departure_time: null,
-            daytime_pickup_arrival_time: null,
-            daytime_dropoff_departure_time: null,
-            daytime_dropoff_arrival_time: null,
-            daytime_pickup_driver_member_id: null,
-            daytime_pickup_vehicle_id: null,
-            daytime_dropoff_driver_member_id: null,
-            daytime_dropoff_vehicle_id: null,
-            pickup_driver_member_id: null,
-            pickup_vehicle_id: null,
-            dropoff_driver_member_id: null,
-            dropoff_vehicle_id: null,
-          })
+          .update(ABSENT_CLEARED_FIELDS)
           .eq('id', existing.id)
       }
     } else {
