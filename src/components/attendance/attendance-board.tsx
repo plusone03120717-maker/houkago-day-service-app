@@ -17,6 +17,8 @@ import {
   ClipboardEdit,
   LayoutList,
   CalendarDays,
+  Trash2,
+  Loader2,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { MonthlyAttendanceView } from './monthly-attendance-view'
@@ -108,6 +110,8 @@ export function AttendanceBoard({
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [saving, setSaving] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Reservation | null>(null)
   const [view, setView] = useState<'day' | 'month'>('day')
 
   // 送迎・日中一時入力（日々の記録と同じUI）
@@ -334,6 +338,50 @@ export function AttendanceBoard({
     const { error } = await supabase.from('daily_attendance').delete().eq('id', existing.id)
     if (error) { alert(`取り消しエラー: ${error.message}`); setSaving(null); return }
     setSaving(null)
+    startTransition(() => router.refresh())
+  }
+
+  // 利用予定ごと削除（そもそも利用予定がない児童を誤って入れてしまった場合）
+  // 「欠席」にすると記録が残り請求にも出てくるため、なかったことにする操作を用意する
+  const deleteReservation = async (res: Reservation) => {
+    const childId = res.child_id
+    setDeleting(childId)
+
+    // 請求側の上書きレコード
+    await supabase
+      .from('billing_daily_records')
+      .delete()
+      .eq('child_id', childId)
+      .eq('unit_id', selectedUnitId)
+      .eq('date', date)
+
+    // 出欠記録（支援記録・活動記録は ON DELETE CASCADE で一緒に消える）
+    const existing = attendanceMap[childId]
+    if (existing) {
+      const { error } = await supabase.from('daily_attendance').delete().eq('id', existing.id)
+      if (error) { alert(`削除エラー: ${error.message}`); setDeleting(null); return }
+    }
+
+    // 送迎予定
+    const { data: schedules } = await supabase
+      .from('transport_schedules')
+      .select('id')
+      .eq('unit_id', selectedUnitId)
+      .eq('date', date)
+    if (schedules && schedules.length > 0) {
+      await supabase
+        .from('transport_details')
+        .delete()
+        .eq('child_id', childId)
+        .in('schedule_id', schedules.map((s: { id: string }) => s.id))
+    }
+
+    // 利用予定そのもの
+    const { error: resError } = await supabase.from('usage_reservations').delete().eq('id', res.id)
+    if (resError) { alert(`削除エラー: ${resError.message}`); setDeleting(null); return }
+
+    setDeleting(null)
+    setConfirmDelete(null)
     startTransition(() => router.refresh())
   }
 
@@ -620,6 +668,18 @@ export function AttendanceBoard({
                           記録
                         </Link>
                       )}
+
+                      {/* 利用予定ごと削除（誤って予定に入れた児童を一覧から消す） */}
+                      <button
+                        onClick={() => setConfirmDelete(res)}
+                        disabled={deleting === child.id}
+                        title="この日の利用予定を削除（欠席にするのではなく、一覧から消して未登録に戻す）"
+                        className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                      >
+                        {deleting === child.id
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <Trash2 className="h-4 w-4" />}
+                      </button>
                     </div>
                   </CardContent>
 
@@ -662,6 +722,74 @@ export function AttendanceBoard({
       </div>
         </>
       )}
+
+      {/* ── 利用予定の削除確認ダイアログ ─────────────────────── */}
+      {confirmDelete && (() => {
+        const childName = confirmDelete.children?.name ?? 'この児童'
+        const isDeleting = deleting === confirmDelete.child_id
+        const hasAttendance = !!attendanceMap[confirmDelete.child_id]
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => { if (!isDeleting) setConfirmDelete(null) }}
+          >
+            <div
+              className="bg-white rounded-xl shadow-xl max-w-md w-full p-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-full bg-red-50 flex-shrink-0">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-gray-900">
+                    {formatDate(date)}の{childName}さんの利用予定を削除します
+                  </h3>
+                  <p className="text-sm text-red-700 font-medium mt-2 leading-relaxed">
+                    これは「欠席」にする操作ではありません。<br />
+                    <span className="underline">利用予定そのものが削除され</span>、一覧から消えて記録がなかった状態に戻ります。
+                  </p>
+                </div>
+              </div>
+
+              <ul className="mt-3 space-y-1 text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
+                <li>・この日の利用予定（予約）を削除します</li>
+                {hasAttendance && <li>・出席／欠席の記録と、支援記録・活動記録も削除します</li>}
+                <li>・この日の送迎予定からも外します</li>
+                <li>・国保連請求の対象からも外れます</li>
+              </ul>
+
+              <p className="mt-3 text-xs text-gray-500 leading-relaxed">
+                削除すると元に戻せません。実際に利用予定があってお休みした場合（欠席時対応加算を算定する場合など）は「いいえ」を選び、「欠席」ボタンを使ってください。
+              </p>
+
+              <p className="mt-4 text-sm font-semibold text-gray-900 text-center">
+                削除してもよろしいですか？
+              </p>
+
+              <div className="mt-3 flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  disabled={isDeleting}
+                  onClick={() => setConfirmDelete(null)}
+                >
+                  いいえ
+                </Button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => deleteReservation(confirmDelete)}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  {isDeleting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  はい、削除する
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
