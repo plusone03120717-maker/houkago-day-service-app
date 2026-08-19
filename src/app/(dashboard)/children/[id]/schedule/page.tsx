@@ -20,11 +20,36 @@ export default async function ChildSchedulePage({
   const month = parseInt(sp.month ?? String(now.getMonth() + 1))
   const supabase = await createClient()
 
-  const { data: childRaw } = await supabase
-    .from('children')
-    .select('id, name, address, school_id, schools(id, name)')
-    .eq('id', childId)
-    .single()
+  // 児童・ユニット一覧・利用計画・送迎設定は互いに独立しているため並列取得
+  const [
+    { data: childRaw },
+    { data: unitsRaw },
+    { data: plansRaw },
+    { data: transportSettingRaw },
+  ] = await Promise.all([
+    supabase
+      .from('children')
+      .select('id, name, address, school_id, schools(id, name)')
+      .eq('id', childId)
+      .single(),
+    // 全ユニット（施設内）
+    supabase
+      .from('units')
+      .select('id, name, service_type')
+      .order('name'),
+    // 既存の利用計画
+    supabase
+      .from('usage_plans')
+      .select('id, name, child_id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, service_start_time, service_end_time, transport_type, pickup_location_type, dropoff_location_type, daytime_support, daytime_support_start_time, daytime_support_end_time, units(name)')
+      .eq('child_id', childId)
+      .order('start_date', { ascending: false }),
+    // 既存の送迎設定（新規追加時のデフォルト用）
+    supabase
+      .from('child_transport_settings')
+      .select('transport_type, pickup_location_type, dropoff_location_type')
+      .eq('child_id', childId)
+      .maybeSingle(),
+  ])
 
   if (!childRaw) notFound()
   const child = childRaw as unknown as {
@@ -35,20 +60,8 @@ export default async function ChildSchedulePage({
     schools: { id: string; name: string } | null
   }
 
-  // 全ユニット（施設内）を取得
   type UnitRow = { id: string; name: string; service_type: string }
-  const { data: unitsRaw } = await supabase
-    .from('units')
-    .select('id, name, service_type')
-    .order('name')
   const units = (unitsRaw ?? []) as unknown as UnitRow[]
-
-  // 既存の利用計画
-  const { data: plansRaw } = await supabase
-    .from('usage_plans')
-    .select('id, name, child_id, unit_id, day_of_week, start_date, end_date, is_active, pickup_time, dropoff_time, service_start_time, service_end_time, transport_type, pickup_location_type, dropoff_location_type, daytime_support, daytime_support_start_time, daytime_support_end_time, units(name)')
-    .eq('child_id', childId)
-    .order('start_date', { ascending: false })
 
   type Plan = {
     id: string
@@ -73,12 +86,6 @@ export default async function ChildSchedulePage({
   }
   const plans = (plansRaw ?? []) as unknown as Plan[]
 
-  // 既存の送迎設定（新規追加時のデフォルト用）
-  const { data: transportSettingRaw } = await supabase
-    .from('child_transport_settings')
-    .select('transport_type, pickup_location_type, dropoff_location_type')
-    .eq('child_id', childId)
-    .maybeSingle()
   const defaultTransportType = (transportSettingRaw?.transport_type as string | null)
     ?? plans[0]?.transport_type
     ?? 'both'
@@ -89,14 +96,21 @@ export default async function ChildSchedulePage({
     ?? plans[0]?.dropoff_location_type
     ?? 'home'
 
-  // 曜日別設定を取得
+  // 曜日別設定・特定日上書き設定を並列取得
   const planIds = plans.map((p) => p.id)
-  const { data: daySettingsRaw } = planIds.length > 0
-    ? await supabase
-        .from('usage_plan_day_settings')
-        .select('id, plan_id, day_of_week, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time')
-        .in('plan_id', planIds)
-    : { data: [] }
+  const [{ data: daySettingsRaw }, { data: dateOverridesRaw }] = planIds.length > 0
+    ? await Promise.all([
+        supabase
+          .from('usage_plan_day_settings')
+          .select('id, plan_id, day_of_week, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time')
+          .in('plan_id', planIds),
+        supabase
+          .from('usage_plan_date_overrides')
+          .select('id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time, is_cancelled')
+          .in('plan_id', planIds)
+          .order('date', { ascending: true }),
+      ])
+    : [{ data: [] }, { data: [] }]
 
   type DaySetting = {
     id: string
@@ -112,14 +126,6 @@ export default async function ChildSchedulePage({
   }
   const daySettings = (daySettingsRaw ?? []) as unknown as DaySetting[]
 
-  // 特定日上書き設定を取得
-  const { data: dateOverridesRaw } = planIds.length > 0
-    ? await supabase
-        .from('usage_plan_date_overrides')
-        .select('id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time, is_cancelled')
-        .in('plan_id', planIds)
-        .order('date', { ascending: true })
-    : { data: [] }
 
   type DateOverride = {
     id: string

@@ -1,6 +1,6 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { requireSessionUser } from '@/lib/auth'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 import { PendingRequestsBadge } from '@/components/layout/pending-requests-badge'
@@ -13,26 +13,16 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/login')
-  }
-
-  // ユーザー情報取得
-  const { data: userData } = await supabase
-    .from('users')
-    .select('name, role')
-    .eq('id', user.id)
-    .single()
+  // getUser()（Auth サーバーへの往復）+ users テーブル参照の2往復を、
+  // JWT のローカル検証だけで済ませる。詳細は lib/auth.ts を参照。
+  const user = await requireSessionUser()
 
   // 保護者の場合は保護者ダッシュボードへリダイレクト
-  if (userData?.role === 'parent') {
+  if (user.role === 'parent') {
     redirect('/parent')
   }
 
-  const role = userData?.role ?? 'staff'
+  const role = user.role ?? 'staff'
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -40,7 +30,7 @@ export default async function DashboardLayout({
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* お知らせベルはページ表示をブロックせず後から流し込む */}
         <Header
-          userName={userData?.name}
+          userName={user.name ?? undefined}
           pendingBadge={
             <Suspense fallback={null}>
               <PendingRequestsBadge />

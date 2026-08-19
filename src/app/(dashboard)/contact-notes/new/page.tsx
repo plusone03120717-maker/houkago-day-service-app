@@ -1,5 +1,6 @@
 import { getTodayJST } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { NewContactNoteForm } from '@/components/contact-notes/new-contact-note-form'
@@ -20,7 +21,7 @@ export default async function NewContactNotePage({
 }) {
   const params = await searchParams
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const userId = await getSessionUserId()
 
   const targetDate = params.date ?? getTodayJST()
 
@@ -51,7 +52,7 @@ export default async function NewContactNotePage({
         date={targetDate}
         attended={attended}
         defaultChildId={params.childId}
-        staffId={user?.id ?? ''}
+        staffId={userId ?? ''}
       />
     </div>
   )

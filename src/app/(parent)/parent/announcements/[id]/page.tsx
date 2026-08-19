@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, Bell } from 'lucide-react'
@@ -21,8 +22,8 @@ export default async function ParentAnnouncementDetailPage({
 }) {
   const { id } = await params
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  const userId = await getSessionUserId()
+  if (!userId) return null
 
   const { data: annRaw } = await supabase
     .from('announcements')

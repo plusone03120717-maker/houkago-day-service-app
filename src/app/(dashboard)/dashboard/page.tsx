@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -42,7 +43,7 @@ type Reservation = {
 
 export default async function DashboardPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const userId = await getSessionUserId()
   const today = getTodayJST()
   const [todayY, todayM] = today.split('-').map(Number)
   const thisMonthStart = `${todayY}-${String(todayM).padStart(2, '0')}-01`
@@ -69,6 +70,7 @@ export default async function DashboardPage() {
     todayMedLogsResult,
     activeMedsCountResult,
     unpublishedNotesResult,
+    writtenRecordsResult,
   ] = await Promise.all([
     supabase
       .from('usage_reservations')
@@ -101,10 +103,10 @@ export default async function DashboardPage() {
       .limit(5),
 
     // 自分宛の未読メッセージ数
-    user ? supabase
+    userId ? supabase
       .from('messages')
       .select('id', { count: 'exact', head: true })
-      .eq('receiver_id', user.id)
+      .eq('receiver_id', userId)
       .is('read_at', null) : Promise.resolve({ count: 0 }),
 
     // 承認待ち予約（詳細付き）
@@ -172,6 +174,13 @@ export default async function DashboardPage() {
       .is('published_at', null)
       .order('date', { ascending: false })
       .limit(20),
+
+    // 当日の出席に紐づく記録数（出席IDの取得を待たずに内部結合で数える）
+    supabase
+      .from('daily_records')
+      .select('id, daily_attendance!inner(date, status)', { count: 'exact', head: true })
+      .eq('daily_attendance.date', today)
+      .eq('daily_attendance.status', 'attended'),
   ])
 
   // 予約 + 有効な利用計画から今日の予定をマージ（重複child_idは予約優先）
@@ -206,15 +215,8 @@ export default async function DashboardPage() {
   )
   const thisMonthUniqueChildren = uniqueChildIds.size
 
-  // 記録済みの出席ID
-  let writtenCount = 0
-  if (todayAttendedIds.length > 0) {
-    const { count } = await supabase
-      .from('daily_records')
-      .select('id', { count: 'exact', head: true })
-      .in('attendance_id', todayAttendedIds)
-    writtenCount = count ?? 0
-  }
+  // 記録済みの件数（上の並列バッチで取得済み）
+  const writtenCount = writtenRecordsResult.count ?? 0
   const unwrittenCount = todayAttendedIds.length - writtenCount
 
   const unpublishedNotes = (unpublishedNotesResult.data ?? []) as unknown as UnpublishedNote[]

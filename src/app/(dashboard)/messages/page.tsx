@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import { StaffMessagesUI } from '@/components/messages/staff-messages-ui'
 
 type Message = {
@@ -18,8 +19,8 @@ type ParentUser = {
 
 export default async function StaffMessagesPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  const userId = await getSessionUserId()
+  if (!userId) return null
 
   // 保護者一覧（role='parent'）
   const { data: parentsRaw } = await supabase
@@ -35,7 +36,7 @@ export default async function StaffMessagesPage() {
     ? await supabase
         .from('messages')
         .select('id, sender_id, receiver_id, content, read_at, created_at')
-        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
         .order('created_at', { ascending: true })
         .limit(200)
     : { data: [] }
@@ -44,14 +45,14 @@ export default async function StaffMessagesPage() {
   // 未読件数（保護者から自分への未読）
   const unreadByParent: Record<string, number> = {}
   messages.forEach((m) => {
-    if (m.receiver_id === user.id && !m.read_at && parentIds.includes(m.sender_id)) {
+    if (m.receiver_id === userId && !m.read_at && parentIds.includes(m.sender_id)) {
       unreadByParent[m.sender_id] = (unreadByParent[m.sender_id] ?? 0) + 1
     }
   })
 
   return (
     <StaffMessagesUI
-      currentUserId={user.id}
+      currentUserId={userId}
       parents={parents}
       messages={messages}
       unreadByParent={unreadByParent}

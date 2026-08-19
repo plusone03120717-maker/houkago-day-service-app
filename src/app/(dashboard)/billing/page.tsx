@@ -68,16 +68,40 @@ export default async function BillingPage({
   const yearMonth = `${year}${String(month).padStart(2, '0')}`
   const activeTab = params.tab ?? 'children'
 
-  const { data: unitsRaw } = await supabase
-    .from('units')
-    .select('id, name, service_type, facilities(name, facility_number)')
-    .order('name')
-  const units = (unitsRaw ?? []) as unknown as UnitWithFacility[]
+  // 該当月に有効な受給者証の範囲（下の並列取得で使う）
+  const certMonthStart = `${year}-${String(month).padStart(2, '0')}-01`
+  const certMonthEnd = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
 
-  const { data: billingMonthlyRaw } = await supabase
-    .from('billing_monthly')
-    .select('id, unit_id, year_month, status, billing_details (id, child_id, total_days, total_units, copay_amount, billed_amount, errors, is_confirmed, children (name))')
-    .eq('year_month', yearMonth)
+  // ユニット・月次請求・児童一覧・受給者証は互いに独立しているため並列取得
+  const [
+    { data: unitsRaw },
+    { data: billingMonthlyRaw },
+    { data: childrenUnitsRaw },
+    { data: certsRaw },
+  ] = await Promise.all([
+    supabase
+      .from('units')
+      .select('id, name, service_type, facilities(name, facility_number)')
+      .order('name'),
+    supabase
+      .from('billing_monthly')
+      .select('id, unit_id, year_month, status, billing_details (id, child_id, total_days, total_units, copay_amount, billed_amount, errors, is_confirmed, children (name))')
+      .eq('year_month', yearMonth),
+    // 児童一覧（ユニット別）
+    supabase
+      .from('children_units')
+      .select('child_id, children(id, name, name_kana), units(id, name, service_type)')
+      .order('children(name_kana)'),
+    // 該当月に有効な受給者証から上限管理事業所を取得
+    supabase
+      .from('benefit_certificates')
+      .select('child_id, upper_limit_manager, start_date, end_date')
+      .lte('start_date', certMonthEnd)
+      .gte('end_date', certMonthStart)
+      .not('upper_limit_manager', 'is', null),
+  ])
+
+  const units = (unitsRaw ?? []) as unknown as UnitWithFacility[]
   const billingMonthly = (billingMonthlyRaw ?? []) as unknown as BillingMonthly[]
 
   const billingByUnit = Object.fromEntries(billingMonthly.map((b) => [b.unit_id, b]))
@@ -96,22 +120,7 @@ export default async function BillingPage({
     }
   }
 
-  // 児童一覧（ユニット別）
-  const { data: childrenUnitsRaw } = await supabase
-    .from('children_units')
-    .select('child_id, children(id, name, name_kana), units(id, name, service_type)')
-    .order('children(name_kana)')
   const childrenUnits = (childrenUnitsRaw ?? []) as unknown as ChildWithUnit[]
-
-  // 該当月に有効な受給者証から上限管理事業所を取得
-  const certMonthStart = `${year}-${String(month).padStart(2, '0')}-01`
-  const certMonthEnd = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
-  const { data: certsRaw } = await supabase
-    .from('benefit_certificates')
-    .select('child_id, upper_limit_manager, start_date, end_date')
-    .lte('start_date', certMonthEnd)
-    .gte('end_date', certMonthStart)
-    .not('upper_limit_manager', 'is', null)
   const certs = (certsRaw ?? []) as CertRow[]
   // child_id → 最新の上限管理事業所（複数ある場合は start_date 最新を優先）
   const upperLimitMap = new Map<string, string>()

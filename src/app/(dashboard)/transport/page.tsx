@@ -31,6 +31,11 @@ export default async function TransportPage({
   const supabase = await createClient()
   const today = params.date ?? getTodayJST()
 
+  // 車両・運転手はユニット選択にもスケジュール生成にも依存しないため、
+  // ここで先に走らせて autoCreate の待ち時間に重ねる（.then で即時実行）
+  const vehiclesPromise = supabase.from('transport_vehicles').select('id, name, capacity').order('name').then((r) => r)
+  const driversPromise = supabase.from('staff_members').select('id, name').order('name').then((r) => r)
+
   const { data: unitsRaw } = await supabase
     .from('units')
     .select('id, name, service_type')
@@ -60,8 +65,8 @@ export default async function TransportPage({
           .eq('date', today)
           .order('direction')
       : ({ data: [] } as { data: unknown[] }),
-    supabase.from('transport_vehicles').select('id, name, capacity').order('name'),
-    supabase.from('staff_members').select('id, name').order('name'),
+    vehiclesPromise,
+    driversPromise,
     selectedUnitId
       ? supabase
           .from('daily_attendance')

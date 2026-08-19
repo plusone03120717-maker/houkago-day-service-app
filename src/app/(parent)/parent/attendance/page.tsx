@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -30,8 +31,8 @@ export default async function ParentAttendancePage({
 }) {
   const params = await searchParams
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  const userId = await getSessionUserId()
+  if (!userId) return null
 
   const now = new Date()
   const year = parseInt(params.year ?? String(now.getFullYear()))
@@ -48,7 +49,7 @@ export default async function ParentAttendancePage({
   const { data: parentChildrenRaw } = await supabase
     .from('parent_children')
     .select('child_id, children(id, name)')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
   const childEntries = (parentChildrenRaw ?? []) as unknown as { child_id: string; children: { id: string; name: string } | null }[]
   const childIds = childEntries.map((e) => e.child_id)
 

@@ -31,12 +31,26 @@ export default async function BillingChildPage({
   const now = new Date()
   const yearMonth = sp.month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
-  // 子ども情報
-  const { data: childRaw } = await supabase
-    .from('children')
-    .select('id, name, name_kana, birth_date')
-    .eq('id', childId)
-    .single()
+  // 児童情報・所属ユニット・受給者証はいずれも childId だけで引けるので並列取得
+  // （以前は3本を直列に await していた）
+  const [{ data: childRaw }, { data: unitsRaw }, { data: certRaw }] = await Promise.all([
+    supabase
+      .from('children')
+      .select('id, name, name_kana, birth_date')
+      .eq('id', childId)
+      .single(),
+    supabase
+      .from('children_units')
+      .select('units(id, name, service_type, facilities(id, name, facility_number))')
+      .eq('child_id', childId),
+    supabase
+      .from('benefit_certificates')
+      .select('certificate_number, max_days_per_month, copay_limit, municipality')
+      .eq('child_id', childId)
+      .order('start_date', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
 
   if (!childRaw) {
     return (
@@ -49,11 +63,6 @@ export default async function BillingChildPage({
     )
   }
 
-  // 所属ユニット
-  const { data: unitsRaw } = await supabase
-    .from('children_units')
-    .select('units(id, name, service_type, facilities(id, name, facility_number))')
-    .eq('child_id', childId)
   const units = (unitsRaw ?? []).map((r: unknown) => (r as { units: unknown }).units).filter(Boolean) as {
     id: string; name: string; service_type: string
     facilities: { id: string; name: string; facility_number: string } | null
@@ -64,25 +73,31 @@ export default async function BillingChildPage({
     ?? units[0]?.facilities?.id
     ?? null
 
-  // 受給者証情報
-  const { data: certRaw } = await supabase
-    .from('benefit_certificates')
-    .select('certificate_number, max_days_per_month, copay_limit, municipality')
-    .eq('child_id', childId)
-    .order('start_date', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  // 月次請求の参照とサービス項目マスタは互いに独立しているため並列取得
+  const yearMonthCompact = yearMonth.replace('-', '')
+  const [monthlyLookup, serviceItemsLookup] = await Promise.all([
+    selectedUnitId
+      ? supabase
+          .from('billing_monthly')
+          .select('id')
+          .eq('unit_id', selectedUnitId)
+          .eq('year_month', yearMonthCompact)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    selectedUnitId
+      ? supabase
+          .from('billing_service_items')
+          .select('id, unit_id, name, category, trigger_field, billing_code, is_active, sort_order')
+          .eq('unit_id', selectedUnitId)
+          .eq('is_active', true)
+          .order('sort_order')
+      : Promise.resolve({ data: [] }),
+  ])
 
   // billing_monthly を自動作成（なければ insert）
-  const yearMonthCompact = yearMonth.replace('-', '')
   let billingMonthlyId: string | null = null
   if (selectedUnitId) {
-    const { data: existingMonthly } = await supabase
-      .from('billing_monthly')
-      .select('id')
-      .eq('unit_id', selectedUnitId)
-      .eq('year_month', yearMonthCompact)
-      .maybeSingle()
+    const existingMonthly = monthlyLookup.data as { id: string } | null
     if (existingMonthly) {
       billingMonthlyId = existingMonthly.id
     } else {
@@ -126,16 +141,8 @@ export default async function BillingChildPage({
     }
   }
 
-  // サービス項目マスタ
-  const { data: serviceItemsRaw } = selectedUnitId
-    ? await supabase
-        .from('billing_service_items')
-        .select('id, unit_id, name, category, trigger_field, billing_code, is_active, sort_order')
-        .eq('unit_id', selectedUnitId)
-        .eq('is_active', true)
-        .order('sort_order')
-    : { data: [] }
-  let serviceItems = (serviceItemsRaw ?? []) as ServiceItem[]
+  // サービス項目マスタ（上の Promise.all で取得済み）
+  let serviceItems = (serviceItemsLookup.data ?? []) as ServiceItem[]
 
   // 各種加算がなければ自動挿入
   if (selectedUnitId && serviceItems.length > 0) {

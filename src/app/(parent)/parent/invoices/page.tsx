@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -19,13 +20,13 @@ type Invoice = {
 
 export default async function ParentInvoicesPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  const userId = await getSessionUserId()
+  if (!userId) return null
 
   const { data: parentChildrenRaw } = await supabase
     .from('parent_children')
     .select('child_id')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
   const childIds = (parentChildrenRaw ?? []).map((pc) => pc.child_id as string)
 
   const { data: invoicesRaw } = childIds.length > 0

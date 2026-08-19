@@ -51,34 +51,39 @@ export default async function ShiftsPage({
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`
   const endDate = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
 
-  const { data: staffRaw } = await supabase
-    .from('users')
-    .select('id, name')
-    .in('role', ['admin', 'staff'])
-    .order('name')
+  // スタッフ・シフト・ユニット・残業申請は互いに独立しているため並列取得
+  const [
+    { data: staffRaw },
+    { data: shiftsRaw },
+    { data: unitsRaw },
+    { data: overtimeRaw },
+  ] = await Promise.all([
+    supabase
+      .from('users')
+      .select('id, name')
+      .in('role', ['admin', 'staff'])
+      .order('name'),
+    supabase
+      .from('staff_shifts')
+      .select('id, staff_id, date, shift_type, start_time, end_time, break_start_time, break_end_time, unit_id, note')
+      .gte('date', startDate)
+      .lte('date', endDate),
+    supabase
+      .from('units')
+      .select('id, name')
+      .order('name'),
+    supabase
+      .from('overtime_requests')
+      .select('id, staff_id, date, overtime_minutes, status')
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .eq('status', 'approved'),
+  ])
+
   const staffList = (staffRaw ?? []).map((s) => ({ ...s, employment_type: null })) as StaffUser[]
-
-  const { data: shiftsRaw } = staffList.length > 0
-    ? await supabase
-        .from('staff_shifts')
-        .select('id, staff_id, date, shift_type, start_time, end_time, break_start_time, break_end_time, unit_id, note')
-        .gte('date', startDate)
-        .lte('date', endDate)
-    : { data: [] }
-  const shifts = (shiftsRaw ?? []) as unknown as ShiftEntry[]
-
-  const { data: unitsRaw } = await supabase
-    .from('units')
-    .select('id, name')
-    .order('name')
+  // スタッフが1人もいない場合はシフトを表示しない（従来どおり）
+  const shifts = (staffList.length > 0 ? (shiftsRaw ?? []) : []) as unknown as ShiftEntry[]
   const units = (unitsRaw ?? []) as unknown as Unit[]
-
-  const { data: overtimeRaw } = await supabase
-    .from('overtime_requests')
-    .select('id, staff_id, date, overtime_minutes, status')
-    .gte('date', startDate)
-    .lte('date', endDate)
-    .eq('status', 'approved')
   const overtimeRequests = (overtimeRaw ?? []) as OvertimeRequest[]
 
   const today = getTodayJST()

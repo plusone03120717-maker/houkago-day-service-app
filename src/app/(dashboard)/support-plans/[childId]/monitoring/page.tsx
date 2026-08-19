@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
+import { getSessionClaims } from '@/lib/auth'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -50,48 +51,55 @@ export default async function MonitoringPage({
 }) {
   const { childId } = await params
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const isReadOnly = (user?.user_metadata?.role as string | undefined) === 'staff'
+  const claims = await getSessionClaims()
+  const isReadOnly = claims?.role === 'staff'
 
-  const { data: childRaw } = await supabase
-    .from('children')
-    .select('id, name')
-    .eq('id', childId)
-    .single()
+  // 児童・支援計画・モニタリング予定・施設・記録は互いに独立しているため並列取得
+  const [
+    { data: childRaw },
+    { data: plansRaw },
+    { data: schedulesRaw },
+    { data: facilityRaw },
+    { data: recordsRaw },
+  ] = await Promise.all([
+    supabase
+      .from('children')
+      .select('id, name')
+      .eq('id', childId)
+      .single(),
+    // 有効な支援計画
+    supabase
+      .from('support_plans')
+      .select('id, plan_date, review_date, status, long_term_goals, short_term_goals')
+      .eq('child_id', childId)
+      .in('status', ['active', 'reviewed'])
+      .order('plan_date', { ascending: false }),
+    // モニタリング予定（schedule_events から）
+    supabase
+      .from('schedule_events')
+      .select('id, event_date, start_time, end_time, note')
+      .eq('child_id', childId)
+      .eq('event_type', 'monitoring')
+      .order('event_date'),
+    // 施設ID（予定追加時に使用）
+    supabase
+      .from('facilities')
+      .select('id')
+      .limit(1)
+      .single(),
+    // 全モニタリング記録（支援計画の有無に関わらず）
+    supabase
+      .from('monitoring_records')
+      .select('id, support_plan_id, record_date, long_term_progress, short_term_progress, issues, next_actions, specialized_support, overall_status, family_wishes, agency_notes, created_at')
+      .eq('child_id', childId)
+      .order('record_date', { ascending: false }),
+  ])
+
   const child = childRaw as unknown as { id: string; name: string } | null
   if (!child) notFound()
 
-  // 有効な支援計画を取得
-  const { data: plansRaw } = await supabase
-    .from('support_plans')
-    .select('id, plan_date, review_date, status, long_term_goals, short_term_goals')
-    .eq('child_id', childId)
-    .in('status', ['active', 'reviewed'])
-    .order('plan_date', { ascending: false })
   const plans = (plansRaw ?? []) as unknown as SupportPlan[]
-
-  // モニタリング予定（schedule_events から）
-  const { data: schedulesRaw } = await supabase
-    .from('schedule_events')
-    .select('id, event_date, start_time, end_time, note')
-    .eq('child_id', childId)
-    .eq('event_type', 'monitoring')
-    .order('event_date')
   const monitoringSchedules = (schedulesRaw ?? []) as MonitoringSchedule[]
-
-  // 施設ID（予定追加時に使用）
-  const { data: facilityRaw } = await supabase
-    .from('facilities')
-    .select('id')
-    .limit(1)
-    .single()
-
-  // 全モニタリング記録を取得（支援計画の有無に関わらず）
-  const { data: recordsRaw } = await supabase
-    .from('monitoring_records')
-    .select('id, support_plan_id, record_date, long_term_progress, short_term_progress, issues, next_actions, specialized_support, overall_status, family_wishes, agency_notes, created_at')
-    .eq('child_id', childId)
-    .order('record_date', { ascending: false })
   const records = (recordsRaw ?? []) as unknown as MonitoringRecord[]
 
   // プランIDでグルーピング（nullは'__none__'キーで管理）

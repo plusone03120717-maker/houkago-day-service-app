@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Bell, ChevronRight } from 'lucide-react'
@@ -15,14 +16,14 @@ type Announcement = {
 
 export default async function ParentAnnouncementsPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  const userId = await getSessionUserId()
+  if (!userId) return null
 
   // 保護者が所属するユニットを取得
   const { data: parentChildrenRaw } = await supabase
     .from('parent_children')
     .select('children(children_units(unit_id))')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
   type PCRow = { children: { children_units: { unit_id: string }[] } | null }
   const unitIds = (parentChildrenRaw ?? []).flatMap((pc) => {
     const r = pc as unknown as PCRow

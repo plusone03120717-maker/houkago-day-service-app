@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
+import { getSessionClaims } from '@/lib/auth'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { ArrowLeft, ClipboardList, FileDown } from 'lucide-react'
@@ -91,37 +92,39 @@ export default async function SupportPlanDetailPage({
 }) {
   const { childId } = await params
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const isReadOnly = (user?.user_metadata?.role as string | undefined) === 'staff'
+  const claims = await getSessionClaims()
+  const isReadOnly = claims?.role === 'staff'
 
-  const { data: childRaw } = await supabase
-    .from('children')
-    .select('id, name, name_kana, birth_date, diagnosis')
-    .eq('id', childId)
-    .single()
-  const child = childRaw as unknown as Child | null
-
-  if (!child) return <div className="p-4 text-gray-500">児童が見つかりません</div>
-
-  const { data: plansRaw } = await supabase
-    .from('support_plans')
-    .select('id, plan_date, review_date, status, long_term_goals, short_term_goals, support_content, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, support_goal_health_life, support_goal_movement_sensory, support_goal_cognition_behavior, support_goal_language_communication, support_goal_social_relationships, support_goal_transition, support_goal_family, support_assignee_health_life, support_assignee_movement_sensory, support_assignee_cognition_behavior, support_assignee_language_communication, support_assignee_social_relationships, support_assignee_transition, support_assignee_family, support_priority_health_life, support_priority_movement_sensory, support_priority_cognition_behavior, support_priority_language_communication, support_priority_social_relationships, support_priority_transition, support_priority_family, support_achievement_health_life, support_achievement_movement_sensory, support_achievement_cognition_behavior, support_achievement_language_communication, support_achievement_social_relationships, support_achievement_transition, support_achievement_family, support_kasan_health_life, support_kasan_movement_sensory, support_kasan_cognition_behavior, support_kasan_language_communication, support_kasan_social_relationships, support_kasan_transition, support_kasan_family, support_evaluation_health_life, support_evaluation_movement_sensory, support_evaluation_cognition_behavior, support_evaluation_language_communication, support_evaluation_social_relationships, support_evaluation_transition, support_evaluation_family, support_specialized, manager_name, standard_service_time, family_wishes, support_policy, monitoring_notes, long_term_goal_rating, short_term_goal_rating, created_at')
-    .eq('child_id', childId)
-    .order('plan_date', { ascending: false })
-  const plans = (plansRaw ?? []) as unknown as SupportPlan[]
-
-  // 直近3ヶ月の特記事項
+  // 直近3ヶ月の特記事項の範囲
   const threeMonthsAgo = new Date()
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
   const threeMonthsAgoStr = threeMonthsAgo.toISOString().slice(0, 10)
 
-  const { data: notableRaw } = await supabase
-    .from('daily_attendance')
-    .select('date, daily_records!inner(content, record_type)')
-    .eq('child_id', childId)
-    .gte('date', threeMonthsAgoStr)
-    .eq('daily_records.record_type', 'notable')
-    .order('date', { ascending: false })
+  // 児童・支援計画・特記事項はいずれも childId だけで引けるので並列取得
+  const [{ data: childRaw }, { data: plansRaw }, { data: notableRaw }] = await Promise.all([
+    supabase
+      .from('children')
+      .select('id, name, name_kana, birth_date, diagnosis')
+      .eq('id', childId)
+      .single(),
+    supabase
+      .from('support_plans')
+      .select('id, plan_date, review_date, status, long_term_goals, short_term_goals, support_content, support_health_life, support_movement_sensory, support_cognition_behavior, support_language_communication, support_social_relationships, support_transition, support_family, support_goal_health_life, support_goal_movement_sensory, support_goal_cognition_behavior, support_goal_language_communication, support_goal_social_relationships, support_goal_transition, support_goal_family, support_assignee_health_life, support_assignee_movement_sensory, support_assignee_cognition_behavior, support_assignee_language_communication, support_assignee_social_relationships, support_assignee_transition, support_assignee_family, support_priority_health_life, support_priority_movement_sensory, support_priority_cognition_behavior, support_priority_language_communication, support_priority_social_relationships, support_priority_transition, support_priority_family, support_achievement_health_life, support_achievement_movement_sensory, support_achievement_cognition_behavior, support_achievement_language_communication, support_achievement_social_relationships, support_achievement_transition, support_achievement_family, support_kasan_health_life, support_kasan_movement_sensory, support_kasan_cognition_behavior, support_kasan_language_communication, support_kasan_social_relationships, support_kasan_transition, support_kasan_family, support_evaluation_health_life, support_evaluation_movement_sensory, support_evaluation_cognition_behavior, support_evaluation_language_communication, support_evaluation_social_relationships, support_evaluation_transition, support_evaluation_family, support_specialized, manager_name, standard_service_time, family_wishes, support_policy, monitoring_notes, long_term_goal_rating, short_term_goal_rating, created_at')
+      .eq('child_id', childId)
+      .order('plan_date', { ascending: false }),
+    supabase
+      .from('daily_attendance')
+      .select('date, daily_records!inner(content, record_type)')
+      .eq('child_id', childId)
+      .gte('date', threeMonthsAgoStr)
+      .eq('daily_records.record_type', 'notable')
+      .order('date', { ascending: false }),
+  ])
+
+  const child = childRaw as unknown as Child | null
+  if (!child) return <div className="p-4 text-gray-500">児童が見つかりません</div>
+
+  const plans = (plansRaw ?? []) as unknown as SupportPlan[]
 
   type NotableRow = { date: string; daily_records: { content: string; record_type: string } | { content: string; record_type: string }[] }
   const notableRecords = ((notableRaw ?? []) as unknown as NotableRow[]).flatMap((row) => {

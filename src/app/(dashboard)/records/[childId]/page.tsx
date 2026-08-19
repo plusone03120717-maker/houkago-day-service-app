@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import { DailyRecordForm } from '@/components/records/daily-record-form'
 
@@ -25,7 +26,7 @@ export default async function RecordPage({
     { data: medicationLogs },
     { data: schoolHolidaysRaw },
     { data: facilityRaw },
-    { data: { user } },
+    userId,
   ] = await Promise.all([
     supabase
       .from('children')
@@ -45,7 +46,7 @@ export default async function RecordPage({
     supabase.from('medication_logs').select('id, medication_id, log_date, status, notes, administered_at').eq('child_id', childId).eq('log_date', date),
     supabase.from('child_school_holidays').select('start_date, end_date').eq('child_id', childId),
     supabase.from('facilities').select('id').limit(1).single(),
-    supabase.auth.getUser(),
+    getSessionUserId(),
   ])
 
   if (!child) notFound()
@@ -87,7 +88,7 @@ export default async function RecordPage({
       activities={activities ?? []}
       programs={programs ?? []}
       contactNote={contactNote ?? null}
-      staffId={user?.id ?? ''}
+      staffId={userId ?? ''}
       medications={medications ?? []}
       medicationLogs={medicationLogs ?? []}
       isSchoolHoliday={isSchoolHoliday}

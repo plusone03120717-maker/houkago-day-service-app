@@ -52,19 +52,20 @@ export default async function ChildrenPage({
   const serviceFilter = params.service ?? ''
   const unitFilter = params.unit ?? ''
 
-  // ユニット一覧取得（フィルターボタン用）
-  const { data: unitsRaw } = await supabase.from('units').select('id, name').order('name')
+  // ユニット一覧（フィルターボタン用）とユニット絞り込み用の児童IDは
+  // 互いに独立しているため並列取得する
+  const [{ data: unitsRaw }, { data: cuRaw }] = await Promise.all([
+    supabase.from('units').select('id, name').order('name'),
+    unitFilter
+      ? supabase.from('children_units').select('child_id').eq('unit_id', unitFilter)
+      : Promise.resolve({ data: null }),
+  ])
   const units = (unitsRaw ?? []) as unknown as Unit[]
 
-  // ユニットフィルター時: children_units から対象の child_id を取得
-  let unitChildIds: string[] | null = null
-  if (unitFilter) {
-    const { data: cuRaw } = await supabase
-      .from('children_units')
-      .select('child_id')
-      .eq('unit_id', unitFilter)
-    unitChildIds = (cuRaw ?? []).map((r: { child_id: string }) => r.child_id)
-  }
+  // ユニットフィルター時のみ対象の child_id を絞り込む
+  const unitChildIds: string[] | null = unitFilter
+    ? ((cuRaw ?? []) as { child_id: string }[]).map((r) => r.child_id)
+    : null
 
   let query = supabase
     .from('children')

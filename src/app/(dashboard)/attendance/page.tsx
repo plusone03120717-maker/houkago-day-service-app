@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import { formatDate, getTodayJST } from '@/lib/utils'
 import { AttendanceBoard } from '@/components/attendance/attendance-board'
 import type { Unit, Reservation, Attendance, PrevAttendanceRow } from '@/components/attendance/attendance-board'
@@ -37,32 +38,28 @@ export default async function AttendancePage({
 
   // 認証ユーザーとユニット一覧は独立しているため並列取得
   const [
-    { data: { user } },
+    userId,
     { data: unitsRaw },
     { data: staffMembersRaw },
     { data: vehiclesRaw },
     { data: facilityRaw },
   ] = await Promise.all([
-    supabase.auth.getUser(),
+    getSessionUserId(),
     supabase
       .from('units')
       .select('id, name, service_type, capacity, facilities (id, name)')
       .order('name'),
     supabase.from('staff_members').select('id, name').order('name'),
     supabase.from('transport_vehicles').select('id, name').order('name'),
-    supabase.from('facilities').select('id').limit(1).single(),
+    // 通知設定は施設に紐づくので埋め込みで一緒に取得する（別クエリだと往復が1回増える）
+    supabase.from('facilities').select('id, notification_settings(default_service_end_time)').limit(1).single(),
   ])
   const units = (unitsRaw ?? []) as unknown as Unit[]
 
-  const { data: notifSettings } = facilityRaw
-    ? await supabase
-        .from('notification_settings')
-        .select('default_service_end_time')
-        .eq('facility_id', facilityRaw.id)
-        .limit(1)
-        .single()
-    : { data: null }
-  const defaultServiceEndTime = (notifSettings?.default_service_end_time as string | null)?.slice(0, 5) ?? '16:30'
+  const notifSettings =
+    (facilityRaw as { notification_settings?: { default_service_end_time: string | null }[] } | null)
+      ?.notification_settings?.[0] ?? null
+  const defaultServiceEndTime = notifSettings?.default_service_end_time?.slice(0, 5) ?? '16:30'
 
   const selectedUnitId = params.unit ?? units[0]?.id ?? ''
 
@@ -118,25 +115,10 @@ export default async function AttendancePage({
     return (p.day_of_week ?? []).includes(todayDow)
   })
 
-  // この日付でキャンセルされた計画IDを取得
-  const planIds = planRows.map((p) => p.id)
-  const { data: cancelledOverridesRaw } = planIds.length > 0
-    ? await supabase
-        .from('usage_plan_date_overrides')
-        .select('plan_id')
-        .in('plan_id', planIds)
-        .eq('date', today)
-        .eq('is_cancelled', true)
-    : { data: [] }
-  const cancelledPlanIds = new Set((cancelledOverridesRaw ?? []).map((o: { plan_id: string }) => o.plan_id))
-
-  // 計画があるが全てキャンセルされている児童を特定
-  const childHasPlan = new Set<string>(planRows.map((p) => p.child_id))
-  const childHasValidPlan = new Set<string>(
-    planRows.filter((p) => !cancelledPlanIds.has(p.id)).map((p) => p.child_id)
-  )
-
   // ── 送迎・日中一時入力の初期値: 特定日上書き > 曜日別設定 > プランのデフォルト ──
+  // 特定日上書きはキャンセル判定にも初期値にも使うため1回だけ取得する
+  // （以前は is_cancelled=true 用に同じテーブルをもう1回引いていた）
+  const planIds = planRows.map((p) => p.id)
   type DaySettingRow = {
     plan_id: string
     transport_type: string | null
@@ -162,13 +144,22 @@ export default async function AttendancePage({
       ])
     : [{ data: [] }, { data: [] }]
 
+  const overrideRows = (overridesRaw ?? []) as unknown as DateOverrideRow[]
+
+  // この日付でキャンセルされた計画ID
+  const cancelledPlanIds = new Set(overrideRows.filter((o) => o.is_cancelled).map((o) => o.plan_id))
+
+  // 計画があるが全てキャンセルされている児童を特定
+  const childHasPlan = new Set<string>(planRows.map((p) => p.child_id))
+  const childHasValidPlan = new Set<string>(
+    planRows.filter((p) => !cancelledPlanIds.has(p.id)).map((p) => p.child_id)
+  )
+
   const daySettingByPlanId = Object.fromEntries(
     ((daySettingsRaw ?? []) as unknown as DaySettingRow[]).map((d) => [d.plan_id, d])
   )
   const overrideByPlanId = Object.fromEntries(
-    ((overridesRaw ?? []) as unknown as DateOverrideRow[])
-      .filter((o) => !o.is_cancelled)
-      .map((o) => [o.plan_id, o])
+    overrideRows.filter((o) => !o.is_cancelled).map((o) => [o.plan_id, o])
   )
 
   const scheduleDefaultsByChildId: Record<string, ScheduleDefaults> = {}
@@ -218,39 +209,42 @@ export default async function AttendancePage({
     .map((a) => a.child_id)
     .filter((id) => !existingChildIds.has(id))
 
-  let finalReservations: Reservation[] = allReservations
-  if (extraChildIds.length > 0) {
-    const { data: extraChildrenRaw } = await supabase
-      .from('children')
-      .select('id, name, name_kana, photo_url, allergy_info, medical_info')
-      .in('id', extraChildIds)
-    type ChildInfo = { id: string; name: string; name_kana: string | null; photo_url: string | null; allergy_info: string | null; medical_info: string | null }
-    const extraReservations: Reservation[] = ((extraChildrenRaw ?? []) as unknown as ChildInfo[]).map((child) => ({
-      id: `da-${child.id}`,
-      child_id: child.id,
-      date: today,
-      status: 'scheduled',
-      children: child,
-    }))
-    finalReservations = [...allReservations, ...extraReservations]
-  }
-
   // ── 前回コピー用: 過去45日以内の直近の出席データ（児童ごとに入力のある最新行） ──
-  const childIds = [...new Set(finalReservations.map((r) => r.child_id))]
+  // 対象児童IDは children の取得を待たずに確定できるので、追加児童の取得と並列に走らせる
+  const childIds = [...new Set([...allReservations.map((r) => r.child_id), ...extraChildIds])]
   const rangeStart = new Date(today)
   rangeStart.setDate(rangeStart.getDate() - 45)
   const prevRangeStart = rangeStart.toISOString().slice(0, 10)
 
-  const { data: prevRaw } = childIds.length > 0
-    ? await supabase
-        .from('daily_attendance')
-        .select(`child_id, date, ${TRANSPORT_COLUMNS}`)
-        .in('child_id', childIds)
-        .eq('status', 'attended')
-        .gte('date', prevRangeStart)
-        .lt('date', today)
-        .order('date', { ascending: false })
-    : { data: [] }
+  const [{ data: extraChildrenRaw }, { data: prevRaw }] = await Promise.all([
+    extraChildIds.length > 0
+      ? supabase
+          .from('children')
+          .select('id, name, name_kana, photo_url, allergy_info, medical_info')
+          .in('id', extraChildIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+    childIds.length > 0
+      ? supabase
+          .from('daily_attendance')
+          .select(`child_id, date, ${TRANSPORT_COLUMNS}`)
+          .in('child_id', childIds)
+          .eq('status', 'attended')
+          .gte('date', prevRangeStart)
+          .lt('date', today)
+          .order('date', { ascending: false })
+      : Promise.resolve({ data: [] as unknown[] }),
+  ])
+
+  // daily_attendance に記録があるが予約・計画に無い児童を予約リストへ追加
+  type ChildInfo = { id: string; name: string; name_kana: string | null; photo_url: string | null; allergy_info: string | null; medical_info: string | null }
+  const extraReservations: Reservation[] = ((extraChildrenRaw ?? []) as unknown as ChildInfo[]).map((child) => ({
+    id: `da-${child.id}`,
+    child_id: child.id,
+    date: today,
+    status: 'scheduled',
+    children: child,
+  }))
+  const finalReservations: Reservation[] = [...allReservations, ...extraReservations]
 
   const prevByChildId: Record<string, PrevAttendanceRow> = {}
   for (const row of (prevRaw ?? []) as unknown as PrevAttendanceRow[]) {
@@ -266,7 +260,7 @@ export default async function AttendancePage({
       selectedUnitId={selectedUnitId}
       reservations={finalReservations}
       attendances={attendances}
-      staffId={user?.id ?? ''}
+      staffId={userId ?? ''}
       staffMembers={(staffMembersRaw ?? []) as { id: string; name: string }[]}
       vehicles={(vehiclesRaw ?? []) as { id: string; name: string }[]}
       defaultServiceEndTime={defaultServiceEndTime}

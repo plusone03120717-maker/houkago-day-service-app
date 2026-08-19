@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getSessionClaims } from '@/lib/auth'
 
 /**
  * 管理者（admin）のみアクセス可能なページで呼ぶ。
@@ -7,15 +7,11 @@ import { createClient } from '@/lib/supabase/server'
  * DBクエリを使わず JWT の user_metadata.role を参照。
  */
 export async function requireAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  // user_metadata.role は仮パスワード登録時に設定済み
-  const role = user.user_metadata?.role as string | undefined
+  const claims = await getSessionClaims()
+  if (!claims) redirect('/login')
 
   // role が未設定（初期管理者等）の場合は通す。staff は必ずブロック。
-  if (role === 'staff') {
+  if (claims.role === 'staff') {
     redirect('/shifts')
   }
 }

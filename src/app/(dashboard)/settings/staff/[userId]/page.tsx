@@ -48,60 +48,60 @@ export default async function StaffProfilePage({
   const { userId } = await params
   const supabase = await createClient()
 
-  // ユーザー情報
-  const { data: userRaw } = await supabase
-    .from('users')
-    .select('id, name, email, role, line_user_id, job_titles')
-    .eq('id', userId)
-    .single()
+  // ユーザー・プロファイル・ユニット一覧・施設は互いに独立しているため並列取得
+  const [
+    { data: userRaw },
+    { data: profileRaw },
+    { data: unitsRaw },
+    { data: facilityRaw },
+  ] = await Promise.all([
+    supabase
+      .from('users')
+      .select('id, name, email, role, line_user_id, job_titles')
+      .eq('id', userId)
+      .single(),
+    supabase
+      .from('staff_profiles')
+      .select('id, employment_type, qualification, hire_date, facility_id')
+      .eq('user_id', userId)
+      .single(),
+    supabase
+      .from('units')
+      .select('id, name')
+      .order('name'),
+    supabase
+      .from('facilities')
+      .select('id')
+      .limit(1)
+      .single(),
+  ])
+
   const user = userRaw as { id: string; name: string; email: string; role: string; line_user_id: string | null; job_titles: string[] | null } | null
 
   if (!user) return <div className="p-4 text-gray-500">スタッフが見つかりません</div>
 
-  // プロファイル情報
-  const { data: profileRaw } = await supabase
-    .from('staff_profiles')
-    .select('id, employment_type, qualification, hire_date, facility_id')
-    .eq('user_id', userId)
-    .single()
   const profile = profileRaw as unknown as StaffProfile | null
-
-  // ユニット割当
-  const { data: assignmentsRaw } = profile
-    ? await supabase
-        .from('staff_unit_assignments')
-        .select('unit_id')
-        .eq('staff_id', profile.id)
-    : { data: [] }
-  const assignments = (assignmentsRaw ?? []) as unknown as UnitAssignment[]
-  const assignedUnitIds = assignments.map((a) => a.unit_id)
-
-  // 全ユニット一覧
-  const { data: unitsRaw } = await supabase
-    .from('units')
-    .select('id, name')
-    .order('name')
   const units = (unitsRaw ?? []) as unknown as Unit[]
 
   // 施設ID（プロファイルがあればそこから、なければ最初の施設）
-  let facilityId = profile?.facility_id ?? ''
-  if (!facilityId) {
-    const { data: facilityRaw } = await supabase
-      .from('facilities')
-      .select('id')
-      .limit(1)
-      .single()
-    facilityId = (facilityRaw as { id: string } | null)?.id ?? ''
-  }
+  const facilityId = profile?.facility_id ?? (facilityRaw as { id: string } | null)?.id ?? ''
 
-  // 研修記録
-  const { data: trainingRaw } = profile
-    ? await supabase
-        .from('staff_training_records')
-        .select('id, training_name, training_type, organizer, completed_date, certificate_number, hours, notes')
-        .eq('staff_profile_id', profile.id)
-        .order('completed_date', { ascending: false })
-    : { data: [] }
+  // ユニット割当・研修記録はプロファイルに依存するため後段でまとめて取得
+  const [{ data: assignmentsRaw }, { data: trainingRaw }] = profile
+    ? await Promise.all([
+        supabase
+          .from('staff_unit_assignments')
+          .select('unit_id')
+          .eq('staff_id', profile.id),
+        supabase
+          .from('staff_training_records')
+          .select('id, training_name, training_type, organizer, completed_date, certificate_number, hours, notes')
+          .eq('staff_profile_id', profile.id)
+          .order('completed_date', { ascending: false }),
+      ])
+    : [{ data: [] }, { data: [] }]
+  const assignments = (assignmentsRaw ?? []) as unknown as UnitAssignment[]
+  const assignedUnitIds = assignments.map((a) => a.unit_id)
   const trainingRecords = (trainingRaw ?? []) as unknown as TrainingRecord[]
 
   return (

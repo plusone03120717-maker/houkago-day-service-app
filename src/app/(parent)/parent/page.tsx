@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { BookOpen, ChevronRight, ClipboardList, MessageSquare, Receipt } from 'lucide-react'
@@ -28,14 +29,14 @@ type ContactNote = {
 
 export default async function ParentHomePage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  const userId = await getSessionUserId()
+  if (!userId) return null
 
   // 自分の子供を取得
   const { data: parentChildrenRaw } = await supabase
     .from('parent_children')
     .select('child_id, children (id, name, name_kana, gender)')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
   const children = (parentChildrenRaw ?? []).map((pc) => pc.children as unknown as Child).filter(Boolean)
 
   const childIds = children.map((c) => c.id)
@@ -68,7 +69,7 @@ export default async function ParentHomePage() {
     supabase
       .from('messages')
       .select('*', { count: 'exact', head: true })
-      .eq('receiver_id', user.id)
+      .eq('receiver_id', userId)
       .is('read_at', null),
   ])
   const announcements = (announcementsRaw ?? []) as unknown as Announcement[]

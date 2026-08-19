@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import { MessagesUI } from '@/components/parent/messages-ui'
 
 type Message = {
@@ -19,14 +20,14 @@ type Staff = {
 
 export default async function ParentMessagesPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  const userId = await getSessionUserId()
+  if (!userId) return null
 
   // 自分の子供が通う施設のスタッフ一覧を取得
   const { data: parentChildrenRaw } = await supabase
     .from('parent_children')
     .select('child_id, children(children_units(units(facility_id)))')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
 
   // 施設IDを抽出
   const facilityIds = new Set<string>()
@@ -52,13 +53,13 @@ export default async function ParentMessagesPage() {
   const { data: messagesRaw } = await supabase
     .from('messages')
     .select('id, sender_id, receiver_id, content, read_at, created_at, attachments')
-    .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
     .order('created_at', { ascending: true })
     .limit(100)
   const messages = (messagesRaw ?? []) as Message[]
 
   // 未読メッセージを既読にする
-  const unreadIds = messages.filter((m) => m.receiver_id === user.id && !m.read_at).map((m) => m.id)
+  const unreadIds = messages.filter((m) => m.receiver_id === userId && !m.read_at).map((m) => m.id)
   if (unreadIds.length > 0) {
     await supabase
       .from('messages')
@@ -68,7 +69,7 @@ export default async function ParentMessagesPage() {
 
   return (
     <MessagesUI
-      currentUserId={user.id}
+      currentUserId={userId}
       messages={messages}
       staffList={staffList}
     />

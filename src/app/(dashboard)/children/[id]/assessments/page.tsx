@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, ClipboardList } from 'lucide-react'
@@ -39,20 +40,20 @@ export default async function AssessmentsPage({
   const { id: childId } = await params
   const supabase = await createClient()
 
-  const [childResult, assessmentsResult, userResult] = await Promise.all([
+  const [childResult, assessmentsResult, userId] = await Promise.all([
     supabase.from('children').select('id, name').eq('id', childId).single(),
     supabase
       .from('child_assessments')
       .select('id, assessment_date, child_situation, current_issues, family_situation, related_agencies, child_wishes, parent_wishes, usage_goals, notes, users!child_assessments_assessor_id_fkey(name)')
       .eq('child_id', childId)
       .order('assessment_date', { ascending: false }),
-    supabase.auth.getUser(),
+    getSessionUserId(),
   ])
 
   if (!childResult.data) notFound()
   const child = childResult.data as { id: string; name: string }
   const assessments = (assessmentsResult.data ?? []) as unknown as Assessment[]
-  const staffId = userResult.data.user?.id ?? ''
+  const staffId = userId ?? ''
 
   return (
     <div className="space-y-5 max-w-2xl">

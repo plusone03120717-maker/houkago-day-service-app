@@ -41,15 +41,32 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   const supabase = await createClient()
   const todayDow = new Date(date).getDay()
 
-  // 利用計画から今日の対象児童を取得（送迎設定・時間も含む）
-  const { data: plansRaw } = await supabase
-    .from('usage_plans')
-    .select('id, child_id, pickup_time, dropoff_time, transport_type, pickup_location_type, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
-    .eq('unit_id', unitId)
-    .eq('is_active', true)
-    .lte('start_date', date)
-    .or(`end_date.is.null,end_date.gte.${date}`)
-    .contains('day_of_week', [todayDow])
+  // 利用計画・個別予約・既存スケジュールは互いに独立しているため並列取得
+  // （既存スケジュールは後段のループで insert 失敗→再select の往復を避けるため先読みする）
+  const [{ data: plansRaw }, { data: reservationsRaw }, { data: existingSchedulesRaw }] = await Promise.all([
+    // 利用計画から今日の対象児童を取得（送迎設定・時間も含む）
+    supabase
+      .from('usage_plans')
+      .select('id, child_id, pickup_time, dropoff_time, transport_type, pickup_location_type, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
+      .eq('unit_id', unitId)
+      .eq('is_active', true)
+      .lte('start_date', date)
+      .or(`end_date.is.null,end_date.gte.${date}`)
+      .contains('day_of_week', [todayDow]),
+    // 個別予約からも取得（重複は後でマージ）
+    supabase
+      .from('usage_reservations')
+      .select('child_id, pickup_time, dropoff_time, transport_type, pickup_location_type, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
+      .eq('unit_id', unitId)
+      .eq('date', date)
+      .in('status', ['confirmed', 'reserved']),
+    // 当日の既存スケジュール（明細の児童IDまで含めて1回で取得）
+    supabase
+      .from('transport_schedules')
+      .select('id, direction, departure_time, transport_details(child_id)')
+      .eq('unit_id', unitId)
+      .eq('date', date),
+  ])
 
   // 曜日別設定・特定日上書きを取得
   const planIds = (plansRaw ?? []).map((p) => p.id).filter(Boolean)
@@ -105,14 +122,6 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       })
     }
   }
-
-  // 個別予約からも取得（重複は後でマージ）
-  const { data: reservationsRaw } = await supabase
-    .from('usage_reservations')
-    .select('child_id, pickup_time, dropoff_time, transport_type, pickup_location_type, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
-    .eq('unit_id', unitId)
-    .eq('date', date)
-    .in('status', ['confirmed', 'reserved'])
 
   // 児童をユニーク化（planが優先 → 曜日別設定 > plan全体設定の優先順）
   const childrenMap = new Map<string, ChildRow>()
@@ -286,7 +295,27 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     }
   }
 
-  // pickup・dropoff それぞれ、スロットごとにスケジュールを作成
+  // ── スケジュール作成 ──
+  // 既存スケジュールは冒頭で1回だけ取得済み。
+  // 以前は「insert して 23505 で失敗したら select し直す」を時間スロットごとに
+  // 直列で繰り返していたため、既に生成済みの日でも往復が十数回発生していた。
+  type ExistingSchedule = {
+    id: string
+    direction: string
+    departure_time: string | null
+    transport_details: { child_id: string }[]
+  }
+  // unit_id + date + direction にユニーク制約があるため方向ごとに最大1件
+  const scheduleByDirection = new Map<string, ExistingSchedule>()
+  for (const s of (existingSchedulesRaw ?? []) as unknown as ExistingSchedule[]) {
+    if (scheduleByDirection.has(s.direction)) continue
+    scheduleByDirection.set(s.direction, { ...s, transport_details: s.transport_details ?? [] })
+  }
+
+  /** TIME 型は 'HH:MM:SS' で返るが 'HH:MM' の可能性もあるため先頭5文字で比較 */
+  const sameSlot = (a: string | null, b: string | null) =>
+    (a ?? '').slice(0, 5) === (b ?? '').slice(0, 5)
+
   for (const direction of ['pickup', 'dropoff'] as const) {
     const slotsMap = direction === 'pickup' ? pickupSlots : dropoffSlots
 
@@ -298,63 +327,60 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       const groups = nearestNeighborSort(buildRouteGroups(candidates, direction))
       const orderedChildren = groups.flatMap((g) => g.children)
 
-      const { data: schedule, error: schedErr } = await supabase
-        .from('transport_schedules')
-        .insert({
-          unit_id: unitId,
-          date,
-          direction,
-          vehicle_id: null,
-          departure_time: slot,
-          route_order: [],
-        })
-        .select('id')
-        .single()
+      let existing = scheduleByDirection.get(direction)
 
-      if (schedErr || !schedule) {
-        if (schedErr?.code === '23505') {
-          // 既存スケジュールに未追加の児童を補完する
-          const { data: existingSched } = await supabase
+      if (!existing) {
+        const { data: schedule, error: schedErr } = await supabase
+          .from('transport_schedules')
+          .insert({
+            unit_id: unitId,
+            date,
+            direction,
+            vehicle_id: null,
+            departure_time: slot,
+            route_order: [],
+          })
+          .select('id')
+          .single()
+
+        if (schedErr || !schedule) {
+          // 同時実行で既に作られていた場合のみ取得し直す
+          if (schedErr?.code !== '23505') continue
+          const { data: refetched } = await supabase
             .from('transport_schedules')
-            .select('id, transport_details(child_id)')
+            .select('id, direction, departure_time, transport_details(child_id)')
             .eq('unit_id', unitId)
             .eq('date', date)
             .eq('direction', direction)
-            .eq('departure_time', slot)
             .maybeSingle()
-          if (existingSched?.id) {
-            const existingIds = new Set(
-              (existingSched.transport_details as { child_id: string }[]).map((d) => d.child_id)
-            )
-            const missing = orderedChildren.filter((c) => !existingIds.has(c.child_id))
-            if (missing.length > 0) {
-              const nextOrder = (existingSched.transport_details as unknown[]).length
-              await supabase.from('transport_details').insert(
-                missing.map((c, idx) => ({
-                  schedule_id: existingSched.id,
-                  child_id: c.child_id,
-                  pickup_location: getPickupLocation(c, direction),
-                  status: 'scheduled',
-                  sort_order: nextOrder + idx,
-                }))
-              )
-            }
-          }
+          if (!refetched) continue
+          const r = refetched as unknown as ExistingSchedule
+          existing = { ...r, transport_details: r.transport_details ?? [] }
+        } else {
+          existing = { id: schedule.id, direction, departure_time: slot, transport_details: [] }
         }
-        continue
+        scheduleByDirection.set(direction, existing)
       }
 
-      if (orderedChildren.length > 0) {
-        await supabase.from('transport_details').insert(
-          orderedChildren.map((c, idx) => ({
-            schedule_id: schedule.id,
-            child_id: c.child_id,
-            pickup_location: getPickupLocation(c, direction),
-            status: 'scheduled',
-            sort_order: idx,
-          }))
-        )
-      }
+      const sched = existing
+      // 既存スケジュールの出発時刻が違うスロットは対象外（従来どおり何もしない）
+      if (!sameSlot(sched.departure_time, slot)) continue
+
+      const existingIds = new Set(sched.transport_details.map((d) => d.child_id))
+      const missing = orderedChildren.filter((c) => !existingIds.has(c.child_id))
+      if (missing.length === 0) continue
+
+      const nextOrder = sched.transport_details.length
+      await supabase.from('transport_details').insert(
+        missing.map((c, idx) => ({
+          schedule_id: sched.id,
+          child_id: c.child_id,
+          pickup_location: getPickupLocation(c, direction),
+          status: 'scheduled',
+          sort_order: nextOrder + idx,
+        }))
+      )
+      sched.transport_details.push(...missing.map((c) => ({ child_id: c.child_id })))
     }
   }
 }
