@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -109,7 +109,6 @@ export function AttendanceBoard({
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
-  const [, startTransition] = useTransition()
   const [saving, setSaving] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Reservation | null>(null)
@@ -122,7 +121,79 @@ export function AttendanceBoard({
   const [transportSavedIds, setTransportSavedIds] = useState<Set<string>>(new Set())
   const [savedOnce, setSavedOnce] = useState<Set<string>>(new Set())
 
-  const attendanceMap = Object.fromEntries(attendances.map((a) => [a.child_id, a]))
+  // ── 出席・予約はローカル状態として持つ ──
+  // 以前は保存のたびに router.refresh() でページ全体（サーバー4往復）を取り直していた。
+  // 更新後の行でローカル状態を差し替えれば、保存時のサーバー往復は0になる。
+  // props への同期は日付・ユニットが変わったときだけ行う。
+  const boardKey = `${selectedUnitId}|${date}`
+  const [syncedKey, setSyncedKey] = useState(boardKey)
+  const [rows, setRows] = useState<Attendance[]>(attendances)
+  const [resList, setResList] = useState<Reservation[]>(reservations)
+  if (syncedKey !== boardKey) {
+    setSyncedKey(boardKey)
+    setRows(attendances)
+    setResList(reservations)
+  }
+
+  const attendanceMap = Object.fromEntries(rows.map((a) => [a.child_id, a]))
+
+  /** 保存結果の行を反映（同じidがあれば置換、なければ追加） */
+  const applyRow = (row: Attendance) =>
+    setRows((prev) => {
+      const i = prev.findIndex((a) => a.id === row.id)
+      if (i === -1) return [...prev, row]
+      const next = [...prev]
+      next[i] = row
+      return next
+    })
+
+  /** 児童の出席行をローカルから除去 */
+  const dropRow = (childId: string) =>
+    setRows((prev) => prev.filter((a) => a.child_id !== childId))
+
+  // 他の職員による変更の取り込み。
+  // 保存ごとの router.refresh() が副次的に担っていた同期を、Realtime と
+  // タブ復帰時の再取得に置き換える（Realtime 未設定の環境でも後者で追従できる）。
+  useEffect(() => {
+    if (!selectedUnitId) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const reload = async () => {
+      const { data } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('unit_id', selectedUnitId)
+        .eq('date', date)
+      if (!cancelled && data) setRows(data as unknown as Attendance[])
+    }
+    // 自分の保存でも通知が飛ぶため、連続保存はまとめて1回だけ取り直す
+    const scheduleReload = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => { void reload() }, 500)
+    }
+
+    const channel = supabase
+      .channel(`attendance:${selectedUnitId}:${date}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'daily_attendance', filter: `unit_id=eq.${selectedUnitId}` },
+        scheduleReload
+      )
+      .subscribe()
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void reload()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+      void supabase.removeChannel(channel)
+    }
+  }, [supabase, selectedUnitId, date])
 
   // DBの値が空の場合は利用スケジュールの初期値を自動セット
   const buildInitialFields = (a: Attendance): TransportFields => {
@@ -159,17 +230,20 @@ export function AttendanceBoard({
 
   const handleSaveTransport = async (a: Attendance) => {
     setTransportSaving(a.id)
-    const { error } = await supabase
+    // 更新後の行を受け取ってローカルへ反映する（ページ全体の再取得は不要）
+    const { data, error } = await supabase
       .from('daily_attendance')
       .update(buildTransportUpdate(getFields(a)))
       .eq('id', a.id)
+      .select('*')
+      .single()
     setTransportSaving(null)
     if (error) { alert(`保存エラー: ${error.message}`); return }
+    if (data) applyRow(data as unknown as Attendance)
 
     setSavedOnce((prev) => new Set(prev).add(a.id))
     setTransportSavedIds((prev) => new Set(prev).add(a.id))
     setTimeout(() => setTransportSavedIds((prev) => { const s = new Set(prev); s.delete(a.id); return s }), 2000)
-    startTransition(() => router.refresh())
   }
 
   // 日付を1日前後に移動
@@ -193,53 +267,19 @@ export function AttendanceBoard({
   }
 
   // 利用スケジュールから当日の利用時間を取得（特定日上書き > 曜日別設定 > プランのデフォルト）
-  const fetchScheduledTimes = async (childId: string): Promise<UsageTimes> => {
-    const dow = new Date(date).getDay()
-    const { data: plans } = await supabase
-      .from('usage_plans')
-      .select('id, pickup_time, dropoff_time')
-      .eq('child_id', childId)
-      .eq('unit_id', selectedUnitId)
-      .eq('is_active', true)
-      .lte('start_date', date)
-      .or(`end_date.is.null,end_date.gte.${date}`)
-      .contains('day_of_week', [dow])
-      .limit(1)
-
-    if (!plans || plans.length === 0) return {}
-    const plan = plans[0]
-    let pickupTime = plan.pickup_time as string | null
-    let dropoffTime = plan.dropoff_time as string | null
-
-    // 特定日上書きがあれば最優先
-    const { data: dateOverride } = await supabase
-      .from('usage_plan_date_overrides')
-      .select('pickup_time, dropoff_time')
-      .eq('plan_id', plan.id)
-      .eq('date', date)
-      .maybeSingle()
-    if (dateOverride) {
-      if (dateOverride.pickup_time) pickupTime = dateOverride.pickup_time as string
-      if (dateOverride.dropoff_time) dropoffTime = dateOverride.dropoff_time as string
-    } else {
-      // 曜日別設定があれば上書き
-      const { data: daySetting } = await supabase
-        .from('usage_plan_day_settings')
-        .select('pickup_time, dropoff_time')
-        .eq('plan_id', plan.id)
-        .eq('day_of_week', dow)
-        .maybeSingle()
-      if (daySetting?.pickup_time) pickupTime = daySetting.pickup_time as string
-      if (daySetting?.dropoff_time) dropoffTime = daySetting.dropoff_time as string
-    }
-
+  // 以前はブラウザから usage_plans / usage_plan_date_overrides / usage_plan_day_settings を
+  // 引き直していたが（児童1人につき2〜3往復）、サーバーが同じ優先順で計算した
+  // scheduleDefaultsByChildId を props で受け取っているため往復ゼロで求められる。
+  const getScheduledTimes = (childId: string): UsageTimes => {
+    const sched = scheduleDefaultsByChildId[childId]
+    if (!sched) return {}
     const result: UsageTimes = {}
-    if (pickupTime) {
-      result.service_start_time = pickupTime.slice(0, 5)
+    if (sched.pickupTime) {
+      result.service_start_time = sched.pickupTime.slice(0, 5)
       result.check_in_time = result.service_start_time
     }
-    if (dropoffTime) {
-      result.service_end_time = dropoffTime.slice(0, 5)
+    if (sched.dropoffTime) {
+      result.service_end_time = sched.dropoffTime.slice(0, 5)
       result.check_out_time = result.service_end_time
     }
     return result
@@ -254,36 +294,39 @@ export function AttendanceBoard({
     // すでに出席済み（手動で時間編集済みの可能性あり）の場合は上書きしない
     let scheduledTimes: UsageTimes = {}
     if (updates.status === 'attended' && existing?.status !== 'attended') {
-      scheduledTimes = await fetchScheduledTimes(childId)
+      scheduledTimes = getScheduledTimes(childId)
     }
 
-    const mergedUpdates = { ...scheduledTimes, ...updates }
+    // 欠席にする場合は送迎時間・利用時間のクリアも同じ1回のUPDATEにまとめる
+    const mergedUpdates = updates.status === 'absent'
+      ? { ...scheduledTimes, ...updates, ...ABSENT_CLEARED_FIELDS }
+      : { ...scheduledTimes, ...updates }
 
     if (existing) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('daily_attendance')
         .update(mergedUpdates)
         .eq('id', existing.id)
+        .select('*')
+        .single()
       if (error) { alert(`更新エラー: ${error.message}`); setSaving(null); return }
-
-      // 欠席になった場合、送迎時間・利用時間をすべてクリア
-      if (updates.status === 'absent') {
-        await supabase
-          .from('daily_attendance')
-          .update(ABSENT_CLEARED_FIELDS)
-          .eq('id', existing.id)
-      }
+      if (data) applyRow(data as unknown as Attendance)
     } else {
-      const { error } = await supabase.from('daily_attendance').insert({
-        child_id: childId,
-        unit_id: selectedUnitId,
-        date,
-        status: 'attended',
-        pickup_type: 'none',
-        created_by: staffId,
-        ...mergedUpdates,
-      })
+      const { data, error } = await supabase
+        .from('daily_attendance')
+        .insert({
+          child_id: childId,
+          unit_id: selectedUnitId,
+          date,
+          status: 'attended',
+          pickup_type: 'none',
+          created_by: staffId,
+          ...mergedUpdates,
+        })
+        .select('*')
+        .single()
       if (error) { alert(`登録エラー: ${error.message}`); setSaving(null); return }
+      if (data) applyRow(data as unknown as Attendance)
     }
 
     // 欠席になった場合、送迎スケジュールからも削除
@@ -304,7 +347,6 @@ export function AttendanceBoard({
     }
 
     setSaving(null)
-    startTransition(() => router.refresh())
   }
 
   // 出席取り消し（レコードを削除して未記録に戻す）
@@ -314,8 +356,8 @@ export function AttendanceBoard({
     setSaving(childId)
     const { error } = await supabase.from('daily_attendance').delete().eq('id', existing.id)
     if (error) { alert(`取り消しエラー: ${error.message}`); setSaving(null); return }
+    dropRow(childId)
     setSaving(null)
-    startTransition(() => router.refresh())
   }
 
   // 利用予定ごと削除（そもそも利用予定がない児童を誤って入れてしまった場合）
@@ -330,46 +372,51 @@ export function AttendanceBoard({
       date,
     })
     if (error) { alert(`削除エラー: ${error}`); setDeleting(null); return }
+    setResList((prev) => prev.filter((r) => r.child_id !== res.child_id))
+    dropRow(res.child_id)
     setDeleting(null)
     setConfirmDelete(null)
-    startTransition(() => router.refresh())
   }
 
   // 一括出席登録
   const markAllPresent = async () => {
     setSaving('all')
-    const unrecorded = reservations.filter(
+    const unrecorded = resList.filter(
       (r) => r.status !== 'cancel_waiting' && !attendanceMap[r.child_id]
     )
 
-    // 各児童のスケジュール時間を取得してから登録
-    await Promise.all(
-      unrecorded.map(async (r) => {
-        const times = await fetchScheduledTimes(r.child_id)
-        return supabase.from('daily_attendance').insert({
+    // スケジュール時間は props から求まるので、追加の取得往復は発生しない。
+    // 他の職員が同じ児童を先に登録していた場合に一括処理ごと失敗しないよう、
+    // (child_id, unit_id, date) の重複はスキップする。
+    const { data, error } = await supabase
+      .from('daily_attendance')
+      .upsert(
+        unrecorded.map((r) => ({
           child_id: r.child_id,
           unit_id: selectedUnitId,
           date,
           status: 'attended',
           pickup_type: 'none',
           created_by: staffId,
-          ...times,
-        })
-      })
-    )
+          ...getScheduledTimes(r.child_id),
+        })),
+        { onConflict: 'child_id,unit_id,date', ignoreDuplicates: true }
+      )
+      .select('*')
     setSaving(null)
-    startTransition(() => router.refresh())
+    if (error) { alert(`一括登録エラー: ${error.message}`); return }
+    if (data) for (const row of data as unknown as Attendance[]) applyRow(row)
   }
 
-  const attending = reservations.filter((r) => {
+  const attending = resList.filter((r) => {
     const att = attendanceMap[r.child_id]
     return att?.status === 'attended'
   })
-  const absent = reservations.filter((r) => {
+  const absent = resList.filter((r) => {
     const att = attendanceMap[r.child_id]
     return att?.status === 'absent' || r.status === 'cancel_waiting'
   })
-  const unrecorded = reservations.filter((r) => {
+  const unrecorded = resList.filter((r) => {
     return !attendanceMap[r.child_id] && r.status !== 'cancel_waiting'
   })
 
@@ -504,14 +551,14 @@ export function AttendanceBoard({
       <div>
         <h2 className="text-sm font-semibold text-gray-500 mb-2 px-1">利用予定児童一覧</h2>
         <div className="space-y-3">
-            {reservations.length === 0 ? (
+            {resList.length === 0 ? (
               <Card>
                 <CardContent className="p-6 text-sm text-gray-500 text-center">
                   この日の利用予定はありません
                 </CardContent>
               </Card>
             ) : (
-              reservations.map((res) => {
+              resList.map((res) => {
                 const child = res.children
                 if (!child) return null
                 const att = attendanceMap[child.id]
