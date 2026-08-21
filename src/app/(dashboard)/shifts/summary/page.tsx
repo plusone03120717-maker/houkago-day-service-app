@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/require-admin'
-import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ChevronLeft, ChevronRight, Clock, AlertTriangle, Fingerprint } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, Fingerprint } from 'lucide-react'
+import { SummaryDailyEditor, type DailyRow } from '@/components/shifts/summary-daily-editor'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,7 +24,7 @@ type StaffShift = {
   is_attendance_confirmed: boolean
 }
 
-type TCRecord = { staff_member_id: string; type: string; recorded_at: string }
+type TCRecord = { id: string; staff_member_id: string; type: string; recorded_at: string }
 type OvertimeRow = { staff_id: string; date: string; overtime_minutes: number | null }
 type PaidLeaveRow = { staff_member_id: string; date: string; days_used: number }
 
@@ -44,11 +44,6 @@ function toJSTTime(isoStr: string): string {
 
 function toJSTEpochMin(isoStr: string): number {
   return Math.floor((new Date(isoStr).getTime() + 9 * 60 * 60 * 1000) / 60000)
-}
-
-function minToHHMM(m: number): string {
-  const mod = ((m % 1440) + 1440) % 1440
-  return `${String(Math.floor(mod / 60)).padStart(2, '0')}:${String(mod % 60).padStart(2, '0')}`
 }
 
 function toMinutes(time: string | null): number {
@@ -83,7 +78,11 @@ type TCDay = {
   date: string
   clockIn: string | null    // HH:MM
   clockOut: string | null   // HH:MM
+  clockInId: string | null
+  clockOutId: string | null
   hours: number | null
+  breakMinutes: number      // シフトに設定された中抜け
+  lunchDeduction: number    // 5時間以上で自動控除される60分
 }
 
 function buildTCDays(
@@ -91,41 +90,48 @@ function buildTCDays(
   shiftsMap: Map<string, Pick<StaffShift, 'break_start_time' | 'break_end_time'>>,
 ): TCDay[] {
   // raw データ（最早 clock_in・最遅 clock_out を選択）
-  const byDate = new Map<string, { inIso: string | null; outIso: string | null }>()
+  const byDate = new Map<string, { inRec: TCRecord | null; outRec: TCRecord | null }>()
   for (const r of records) {
     const date = toJSTDate(r.recorded_at)
-    if (!byDate.has(date)) byDate.set(date, { inIso: null, outIso: null })
+    if (!byDate.has(date)) byDate.set(date, { inRec: null, outRec: null })
     const d = byDate.get(date)!
     if (r.type === 'clock_in') {
-      if (!d.inIso || r.recorded_at < d.inIso) d.inIso = r.recorded_at
+      if (!d.inRec || r.recorded_at < d.inRec.recorded_at) d.inRec = r
     } else if (r.type === 'clock_out') {
-      if (!d.outIso || r.recorded_at > d.outIso) d.outIso = r.recorded_at
+      if (!d.outRec || r.recorded_at > d.outRec.recorded_at) d.outRec = r
     }
   }
 
   return Array.from(byDate.entries())
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, { inIso, outIso }]) => {
+    .map(([date, { inRec, outRec }]) => {
+      const shift = shiftsMap.get(date)
+      const brkMins = shift?.break_start_time && shift?.break_end_time
+        ? Math.max(0, toMinutes(shift.break_end_time.slice(0, 5)) - toMinutes(shift.break_start_time.slice(0, 5)))
+        : 0
+
       let hours: number | null = null
-      if (inIso && outIso) {
-        const inM = Math.ceil(toJSTEpochMin(inIso) / 30) * 30   // 切り上げ30分
-        const outM = Math.floor(toJSTEpochMin(outIso) / 30) * 30  // 切り捨て30分
+      let lunchDeduction = 0
+      if (inRec && outRec) {
+        const inM = Math.ceil(toJSTEpochMin(inRec.recorded_at) / 30) * 30   // 切り上げ30分
+        const outM = Math.floor(toJSTEpochMin(outRec.recorded_at) / 30) * 30  // 切り捨て30分
         const diff = outM - inM
         if (diff > 0) {
-          const shift = shiftsMap.get(date)
-          const brkMins = shift?.break_start_time && shift?.break_end_time
-            ? Math.max(0, toMinutes(shift.break_end_time.slice(0, 5)) - toMinutes(shift.break_start_time.slice(0, 5)))
-            : 0
           const afterBreak = Math.max(0, diff - brkMins)
-          const net = Math.max(0, afterBreak - (afterBreak >= 300 ? 60 : 0))
+          lunchDeduction = afterBreak >= 300 ? 60 : 0
+          const net = Math.max(0, afterBreak - lunchDeduction)
           hours = Math.round((net / 60) * 100) / 100
         }
       }
       return {
         date,
-        clockIn: inIso ? toJSTTime(inIso) : null,
-        clockOut: outIso ? toJSTTime(outIso) : null,
+        clockIn: inRec ? toJSTTime(inRec.recorded_at) : null,
+        clockOut: outRec ? toJSTTime(outRec.recorded_at) : null,
+        clockInId: inRec?.id ?? null,
+        clockOutId: outRec?.id ?? null,
         hours,
+        breakMinutes: brkMins,
+        lunchDeduction,
       }
     })
 }
@@ -172,7 +178,7 @@ export default async function ShiftSummaryPage({
     memberIds.length > 0
       ? supabase
           .from('time_records')
-          .select('staff_member_id, type, recorded_at')
+          .select('id, staff_member_id, type, recorded_at')
           .in('staff_member_id', memberIds)
           .gte('recorded_at', recordsStart)
           .lt('recorded_at', recordsEnd)
@@ -232,6 +238,8 @@ export default async function ShiftSummaryPage({
     const tcDays = buildTCDays(myTC, shiftsMap)
     const tcWorkDays = tcDays.filter((d) => d.clockIn !== null).length
     const tcTotalHours = Math.round(tcDays.reduce((sum, d) => sum + (d.hours ?? 0), 0) * 100) / 100
+    // 実働から差し引いた休憩の合計（中抜け＋5時間以上の自動控除）
+    const totalBreakMinutes = tcDays.reduce((sum, d) => sum + d.breakMinutes + d.lunchDeduction, 0)
 
     // 残業集計（承認済み・30分単位切り捨て）
     const myOvertimes = overtimes.filter((o) => o.staff_id === member.id)
@@ -244,6 +252,44 @@ export default async function ShiftSummaryPage({
     const myLeaves = leaves.filter((l) => l.staff_member_id === member.id)
     const paidLeaveDays = myLeaves.reduce((sum, l) => sum + l.days_used, 0)
     const leaveByDate = new Map(myLeaves.map((l) => [l.date, l.days_used]))
+
+    // ── 日次詳細（編集可）の行を組み立てる ──
+    const shiftByDate = new Map(myShifts.map((s) => [s.date, s]))
+    const tcByDate = new Map(tcDays.map((d) => [d.date, d]))
+    const allDates = new Set([
+      ...myShifts.map((s) => s.date),
+      ...tcDays.map((d) => d.date),
+      ...myOvertimes.map((o) => o.date),
+      ...myLeaves.map((l) => l.date),
+    ])
+    const dailyRows: DailyRow[] = Array.from(allDates)
+      .sort()
+      .map((date) => {
+        const shift = shiftByDate.get(date)
+        const tc = tcByDate.get(date)
+        return {
+          date,
+          shiftId: shift?.id ?? null,
+          shiftType: shift?.shift_type ?? null,
+          planStart: shift?.start_time?.slice(0, 5) ?? null,
+          planEnd: shift?.end_time?.slice(0, 5) ?? null,
+          breakStart: shift?.break_start_time?.slice(0, 5) ?? null,
+          breakEnd: shift?.break_end_time?.slice(0, 5) ?? null,
+          clockInId: tc?.clockInId ?? null,
+          clockOutId: tc?.clockOutId ?? null,
+          clockIn: tc?.clockIn ?? null,
+          clockOut: tc?.clockOut ?? null,
+          hours: tc?.hours ?? null,
+          breakMinutes: tc?.breakMinutes
+            ?? (shift?.break_start_time && shift?.break_end_time
+              ? Math.max(0, toMinutes(shift.break_end_time.slice(0, 5)) - toMinutes(shift.break_start_time.slice(0, 5)))
+              : 0),
+          lunchDeduction: tc?.lunchDeduction ?? 0,
+          isConfirmed: shift?.is_attendance_confirmed ?? false,
+          overtimeMinutes: overtimeByDate.get(date) ?? null,
+          leaveDays: leaveByDate.get(date) ?? null,
+        }
+      })
 
     return {
       member,
@@ -259,6 +305,8 @@ export default async function ShiftSummaryPage({
       tcWorkDays,
       tcTotalHours,
       tcDays,
+      totalBreakMinutes,
+      dailyRows,
       // overtime / leave
       approvedOvertimeMinutes,
       overtimeByDate,
@@ -346,6 +394,7 @@ export default async function ShiftSummaryPage({
                   <th className="text-center px-3 py-2.5 font-medium">休み</th>
                   <th className="text-center px-3 py-2.5 font-medium text-blue-600">有給</th>
                   <th className="text-right px-3 py-2.5 font-medium">計画時間</th>
+                  <th className="text-right px-3 py-2.5 font-medium" title="実働時間から差し引いた休憩の合計（中抜け＋5時間以上の自動控除）">休憩</th>
                   <th className="text-right px-3 py-2.5 font-medium">
                     <span className="flex items-center justify-end gap-1">
                       <Fingerprint className="h-3 w-3" />打刻時間
@@ -356,7 +405,7 @@ export default async function ShiftSummaryPage({
                 </tr>
               </thead>
               <tbody>
-                {staffStats.map(({ member, hasShifts, shiftWorkDays, plannedMinutes, offDays, typeCounts, tcWorkDays, tcTotalHours, confirmedDays, unconfirmedCount, approvedOvertimeMinutes, paidLeaveDays }) => (
+                {staffStats.map(({ member, hasShifts, shiftWorkDays, plannedMinutes, offDays, typeCounts, tcWorkDays, tcTotalHours, totalBreakMinutes, confirmedDays, unconfirmedCount, approvedOvertimeMinutes, paidLeaveDays }) => (
                   <tr key={member.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{member.name}</p>
@@ -398,6 +447,10 @@ export default async function ShiftSummaryPage({
                     {/* 計画時間 */}
                     <td className="px-3 py-3 text-right text-gray-600">
                       {hasShifts && plannedMinutes > 0 ? formatDuration(plannedMinutes) : <span className="text-gray-300">—</span>}
+                    </td>
+                    {/* 休憩（実働から差し引いた合計） */}
+                    <td className="px-3 py-3 text-right text-gray-600">
+                      {totalBreakMinutes > 0 ? formatDuration(totalBreakMinutes) : <span className="text-gray-300">—</span>}
                     </td>
                     {/* 打刻実績時間 */}
                     <td className="px-3 py-3 text-right">
@@ -449,6 +502,11 @@ export default async function ShiftSummaryPage({
                         : '—'}
                     </td>
                     <td className="px-3 py-2.5 text-right text-gray-600">{formatDuration(totalPlanned)}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-600">
+                      {staffStats.reduce((s, st) => s + st.totalBreakMinutes, 0) > 0
+                        ? formatDuration(staffStats.reduce((s, st) => s + st.totalBreakMinutes, 0))
+                        : '—'}
+                    </td>
                     <td className="px-3 py-2.5 text-right text-teal-700">{totalTCHours}h</td>
                     <td className="px-3 py-2.5 text-right text-orange-600">
                       {staffStats.reduce((s, st) => s + st.approvedOvertimeMinutes, 0) > 0
@@ -464,105 +522,27 @@ export default async function ShiftSummaryPage({
         </CardContent>
       </Card>
 
-      {/* スタッフ別 日次詳細 */}
+      {/* スタッフ別 日次詳細（出退勤・休憩をここで編集できる） */}
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-gray-700">スタッフ別 日次詳細</h2>
-        {staffStats.map(({ member, myShifts, tcDays, hasShifts, overtimeByDate, leaveByDate }) => {
-          // シフトと打刻をdateでマージ
-          const allDates = new Set([
-            ...myShifts.map((s) => s.date),
-            ...tcDays.map((d) => d.date),
-            ...Array.from(overtimeByDate.keys()),
-            ...Array.from(leaveByDate.keys()),
-          ])
-          const sortedDates = Array.from(allDates).sort()
-          if (sortedDates.length === 0) return null
-
-          const shiftByDate = new Map(myShifts.map((s) => [s.date, s]))
-          const tcByDate = new Map(tcDays.map((d) => [d.date, d]))
-
+        <div>
+          <h2 className="text-sm font-semibold text-gray-700">スタッフ別 日次詳細</h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            出退勤の打刻と中抜け休憩はこの画面で直接編集できます。変更はタイムカードにもそのまま反映されます。
+          </p>
+        </div>
+        {staffStats.map(({ member, dailyRows }) => {
+          if (dailyRows.length === 0) return null
           return (
             <Card key={member.id}>
               <CardHeader className="pb-2 pt-3">
                 <CardTitle className="text-sm font-semibold text-gray-800">{member.name}</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="divide-y divide-gray-100">
-                  {sortedDates.map((date) => {
-                    const shift = shiftByDate.get(date)
-                    const tc = tcByDate.get(date)
-                    const isWork = shift ? !['off', 'holiday'].includes(shift.shift_type) : true
-                    const dow = ['日', '月', '火', '水', '木', '金', '土'][new Date(date + 'T00:00:00').getDay()]
-                    const holidayName = getJapaneseHolidayName(date)
-                    const isWeekend = dow === '日' || dow === '土' || holidayName !== null
-
-                    return (
-                      <div key={date} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm">
-                        {/* 日付 */}
-                        <span
-                          className={`text-xs w-20 flex-shrink-0 ${isWeekend ? 'text-red-500' : 'text-gray-500'}`}
-                          title={holidayName ?? undefined}
-                        >
-                          {date.slice(5).replace('-', '/')}（{holidayName ? '祝' : dow}）
-                        </span>
-
-                        {/* シフト種別 */}
-                        {shift && (
-                          <Badge
-                            variant={isWork ? 'secondary' : 'outline'}
-                            className={`text-xs flex-shrink-0 ${!isWork ? 'text-gray-400' : ''}`}
-                          >
-                            {SHIFT_LABELS[shift.shift_type] ?? shift.shift_type}
-                          </Badge>
-                        )}
-
-                        {/* シフト計画時間 */}
-                        {shift && isWork && shift.start_time && shift.end_time && (
-                          <span className="text-gray-400 text-xs">
-                            予定: {shift.start_time.slice(0, 5)}〜{shift.end_time.slice(0, 5)}
-                          </span>
-                        )}
-
-                        {/* タイムカード打刻 */}
-                        {tc ? (
-                          <span className="flex items-center gap-1 text-xs text-teal-700">
-                            <Fingerprint className="h-3 w-3 flex-shrink-0" />
-                            {tc.clockIn ?? '?'}〜{tc.clockOut ?? '未退勤'}
-                            {tc.hours != null && (
-                              <span className="text-gray-400 ml-0.5">({tc.hours}h)</span>
-                            )}
-                            {tc.clockIn && !tc.clockOut && (
-                              <AlertTriangle className="h-3 w-3 text-red-500 ml-1" />
-                            )}
-                          </span>
-                        ) : (
-                          isWork && hasShifts && (
-                            <span className="text-xs text-gray-300">打刻なし</span>
-                          )
-                        )}
-
-                        {/* 有給バッジ */}
-                        {leaveByDate.has(date) && (
-                          <Badge variant="secondary" className="text-xs flex-shrink-0 bg-blue-100 text-blue-700 border-blue-200">
-                            有給{leaveByDate.get(date) === 0.5 ? ' 半日' : ''}
-                          </Badge>
-                        )}
-
-                        {/* 残業バッジ */}
-                        {overtimeByDate.has(date) && (
-                          <span className="text-xs text-orange-600 flex-shrink-0">
-                            残業 {overtimeByDate.get(date) != null ? `${overtimeByDate.get(date)}分` : ''}
-                          </span>
-                        )}
-
-                        {/* 確認済バッジ */}
-                        {shift?.is_attendance_confirmed && (
-                          <Badge variant="success" className="text-xs ml-auto flex-shrink-0">確認済</Badge>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
+                <SummaryDailyEditor
+                  staffMemberId={member.id}
+                  userId={member.user_id}
+                  rows={dailyRows}
+                />
               </CardContent>
             </Card>
           )
@@ -571,7 +551,8 @@ export default async function ShiftSummaryPage({
 
       <p className="text-xs text-gray-400">
         <Fingerprint className="h-3 w-3 inline mr-0.5" />
-        マークはLINEタイムカードの打刻データです（30分丸め・5時間以上で休憩1時間自動控除）
+        マークはLINEタイムカードの打刻データです。実働時間は打刻を30分丸め（出勤は切り上げ・退勤は切り捨て）し、
+        中抜け休憩を引いたうえで、5時間以上なら休憩1時間を自動控除して計算します。
       </p>
     </div>
   )

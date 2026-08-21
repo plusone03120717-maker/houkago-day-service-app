@@ -64,7 +64,8 @@ export default async function TimecardPage({
     userId
       ? supabase
           .from('staff_shifts')
-          .select('id, date, shift_type, start_time, end_time')
+          // break_* は実働時間の計算（中抜け控除）に使うので初回描画から必要
+          .select('id, date, shift_type, start_time, end_time, break_start_time, break_end_time')
           .eq('staff_id', userId)
           .gte('date', rateMonthStart)
           .lte('date', rateMonthEnd)
