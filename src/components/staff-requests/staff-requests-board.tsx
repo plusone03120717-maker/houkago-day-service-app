@@ -76,6 +76,23 @@ export function StaffRequestsBoard({ overtimeRequests: init_ot, leaveUsages: ini
     setLoading(null)
   }
 
+  // 有給申請の取り消し（レコードごと削除）
+  const handleLeaveCancel = async (id: string) => {
+    if (!window.confirm('この有給申請を取り消します。記録も削除されますが、よろしいですか？')) return
+    setLoading(id)
+    try {
+      const res = await fetch(`/api/staff/paid-leave/usage?id=${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({})) as { error?: string }
+        alert(j.error ?? '取り消しに失敗しました')
+        return
+      }
+      setLeaves((prev) => prev.filter((r) => r.id !== id))
+    } finally {
+      setLoading(null)
+    }
+  }
+
   const handleBreakReviewed = async (id: string) => {
     setLoading(id)
     await fetch('/api/staff-requests/break-reviewed', {
@@ -155,14 +172,25 @@ export function StaffRequestsBoard({ overtimeRequests: init_ot, leaveUsages: ini
                     {formatDate(lv.date)}　{lv.days_used === 0.5 ? '半日' : '1日'}
                   </p>
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={loading === lv.id}
-                  onClick={() => handleLeaveReviewed(lv.id)}
-                >
-                  確認済み
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={loading === lv.id}
+                    onClick={() => handleLeaveReviewed(lv.id)}
+                  >
+                    確認済み
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={loading === lv.id}
+                    onClick={() => handleLeaveCancel(lv.id)}
+                    className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                  >
+                    取り消し
+                  </Button>
+                </div>
               </div>
             ))}
           </CardContent>

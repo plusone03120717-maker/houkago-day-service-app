@@ -90,6 +90,8 @@ function StaffLiffContent() {
   const [breakEnd, setBreakEnd] = useState('13:00')
 
   const [submitting, setSubmitting] = useState(false)
+  const [cancellingLeave, setCancellingLeave] = useState(false)
+  const [confirmLeaveCancel, setConfirmLeaveCancel] = useState(false)
   const [toast, setToast] = useState<{ ok: boolean; message: string } | null>(null)
 
   // スタッフ特定
@@ -172,10 +174,10 @@ function StaffLiffContent() {
   }
 
   function openDate(dateStr: string) {
-    setSelectedDate(dateStr); setActiveForm(null); setToast(null)
+    setSelectedDate(dateStr); setActiveForm(null); setToast(null); setConfirmLeaveCancel(false)
   }
   function closeSheet() {
-    setSelectedDate(null); setActiveForm(null); setToast(null)
+    setSelectedDate(null); setActiveForm(null); setToast(null); setConfirmLeaveCancel(false)
   }
 
   // 申請送信
@@ -203,6 +205,34 @@ function StaffLiffContent() {
       setToast({ ok: false, message: '通信エラーが発生しました' })
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  // 有給の取り消し（レコードごと削除）
+  async function cancelLeave() {
+    if (liffState.status !== 'ready' || !selectedDate) return
+    const accessToken = liffState.liff.getAccessToken()
+    if (!accessToken) return
+
+    setCancellingLeave(true)
+    try {
+      const res = await fetch('/api/liff/staff/leave/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken, date: selectedDate }),
+      })
+      const json = await res.json() as { error?: string }
+      if (!res.ok) {
+        setToast({ ok: false, message: json.error ?? '取り消しに失敗しました' })
+      } else {
+        setToast({ ok: true, message: '有給申請を取り消しました' })
+        setConfirmLeaveCancel(false)
+        loadMonth(year, month)
+      }
+    } catch {
+      setToast({ ok: false, message: '通信エラーが発生しました' })
+    } finally {
+      setCancellingLeave(false)
     }
   }
 
@@ -442,11 +472,45 @@ function StaffLiffContent() {
 
               {/* 既存レコード */}
               {dateInfo.leave && (
-                <div className="flex items-center gap-2.5 bg-green-50 rounded-2xl px-4 py-3 border border-green-100">
-                  <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
-                  <span className="text-sm text-green-800 font-medium">
-                    有給取得済み{dateInfo.leave.days_used === 0.5 ? '（半日）' : '（1日）'}
-                  </span>
+                <div className="bg-green-50 rounded-2xl px-4 py-3 border border-green-100">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                    <span className="text-sm text-green-800 font-medium flex-1">
+                      有給取得済み{dateInfo.leave.days_used === 0.5 ? '（半日）' : '（1日）'}
+                    </span>
+                    {!confirmLeaveCancel && (
+                      <button
+                        onClick={() => { setConfirmLeaveCancel(true); setToast(null) }}
+                        className="shrink-0 rounded-full border border-green-300 bg-white px-3 py-1.5 text-xs font-medium text-red-500 active:opacity-70"
+                      >
+                        取り消す
+                      </button>
+                    )}
+                  </div>
+                  {confirmLeaveCancel && (
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-600 mb-2">
+                        この日の有給申請を削除します。元に戻せません。
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setConfirmLeaveCancel(false)}
+                          disabled={cancellingLeave}
+                          className="flex-1 rounded-xl py-2.5 text-sm text-gray-500 bg-white border border-gray-200 disabled:opacity-50"
+                        >
+                          やめる
+                        </button>
+                        <button
+                          onClick={cancelLeave}
+                          disabled={cancellingLeave}
+                          className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white bg-red-500 disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm"
+                        >
+                          {cancellingLeave && <Loader2 className="h-4 w-4 animate-spin" />}
+                          取り消す
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               {dateInfo.overtime && (

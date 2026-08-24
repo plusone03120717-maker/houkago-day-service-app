@@ -181,6 +181,10 @@ export default function StaffSchedulePage() {
   const [reloadKey, setReloadKey] = useState(0)
   const [result, setResult] = useState<FetchResult | null>(null)
   const [monthResult, setMonthResult] = useState<MonthResult | null>(null)
+  // 有給取り消しの確認ダイアログ（対象日）
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null)
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
   const accessToken = liffState.status === 'ready' ? liffState.liff.getAccessToken() : null
   const requestKey = `${date}#${reloadKey}`
@@ -239,6 +243,31 @@ export default function StaffSchedulePage() {
 
     return () => { cancelled = true }
   }, [accessToken, view, cal.year, cal.month, monthKey])
+
+  /** 申請済みの有給を取り消す（レコードごと削除して再読み込み） */
+  async function runCancelLeave() {
+    if (!accessToken || !cancelTarget) return
+    setCancelling(true)
+    setCancelError(null)
+    try {
+      const res = await fetch('/api/liff/staff/leave/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken, date: cancelTarget }),
+      })
+      const json = await res.json() as { error?: string }
+      if (!res.ok) {
+        setCancelError(json.error ?? '取り消しに失敗しました')
+        return
+      }
+      setCancelTarget(null)
+      setReloadKey((k) => k + 1)
+    } catch {
+      setCancelError('通信エラーが発生しました')
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   // ローディング
   if (liffState.status === 'loading' || (!result && liffState.status === 'ready' && accessToken)) {
@@ -316,6 +345,7 @@ export default function StaffSchedulePage() {
     dot: string
     status: string | null
     statusColor: string
+    cancelable: boolean
   }[] = [
     ...(monthData?.leaveUsages ?? []).map((l) => ({
       key: `leave-${l.id}`,
@@ -324,6 +354,7 @@ export default function StaffSchedulePage() {
       dot: 'bg-green-500',
       status: null,
       statusColor: '',
+      cancelable: true,
     })),
     ...(monthData?.overtimeRequests ?? []).map((o) => ({
       key: `overtime-${o.id}`,
@@ -332,6 +363,7 @@ export default function StaffSchedulePage() {
       dot: overtimeStyle(o.status).dot,
       status: overtimeStyle(o.status).label,
       statusColor: overtimeStyle(o.status).text,
+      cancelable: false,
     })),
     ...(monthData?.breakRecords ?? []).map((b, i) => ({
       key: `break-${b.date}-${i}`,
@@ -340,6 +372,7 @@ export default function StaffSchedulePage() {
       dot: 'bg-sky-400',
       status: null,
       statusColor: '',
+      cancelable: false,
     })),
   ].sort((a, b) => a.date.localeCompare(b.date))
 
@@ -572,20 +605,32 @@ export default function StaffSchedulePage() {
               ) : (
                 <div className="space-y-2">
                   {monthEntries.map((entry) => (
-                    <button
+                    <div
                       key={entry.key}
-                      onClick={() => { setDate(entry.date); setView('day') }}
-                      className="w-full text-left bg-white rounded-2xl shadow-sm px-4 py-3 flex items-center gap-3 active:bg-gray-50"
+                      className="bg-white rounded-2xl shadow-sm flex items-center gap-1 pr-2"
                     >
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${entry.dot}`} />
-                      <span className="text-sm font-medium text-gray-800 w-14 shrink-0">
-                        {Number(entry.date.slice(5, 7))}/{Number(entry.date.slice(8, 10))}
-                      </span>
-                      <span className="text-sm text-gray-700 flex-1">{entry.label}</span>
-                      {entry.status && (
-                        <span className={`text-xs shrink-0 ${entry.statusColor}`}>{entry.status}</span>
+                      <button
+                        onClick={() => { setDate(entry.date); setView('day') }}
+                        className="flex-1 min-w-0 text-left px-4 py-3 flex items-center gap-3 active:opacity-60"
+                      >
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${entry.dot}`} />
+                        <span className="text-sm font-medium text-gray-800 w-14 shrink-0">
+                          {Number(entry.date.slice(5, 7))}/{Number(entry.date.slice(8, 10))}
+                        </span>
+                        <span className="text-sm text-gray-700 flex-1">{entry.label}</span>
+                        {entry.status && (
+                          <span className={`text-xs shrink-0 ${entry.statusColor}`}>{entry.status}</span>
+                        )}
+                      </button>
+                      {entry.cancelable && (
+                        <button
+                          onClick={() => { setCancelTarget(entry.date); setCancelError(null) }}
+                          className="shrink-0 rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-red-500 active:opacity-70"
+                        >
+                          取消
+                        </button>
                       )}
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -741,9 +786,15 @@ export default function StaffSchedulePage() {
               {data?.leave && (
                 <div className="flex items-center gap-2.5 bg-green-50 rounded-2xl px-4 py-3 border border-green-100">
                   <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
-                  <span className="text-sm text-green-800 font-medium">
+                  <span className="text-sm text-green-800 font-medium flex-1">
                     有給取得済み{data.leave.daysUsed === 0.5 ? '（半日）' : '（1日）'}
                   </span>
+                  <button
+                    onClick={() => { setCancelTarget(date); setCancelError(null) }}
+                    className="shrink-0 rounded-full border border-green-300 bg-white px-3 py-1.5 text-xs font-medium text-red-500 active:opacity-70"
+                  >
+                    取り消す
+                  </button>
                 </div>
               )}
               {data?.overtime && (
@@ -792,6 +843,44 @@ export default function StaffSchedulePage() {
         </Link>
       </div>
       </>
+      )}
+
+      {/* 有給の取り消し確認 */}
+      {cancelTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-8">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => { if (!cancelling) setCancelTarget(null) }}
+          />
+          <div className="relative w-full max-w-xs bg-white rounded-2xl shadow-2xl p-5">
+            <p className="text-sm font-bold text-gray-900 mb-1">有給申請を取り消しますか？</p>
+            <p className="text-xs text-gray-500 mb-4">
+              {formatMonthDay(cancelTarget)}の有給申請を削除します。元に戻せません。
+            </p>
+            {cancelError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3">
+                {cancelError}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCancelTarget(null)}
+                disabled={cancelling}
+                className="flex-1 rounded-xl py-2.5 text-sm text-gray-500 bg-white border border-gray-200 disabled:opacity-50"
+              >
+                やめる
+              </button>
+              <button
+                onClick={runCancelLeave}
+                disabled={cancelling}
+                className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white bg-red-500 disabled:opacity-50 flex items-center justify-center gap-1"
+              >
+                {cancelling && <Loader2 className="h-4 w-4 animate-spin" />}
+                取り消す
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
