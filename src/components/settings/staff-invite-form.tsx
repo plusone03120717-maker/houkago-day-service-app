@@ -6,18 +6,22 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { UserPlus, Copy, Check, KeyRound } from 'lucide-react'
+import { SERVICE_MANAGER } from '@/lib/roles'
 
 // 役職オプション（needsAuth=trueはアプリログイン・電話番号が必要）
+// サービス管理者はログイン権限としてはスタッフと同じで、
+// 追加で「児童管理 → 利用スケジュール」を編集できる。
 const ROLE_OPTIONS = [
-  { value: 'staff',     label: 'スタッフ',   needsAuth: true },
-  { value: 'admin',     label: '管理者',     needsAuth: true },
-  { value: 'driver',    label: 'ドライバー',  needsAuth: false },
-  { value: 'therapist', label: '療育士',     needsAuth: false },
+  { value: 'staff',           label: 'スタッフ',       needsAuth: true },
+  { value: SERVICE_MANAGER,   label: 'サービス管理者',  needsAuth: true },
+  { value: 'admin',           label: 'システム管理者',  needsAuth: true },
+  { value: 'driver',          label: 'ドライバー',      needsAuth: false },
+  { value: 'therapist',       label: '療育士',         needsAuth: false },
 ]
 
 function getAuthRole(selected: Set<string>): 'admin' | 'staff' | null {
   if (selected.has('admin')) return 'admin'
-  if (selected.has('staff')) return 'staff'
+  if (selected.has('staff') || selected.has(SERVICE_MANAGER)) return 'staff'
   return null
 }
 
@@ -171,6 +175,11 @@ export function StaffInviteForm() {
                 </button>
               ))}
             </div>
+            {selectedRoles.has(SERVICE_MANAGER) && (
+              <p className="text-xs text-violet-600 mt-1.5">
+                サービス管理者は、スタッフの権限に加えて「児童管理 → 利用スケジュール」を編集できます。
+              </p>
+            )}
             {!needsPhone && selectedRoles.size > 0 && (
               <p className="text-xs text-gray-400 mt-1.5">
                 ログイン不要のスタッフとして登録されます。LINE User IDを設定すると、LINEからマイスケジュールの確認や各種申請ができます。

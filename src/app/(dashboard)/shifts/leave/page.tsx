@@ -59,7 +59,7 @@ export default async function PaidLeavePage({
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">有給管理</h1>
-        <p className="text-sm text-gray-500 mt-0.5">年度別の有給付与・使用記録を管理します（管理者専用）</p>
+        <p className="text-sm text-gray-500 mt-0.5">年度別の有給付与・使用記録を管理します（システム管理者専用）</p>
       </div>
 
       <PaidLeaveBoard

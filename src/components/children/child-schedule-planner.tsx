@@ -158,12 +158,15 @@ interface Props {
   defaultTransportType: string
   defaultPickupLocationType: string
   defaultDropoffLocationType: string
+  /** false のときは閲覧のみ（システム管理者・サービス管理者以外） */
+  canEdit?: boolean
 }
 
 export function ChildSchedulePlanner({
   childId, units, initialPlans, initialDaySettings, initialDateOverrides,
   childAddress, schoolName,
   defaultTransportType, defaultPickupLocationType, defaultDropoffLocationType,
+  canEdit = true,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -743,6 +746,12 @@ export function ChildSchedulePlanner({
 
   return (
     <div className="space-y-4">
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          利用スケジュールの編集はシステム管理者・サービス管理者のみ行えます（閲覧のみ）。
+        </p>
+      )}
+
       {/* 既存プラン一覧 */}
       {plans.length > 0 && (
         <div className="space-y-3">
@@ -907,13 +916,13 @@ export function ChildSchedulePlanner({
                               <div key={d} className="relative">
                                 <button
                                   type="button"
-                                  onClick={() => active ? openDayEdit(plan, d) : undefined}
+                                  onClick={() => active && canEdit ? openDayEdit(plan, d) : undefined}
                                   className={`inline-flex flex-col items-center justify-center w-9 h-9 rounded-full text-xs font-bold border transition-colors ${
                                     active
-                                      ? `${DAY_COLORS[d]} hover:opacity-80 cursor-pointer`
+                                      ? `${DAY_COLORS[d]}${canEdit ? ' hover:opacity-80 cursor-pointer' : ' cursor-default'}`
                                       : 'bg-gray-100 text-gray-300 border-gray-200 cursor-default'
                                   }`}
-                                  title={active ? `${DAY_LABELS[d]}曜日の設定を編集` : undefined}
+                                  title={active && canEdit ? `${DAY_LABELS[d]}曜日の設定を編集` : undefined}
                                 >
                                   {DAY_LABELS[d]}
                                 </button>
@@ -973,21 +982,23 @@ export function ChildSchedulePlanner({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <button onClick={() => startEdit(plan)} title="編集"
-                        className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => handleToggleActive(plan)}
-                        title={plan.is_active ? '無効にする' : '有効にする'}
-                        className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-                        <Power className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => handleDelete(plan.id)} title="削除"
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
+                    {canEdit && (
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => startEdit(plan)} title="編集"
+                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => handleToggleActive(plan)}
+                          title={plan.is_active ? '無効にする' : '有効にする'}
+                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                          <Power className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => handleDelete(plan.id)} title="削除"
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* 曜日別設定パネル */}
@@ -1063,16 +1074,16 @@ export function ChildSchedulePlanner({
                           .filter((ds) => ds.plan_id === plan.id)
                           .sort((a, b) => a.day_of_week - b.day_of_week)
                           .map((ds) => (
-                            <button key={ds.id} type="button"
+                            <button key={ds.id} type="button" disabled={!canEdit}
                               onClick={() => openDayEdit(plan, ds.day_of_week)}
-                              className="flex items-center gap-1.5 text-xs bg-white border border-orange-200 rounded-lg px-2 py-1 hover:bg-orange-50 transition-colors">
+                              className="flex items-center gap-1.5 text-xs bg-white border border-orange-200 rounded-lg px-2 py-1 enabled:hover:bg-orange-50 disabled:cursor-default transition-colors">
                               <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold ${DAY_COLORS[ds.day_of_week]}`}>
                                 {DAY_LABELS[ds.day_of_week]}
                               </span>
                               <span className="text-orange-700">{transportLabel(ds.transport_type).label}</span>
                               {ds.pickup_time && <span className="text-gray-500">{formatTime(ds.pickup_time)}</span>}
                               {ds.service_start_time && <span className="text-purple-600">{formatTime(ds.service_start_time)}〜</span>}
-                              <ChevronDown className="h-3 w-3 text-gray-400" />
+                              {canEdit && <ChevronDown className="h-3 w-3 text-gray-400" />}
                             </button>
                           ))}
                       </div>
@@ -1084,11 +1095,13 @@ export function ChildSchedulePlanner({
                     <div className="pt-1 border-t border-gray-100">
                       <div className="flex items-center justify-between mb-1.5">
                         <p className="text-xs text-gray-400">特定日の変更</p>
-                        <button type="button"
-                          onClick={() => openDateOverrideForm(plan)}
-                          className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 px-2 py-0.5 rounded hover:bg-indigo-50 transition-colors">
-                          <Plus className="h-3 w-3" />追加
-                        </button>
+                        {canEdit && (
+                          <button type="button"
+                            onClick={() => openDateOverrideForm(plan)}
+                            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 px-2 py-0.5 rounded hover:bg-indigo-50 transition-colors">
+                            <Plus className="h-3 w-3" />追加
+                          </button>
+                        )}
                       </div>
 
                       {dateOverrides.filter((o) => o.plan_id === plan.id && !o.is_cancelled).length > 0 && (
@@ -1097,13 +1110,13 @@ export function ChildSchedulePlanner({
                             .filter((o) => o.plan_id === plan.id && !o.is_cancelled)
                             .sort((a, b) => a.date.localeCompare(b.date))
                             .map((override) => (
-                              <button key={override.id} type="button"
+                              <button key={override.id} type="button" disabled={!canEdit}
                                 onClick={() => openDateOverrideForm(plan, override)}
-                                className="flex items-center gap-1.5 text-xs bg-white border border-purple-200 rounded-lg px-2 py-1 hover:bg-purple-50 transition-colors">
+                                className="flex items-center gap-1.5 text-xs bg-white border border-purple-200 rounded-lg px-2 py-1 enabled:hover:bg-purple-50 disabled:cursor-default transition-colors">
                                 <CalendarDays className="h-3 w-3 text-purple-500" />
                                 <span className="text-purple-700 font-medium">{override.date}</span>
                                 <span className="text-gray-500">{transportLabel(override.transport_type).label}</span>
-                                <ChevronDown className="h-3 w-3 text-gray-400" />
+                                {canEdit && <ChevronDown className="h-3 w-3 text-gray-400" />}
                               </button>
                             ))}
                         </div>
@@ -1174,14 +1187,14 @@ export function ChildSchedulePlanner({
         </div>
       )}
 
-      {plans.length === 0 && !showForm && (
+      {plans.length === 0 && (!showForm || !canEdit) && (
         <div className="text-center py-10 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
           スケジュールが登録されていません
         </div>
       )}
 
       {/* 新規追加フォーム */}
-      {showForm ? (
+      {!canEdit ? null : showForm ? (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">新しいスケジュールを追加</CardTitle>

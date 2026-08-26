@@ -5,13 +5,7 @@ import { ArrowLeft, Car } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { StaffMemberForm } from '@/components/settings/staff-member-form'
-
-const roleLabel: Record<string, string> = {
-  driver: 'ドライバー',
-  therapist: '療育士',
-  nurse: '看護師',
-  staff: 'スタッフ',
-}
+import { roleLabel } from '@/lib/roles'
 
 export default async function StaffMemberPage({
   params,
@@ -57,7 +51,7 @@ export default async function StaffMemberPage({
           </div>
           <div className="flex gap-1 flex-wrap justify-end">
             {memberRoles.map((r) => (
-              <Badge key={r} variant="secondary">{roleLabel[r] ?? r}</Badge>
+              <Badge key={r} variant="secondary">{roleLabel(r)}</Badge>
             ))}
           </div>
         </CardContent>

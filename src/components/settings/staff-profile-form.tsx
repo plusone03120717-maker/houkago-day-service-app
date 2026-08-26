@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Save, CheckCircle } from 'lucide-react'
+import { SERVICE_MANAGER } from '@/lib/roles'
 
 // 放デイで一般的な資格一覧
 const QUALIFICATION_OPTIONS = [
@@ -28,9 +29,10 @@ type Unit = { id: string; name: string }
 
 // ログインユーザーに付与できる追加役職
 const JOB_TITLE_OPTIONS = [
-  { value: 'driver',    label: 'ドライバー' },
-  { value: 'therapist', label: '療育士' },
-  { value: 'nurse',     label: '看護師' },
+  { value: SERVICE_MANAGER, label: 'サービス管理者' },
+  { value: 'driver',        label: 'ドライバー' },
+  { value: 'therapist',     label: '療育士' },
+  { value: 'nurse',         label: '看護師' },
 ]
 
 interface Props {
@@ -282,6 +284,11 @@ export function StaffProfileForm({
             )
           })}
         </div>
+        {jobTitles.has(SERVICE_MANAGER) && (
+          <p className="text-xs text-violet-600 mt-1.5">
+            サービス管理者は「児童管理 → 利用スケジュール」を編集できます。
+          </p>
+        )}
       </div>
 
       {/* LINE User ID */}

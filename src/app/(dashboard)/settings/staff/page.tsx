@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, User, Mail, Car } from 'lucide-react'
 import { StaffInviteForm } from '@/components/settings/staff-invite-form'
+import { roleLabel, roleBadgeClass } from '@/lib/roles'
 
 type StaffUser = {
   id: string
@@ -20,23 +21,6 @@ type StaffMember = {
   role: string
   roles: string[] | null
   line_user_id: string | null
-}
-
-const roleLabel: Record<string, string> = {
-  admin: '管理者',
-  staff: 'スタッフ',
-  driver: 'ドライバー',
-  therapist: '療育士',
-  nurse: '看護師',
-  parent: '保護者',
-}
-
-const roleBadgeClass: Record<string, string> = {
-  admin: 'bg-indigo-100 text-indigo-700',
-  staff: 'bg-gray-100 text-gray-700',
-  driver: 'bg-amber-100 text-amber-700',
-  therapist: 'bg-teal-100 text-teal-700',
-  nurse: 'bg-rose-100 text-rose-700',
 }
 
 export default async function SettingsStaffPage() {
@@ -93,12 +77,12 @@ export default async function SettingsStaffPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass[s.role] ?? 'bg-gray-100 text-gray-700'}`}>
-                      {roleLabel[s.role] ?? s.role}
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass(s.role)}`}>
+                      {roleLabel(s.role)}
                     </span>
                     {s.job_titles?.map((jt) => (
-                      <span key={jt} className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass[jt] ?? 'bg-gray-100 text-gray-700'}`}>
-                        {roleLabel[jt] ?? jt}
+                      <span key={jt} className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass(jt)}`}>
+                        {roleLabel(jt)}
                       </span>
                     ))}
                     <span className="text-xs text-indigo-500">詳細 →</span>
@@ -139,8 +123,8 @@ export default async function SettingsStaffPage() {
                     </div>
                     <div className="flex items-center gap-2 flex-wrap justify-end">
                       {(m.roles?.length ? m.roles : [m.role]).map((r) => (
-                        <span key={r} className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass[r] ?? 'bg-gray-100 text-gray-700'}`}>
-                          {roleLabel[r] ?? r}
+                        <span key={r} className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass(r)}`}>
+                          {roleLabel(r)}
                         </span>
                       ))}
                       <span className="text-xs text-indigo-500">詳細 →</span>

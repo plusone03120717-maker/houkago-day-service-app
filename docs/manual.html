@@ -137,6 +137,7 @@
       font-weight: bold;
     }
     .badge-admin { background: #fce7f3; color: #9d174d; }
+    .badge-svcmgr { background: #ede9fe; color: #5b21b6; }
     .badge-staff { background: #e0f2fe; color: #0369a1; }
     .badge-parent { background: #f0fdf4; color: #166534; }
     .nav-grid {
@@ -196,6 +197,7 @@
         <li>緊急連絡先</li>
         <li>上限管理事業所</li>
         <li>学校休日</li>
+        <li>利用スケジュール（編集権限）</li>
       </ul>
     </li>
     <li><a href="#ch6">個別支援計画</a>
@@ -234,6 +236,7 @@
       <ul class="sub">
         <li>施設・ユニット設定</li>
         <li>スタッフ管理</li>
+        <li>役職と権限</li>
         <li>施設カレンダー</li>
         <li>車両管理</li>
       </ul>
@@ -257,14 +260,19 @@
   <table>
     <tr><th>種別</th><th>説明</th><th>主な機能</th></tr>
     <tr>
-      <td><span class="badge badge-admin">管理者</span></td>
+      <td><span class="badge badge-admin">システム管理者</span></td>
       <td>施設管理者・管理職</td>
       <td>全機能へのアクセス、設定変更、スタッフ管理</td>
     </tr>
     <tr>
+      <td><span class="badge badge-svcmgr">サービス管理者</span></td>
+      <td>サービス提供責任者・児発管</td>
+      <td>スタッフの全機能に加えて、児童管理の「利用スケジュール」の編集</td>
+    </tr>
+    <tr>
       <td><span class="badge badge-staff">スタッフ</span></td>
       <td>支援員・指導員</td>
-      <td>出席・記録・支援計画・帳票出力</td>
+      <td>出席・記録・支援計画・帳票出力（利用スケジュールは閲覧のみ）</td>
     </tr>
     <tr>
       <td><span class="badge badge-parent">保護者</span></td>
@@ -279,7 +287,8 @@
   <div class="step"><span class="step-num">3</span> 「ログイン」ボタンをクリック</div>
   <div class="step"><span class="step-num">4</span> ダッシュボードが表示されればログイン成功</div>
 
-  <div class="tip"><strong>💡 ヒント：</strong> スタッフ・管理者はダッシュボード画面へ、保護者は保護者ポータル画面へ自動的に遷移します。</div>
+  <div class="tip"><strong>💡 ヒント：</strong> スタッフ・サービス管理者・システム管理者はダッシュボード画面へ、保護者は保護者ポータル画面へ自動的に遷移します。</div>
+  <p class="note">以前「管理者」と呼んでいた種別は、サービス管理者と区別しやすくするため <strong>「システム管理者」</strong> に名称を変更しました。権限の内容はこれまでと同じです。</p>
 </div>
 
 <!-- Chapter 2 -->
@@ -560,6 +569,27 @@
 
   <div class="tip"><strong>💡 ヒント：</strong> 一括編集で空欄のままにした項目は変更されません。特定の時間だけまとめて変更したい場合に便利です。</div>
   <div class="tip"><strong>💡 ヒント：</strong> 設定したお迎え時間は送迎管理画面にも自動反映されます。</div>
+
+  <h3>利用スケジュール</h3>
+  <p>児童詳細画面の「利用スケジュール」から、その児童の毎週の利用計画（曜日・期間・ユニット・送迎区分・利用時間・日中一時）を登録します。ここに登録した内容が、出席管理・送迎管理・全体スケジュールの初期値になります。</p>
+
+  <table>
+    <tr><th>設定単位</th><th>内容</th><th>優先順位</th></tr>
+    <tr><td>スケジュール（全体）</td><td>曜日・期間・ユニット・送迎区分・時間のデフォルト</td><td>3（基本）</td></tr>
+    <tr><td>曜日別設定</td><td>「火曜だけ送迎なし」など曜日ごとの上書き</td><td>2</td></tr>
+    <tr><td>特定日の変更</td><td>「10/15だけ利用時間が違う」など日付ごとの上書き</td><td>1（最優先）</td></tr>
+  </table>
+
+  <h4>編集できる役職</h4>
+  <p>利用スケジュールを追加・編集・削除できるのは <span class="badge badge-admin">システム管理者</span> と <span class="badge badge-svcmgr">サービス管理者</span> のみです。</p>
+  <table>
+    <tr><th>役職</th><th>利用スケジュール</th></tr>
+    <tr><td><span class="badge badge-admin">システム管理者</span></td><td>追加・編集・削除できる</td></tr>
+    <tr><td><span class="badge badge-svcmgr">サービス管理者</span></td><td>追加・編集・削除できる</td></tr>
+    <tr><td><span class="badge badge-staff">スタッフ</span></td><td>閲覧のみ（編集ボタンは表示されません）</td></tr>
+  </table>
+  <div class="tip"><strong>💡 ヒント：</strong> サービス管理者の役職は「設定 → スタッフ管理」から付与します。詳しくは <a href="#ch14">Chapter 14「役職と権限」</a> を参照してください。</div>
+  <p class="note">閲覧のみのスタッフには画面上部に「利用スケジュールの編集はシステム管理者・サービス管理者のみ行えます（閲覧のみ）」と表示されます。同じ画面の下にある<strong>出席カレンダーは全スタッフが編集できます</strong>（実績の記録のため）。</p>
 </div>
 
 <!-- Chapter 6 -->
@@ -1497,11 +1527,47 @@
 
   <h3>スタッフ管理</h3>
   <div class="step"><span class="step-num">1</span> 「設定」→「スタッフ管理」をクリック</div>
-  <div class="step"><span class="step-num">2</span> 「スタッフ追加」からメール・名前・権限を設定</div>
+  <div class="step"><span class="step-num">2</span> 「スタッフを追加」から氏名・電話番号・役職を設定</div>
   <div class="step"><span class="step-num">3</span> スタッフ詳細から資格・雇用形態・研修記録を管理</div>
   <div class="step"><span class="step-num">4</span> 「LINE User ID」欄に入力すると、そのスタッフがLINEと連携できる</div>
 
   <div class="tip"><strong>💡 ヒント：</strong> LINE User IDは、LINEからの<strong>マイスケジュール閲覧・有給／残業／中抜けの申請・タイムカード打刻</strong>で本人を特定するために使います。未登録のスタッフはこれらの機能を利用できません。</div>
+
+  <h3>役職と権限</h3>
+  <p>スタッフの役職は「スタッフを追加」の<strong>役職</strong>欄（複数選択可）で設定します。登録済みのスタッフは「スタッフ管理 → 対象スタッフ → 勤務情報・資格」の<strong>役職</strong>欄からいつでも変更できます。</p>
+
+  <table>
+    <tr><th>役職</th><th>ログイン</th><th>できること</th></tr>
+    <tr>
+      <td><span class="badge badge-admin">システム管理者</span></td>
+      <td>必要</td>
+      <td>全機能。設定・国保連請求・シフト管理・有給管理・スタッフ管理を含む</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-svcmgr">サービス管理者</span></td>
+      <td>必要</td>
+      <td>スタッフと同じ画面に加えて、<strong>児童管理の「利用スケジュール」を編集できる</strong></td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-staff">スタッフ</span></td>
+      <td>必要</td>
+      <td>出席・記録・支援計画・送迎・帳票出力など。設定／請求／シフト管理は開けない。利用スケジュールは閲覧のみ</td>
+    </tr>
+    <tr>
+      <td>ドライバー・療育士・看護師</td>
+      <td>不要</td>
+      <td>送迎やシフトの割り当て対象として登録。LINE User IDを設定すればLINEからマイスケジュール確認・各種申請ができる</td>
+    </tr>
+  </table>
+
+  <h4>サービス管理者を設定する</h4>
+  <div class="step"><span class="step-num">1</span> 「設定」→「スタッフ管理」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 新規なら「スタッフを追加」で役職の<strong>「サービス管理者」</strong>を選択（電話番号が必須）</div>
+  <div class="step"><span class="step-num">3</span> 登録済みのスタッフなら一覧から本人を開き、「勤務情報・資格」の役職欄で<strong>「サービス管理者」</strong>をオンにして「保存」</div>
+  <div class="step"><span class="step-num">4</span> 一覧のバッジに <span class="badge badge-svcmgr">サービス管理者</span> が表示されれば設定完了</div>
+
+  <p class="note">サービス管理者はログイン権限としてはスタッフと同じです。設定・国保連請求・シフト管理・有給管理には入れません。追加でできるのは「児童管理 → 利用スケジュール」の編集だけです。</p>
+  <p class="note">以前の「管理者」は、サービス管理者と紛らわしいため <strong>「システム管理者」</strong> に名称を変更しました。名前が変わっただけで、権限やアカウントの設定はこれまでどおりです。</p>
 
   <h3>処遇改善加算設定</h3>
   <p>「設定」→「加算設定」から、各種加算（処遇改善加算・特定処遇改善加算・ベースアップ等支援加算など）の有効/無効と算定率を登録します。算定率は基本報酬に対する割合で、加算額を確認するための設定です。請求の単位数計算には使われません（単位数は「国保連サービスコード・単位数設定」に登録した値で集計されます）。</p>

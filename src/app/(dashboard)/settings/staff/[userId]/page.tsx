@@ -8,6 +8,7 @@ import { StaffProfileForm } from '@/components/settings/staff-profile-form'
 import { TrainingRecordForm } from '@/components/settings/training-record-form'
 import { DeleteStaffButton } from '@/components/settings/delete-staff-button'
 import { ResetStaffPasswordButton } from '@/components/settings/reset-staff-password-button'
+import { roleLabel } from '@/lib/roles'
 
 type StaffProfile = {
   id: string
@@ -33,11 +34,6 @@ type UnitAssignment = {
 }
 
 type Unit = { id: string; name: string }
-
-const roleLabel: Record<string, string> = {
-  admin: '管理者',
-  staff: 'スタッフ',
-}
 
 export default async function StaffProfilePage({
   params,
@@ -126,7 +122,12 @@ export default async function StaffProfilePage({
             <p className="font-semibold text-gray-900">{user.name}</p>
             <p className="text-sm text-gray-400">{user.email}</p>
           </div>
-          <Badge variant="secondary">{roleLabel[user.role] ?? user.role}</Badge>
+          <div className="flex gap-1 flex-wrap justify-end">
+            <Badge variant="secondary">{roleLabel(user.role)}</Badge>
+            {user.job_titles?.map((jt) => (
+              <Badge key={jt} variant="secondary">{roleLabel(jt)}</Badge>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
