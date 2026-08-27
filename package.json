@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "verify:kokuhoren": "tsx scripts/verify-kokuhoren-csv.ts",
-    "verify:service-record": "tsx scripts/verify-service-record-csv.ts"
+    "verify:service-record": "tsx scripts/verify-service-record-csv.ts",
+    "check:anomaly": "tsx scripts/run-anomaly-check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

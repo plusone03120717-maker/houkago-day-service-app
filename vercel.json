@@ -7,6 +7,12 @@
       "maxDuration": 30
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/anomaly-check",
+      "schedule": "0 21 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

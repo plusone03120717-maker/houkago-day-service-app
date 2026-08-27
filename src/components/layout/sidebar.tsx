@@ -28,6 +28,7 @@ import {
   SmartphoneNfc,
   KeyRound,
   Inbox,
+  ListChecks,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -40,6 +41,7 @@ const adminNav = [
       { href: '/schedule', label: '全体スケジュール', icon: CalendarRange },
       { href: '/attendance', label: '出席管理', icon: ClipboardList },
       { href: '/attendance/monthly', label: '給付量チェック', icon: ShieldAlert },
+      { href: '/checks', label: '入力チェック', icon: ListChecks },
       { href: '/incidents', label: 'ヒヤリハット', icon: TriangleAlert },
       { href: '/records', label: '日々の記録', icon: BookOpen },
     ],
@@ -92,6 +94,7 @@ const staffNav = [
       { href: '/schedule', label: '全体スケジュール', icon: CalendarRange },
       { href: '/attendance', label: '出席管理', icon: ClipboardList },
       { href: '/attendance/monthly', label: '給付量チェック', icon: ShieldAlert },
+      { href: '/checks', label: '入力チェック', icon: ListChecks },
       { href: '/incidents', label: 'ヒヤリハット', icon: TriangleAlert },
       { href: '/records', label: '日々の記録', icon: BookOpen },
     ],
