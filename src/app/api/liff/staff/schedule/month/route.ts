@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
 import { findStaffByLineUserId } from '@/lib/line/liff-staff'
+import { calcShiftMinutes, buildTCDays } from '@/lib/work-time'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest) {
       staff.userId
         ? adminClient
             .from('staff_shifts')
-            .select('date, shift_type, start_time, end_time')
+            .select('date, shift_type, start_time, end_time, break_start_time, break_end_time')
             .eq('staff_id', staff.userId)
             .gte('date', startDate)
             .lte('date', endDate)
@@ -118,14 +119,18 @@ export async function POST(req: NextRequest) {
         .from('time_records')
         .select('type, recorded_at')
         .eq('staff_member_id', staff.staffMemberId)
-        .in('type', ['break_start', 'break_end'])
+        .in('type', ['break_start', 'break_end', 'clock_in', 'clock_out'])
         .gte('recorded_at', new Date(`${startDate}T00:00:00+09:00`).toISOString())
         .lte('recorded_at', new Date(`${endDate}T23:59:59+09:00`).toISOString())
         .order('recorded_at'),
     ])
 
     // --- シフト ---
-    type ShiftRow = { date: string; shift_type: string; start_time: string | null; end_time: string | null }
+    type ShiftRow = {
+      date: string; shift_type: string
+      start_time: string | null; end_time: string | null
+      break_start_time: string | null; break_end_time: string | null
+    }
     const shiftRows = (shiftRes.data ?? []) as unknown as ShiftRow[]
 
     // --- 送迎担当（日別の件数） ---
@@ -179,7 +184,8 @@ export async function POST(req: NextRequest) {
     })
 
     // --- 中抜け記録を日付ごとにペアリング ---
-    const rawBreaks = (breakRes.data ?? []) as unknown as { type: string; recorded_at: string }[]
+    const timeRecords = (breakRes.data ?? []) as unknown as { type: string; recorded_at: string }[]
+    const rawBreaks = timeRecords.filter((r) => r.type === 'break_start' || r.type === 'break_end')
     const breaksByDate = new Map<string, { start: string | null; end: string | null }[]>()
     for (const r of rawBreaks) {
       const date = toJSTDate(r.recorded_at)
@@ -202,6 +208,18 @@ export async function POST(req: NextRequest) {
 
     const leaveUsages = (leaveRes.data ?? []) as unknown as { id: string; date: string; days_used: number }[]
 
+    // --- 勤務時間（実績＝タイムカード打刻／予定＝シフト）---
+    const workShifts = shiftRows.filter((s) => s.shift_type !== 'off' && s.shift_type !== 'holiday')
+    const plannedMinutes = workShifts.reduce(
+      (sum, s) => sum + calcShiftMinutes(s.start_time, s.end_time, s.break_start_time, s.break_end_time),
+      0,
+    )
+    const shiftsMap = new Map(
+      shiftRows.map((s) => [s.date, { break_start_time: s.break_start_time, break_end_time: s.break_end_time }]),
+    )
+    const tcDays = buildTCDays(timeRecords, shiftsMap)
+    const workedMinutes = Math.round(tcDays.reduce((sum, d) => sum + (d.hours ?? 0), 0) * 60)
+
     return NextResponse.json({
       days,
       overtimeRequests: overtimeRes.data ?? [],
@@ -211,6 +229,8 @@ export async function POST(req: NextRequest) {
         workDays: shiftRows.filter((s) => s.shift_type !== 'off' && s.shift_type !== 'holiday').length,
         transportCount: Array.from(transportByDate.values()).reduce((a, b) => a + b, 0),
         leaveDays: leaveUsages.reduce((a, l) => a + Number(l.days_used), 0),
+        workedMinutes,
+        plannedMinutes,
       },
     })
   } catch (err) {

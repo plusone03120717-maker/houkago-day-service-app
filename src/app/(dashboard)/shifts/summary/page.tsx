@@ -5,6 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ChevronLeft, ChevronRight, Clock, Fingerprint } from 'lucide-react'
 import { SummaryDailyEditor, type DailyRow } from '@/components/shifts/summary-daily-editor'
+import {
+  toMinutes, formatDuration, calcShiftMinutes, buildTCDays,
+} from '@/lib/work-time'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,108 +35,6 @@ type PaidLeaveRow = { staff_member_id: string; date: string; days_used: number }
 
 const SHIFT_LABELS: Record<string, string> = {
   full: '全日', morning: '午前', afternoon: '午後', off: '休み', holiday: '祝休',
-}
-
-function toJSTDate(isoStr: string): string {
-  return new Date(new Date(isoStr).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-}
-
-function toJSTTime(isoStr: string): string {
-  return new Date(new Date(isoStr).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(11, 16)
-}
-
-function toJSTEpochMin(isoStr: string): number {
-  return Math.floor((new Date(isoStr).getTime() + 9 * 60 * 60 * 1000) / 60000)
-}
-
-function toMinutes(time: string | null): number {
-  if (!time) return 0
-  const [h, m] = time.split(':').map(Number)
-  return h * 60 + (m ?? 0)
-}
-
-function formatDuration(minutes: number): string {
-  if (minutes <= 0) return '0分'
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  if (h === 0) return `${m}分`
-  if (m === 0) return `${h}時間`
-  return `${h}時間${m}分`
-}
-
-function calcShiftMinutes(
-  start: string | null, end: string | null,
-  brkStart?: string | null, brkEnd?: string | null,
-): number {
-  if (!start || !end) return 0
-  const diff = toMinutes(end) - toMinutes(start)
-  if (diff <= 0) return 0
-  const brkMins = brkStart && brkEnd ? Math.max(0, toMinutes(brkEnd) - toMinutes(brkStart)) : 0
-  const afterBreak = Math.max(0, diff - brkMins)
-  return Math.max(0, afterBreak - (afterBreak >= 300 ? 60 : 0))
-}
-
-// タイムカード打刻から日次データを構築（timecard-board と同ロジック）
-type TCDay = {
-  date: string
-  clockIn: string | null    // HH:MM
-  clockOut: string | null   // HH:MM
-  clockInId: string | null
-  clockOutId: string | null
-  hours: number | null
-  breakMinutes: number      // シフトに設定された中抜け
-  lunchDeduction: number    // 5時間以上で自動控除される60分
-}
-
-function buildTCDays(
-  records: TCRecord[],
-  shiftsMap: Map<string, Pick<StaffShift, 'break_start_time' | 'break_end_time'>>,
-): TCDay[] {
-  // raw データ（最早 clock_in・最遅 clock_out を選択）
-  const byDate = new Map<string, { inRec: TCRecord | null; outRec: TCRecord | null }>()
-  for (const r of records) {
-    const date = toJSTDate(r.recorded_at)
-    if (!byDate.has(date)) byDate.set(date, { inRec: null, outRec: null })
-    const d = byDate.get(date)!
-    if (r.type === 'clock_in') {
-      if (!d.inRec || r.recorded_at < d.inRec.recorded_at) d.inRec = r
-    } else if (r.type === 'clock_out') {
-      if (!d.outRec || r.recorded_at > d.outRec.recorded_at) d.outRec = r
-    }
-  }
-
-  return Array.from(byDate.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, { inRec, outRec }]) => {
-      const shift = shiftsMap.get(date)
-      const brkMins = shift?.break_start_time && shift?.break_end_time
-        ? Math.max(0, toMinutes(shift.break_end_time.slice(0, 5)) - toMinutes(shift.break_start_time.slice(0, 5)))
-        : 0
-
-      let hours: number | null = null
-      let lunchDeduction = 0
-      if (inRec && outRec) {
-        const inM = Math.ceil(toJSTEpochMin(inRec.recorded_at) / 30) * 30   // 切り上げ30分
-        const outM = Math.floor(toJSTEpochMin(outRec.recorded_at) / 30) * 30  // 切り捨て30分
-        const diff = outM - inM
-        if (diff > 0) {
-          const afterBreak = Math.max(0, diff - brkMins)
-          lunchDeduction = afterBreak >= 300 ? 60 : 0
-          const net = Math.max(0, afterBreak - lunchDeduction)
-          hours = Math.round((net / 60) * 100) / 100
-        }
-      }
-      return {
-        date,
-        clockIn: inRec ? toJSTTime(inRec.recorded_at) : null,
-        clockOut: outRec ? toJSTTime(outRec.recorded_at) : null,
-        clockInId: inRec?.id ?? null,
-        clockOutId: outRec?.id ?? null,
-        hours,
-        breakMinutes: brkMins,
-        lunchDeduction,
-      }
-    })
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────

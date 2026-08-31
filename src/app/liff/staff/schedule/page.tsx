@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useLiff } from '@/hooks/use-liff'
 import { getTodayJST } from '@/lib/utils'
 import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanese-holidays'
+import { formatDuration } from '@/lib/work-time'
 import {
   Loader2, AlertCircle, ChevronLeft, ChevronRight, Clock, Car, CalendarDays,
   ArrowRight, User, FileText, RotateCw,
@@ -74,7 +75,15 @@ type MonthData = {
   overtimeRequests: { id: string; date: string; actual_end_time: string | null; status: string }[]
   leaveUsages: { id: string; date: string; days_used: number }[]
   breakRecords: { date: string; break_start: string | null; break_end: string | null }[]
-  summary: { workDays: number; transportCount: number; leaveDays: number }
+  summary: {
+    workDays: number
+    transportCount: number
+    leaveDays: number
+    /** タイムカード打刻から集計した実働時間（分） */
+    workedMinutes: number
+    /** シフトの予定勤務時間（分） */
+    plannedMinutes: number
+  }
 }
 
 type MonthResult = { key: string; data: MonthData | null }
@@ -573,6 +582,17 @@ export default function StaffSchedulePage() {
 
           {/* 月のサマリー */}
           {monthData && (
+            <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-white rounded-2xl shadow-sm py-3 text-center">
+                <p className="text-xs text-gray-400 mb-0.5">勤務時間</p>
+                <p className="text-lg font-bold text-indigo-600">{formatDuration(monthData.summary.workedMinutes)}</p>
+              </div>
+              <div className="bg-white rounded-2xl shadow-sm py-3 text-center">
+                <p className="text-xs text-gray-400 mb-0.5">勤務予定時間</p>
+                <p className="text-lg font-bold text-gray-800">{formatDuration(monthData.summary.plannedMinutes)}</p>
+              </div>
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="bg-white rounded-2xl shadow-sm py-3 text-center">
                 <p className="text-xs text-gray-400 mb-0.5">勤務日</p>
@@ -586,6 +606,10 @@ export default function StaffSchedulePage() {
                 <p className="text-xs text-gray-400 mb-0.5">有給取得</p>
                 <p className="text-lg font-bold text-gray-800">{monthData.summary.leaveDays}<span className="text-xs font-normal text-gray-400 ml-0.5">日</span></p>
               </div>
+            </div>
+            <p className="text-center text-[10px] text-gray-400">
+              勤務時間はタイムカードの打刻（30分単位）から、休憩を差し引いて集計しています
+            </p>
             </div>
           )}
 
