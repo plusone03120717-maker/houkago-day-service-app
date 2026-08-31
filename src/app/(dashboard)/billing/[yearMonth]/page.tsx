@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, AlertCircle } from 'lucide-react'
+import { ArrowLeft, AlertCircle, Receipt } from 'lucide-react'
 import { BillingExportButton } from '@/components/billing/billing-export-button'
 import { KokuhorenExportButton } from '@/components/billing/kokuhoren-export-button'
 import { AiCheckButton } from '@/components/billing/ai-check-button'
@@ -240,6 +240,20 @@ export default async function BillingDetailPage({
 
               {/* 出席実績からの再集計 */}
               <RecalcBillingButton unitId={billing.unit_id} yearMonth={yearMonth} />
+
+              {/* 利用者負担額（請求書・領収書） */}
+              <Link
+                href={`/billing/${yearMonth}/invoices?unit=${billing.unit_id}`}
+                className="flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 transition-colors hover:bg-orange-100"
+              >
+                <div>
+                  <p className="text-sm font-medium text-orange-900">利用者負担額の請求書・領収書</p>
+                  <p className="text-xs text-orange-700 mt-0.5">
+                    給付費の1割・日中一時支援・おやつ代などの加算・実費をまとめて発行します
+                  </p>
+                </div>
+                <Receipt className="h-5 w-5 text-orange-500" />
+              </Link>
 
               {/* 児童別明細（編集可） */}
               <BillingDetailsTable initial={details} />

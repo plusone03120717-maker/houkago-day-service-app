@@ -23,6 +23,7 @@ type Child = {
   school_name: string | null
   grade: string | null
   disability_type: string | null
+  daytime_support_category: number | null
   diagnosis: string | null
   allergy_info: string | null
   medical_info: string | null
@@ -52,7 +53,7 @@ export default async function EditChildPage({
   const [{ data: childRaw }, { data: unitsRaw }, { data: schoolsRaw }, { data: transportRaw }, { data: addressesRaw }, { data: phonesRaw }] = await Promise.all([
     supabase
       .from('children')
-      .select('id, name, name_kana, birth_date, gender, postal_code, address, school_id, school_name, grade, disability_type, diagnosis, allergy_info, medical_info, notes, service_type, childcare_type, children_units(unit_id)')
+      .select('id, name, name_kana, birth_date, gender, postal_code, address, school_id, school_name, grade, disability_type, daytime_support_category, diagnosis, allergy_info, medical_info, notes, service_type, childcare_type, children_units(unit_id)')
       .eq('id', id)
       .single(),
     supabase.from('units').select('id, name, service_type').order('name'),
@@ -111,6 +112,7 @@ export default async function EditChildPage({
           school_name: child.school_name ?? '',
           grade: child.grade ?? '',
           disability_type: child.disability_type ?? '',
+          daytime_support_category: child.daytime_support_category != null ? String(child.daytime_support_category) : '',
           diagnosis: child.diagnosis ?? '',
           allergy_info: child.allergy_info ?? '',
           medical_info: child.medical_info ?? '',

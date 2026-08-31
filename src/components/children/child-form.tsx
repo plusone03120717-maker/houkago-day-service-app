@@ -35,6 +35,7 @@ interface ChildData {
   school_name: string
   grade: string
   disability_type: string
+  daytime_support_category: string
   diagnosis: string
   allergy_info: string
   medical_info: string
@@ -132,6 +133,7 @@ export function ChildForm({ units, schools, initial, initialAddresses, initialPh
     school_name: initial?.school_name ?? '',
     grade: initial?.grade ?? '',
     disability_type: initial?.disability_type ?? '',
+    daytime_support_category: initial?.daytime_support_category ?? '',
     diagnosis: initial?.diagnosis ?? '',
     allergy_info: initial?.allergy_info ?? '',
     medical_info: initial?.medical_info ?? '',
@@ -334,6 +336,7 @@ export function ChildForm({ units, schools, initial, initialAddresses, initialPh
         : (form.school_name || null),
       grade: form.grade || null,
       disability_type: form.disability_type || null,
+      daytime_support_category: form.daytime_support_category ? parseInt(form.daytime_support_category, 10) : null,
       diagnosis: form.diagnosis || null,
       allergy_info: form.allergy_info || null,
       medical_info: form.medical_info || null,
@@ -779,6 +782,22 @@ export function ChildForm({ units, schools, initial, initialAddresses, initialPh
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">診断名</label>
               <Input value={form.diagnosis} onChange={set('diagnosis')} placeholder="ASD、ADHDなど" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">日中一時支援の児区分</label>
+              <select
+                value={form.daytime_support_category}
+                onChange={set('daytime_support_category')}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="">利用なし・未設定</option>
+                <option value="1">児区分1</option>
+                <option value="2">児区分2</option>
+                <option value="3">児区分3</option>
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                日中一時支援の利用者負担額（1割）の計算に使います
+              </p>
             </div>
           </div>
           <div>

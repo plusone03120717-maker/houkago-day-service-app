@@ -6,14 +6,27 @@ import { Badge } from '@/components/ui/badge'
 import { Receipt, FileText } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
+type InvoiceLine = {
+  category: string
+  name: string
+  unitPrice: number | null
+  count: number
+  amount: number
+  detail?: string
+}
+
 type Invoice = {
   id: string
   year_month: string
   invoice_type: string
   copay_amount: number
+  daytime_copay_amount: number
+  extra_charge_total: number
   actual_cost_total: number
   total_amount: number
+  lines: InvoiceLine[]
   issued_at: string | null
+  paid_at: string | null
   pdf_url: string | null
   children: { name: string } | null
 }
@@ -32,7 +45,7 @@ export default async function ParentInvoicesPage() {
   const { data: invoicesRaw } = childIds.length > 0
     ? await supabase
         .from('billing_invoices')
-        .select('id, year_month, invoice_type, copay_amount, actual_cost_total, total_amount, issued_at, pdf_url, children(name)')
+        .select('id, year_month, invoice_type, copay_amount, daytime_copay_amount, extra_charge_total, actual_cost_total, total_amount, lines, issued_at, paid_at, pdf_url, children(name)')
         .in('child_id', childIds)
         .order('year_month', { ascending: false })
         .limit(24)
@@ -82,16 +95,35 @@ export default async function ParentInvoicesPage() {
                             <span className="text-xs text-gray-400">{inv.children.name}</span>
                           )}
                         </div>
-                        {inv.issued_at && (
-                          <span className="text-xs text-gray-400">{formatDate(inv.issued_at)}</span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {inv.paid_at && (
+                            <span className="rounded bg-green-50 px-1.5 py-0.5 text-xs text-green-700">入金済</span>
+                          )}
+                          {inv.issued_at && (
+                            <span className="text-xs text-gray-400">{formatDate(inv.issued_at)}</span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="space-y-1 text-sm">
-                        <div className="flex justify-between text-gray-600">
-                          <span>利用者負担額</span>
-                          <span>{inv.copay_amount.toLocaleString()}円</span>
-                        </div>
+                        {inv.copay_amount > 0 && (
+                          <div className="flex justify-between text-gray-600">
+                            <span>放課後等デイサービス（1割）</span>
+                            <span>{inv.copay_amount.toLocaleString()}円</span>
+                          </div>
+                        )}
+                        {inv.daytime_copay_amount > 0 && (
+                          <div className="flex justify-between text-gray-600">
+                            <span>日中一時支援</span>
+                            <span>{inv.daytime_copay_amount.toLocaleString()}円</span>
+                          </div>
+                        )}
+                        {inv.extra_charge_total > 0 && (
+                          <div className="flex justify-between text-gray-600">
+                            <span>おやつ代・教材費など</span>
+                            <span>{inv.extra_charge_total.toLocaleString()}円</span>
+                          </div>
+                        )}
                         {inv.actual_cost_total > 0 && (
                           <div className="flex justify-between text-gray-600">
                             <span>実費</span>
@@ -103,6 +135,27 @@ export default async function ParentInvoicesPage() {
                           <span>{inv.total_amount.toLocaleString()}円</span>
                         </div>
                       </div>
+
+                      {Array.isArray(inv.lines) && inv.lines.length > 0 && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-xs text-indigo-600">内訳を見る</summary>
+                          <ul className="mt-1.5 space-y-1">
+                            {inv.lines.map((line, i) => (
+                              <li key={i} className="flex justify-between gap-2 text-xs text-gray-500">
+                                <span>
+                                  {line.name}
+                                  {line.unitPrice != null && line.count > 0 && (
+                                    <span className="text-gray-400">
+                                      （{line.unitPrice.toLocaleString()}円 × {line.count}）
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="flex-shrink-0">{line.amount.toLocaleString()}円</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
 
                       {inv.pdf_url && (
                         <a

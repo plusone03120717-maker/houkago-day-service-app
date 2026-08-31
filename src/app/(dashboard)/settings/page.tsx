@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash } from 'lucide-react'
+import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash, Clock } from 'lucide-react'
 import { requireAdmin } from '@/lib/require-admin'
 
 const sections = [
@@ -27,6 +27,12 @@ const sections = [
     icon: Hash,
     label: '国保連サービスコード・単位数設定',
     description: 'サービス項目ごとの6桁コードと単位数（請求の自動計算に必須）',
+  },
+  {
+    href: '/settings/daytime-rates',
+    icon: Clock,
+    label: '日中一時支援の単位数・送迎費',
+    description: '利用時間区分×児区分の単位数と送迎費（利用者負担額の計算に使用）',
   },
   {
     href: '/settings/addition-requirements',
