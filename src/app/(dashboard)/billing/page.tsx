@@ -55,6 +55,12 @@ type CertRow = {
   end_date: string
 }
 
+type LimitManagementRow = {
+  child_id: string
+  facility_name: string
+  start_date: string
+}
+
 export default async function BillingPage({
   searchParams,
 }: {
@@ -78,6 +84,7 @@ export default async function BillingPage({
     { data: billingMonthlyRaw },
     { data: childrenUnitsRaw },
     { data: certsRaw },
+    { data: limitMgmtRaw },
   ] = await Promise.all([
     supabase
       .from('units')
@@ -99,6 +106,12 @@ export default async function BillingPage({
       .lte('start_date', certMonthEnd)
       .gte('end_date', certMonthStart)
       .not('upper_limit_manager', 'is', null),
+    // 児童詳細の「上限管理事業所情報」からも取得（対象月までに適用開始したもの）
+    supabase
+      .from('child_limit_management')
+      .select('child_id, facility_name, start_date')
+      .lte('start_date', certMonthEnd)
+      .order('start_date', { ascending: true }),
   ])
 
   const units = (unitsRaw ?? []) as unknown as UnitWithFacility[]
@@ -122,10 +135,17 @@ export default async function BillingPage({
 
   const childrenUnits = (childrenUnitsRaw ?? []) as unknown as ChildWithUnit[]
   const certs = (certsRaw ?? []) as CertRow[]
+  const limitMgmts = (limitMgmtRaw ?? []) as LimitManagementRow[]
   // child_id → 最新の上限管理事業所（複数ある場合は start_date 最新を優先）
+  // 上限管理事業所は受給者証の欄と児童詳細の「上限管理事業所情報」の2か所から
+  // 登録できるため、どちらで登録してもこの一覧に出るよう両方を見る。
+  // 適用開始日が明示されている児童詳細側を後に適用して優先する。
   const upperLimitMap = new Map<string, string>()
   for (const c of certs.sort((a, b) => a.start_date.localeCompare(b.start_date))) {
     if (c.upper_limit_manager) upperLimitMap.set(c.child_id, c.upper_limit_manager)
+  }
+  for (const lm of limitMgmts.sort((a, b) => a.start_date.localeCompare(b.start_date))) {
+    if (lm.facility_name) upperLimitMap.set(lm.child_id, lm.facility_name)
   }
 
   const statusLabel: Record<string, string> = {
