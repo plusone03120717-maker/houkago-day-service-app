@@ -15,7 +15,11 @@ import {
   GripVertical,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import { deleteAndRecreateTransportSchedules } from '@/app/actions/transport'
+import {
+  deleteAndRecreateTransportSchedules,
+  syncTransportToAttendance,
+  clearTransportDirection,
+} from '@/app/actions/transport'
 
 type Unit = { id: string; name: string; service_type: string }
 type Vehicle = { id: string; name: string; capacity: number }
@@ -127,32 +131,16 @@ export function TransportManageBoard({
     return (created?.id as string | undefined) ?? null
   }
 
-  /** 送迎一覧から外す（出席の送迎区分もその方向だけ取り下げる） */
+  /** 送迎一覧から外す（日々の記録側の送迎欄・送迎区分も同じ方向だけ取り下げる） */
   const handleRemove = async (row: TransportRow) => {
-    if (!confirm(`「${row.name}」を${DIRECTION_LABEL[row.direction]}の一覧から外しますか？`)) return
+    if (!confirm(`「${row.name}」を${DIRECTION_LABEL[row.direction]}の一覧から外しますか？\n（日々の記録の${DIRECTION_LABEL[row.direction]}欄も消えます）`)) return
     await supabase.from('transport_details').delete().eq('id', row.id)
-
-    const { data: attendance } = await supabase
-      .from('daily_attendance')
-      .select('id, pickup_type')
-      .eq('unit_id', selectedUnitId)
-      .eq('date', date)
-      .eq('child_id', row.childId)
-      .maybeSingle()
-    if (attendance) {
-      const current = attendance.pickup_type as string
-      let next = current
-      if (row.direction === 'pickup') next = current === 'both' ? 'dropoff_only' : current === 'pickup_only' ? 'none' : current
-      else next = current === 'both' ? 'pickup_only' : current === 'dropoff_only' ? 'none' : current
-      if (next !== current) {
-        await supabase.from('daily_attendance').update({ pickup_type: next }).eq('id', attendance.id)
-      }
-    }
+    await clearTransportDirection(row.childId, selectedUnitId, date, row.direction)
     refresh()
   }
 
   const handleRegenerate = async () => {
-    if (!confirm('既存の送迎予定を削除して、利用スケジュールの時間設定をもとに再生成しますか？')) return
+    if (!confirm('既存の送迎予定を削除して、利用スケジュールの時間設定をもとに再生成しますか？\n（日々の記録に保存済みの内容はそのまま残ります）')) return
     setRegenerating(true)
     await deleteAndRecreateTransportSchedules(selectedUnitId, date)
     setRegenerating(false)
@@ -298,6 +286,8 @@ export function TransportManageBoard({
                 key={`${row.id}:${row.time ?? ''}`}
                 row={row}
                 index={i}
+                unitId={selectedUnitId}
+                date={date}
                 drivers={drivers}
                 vehicles={vehicles}
                 isDragging={dragIndex === i}
@@ -334,6 +324,8 @@ export function TransportManageBoard({
 function TransportRowItem({
   row,
   index,
+  unitId,
+  date,
   drivers,
   vehicles,
   isDragging,
@@ -348,6 +340,8 @@ function TransportRowItem({
 }: {
   row: TransportRow
   index: number
+  unitId: string
+  date: string
   drivers: Driver[]
   vehicles: Vehicle[]
   isDragging: boolean
@@ -364,16 +358,29 @@ function TransportRowItem({
   const [saving, setSaving] = useState(false)
   const [time, setTime] = useState(row.time ?? '')
 
-  const update = async (patch: Record<string, unknown>) => {
+  /** transport_details を更新し、必要なら日々の記録（daily_attendance）にも反映する */
+  const update = async (
+    patch: Record<string, unknown>,
+    sync?: { time?: string | null; driverMemberId?: string | null; vehicleId?: string | null }
+  ) => {
     setSaving(true)
     await supabase.from('transport_details').update(patch).eq('id', row.id)
+    if (sync) {
+      await syncTransportToAttendance({
+        childId: row.childId,
+        unitId,
+        date,
+        direction: row.direction,
+        ...sync,
+      })
+    }
     setSaving(false)
     onSaved()
   }
 
   const handleTimeBlur = () => {
     if ((time || null) === (row.hasOwnTime ? row.time : null)) return
-    void update({ pickup_time: time || null })
+    void update({ pickup_time: time || null }, { time: time || null })
   }
 
   const handleDirectionChange = async (direction: Direction) => {
@@ -382,6 +389,17 @@ function TransportRowItem({
     const scheduleId = await ensureScheduleId(direction)
     if (scheduleId) {
       await supabase.from('transport_details').update({ schedule_id: scheduleId }).eq('id', row.id)
+      // 日々の記録側も、元の方向の欄を空にして新しい方向へ付け替える
+      await clearTransportDirection(row.childId, unitId, date, row.direction)
+      await syncTransportToAttendance({
+        childId: row.childId,
+        unitId,
+        date,
+        direction,
+        time: row.time,
+        driverMemberId: row.driverMemberId,
+        vehicleId: row.vehicleId,
+      })
     }
     setSaving(false)
     onSaved()
@@ -492,7 +510,9 @@ function TransportRowItem({
         <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">ドライバー</span>
         <select
           value={row.driverMemberId ?? ''}
-          onChange={(e) => void update({ driver_member_id: e.target.value || null })}
+          onChange={(e) =>
+            void update({ driver_member_id: e.target.value || null }, { driverMemberId: e.target.value || null })
+          }
           disabled={saving}
           className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
         >
@@ -510,7 +530,7 @@ function TransportRowItem({
         <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">車種</span>
         <select
           value={row.vehicleId ?? ''}
-          onChange={(e) => void update({ vehicle_id: e.target.value || null })}
+          onChange={(e) => void update({ vehicle_id: e.target.value || null }, { vehicleId: e.target.value || null })}
           disabled={saving}
           className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
         >

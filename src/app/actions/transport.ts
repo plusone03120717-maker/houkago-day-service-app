@@ -3,6 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { buildRouteGroups, nearestNeighborSort, type RouteChildData } from '@/lib/transport-route'
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
+
 type ChildRow = {
   id: string
   name: string
@@ -397,4 +399,265 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       sched.transport_details.push(...missing.map((c) => ({ child_id: c.child_id })))
     }
   }
+}
+
+// =====================================================
+// 送迎管理 → 日々の記録（daily_attendance）への一方向同期
+//
+// 送迎管理で組んだ配車を、スタッフスケジュール・LINE・国保連請求が読む
+// daily_attendance 側にも反映する。日々の記録側での編集は送迎管理には
+// 戻さない（同期は送迎管理→日々の記録の一方向のみ）。
+// =====================================================
+
+/** 'HH:MM' を分単位でずらす。日をまたぐ場合は null */
+function shiftTime(hhmm: string, minutes: number): string | null {
+  const [h, m] = hhmm.split(':').map(Number)
+  if (Number.isNaN(h) || Number.isNaN(m)) return null
+  const total = h * 60 + m + minutes
+  if (total < 0 || total >= 24 * 60) return null
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+const hasTime = (v: string | null | undefined) => !!v && v !== '00:00' && v !== '00:00:00'
+
+/** daily_attendance のうち送迎・日中一時パネルが扱う列 */
+type AttendanceRow = {
+  id: string
+  status: string
+  pickup_type: string
+  pickup_departure_time: string | null
+  pickup_arrival_time: string | null
+  pickup_driver_member_id: string | null
+  pickup_vehicle_id: string | null
+  dropoff_departure_time: string | null
+  dropoff_arrival_time: string | null
+  dropoff_driver_member_id: string | null
+  dropoff_vehicle_id: string | null
+  service_start_time: string | null
+  daytime_support: boolean | null
+  daytime_support_start_time: string | null
+  daytime_support_end_time: string | null
+}
+
+const ATTENDANCE_SELECT =
+  'id, status, pickup_type, pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id, ' +
+  'dropoff_departure_time, dropoff_arrival_time, dropoff_driver_member_id, dropoff_vehicle_id, ' +
+  'service_start_time, daytime_support, daytime_support_start_time, daytime_support_end_time'
+
+/**
+ * 送迎・日中一時パネルが「まだ何も入力されていない」と判定する状態か。
+ * この状態の行は各画面で利用スケジュールの初期値が表示されるだけで、
+ * DB には値が入っていない。送迎管理から1項目でも書き込むと初期値の
+ * 表示が止まってしまうため、そのときは初期値ごと確定させる。
+ */
+function isBlankAttendance(a: AttendanceRow | null): boolean {
+  if (!a) return true
+  return !(
+    hasTime(a.pickup_departure_time) || hasTime(a.pickup_arrival_time) ||
+    a.pickup_driver_member_id || a.pickup_vehicle_id ||
+    hasTime(a.dropoff_departure_time) || hasTime(a.dropoff_arrival_time) ||
+    a.dropoff_driver_member_id || a.dropoff_vehicle_id ||
+    hasTime(a.service_start_time) || a.daytime_support ||
+    hasTime(a.daytime_support_start_time) || hasTime(a.daytime_support_end_time)
+  )
+}
+
+type PlanTimeKey = 'pickup_time' | 'dropoff_time' | 'service_start_time' | 'service_end_time'
+
+/** その日の利用スケジュール（特定日上書き > 曜日別設定 > プラン）から利用時間・日中一時を解決 */
+async function resolveScheduleDefaults(
+  supabase: SupabaseServerClient,
+  childId: string,
+  unitId: string,
+  date: string
+): Promise<Record<string, unknown>> {
+  const dow = new Date(date).getDay()
+  const { data: plans } = await supabase
+    .from('usage_plans')
+    .select('id, pickup_time, dropoff_time, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time')
+    .eq('child_id', childId)
+    .eq('unit_id', unitId)
+    .eq('is_active', true)
+    .lte('start_date', date)
+    .or(`end_date.is.null,end_date.gte.${date}`)
+    .contains('day_of_week', [dow])
+    .limit(1)
+
+  const plan = plans?.[0]
+  if (!plan) return {}
+
+  const [{ data: daySetting }, { data: override }] = await Promise.all([
+    supabase
+      .from('usage_plan_day_settings')
+      .select('pickup_time, dropoff_time, service_start_time, service_end_time')
+      .eq('plan_id', plan.id)
+      .eq('day_of_week', dow)
+      .maybeSingle(),
+    supabase
+      .from('usage_plan_date_overrides')
+      .select('pickup_time, dropoff_time, service_start_time, service_end_time, is_cancelled')
+      .eq('plan_id', plan.id)
+      .eq('date', date)
+      .maybeSingle(),
+  ])
+
+  const ov = (override?.is_cancelled ? null : override) as Record<string, unknown> | null
+  const ds = daySetting as Record<string, unknown> | null
+  const pl = plan as unknown as Record<string, unknown>
+  const pick = (key: PlanTimeKey) =>
+    (ov?.[key] ?? ds?.[key] ?? pl[key] ?? null) as string | null
+
+  // 利用開始が未設定ならお迎え時刻を充てる（送迎・日中一時パネルと同じ規則）
+  const start = pick('service_start_time') ?? pick('pickup_time')
+  const end = pick('service_end_time')
+  const daytime = (pl.daytime_support as boolean | null) ?? false
+
+  return {
+    service_start_time: start,
+    check_in_time: start,
+    service_end_time: end,
+    check_out_time: end,
+    daytime_support: daytime,
+    daytime_support_start_time: daytime ? pl.daytime_support_start_time : null,
+    daytime_support_end_time: daytime ? pl.daytime_support_end_time : null,
+  }
+}
+
+type SyncInput = {
+  childId: string
+  unitId: string
+  date: string
+  direction: 'pickup' | 'dropoff'
+  /** 'HH:MM' / null（クリア）。undefined なら時刻は触らない */
+  time?: string | null
+  driverMemberId?: string | null
+  vehicleId?: string | null
+}
+
+/**
+ * 送迎管理での編集内容を daily_attendance に反映する。
+ * お迎えの時刻は「到着時刻」、お送りの時刻は「施設の出発時刻」に対応させ、
+ * 対になる時刻（お迎えの出発／お送りの到着）は空のときだけ ±10 分で補完する。
+ */
+export async function syncTransportToAttendance(input: SyncInput) {
+  const { childId, unitId, date, direction, time, driverMemberId, vehicleId } = input
+  const supabase = await createClient()
+
+  const { data: existingRaw } = await supabase
+    .from('daily_attendance')
+    .select(ATTENDANCE_SELECT)
+    .eq('child_id', childId)
+    .eq('unit_id', unitId)
+    .eq('date', date)
+    .maybeSingle()
+  const existing = (existingRaw ?? null) as AttendanceRow | null
+
+  // 欠席として記録済みの日は送迎管理からの書き込みで復活させない
+  if (existing?.status === 'absent') return
+
+  const patch: Record<string, unknown> = {}
+
+  if (direction === 'pickup') {
+    if (driverMemberId !== undefined) patch.pickup_driver_member_id = driverMemberId
+    if (vehicleId !== undefined) patch.pickup_vehicle_id = vehicleId
+    if (time !== undefined) {
+      patch.pickup_arrival_time = time
+      // 施設を出るのは到着の10分前
+      if (time && !hasTime(existing?.pickup_departure_time)) {
+        patch.pickup_departure_time = shiftTime(time, -10)
+      }
+    }
+  } else {
+    if (driverMemberId !== undefined) patch.dropoff_driver_member_id = driverMemberId
+    if (vehicleId !== undefined) patch.dropoff_vehicle_id = vehicleId
+    if (time !== undefined) {
+      patch.dropoff_departure_time = time
+      // 自宅に着くのは出発の10分後
+      if (time && !hasTime(existing?.dropoff_arrival_time)) {
+        patch.dropoff_arrival_time = shiftTime(time, 10)
+      }
+    }
+  }
+
+  if (Object.keys(patch).length === 0) return
+
+  // この方向の送迎があることを送迎区分にも反映する（既存の区分は広げるだけ）
+  if (existing) {
+    const current = existing.pickup_type
+    const own = direction === 'pickup' ? 'pickup_only' : 'dropoff_only'
+    const other = direction === 'pickup' ? 'dropoff_only' : 'pickup_only'
+    const next = current === 'both' || current === other ? 'both' : own
+    if (next !== current) patch.pickup_type = next
+  }
+
+  // 未入力の行に書き込むときは、各画面が表示していた利用スケジュールの
+  // 初期値（利用時間・日中一時）も一緒に確定させる
+  const defaults = isBlankAttendance(existing)
+    ? await resolveScheduleDefaults(supabase, childId, unitId, date)
+    : {}
+
+  if (existing) {
+    await supabase
+      .from('daily_attendance')
+      .update({ ...defaults, ...patch })
+      .eq('id', existing.id)
+  } else {
+    await supabase.from('daily_attendance').insert({
+      child_id: childId,
+      unit_id: unitId,
+      date,
+      status: 'attended',
+      pickup_type: direction === 'pickup' ? 'pickup_only' : 'dropoff_only',
+      ...defaults,
+      ...patch,
+    })
+  }
+}
+
+/**
+ * 送迎管理から1方向を取り下げたときの後始末。
+ * daily_attendance のその方向の送迎欄を消し、送迎区分も狭める。
+ */
+export async function clearTransportDirection(
+  childId: string,
+  unitId: string,
+  date: string,
+  direction: 'pickup' | 'dropoff'
+) {
+  const supabase = await createClient()
+
+  const { data: existing } = await supabase
+    .from('daily_attendance')
+    .select('id, pickup_type')
+    .eq('child_id', childId)
+    .eq('unit_id', unitId)
+    .eq('date', date)
+    .maybeSingle()
+  if (!existing) return
+
+  const current = existing.pickup_type as string
+  const nextPickupType =
+    direction === 'pickup'
+      ? current === 'both' ? 'dropoff_only' : current === 'pickup_only' ? 'none' : current
+      : current === 'both' ? 'pickup_only' : current === 'dropoff_only' ? 'none' : current
+
+  const cleared =
+    direction === 'pickup'
+      ? {
+          pickup_departure_time: null,
+          pickup_arrival_time: null,
+          pickup_driver_member_id: null,
+          pickup_vehicle_id: null,
+        }
+      : {
+          dropoff_departure_time: null,
+          dropoff_arrival_time: null,
+          dropoff_driver_member_id: null,
+          dropoff_vehicle_id: null,
+        }
+
+  await supabase
+    .from('daily_attendance')
+    .update({ ...cleared, pickup_type: nextPickupType })
+    .eq('id', existing.id)
 }
