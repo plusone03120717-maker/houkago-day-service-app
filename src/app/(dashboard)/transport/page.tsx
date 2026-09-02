@@ -171,12 +171,18 @@ export default async function TransportPage({
     }
   }
 
-  // 送迎時間の早い順。時間未設定は末尾、同時刻内は sort_order → 名前順
+  // 送迎時間の早い順。時間未設定は末尾。
+  // 同時刻内は「区分 → 送迎場所」でまとめ、その中を sort_order → 名前順にする。
+  // 同じ便（同じ時間・同じ場所）の児童が隣り合うので、まとめて設定できる。
   rows.sort((a, b) => {
     if (a.time && b.time) {
       if (a.time !== b.time) return a.time < b.time ? -1 : 1
     } else if (a.time) return -1
     else if (b.time) return 1
+    if (a.direction !== b.direction) return a.direction === 'pickup' ? -1 : 1
+    const locA = a.location ?? ''
+    const locB = b.location ?? ''
+    if (locA !== locB) return locA.localeCompare(locB, 'ja')
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
     return (a.nameKana ?? a.name).localeCompare(b.nameKana ?? b.name, 'ja')
   })

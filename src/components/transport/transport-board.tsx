@@ -74,6 +74,55 @@ const DIRECTION_LABEL: Record<Direction, string> = { pickup: 'お迎え', dropof
 /** 一覧の列幅（ヘッダーと各行で共有） */
 const GRID_COLS = 'md:grid md:grid-cols-[2rem_1.5rem_4.5rem_minmax(6rem,1fr)_minmax(8rem,1.4fr)_6.5rem_minmax(6rem,1fr)_minmax(6rem,1fr)_2rem] md:items-center md:gap-2'
 
+/** 同じ便としてまとめられる行のかたまり（区分・送迎時間・送迎場所がすべて同じ） */
+type RowGroup = {
+  /** React キー兼「保存中」判定用。同条件の便が2つできても衝突しない */
+  key: string
+  /** 隣り合う行が同じ便かの判定用 */
+  matchKey: string
+  direction: Direction
+  time: string | null
+  location: string | null
+  rows: TransportRow[]
+  /** まとめて設定できるか（2名以上で、時間・場所がどちらも決まっている） */
+  canBulk: boolean
+}
+
+/**
+ * 並び順を保ったまま、隣り合う「区分・送迎時間・送迎場所が同じ」行をまとめる。
+ * 一覧は時間 → 区分 → 場所の順に並んでいるため、同じ便は必ず連続する。
+ */
+function buildRowGroups(rows: TransportRow[]): RowGroup[] {
+  const groups: RowGroup[] = []
+  for (const row of rows) {
+    const matchKey = `${row.direction}|${row.time ?? ''}|${row.location ?? ''}`
+    const last = groups[groups.length - 1]
+    if (last && last.matchKey === matchKey) {
+      last.rows.push(row)
+      continue
+    }
+    groups.push({
+      key: `${matchKey}#${row.id}`,
+      matchKey,
+      direction: row.direction,
+      time: row.time,
+      location: row.location,
+      rows: [row],
+      canBulk: false,
+    })
+  }
+  for (const g of groups) {
+    g.canBulk = g.rows.length >= 2 && !!g.time && !!g.location
+  }
+  return groups
+}
+
+/** グループ内で値が揃っていればその値、混在していれば null */
+function sharedValue(rows: TransportRow[], pick: (r: TransportRow) => string | null): string | null {
+  const first = pick(rows[0])
+  return rows.every((r) => pick(r) === first) ? first : null
+}
+
 export function TransportManageBoard({
   date,
   units,
@@ -96,6 +145,7 @@ export function TransportManageBoard({
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [reordering, setReordering] = useState(false)
+  const [bulkSavingKey, setBulkSavingKey] = useState<string | null>(null)
 
   // サーバーから新しい行が届いたらレンダー中に同期する（effect 経由の再レンダーを避ける）
   if (syncedRows !== rows) {
@@ -169,6 +219,27 @@ export function TransportManageBoard({
     refresh()
   }
 
+  /** 同じ便の児童にドライバー・車種をまとめて設定する */
+  const applyToGroup = async (
+    group: RowGroup,
+    fields: { driverMemberId?: string | null; vehicleId?: string | null }
+  ) => {
+    setBulkSavingKey(group.key)
+    // 欠席として記録済みの児童は書き込み対象外（サーバー側でも弾かれる）
+    for (const row of group.rows.filter((r) => !r.isAbsent)) {
+      await saveTransportRecord({
+        childId: row.childId,
+        unitId: selectedUnitId,
+        date,
+        direction: row.direction,
+        ...fields,
+      })
+    }
+    setBulkSavingKey(null)
+    refresh()
+  }
+
+  const groups = buildRowGroups(localRows)
   const pickupCount = localRows.filter((r) => r.direction === 'pickup').length
   const dropoffCount = localRows.filter((r) => r.direction === 'dropoff').length
 
@@ -281,33 +352,56 @@ export function TransportManageBoard({
           </div>
 
           <div className="divide-y divide-gray-100">
-            {localRows.map((row, i) => (
-              <TransportRowItem
-                // 保存後にサーバーの時刻が変わったら行を作り直して入力欄を同期する
-                key={`${row.id}:${row.time ?? ''}`}
-                row={row}
-                index={i}
-                unitId={selectedUnitId}
-                date={date}
-                drivers={drivers}
-                vehicles={vehicles}
-                isDragging={dragIndex === i}
-                isOver={dragOverIndex === i}
-                onDragStart={() => setDragIndex(i)}
-                onDragOver={(e) => {
-                  e.preventDefault()
-                  setDragOverIndex(i)
-                }}
-                onDrop={() => handleDrop(i)}
-                onDragEnd={() => {
-                  setDragIndex(null)
-                  setDragOverIndex(null)
-                }}
-                ensureScheduleId={ensureScheduleId}
-                onRemove={() => handleRemove(row)}
-                onSaved={refresh}
-              />
-            ))}
+            {(() => {
+              let flatIndex = -1
+              return groups.map((group) => (
+                <div key={group.key}>
+                  {group.canBulk && (
+                    <GroupBandRow
+                      group={group}
+                      drivers={drivers}
+                      vehicles={vehicles}
+                      saving={bulkSavingKey === group.key}
+                      onApply={(fields) => void applyToGroup(group, fields)}
+                    />
+                  )}
+                  <div className="divide-y divide-gray-100">
+                  {group.rows.map((row) => {
+                    flatIndex += 1
+                    const i = flatIndex
+                    return (
+                      <TransportRowItem
+                        // 保存後にサーバーの時刻が変わったら行を作り直して入力欄を同期する
+                        key={`${row.id}:${row.time ?? ''}`}
+                        row={row}
+                        index={i}
+                        grouped={group.canBulk}
+                        unitId={selectedUnitId}
+                        date={date}
+                        drivers={drivers}
+                        vehicles={vehicles}
+                        isDragging={dragIndex === i}
+                        isOver={dragOverIndex === i}
+                        onDragStart={() => setDragIndex(i)}
+                        onDragOver={(e) => {
+                          e.preventDefault()
+                          setDragOverIndex(i)
+                        }}
+                        onDrop={() => handleDrop(i)}
+                        onDragEnd={() => {
+                          setDragIndex(null)
+                          setDragOverIndex(null)
+                        }}
+                        ensureScheduleId={ensureScheduleId}
+                        onRemove={() => handleRemove(row)}
+                        onSaved={refresh}
+                      />
+                    )
+                  })}
+                  </div>
+                </div>
+              ))
+            })()}
           </div>
         </div>
       )}
@@ -323,7 +417,86 @@ export function TransportManageBoard({
           <GripVertical className="h-3 w-3 inline mx-0.5 -mt-0.5" />
           をドラッグして入れ替えられます。
         </p>
+        <p>
+          送迎時間と送迎場所が同じ児童は1つの便としてまとめて表示されます。見出しの
+          <span className="text-gray-500 font-medium">「まとめて設定」</span>
+          から、その便の全員にドライバー・車種を一度に設定できます（個別に変えることもできます）。
+        </p>
         <p>時刻・ドライバー・車種は日々の記録と同じデータです。どちらの画面で直しても両方に反映されます。</p>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 同じ便（区分・送迎時間・送迎場所が同じ）の見出し帯。
+ * ここでドライバー・車種を選ぶと、その便の児童全員に一度に入る。
+ */
+function GroupBandRow({
+  group,
+  drivers,
+  vehicles,
+  saving,
+  onApply,
+}: {
+  group: RowGroup
+  drivers: Driver[]
+  vehicles: Vehicle[]
+  saving: boolean
+  onApply: (fields: { driverMemberId?: string | null; vehicleId?: string | null }) => void
+}) {
+  const isPickup = group.direction === 'pickup'
+  const sharedDriver = sharedValue(group.rows, (r) => r.driverMemberId)
+  const sharedVehicle = sharedValue(group.rows, (r) => r.vehicleId)
+  const selectCls =
+    'text-xs border rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 min-w-0'
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-gray-50/80 border-b border-gray-100">
+      <span
+        className={`text-[11px] font-semibold px-1.5 py-0.5 rounded border shrink-0 ${
+          isPickup
+            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        }`}
+      >
+        {DIRECTION_LABEL[group.direction]}
+      </span>
+      <span className="text-sm font-semibold text-gray-700 tabular-nums shrink-0">{group.time}</span>
+      <span className="text-xs text-gray-500 truncate min-w-0">{group.location}</span>
+      <span className="text-xs text-gray-400 shrink-0">{group.rows.length}名</span>
+
+      <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+        <span className="text-[11px] text-gray-400 shrink-0">まとめて設定</span>
+        <select
+          value={sharedDriver ?? ''}
+          onChange={(e) => onApply({ driverMemberId: e.target.value || null })}
+          disabled={saving}
+          aria-label="この便のドライバーをまとめて設定"
+          className={`${selectCls} ${sharedDriver ? 'border-gray-200' : 'border-dashed border-gray-300 text-gray-500'}`}
+        >
+          <option value="">{sharedDriver ? '未設定' : 'ドライバー（混在）'}</option>
+          {drivers.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={sharedVehicle ?? ''}
+          onChange={(e) => onApply({ vehicleId: e.target.value || null })}
+          disabled={saving}
+          aria-label="この便の車種をまとめて設定"
+          className={`${selectCls} ${sharedVehicle ? 'border-gray-200' : 'border-dashed border-gray-300 text-gray-500'}`}
+        >
+          <option value="">{sharedVehicle ? '未設定' : '車種（混在）'}</option>
+          {vehicles.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name}
+            </option>
+          ))}
+        </select>
+        {saving && <span className="text-[11px] text-gray-400 shrink-0">保存中…</span>}
       </div>
     </div>
   )
@@ -333,6 +506,7 @@ export function TransportManageBoard({
 function TransportRowItem({
   row,
   index,
+  grouped,
   unitId,
   date,
   drivers,
@@ -349,6 +523,8 @@ function TransportRowItem({
 }: {
   row: TransportRow
   index: number
+  /** まとめ帯の下に属する行か（見出しと重複する情報を控えめにする） */
+  grouped: boolean
   unitId: string
   date: string
   drivers: Driver[]
@@ -443,6 +619,8 @@ function TransportRowItem({
       onDrop={onDrop}
       onDragEnd={onDragEnd}
       className={`px-3 py-2.5 space-y-2 md:space-y-0 ${GRID_COLS} transition-colors ${
+        grouped ? 'border-l-2 border-gray-100 pl-2 md:pl-2.5' : ''
+      } ${
         isDragging ? 'opacity-40 bg-indigo-50' : isOver ? 'bg-indigo-50' : saving ? 'bg-amber-50/50' : 'hover:bg-gray-50'
       }`}
     >
