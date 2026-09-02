@@ -94,6 +94,11 @@ function fmtTime(t: string | null | undefined): string {
   return hhmm === '00:00' ? '' : hhmm
 }
 
+/** 実際の時刻が入っているか（未設定・00:00 は未入力とみなす） */
+function hasTime(t: string | null | undefined): boolean {
+  return fmtTime(t) !== ''
+}
+
 export function AttendanceBoard({
   date,
   units,
@@ -290,11 +295,23 @@ export function AttendanceBoard({
     setSaving(childId)
     const existing = attendanceMap[childId]
 
-    // 出席マーク時に利用スケジュールの時間を自動同期
-    // すでに出席済み（手動で時間編集済みの可能性あり）の場合は上書きしない
+    // 出席マーク時に利用スケジュールの時間を自動同期する。
+    // ただし「すでに時刻が入っている項目」は上書きしない。
+    // 出席カレンダーで個別に直した時刻は status='scheduled' の行として残るため、
+    // ここで一律にスケジュールの時刻を入れると、直した時刻が消えてしまう。
     let scheduledTimes: UsageTimes = {}
     if (updates.status === 'attended' && existing?.status !== 'attended') {
       scheduledTimes = getScheduledTimes(childId)
+      if (existing) {
+        if (hasTime(existing.service_start_time) || hasTime(existing.check_in_time)) {
+          delete scheduledTimes.service_start_time
+          delete scheduledTimes.check_in_time
+        }
+        if (hasTime(existing.service_end_time) || hasTime(existing.check_out_time)) {
+          delete scheduledTimes.service_end_time
+          delete scheduledTimes.check_out_time
+        }
+      }
     }
 
     // 欠席にする場合は送迎時間・利用時間のクリアも同じ1回のUPDATEにまとめる
