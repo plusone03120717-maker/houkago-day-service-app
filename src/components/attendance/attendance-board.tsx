@@ -587,10 +587,11 @@ export function AttendanceBoard({
                 const fields = att ? getFields(att) : null
                 const isTransportExpanded = !!att && expanded === att.id
 
-                // 利用時間の表示（service_* を正とし、旧データは check_*_time にフォールバック）
-                const usageStart = fmtTime(att?.service_start_time) || fmtTime(att?.check_in_time)
-                const usageEnd = fmtTime(att?.service_end_time) || fmtTime(att?.check_out_time)
-                const usageRange = usageStart || usageEnd ? `${usageStart || '—'}〜${usageEnd || '—'}` : ''
+                // 出発時間の表示（お迎え出発 〜 事務所出発）
+                const departureStart = fmtTime(att?.pickup_departure_time)
+                const departureEnd = fmtTime(att?.dropoff_departure_time)
+                const departureRange =
+                  departureStart || departureEnd ? `${departureStart || '—'}〜${departureEnd || '—'}` : ''
 
                 return (
                   <div key={res.id}>
@@ -627,12 +628,12 @@ export function AttendanceBoard({
                       </div>
                     </div>
 
-                    {/* 利用時間（表示のみ・入力は下の「送迎・日中一時入力」から） */}
-                    {isPresent && usageRange && (
+                    {/* 出発時間（表示のみ・入力は下の「送迎・日中一時入力」から） */}
+                    {isPresent && departureRange && (
                       <div className="flex items-center gap-1.5 text-xs">
                         <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                        <span className="text-gray-500 w-16 flex-shrink-0">利用時間</span>
-                        <span className="text-gray-700">{usageRange}</span>
+                        <span className="text-gray-500 w-16 flex-shrink-0">出発時間</span>
+                        <span className="text-gray-700">{departureRange}</span>
                       </div>
                     )}
 
