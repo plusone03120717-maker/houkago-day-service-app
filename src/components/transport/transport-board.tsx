@@ -1,82 +1,45 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import {
-  Car,
   ChevronLeft,
   ChevronRight,
   MapPin,
-  Clock,
-  Navigation,
   School as SchoolIcon,
-  Plus,
   XCircle,
   UserPlus,
   X,
   RefreshCw,
-  User,
   GripVertical,
-  Trash2,
-  Check,
-  Split,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import { TransportScheduleCreator } from './transport-schedule-creator'
 import { deleteAndRecreateTransportSchedules } from '@/app/actions/transport'
-
-// 10分刻みの時刻オプション（06:00〜20:00）
-const TIME_OPTIONS: string[] = []
-for (let h = 6; h <= 20; h++) {
-  for (let m = 0; m < 60; m += 10) {
-    if (h === 20 && m > 0) break
-    TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
-  }
-}
 
 type Unit = { id: string; name: string; service_type: string }
 type Vehicle = { id: string; name: string; capacity: number }
 export type Driver = { id: string; name: string }
+export type Direction = 'pickup' | 'dropoff'
 
-export type TransportDetail = {
+/** 送迎一覧の1行（児童1人 × 1方向） */
+export type TransportRow = {
   id: string
-  child_id: string
-  pickup_location: string | null
-  pickup_time: string | null
-  actual_pickup_time: string | null
-  status: string
-  parent_notified: boolean
-  sort_order: number
-  driver_member_id: string | null
-  vehicle_id: string | null
-  children: {
-    id: string
-    name: string
-    name_kana: string | null
-    address: string | null
-    school_id: string | null
-    schools: { id: string; name: string } | null
-  } | null
-}
-
-export type Schedule = {
-  id: string
-  direction: string
-  departure_time: string | null
-  route_order: number[]
-  driver_member_id: string | null
-  transport_vehicles: { id: string; name: string; capacity: number } | null
-  staff_members: { id: string; name: string } | null
-  transport_details: TransportDetail[]
-}
-
-export type AttendingChild = {
-  child_id: string
-  pickup_type: string
-  children: { id: string; name: string; name_kana: string | null } | null
+  childId: string
+  direction: Direction
+  name: string
+  nameKana: string | null
+  /** 表示中の送迎時間 'HH:MM'（個別未設定なら便の出発時刻） */
+  time: string | null
+  /** 児童個別に時間が設定されているか（false は便の出発時刻を暫定表示中） */
+  hasOwnTime: boolean
+  actualTime: string | null
+  location: string | null
+  driverMemberId: string | null
+  vehicleId: string | null
+  sortOrder: number
+  schoolName: string | null
+  homeAddress: string | null
 }
 
 export type UnitChild = {
@@ -88,24 +51,52 @@ export type UnitChild = {
   schools: { id: string; name: string } | null
 }
 
+type ScheduleIds = { pickup: string | null; dropoff: string | null }
+
 interface Props {
   date: string
   units: Unit[]
   selectedUnitId: string
-  schedules: Schedule[]
+  rows: TransportRow[]
+  scheduleIdByDirection: ScheduleIds
   vehicles: Vehicle[]
   drivers: Driver[]
-  attendingChildren: AttendingChild[]
   allChildren: UnitChild[]
 }
 
+const DIRECTION_LABEL: Record<Direction, string> = { pickup: 'お迎え', dropoff: 'お送り' }
 
-export function TransportManageBoard({ date, units, selectedUnitId, schedules, vehicles, drivers, attendingChildren, allChildren }: Props) {
+/** 一覧の列幅（ヘッダーと各行で共有） */
+const GRID_COLS = 'md:grid md:grid-cols-[2rem_1.5rem_4.5rem_minmax(6rem,1fr)_minmax(8rem,1.4fr)_6.5rem_minmax(6rem,1fr)_minmax(6rem,1fr)_2rem] md:items-center md:gap-2'
+
+export function TransportManageBoard({
+  date,
+  units,
+  selectedUnitId,
+  rows,
+  scheduleIdByDirection,
+  vehicles,
+  drivers,
+  allChildren,
+}: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
-  const [updating, setUpdating] = useState<string | null>(null)
   const [regenerating, setRegenerating] = useState(false)
+  const [showAddPanel, setShowAddPanel] = useState(false)
+
+  // ドラッグ並び替え用のローカル順序（時間順ソート済みの rows を初期値にする）
+  const [localRows, setLocalRows] = useState<TransportRow[]>(rows)
+  const [syncedRows, setSyncedRows] = useState<TransportRow[]>(rows)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const [reordering, setReordering] = useState(false)
+
+  // サーバーから新しい行が届いたらレンダー中に同期する（effect 経由の再レンダーを避ける）
+  if (syncedRows !== rows) {
+    setSyncedRows(rows)
+    setLocalRows(rows)
+  }
 
   const changeDate = (delta: number) => {
     const d = new Date(date)
@@ -113,55 +104,90 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
     router.push(`/transport?date=${formatDate(d, 'yyyy-MM-dd')}&unit=${selectedUnitId}`)
   }
 
-  // 方向ごとに複数便を出発時間順でまとめる
-  const pickupSchedules = schedules
-    .filter((s) => s.direction === 'pickup')
-    .sort((a, b) => (a.departure_time ?? '').localeCompare(b.departure_time ?? ''))
-  const dropoffSchedules = schedules
-    .filter((s) => s.direction === 'dropoff')
-    .sort((a, b) => (a.departure_time ?? '').localeCompare(b.departure_time ?? ''))
+  const refresh = () => startTransition(() => router.refresh())
 
-  const pickupChildren = attendingChildren.filter(
-    (c) => c.pickup_type === 'both' || c.pickup_type === 'pickup_only'
-  )
-  const dropoffChildren = attendingChildren.filter(
-    (c) => c.pickup_type === 'both' || c.pickup_type === 'dropoff_only'
-  )
-
-  const removeFromTransport = async (detail: TransportDetail) => {
-    if (!confirm(`「${detail.children?.name}」を送迎スケジュールから外して欠席にしますか？`)) return
-    setUpdating(detail.id)
-    await supabase.from('transport_details').delete().eq('id', detail.id)
-    await supabase
-      .from('daily_attendance')
-      .update({ status: 'absent' })
-      .eq('child_id', detail.child_id)
+  /** 方向ごとの入れ物スケジュールを取得（無ければ作成） */
+  const ensureScheduleId = async (direction: Direction): Promise<string | null> => {
+    const known = scheduleIdByDirection[direction]
+    if (known) return known
+    const { data: existing } = await supabase
+      .from('transport_schedules')
+      .select('id')
       .eq('unit_id', selectedUnitId)
       .eq('date', date)
-    setUpdating(null)
-    startTransition(() => router.refresh())
+      .eq('direction', direction)
+      .limit(1)
+      .maybeSingle()
+    if (existing) return existing.id as string
+    const { data: created } = await supabase
+      .from('transport_schedules')
+      .insert({ unit_id: selectedUnitId, date, direction, route_order: [] })
+      .select('id')
+      .single()
+    return (created?.id as string | undefined) ?? null
+  }
+
+  /** 送迎一覧から外す（出席の送迎区分もその方向だけ取り下げる） */
+  const handleRemove = async (row: TransportRow) => {
+    if (!confirm(`「${row.name}」を${DIRECTION_LABEL[row.direction]}の一覧から外しますか？`)) return
+    await supabase.from('transport_details').delete().eq('id', row.id)
+
+    const { data: attendance } = await supabase
+      .from('daily_attendance')
+      .select('id, pickup_type')
+      .eq('unit_id', selectedUnitId)
+      .eq('date', date)
+      .eq('child_id', row.childId)
+      .maybeSingle()
+    if (attendance) {
+      const current = attendance.pickup_type as string
+      let next = current
+      if (row.direction === 'pickup') next = current === 'both' ? 'dropoff_only' : current === 'pickup_only' ? 'none' : current
+      else next = current === 'both' ? 'pickup_only' : current === 'dropoff_only' ? 'none' : current
+      if (next !== current) {
+        await supabase.from('daily_attendance').update({ pickup_type: next }).eq('id', attendance.id)
+      }
+    }
+    refresh()
   }
 
   const handleRegenerate = async () => {
-    if (!confirm('既存のスケジュールを削除して、利用スケジュールの時間設定をもとに再生成しますか？')) return
+    if (!confirm('既存の送迎予定を削除して、利用スケジュールの時間設定をもとに再生成しますか？')) return
     setRegenerating(true)
     await deleteAndRecreateTransportSchedules(selectedUnitId, date)
     setRegenerating(false)
-    startTransition(() => router.refresh())
+    refresh()
   }
 
-  /** 便タイトル（常に出発時間を付記） */
-  const scheduleTitle = (base: string, sched: Schedule) => {
-    return sched.departure_time
-      ? `${base}（${sched.departure_time.slice(0, 5)} 便）`
-      : `${base}（時間未設定便）`
+  const handleDrop = async (dropIdx: number) => {
+    if (dragIndex === null || dragIndex === dropIdx) {
+      setDragIndex(null)
+      setDragOverIndex(null)
+      return
+    }
+    const next = [...localRows]
+    const [moved] = next.splice(dragIndex, 1)
+    next.splice(dropIdx, 0, moved)
+    setLocalRows(next)
+    setDragIndex(null)
+    setDragOverIndex(null)
+
+    setReordering(true)
+    await Promise.all(
+      next.map((r, i) => supabase.from('transport_details').update({ sort_order: i }).eq('id', r.id))
+    )
+    setReordering(false)
+    refresh()
   }
+
+  const pickupCount = localRows.filter((r) => r.direction === 'pickup').length
+  const dropoffCount = localRows.filter((r) => r.direction === 'dropoff').length
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">送迎管理</h1>
-        <p className="text-sm text-gray-500 mt-0.5">本日の送迎ルート</p>
+        <p className="text-sm text-gray-500 mt-0.5">送迎時間の早い順に、児童ごとの送迎予定を表示します</p>
       </div>
 
       {/* 日付・ユニット選択 */}
@@ -186,243 +212,375 @@ export function TransportManageBoard({ date, units, selectedUnitId, schedules, v
               key={u.id}
               onClick={() => router.push(`/transport?date=${date}&unit=${u.id}`)}
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                u.id === selectedUnitId ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                u.id === selectedUnitId
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
               }`}
             >
               {u.name}
             </button>
           ))}
         </div>
-        {/* 再生成ボタン */}
         {selectedUnitId && (
-          <button
-            onClick={handleRegenerate}
-            disabled={regenerating}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw className={`h-4 w-4 ${regenerating ? 'animate-spin' : ''}`} />
-            {regenerating ? '再生成中...' : 'スケジュール再生成'}
-          </button>
+          <>
+            <button
+              onClick={() => setShowAddPanel((v) => !v)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                showAddPanel
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'
+              }`}
+            >
+              <UserPlus className="h-4 w-4" />
+              児童を追加
+            </button>
+            <button
+              onClick={handleRegenerate}
+              disabled={regenerating}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={`h-4 w-4 ${regenerating ? 'animate-spin' : ''}`} />
+              {regenerating ? '再生成中...' : '再生成'}
+            </button>
+          </>
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* お迎え列（複数便対応） */}
-        <div className="space-y-4">
-          {pickupSchedules.length > 0 ? (
-            pickupSchedules.map((sched) => (
-              <ScheduleCard
-                key={sched.id}
-                title={scheduleTitle('お迎え', sched)}
-                direction="pickup"
-                schedule={sched}
-                targetChildren={pickupChildren}
-                date={date}
-                unitId={selectedUnitId}
-                vehicles={vehicles}
-                drivers={drivers}
-                allChildren={allChildren}
-                onRemove={removeFromTransport}
-                updating={updating}
-              />
-            ))
-          ) : (
-            <ScheduleCard
-              title="お迎え"
-              direction="pickup"
-              schedule={undefined}
-              targetChildren={pickupChildren}
-              date={date}
-              unitId={selectedUnitId}
-              vehicles={vehicles}
-              drivers={drivers}
-              allChildren={allChildren}
-              onRemove={removeFromTransport}
-              updating={updating}
-            />
-          )}
-        </div>
-
-        {/* お送り列（複数便対応） */}
-        <div className="space-y-4">
-          {dropoffSchedules.length > 0 ? (
-            dropoffSchedules.map((sched) => (
-              <ScheduleCard
-                key={sched.id}
-                title={scheduleTitle('お送り', sched)}
-                direction="dropoff"
-                schedule={sched}
-                targetChildren={dropoffChildren}
-                date={date}
-                unitId={selectedUnitId}
-                vehicles={vehicles}
-                drivers={drivers}
-                allChildren={allChildren}
-                onRemove={removeFromTransport}
-                updating={updating}
-              />
-            ))
-          ) : (
-            <ScheduleCard
-              title="お送り"
-              direction="dropoff"
-              schedule={undefined}
-              targetChildren={dropoffChildren}
-              date={date}
-              unitId={selectedUnitId}
-              vehicles={vehicles}
-              drivers={drivers}
-              allChildren={allChildren}
-              onRemove={removeFromTransport}
-              updating={updating}
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** 個別お迎え/お送り時刻セル */
-function PickupTimeCell({
-  detailId,
-  pickupTime,
-  actualPickupTime,
-  defaultTime,
-  label,
-}: {
-  detailId: string
-  pickupTime: string | null
-  actualPickupTime: string | null
-  defaultTime: string | null
-  label: string
-}) {
-  const supabase = createClient()
-  const router = useRouter()
-  const [, startTransition] = useTransition()
-  const [saving, setSaving] = useState(false)
-
-  const value = pickupTime?.slice(0, 5) ?? defaultTime?.slice(0, 5) ?? ''
-
-  const handleChange = async (newTime: string) => {
-    setSaving(true)
-    await supabase
-      .from('transport_details')
-      .update({ pickup_time: newTime || null })
-      .eq('id', detailId)
-    setSaving(false)
-    startTransition(() => router.refresh())
-  }
-
-  return (
-    <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-      <span className="text-[10px] text-gray-400 leading-none">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => void handleChange(e.target.value)}
-        disabled={saving}
-        className="text-xs border border-gray-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 bg-white cursor-pointer"
-      >
-        <option value="">未設定</option>
-        {TIME_OPTIONS.map((t) => (
-          <option key={t} value={t}>{t}</option>
-        ))}
-      </select>
-      {actualPickupTime && (
-        <span className="text-[10px] text-teal-600 leading-none mt-0.5">
-          実績 {actualPickupTime.slice(0, 5)}
+      {/* 件数サマリ */}
+      <div className="flex items-center gap-3 text-xs text-gray-500">
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-indigo-500" />
+          お迎え {pickupCount}名
         </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+          お送り {dropoffCount}名
+        </span>
+        {reordering && <span className="text-gray-400">並び順を保存中…</span>}
+      </div>
+
+      {showAddPanel && (
+        <AddChildPanel
+          date={date}
+          unitId={selectedUnitId}
+          allChildren={allChildren}
+          existing={localRows}
+          ensureScheduleId={ensureScheduleId}
+          onDone={refresh}
+          onClose={() => setShowAddPanel(false)}
+        />
       )}
+
+      {localRows.length === 0 ? (
+        <div className="py-12 text-center border border-dashed border-gray-200 rounded-xl bg-white space-y-2">
+          <p className="text-sm text-gray-400">この日の送迎予定はまだありません</p>
+          <p className="text-xs text-gray-400">「再生成」で利用スケジュールから作成するか、「児童を追加」で個別に登録してください</p>
+        </div>
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          {/* ヘッダー行（PCのみ） */}
+          <div className={`hidden ${GRID_COLS} px-3 py-2 bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-500`}>
+            <span />
+            <span />
+            <span>区分</span>
+            <span>名前</span>
+            <span>送迎場所</span>
+            <span>送迎時間</span>
+            <span>ドライバー</span>
+            <span>車種</span>
+            <span />
+          </div>
+
+          <div className="divide-y divide-gray-100">
+            {localRows.map((row, i) => (
+              <TransportRowItem
+                // 保存後にサーバーの時刻が変わったら行を作り直して入力欄を同期する
+                key={`${row.id}:${row.time ?? ''}`}
+                row={row}
+                index={i}
+                drivers={drivers}
+                vehicles={vehicles}
+                isDragging={dragIndex === i}
+                isOver={dragOverIndex === i}
+                onDragStart={() => setDragIndex(i)}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setDragOverIndex(i)
+                }}
+                onDrop={() => handleDrop(i)}
+                onDragEnd={() => {
+                  setDragIndex(null)
+                  setDragOverIndex(null)
+                }}
+                ensureScheduleId={ensureScheduleId}
+                onRemove={() => handleRemove(row)}
+                onSaved={refresh}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-gray-400">
+        並びは送迎時間の早い順です。同じ時間内の順番は
+        <GripVertical className="h-3 w-3 inline mx-0.5 -mt-0.5" />
+        をドラッグして入れ替えられます。
+      </p>
     </div>
   )
 }
 
-/** 子ども個別のドライバー/車種セル */
-function ChildDetailSelect({
-  detailId,
-  field,
-  value,
-  options,
-  placeholder,
+/** 一覧の1行。各項目はその場で編集して即保存する */
+function TransportRowItem({
+  row,
+  index,
+  drivers,
+  vehicles,
+  isDragging,
+  isOver,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  ensureScheduleId,
+  onRemove,
+  onSaved,
 }: {
-  detailId: string
-  field: 'driver_member_id' | 'vehicle_id'
-  value: string | null
-  options: { id: string; name: string }[]
-  placeholder: string
+  row: TransportRow
+  index: number
+  drivers: Driver[]
+  vehicles: Vehicle[]
+  isDragging: boolean
+  isOver: boolean
+  onDragStart: () => void
+  onDragOver: (e: React.DragEvent) => void
+  onDrop: () => void
+  onDragEnd: () => void
+  ensureScheduleId: (direction: Direction) => Promise<string | null>
+  onRemove: () => void
+  onSaved: () => void
 }) {
   const supabase = createClient()
-  const router = useRouter()
-  const [, startTransition] = useTransition()
   const [saving, setSaving] = useState(false)
+  const [time, setTime] = useState(row.time ?? '')
 
-  const handleChange = async (newVal: string) => {
+  const update = async (patch: Record<string, unknown>) => {
     setSaving(true)
-    await supabase
-      .from('transport_details')
-      .update({ [field]: newVal || null })
-      .eq('id', detailId)
+    await supabase.from('transport_details').update(patch).eq('id', row.id)
     setSaving(false)
-    startTransition(() => router.refresh())
+    onSaved()
   }
 
+  const handleTimeBlur = () => {
+    if ((time || null) === (row.hasOwnTime ? row.time : null)) return
+    void update({ pickup_time: time || null })
+  }
+
+  const handleDirectionChange = async (direction: Direction) => {
+    if (direction === row.direction) return
+    setSaving(true)
+    const scheduleId = await ensureScheduleId(direction)
+    if (scheduleId) {
+      await supabase.from('transport_details').update({ schedule_id: scheduleId }).eq('id', row.id)
+    }
+    setSaving(false)
+    onSaved()
+  }
+
+  // 送迎場所の選択肢（学校・自宅＋既存の任意入力値）
+  const locationOptions: { value: string; label: string }[] = []
+  if (row.schoolName) locationOptions.push({ value: row.schoolName, label: `学校：${row.schoolName}` })
+  if (row.homeAddress) locationOptions.push({ value: row.homeAddress, label: `自宅：${row.homeAddress}` })
+  if (row.location && !locationOptions.some((o) => o.value === row.location)) {
+    locationOptions.unshift({ value: row.location, label: row.location })
+  }
+
+  const isSchool = !!(row.location && row.schoolName && row.location === row.schoolName)
+  const isPickup = row.direction === 'pickup'
+
   return (
-    <select
-      value={value ?? ''}
-      onChange={(e) => void handleChange(e.target.value)}
-      disabled={saving}
-      className="text-xs border border-gray-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 bg-white cursor-pointer max-w-[96px]"
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      className={`px-3 py-2.5 space-y-2 md:space-y-0 ${GRID_COLS} transition-colors ${
+        isDragging ? 'opacity-40 bg-indigo-50' : isOver ? 'bg-indigo-50' : saving ? 'bg-amber-50/50' : 'hover:bg-gray-50'
+      }`}
     >
-      <option value="">{placeholder}</option>
-      {options.map((o) => (
-        <option key={o.id} value={o.id}>{o.name}</option>
-      ))}
-    </select>
+      {/* 番号 */}
+      <span className="hidden md:flex w-6 h-6 rounded-full bg-gray-100 text-gray-600 items-center justify-center text-xs font-bold">
+        {index + 1}
+      </span>
+
+      {/* ドラッグハンドル */}
+      <span className="hidden md:block">
+        <GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing" />
+      </span>
+
+      {/* 区分（お迎え／お送り） */}
+      <div className="flex items-center gap-2">
+        <span className="md:hidden w-6 h-6 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-xs font-bold shrink-0">
+          {index + 1}
+        </span>
+        <select
+          value={row.direction}
+          onChange={(e) => void handleDirectionChange(e.target.value as Direction)}
+          disabled={saving}
+          aria-label="区分"
+          className={`text-xs font-semibold rounded px-1.5 py-1 border cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 ${
+            isPickup
+              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+          }`}
+        >
+          <option value="pickup">お迎え</option>
+          <option value="dropoff">お送り</option>
+        </select>
+      </div>
+
+      {/* 名前 */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        {isSchool ? (
+          <SchoolIcon className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+        ) : (
+          <MapPin className="h-3.5 w-3.5 text-green-500 shrink-0" />
+        )}
+        <span className="font-medium text-gray-800 text-sm truncate">{row.name}</span>
+      </div>
+
+      {/* 送迎場所 */}
+      <label className="flex items-center gap-1.5 md:gap-0 min-w-0">
+        <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">送迎場所</span>
+        <select
+          value={row.location ?? ''}
+          onChange={(e) => void update({ pickup_location: e.target.value || null })}
+          disabled={saving}
+          className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
+        >
+          <option value="">場所未設定</option>
+          {locationOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {/* 送迎時間 */}
+      <label className="flex items-center gap-1.5 md:gap-0 md:flex-col md:items-start">
+        <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">送迎時間</span>
+        <input
+          type="time"
+          step={300}
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          onBlur={handleTimeBlur}
+          disabled={saving}
+          className={`w-full md:w-auto text-xs border rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 ${
+            row.hasOwnTime ? 'border-gray-200 text-gray-800' : 'border-amber-200 text-amber-700'
+          }`}
+        />
+        {row.actualTime && (
+          <span className="text-[10px] text-teal-600 md:mt-0.5 whitespace-nowrap">実績 {row.actualTime}</span>
+        )}
+      </label>
+
+      {/* ドライバー */}
+      <label className="flex items-center gap-1.5 md:gap-0 min-w-0">
+        <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">ドライバー</span>
+        <select
+          value={row.driverMemberId ?? ''}
+          onChange={(e) => void update({ driver_member_id: e.target.value || null })}
+          disabled={saving}
+          className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
+        >
+          <option value="">未設定</option>
+          {drivers.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {/* 車種 */}
+      <label className="flex items-center gap-1.5 md:gap-0 min-w-0">
+        <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">車種</span>
+        <select
+          value={row.vehicleId ?? ''}
+          onChange={(e) => void update({ vehicle_id: e.target.value || null })}
+          disabled={saving}
+          className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
+        >
+          <option value="">未設定</option>
+          {vehicles.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {/* 削除 */}
+      <button
+        onClick={onRemove}
+        disabled={saving}
+        className="justify-self-end p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50"
+        title="この送迎を一覧から外す"
+      >
+        <XCircle className="h-4 w-4" />
+      </button>
+    </div>
   )
 }
 
 /** 児童追加パネル */
 function AddChildPanel({
-  schedule,
-  direction,
   date,
   unitId,
   allChildren,
+  existing,
+  ensureScheduleId,
+  onDone,
   onClose,
 }: {
-  schedule: Schedule
-  direction: 'pickup' | 'dropoff'
   date: string
   unitId: string
   allChildren: UnitChild[]
+  existing: TransportRow[]
+  ensureScheduleId: (direction: Direction) => Promise<string | null>
+  onDone: () => void
   onClose: () => void
 }) {
   const supabase = createClient()
-  const router = useRouter()
-  const [, startTransition] = useTransition()
+  const [direction, setDirection] = useState<Direction>('pickup')
   const [adding, setAdding] = useState<string | null>(null)
 
-  // すでにスケジュールに入っている child_id を除外
-  const scheduledIds = new Set(schedule.transport_details.map((d) => d.child_id))
-  const available = allChildren.filter((c) => !scheduledIds.has(c.id))
+  // 同じ方向にすでに登録済みの児童は候補から除外
+  const registered = new Set(existing.filter((r) => r.direction === direction).map((r) => r.childId))
+  const available = allChildren.filter((c) => !registered.has(c.id))
 
   const handleAdd = async (child: UnitChild, locationType: 'school' | 'home') => {
     setAdding(child.id)
+    const scheduleId = await ensureScheduleId(direction)
+    if (!scheduleId) {
+      setAdding(null)
+      return
+    }
 
-    const location = locationType === 'school'
-      ? (child.schools?.name ?? null)
-      : (child.address ?? null)
+    const location = locationType === 'school' ? (child.schools?.name ?? null) : (child.address ?? null)
 
-    // transport_detail を追加
     await supabase.from('transport_details').insert({
-      schedule_id: schedule.id,
+      schedule_id: scheduleId,
       child_id: child.id,
       pickup_location: location,
       status: 'scheduled',
     })
 
-    // daily_attendance を upsert（出席として追加）
-    const { data: existing } = await supabase
+    // daily_attendance を upsert（出席として追加し、送迎区分を広げる）
+    const { data: attendance } = await supabase
       .from('daily_attendance')
       .select('id, pickup_type')
       .eq('unit_id', unitId)
@@ -430,18 +588,15 @@ function AddChildPanel({
       .eq('child_id', child.id)
       .maybeSingle()
 
-    if (existing) {
-      // 既存の pickup_type を拡張
-      let newPickupType = existing.pickup_type
-      if (direction === 'pickup' && newPickupType === 'dropoff_only') newPickupType = 'both'
-      else if (direction === 'pickup' && newPickupType !== 'both') newPickupType = 'pickup_only'
-      else if (direction === 'dropoff' && newPickupType === 'pickup_only') newPickupType = 'both'
-      else if (direction === 'dropoff' && newPickupType !== 'both') newPickupType = 'dropoff_only'
-
+    if (attendance) {
+      const current = attendance.pickup_type as string
+      const own = direction === 'pickup' ? 'pickup_only' : 'dropoff_only'
+      const other = direction === 'pickup' ? 'dropoff_only' : 'pickup_only'
+      const next = current === 'both' || current === other ? 'both' : own
       await supabase
         .from('daily_attendance')
-        .update({ status: 'attended', pickup_type: newPickupType })
-        .eq('id', existing.id)
+        .update({ status: 'attended', pickup_type: next })
+        .eq('id', attendance.id)
     } else {
       await supabase.from('daily_attendance').insert({
         unit_id: unitId,
@@ -453,14 +608,14 @@ function AddChildPanel({
     }
 
     setAdding(null)
-    startTransition(() => router.refresh())
+    onDone()
   }
 
   return (
-    <div className="border border-indigo-100 rounded-lg bg-indigo-50 p-3 space-y-2">
+    <div className="border border-indigo-100 rounded-xl bg-indigo-50 p-3 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-indigo-700">
-          <UserPlus className="h-3.5 w-3.5 inline mr-1" />
+        <p className="text-xs font-semibold text-indigo-700 flex items-center gap-1.5">
+          <UserPlus className="h-3.5 w-3.5" />
           児童を追加
         </p>
         <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-white transition-colors">
@@ -468,15 +623,31 @@ function AddChildPanel({
         </button>
       </div>
 
+      <div className="flex gap-1.5">
+        {(['pickup', 'dropoff'] as const).map((d) => (
+          <button
+            key={d}
+            onClick={() => setDirection(d)}
+            className={`px-3 py-1 rounded-lg text-xs font-medium border transition-colors ${
+              direction === d
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+            }`}
+          >
+            {DIRECTION_LABEL[d]}
+          </button>
+        ))}
+      </div>
+
       {available.length === 0 ? (
         <p className="text-xs text-gray-400 text-center py-2">追加できる児童がいません</p>
       ) : (
-        <div className="space-y-1.5 max-h-64 overflow-y-auto">
+        <div className="space-y-1.5 max-h-72 overflow-y-auto">
           {available.map((child) => (
             <div key={child.id} className="flex items-center gap-2 bg-white rounded px-3 py-2">
-              <span className="flex-1 text-sm text-gray-800">{child.name}</span>
-              <div className="flex gap-1.5 flex-shrink-0">
-                {direction === 'pickup' && child.schools?.name && (
+              <span className="flex-1 text-sm text-gray-800 truncate">{child.name}</span>
+              <div className="flex gap-1.5 shrink-0">
+                {child.schools?.name && (
                   <button
                     onClick={() => handleAdd(child, 'school')}
                     disabled={adding === child.id}
@@ -505,506 +676,5 @@ function AddChildPanel({
         </div>
       )}
     </div>
-  )
-}
-
-function ScheduleCard({
-  title,
-  direction,
-  schedule,
-  targetChildren,
-  date,
-  unitId,
-  vehicles,
-  drivers,
-  allChildren,
-  onRemove,
-  updating,
-}: {
-  title: string
-  direction: 'pickup' | 'dropoff'
-  schedule: Schedule | undefined
-  targetChildren: AttendingChild[]
-  date: string
-  unitId: string
-  vehicles: Vehicle[]
-  drivers: Driver[]
-  allChildren: UnitChild[]
-  onRemove: (detail: TransportDetail) => void
-  updating: string | null
-}) {
-  const supabase = createClient()
-  const router = useRouter()
-  const [, startTransition] = useTransition()
-  const [driverSaving, setDriverSaving] = useState(false)
-  const [vehicleSaving, setVehicleSaving] = useState(false)
-  const [showCreator, setShowCreator] = useState(false)
-  const [showAddPanel, setShowAddPanel] = useState(false)
-  const [showSplit, setShowSplit] = useState(false)
-  const [splitSelected, setSplitSelected] = useState<Set<string>>(new Set())
-  const [splitting, setSplitting] = useState(false)
-
-  const handleSplit = async () => {
-    if (!schedule || splitSelected.size === 0 || splitSelected.size === localDetails.length) return
-    setSplitting(true)
-    // 1. 新しい便を作成（同じ出発時刻）
-    const { data: newSched } = await supabase
-      .from('transport_schedules')
-      .insert({
-        unit_id: unitId,
-        date,
-        direction: 'dropoff',
-        departure_time: schedule.departure_time,
-        route_order: [],
-      })
-      .select('id')
-      .single()
-    if (newSched) {
-      // 2. 選択した生徒を新しい便に移動
-      const ids = [...splitSelected]
-      await Promise.all(
-        ids.map((id, i) =>
-          supabase.from('transport_details').update({ schedule_id: newSched.id, sort_order: i }).eq('id', id)
-        )
-      )
-    }
-    setSplitting(false)
-    setShowSplit(false)
-    setSplitSelected(new Set())
-    startTransition(() => router.refresh())
-  }
-
-  // ドラッグ&ドロップ用: sort_order 順にソートしたローカル状態
-  const sortedDetails = schedule
-    ? [...schedule.transport_details].sort((a, b) => a.sort_order - b.sort_order)
-    : []
-  const [localDetails, setLocalDetails] = useState<TransportDetail[]>(sortedDetails)
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const [reordering, setReordering] = useState(false)
-
-  // schedule prop が変わった（追加・削除・再生成後）らローカル状態を同期
-  useEffect(() => {
-    const sorted = schedule
-      ? [...schedule.transport_details].sort((a, b) => a.sort_order - b.sort_order)
-      : []
-    setLocalDetails(sorted)
-  }, [schedule])
-
-  const handleDeleteSchedule = async () => {
-    if (!schedule) return
-    const label = schedule.departure_time
-      ? `${title}（出発 ${schedule.departure_time.slice(0, 5)}）`
-      : title
-    if (!confirm(`「${label}」の便をまるごと削除しますか？\n（この便の送迎詳細もすべて削除されます）`)) return
-    await supabase.from('transport_schedules').delete().eq('id', schedule.id)
-    startTransition(() => router.refresh())
-  }
-
-  const handleDriverChange = async (driverId: string) => {
-    if (!schedule) return
-    setDriverSaving(true)
-    await supabase
-      .from('transport_schedules')
-      .update({ driver_member_id: driverId || null })
-      .eq('id', schedule.id)
-    setDriverSaving(false)
-    startTransition(() => router.refresh())
-  }
-
-  const handleVehicleChange = async (vehicleId: string) => {
-    if (!schedule) return
-    setVehicleSaving(true)
-    await supabase
-      .from('transport_schedules')
-      .update({ vehicle_id: vehicleId || null })
-      .eq('id', schedule.id)
-    setVehicleSaving(false)
-    startTransition(() => router.refresh())
-  }
-
-  const handleDragStart = (idx: number) => setDragIndex(idx)
-  const handleDragOver = (e: React.DragEvent, idx: number) => {
-    e.preventDefault()
-    setDragOverIndex(idx)
-  }
-  const handleDrop = async (dropIdx: number) => {
-    if (dragIndex === null || dragIndex === dropIdx || !schedule) {
-      setDragIndex(null)
-      setDragOverIndex(null)
-      return
-    }
-    const next = [...localDetails]
-    const [moved] = next.splice(dragIndex, 1)
-    next.splice(dropIdx, 0, moved)
-    setLocalDetails(next)
-    setDragIndex(null)
-    setDragOverIndex(null)
-
-    // DB に sort_order を一括更新
-    setReordering(true)
-    await Promise.all(
-      next.map((d, i) =>
-        supabase.from('transport_details').update({ sort_order: i }).eq('id', d.id)
-      )
-    )
-    setReordering(false)
-    startTransition(() => router.refresh())
-  }
-  const handleDragEnd = () => {
-    setDragIndex(null)
-    setDragOverIndex(null)
-  }
-
-
-  // ─── お迎え：個別カードレイアウト ──────────────────────────────────────────
-  if (direction === 'pickup') {
-    if (showCreator) {
-      return (
-        <TransportScheduleCreator
-          date={date} unitId={unitId} direction={direction} vehicles={vehicles}
-          onCreated={() => setShowCreator(false)} onCancel={() => setShowCreator(false)}
-        />
-      )
-    }
-    if (!schedule) {
-      return (
-        <div className="py-8 text-center space-y-3 border border-dashed border-gray-200 rounded-xl bg-white">
-          <p className="text-sm text-gray-400">お迎えスケジュールが未設定です</p>
-          <p className="text-xs text-gray-400">対象: {targetChildren.length}名</p>
-          {unitId && (
-            <Button size="sm" variant="outline" onClick={() => setShowCreator(true)}>
-              <Plus className="h-3.5 w-3.5" />スケジュールを作成
-            </Button>
-          )}
-        </div>
-      )
-    }
-
-    return (
-      <div className="space-y-3">
-        {/* セクションヘッダー（カードなし） */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Car className="h-4 w-4 text-indigo-500 shrink-0" />
-          <span className="text-sm font-semibold text-gray-700">
-            お迎え
-            {schedule.departure_time && (
-              <span className="ml-2 text-xs font-normal text-gray-400">
-                <Clock className="h-3 w-3 inline mr-0.5" />
-                出発 {schedule.departure_time.slice(0, 5)}
-              </span>
-            )}
-          </span>
-          <span className="text-xs text-gray-400">{schedule.transport_details.length}名</span>
-          {reordering && <span className="text-xs text-gray-400 ml-1">保存中…</span>}
-          <div className="ml-auto flex gap-1.5">
-            <button
-              onClick={() => setShowAddPanel((v) => !v)}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
-                showAddPanel ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'
-              }`}
-            >
-              <UserPlus className="h-3.5 w-3.5" />追加
-            </button>
-            <button
-              onClick={handleDeleteSchedule}
-              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border border-red-200 bg-white text-red-500 hover:bg-red-50 transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" />削除
-            </button>
-          </div>
-        </div>
-
-        {/* 児童追加パネル */}
-        {showAddPanel && (
-          <AddChildPanel
-            schedule={schedule} direction={direction} date={date}
-            unitId={unitId} allChildren={allChildren} onClose={() => setShowAddPanel(false)}
-          />
-        )}
-
-        {/* 子ども個別カード */}
-        {localDetails.map((detail, i) => {
-          const isSchool = !!(detail.pickup_location && /学校|校$/.test(detail.pickup_location))
-          const isDragging = dragIndex === i
-          const isOver = dragOverIndex === i
-          return (
-            <Card
-              key={detail.id}
-              draggable
-              onDragStart={() => handleDragStart(i)}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDrop={() => handleDrop(i)}
-              onDragEnd={handleDragEnd}
-              className={`transition-all ${isDragging ? 'opacity-40 border-dashed border-indigo-300' : isOver ? 'border-indigo-300 bg-indigo-50/30' : ''}`}
-            >
-              <CardContent className="pt-3 pb-3">
-                <div className="flex items-start gap-2">
-                  <GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing shrink-0 mt-1" />
-                  <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
-                    {i + 1}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    {/* 名前・場所 */}
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      {isSchool
-                        ? <SchoolIcon className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                        : <MapPin className="h-3.5 w-3.5 text-green-500 shrink-0" />
-                      }
-                      <p className="font-medium text-gray-800 text-sm">{detail.children?.name ?? '不明'}</p>
-                    </div>
-                    <p className="text-xs text-gray-400 mb-2 pl-5">{detail.pickup_location ?? '場所未設定'}</p>
-                    {/* 個別設定 */}
-                    <div className="flex flex-wrap items-center gap-2 pl-5">
-                      <PickupTimeCell
-                        detailId={detail.id}
-                        pickupTime={detail.pickup_time}
-                        actualPickupTime={detail.actual_pickup_time}
-                        defaultTime={schedule.departure_time}
-                        label="お迎え時刻"
-                      />
-                      <ChildDetailSelect
-                        detailId={detail.id} field="driver_member_id"
-                        value={detail.driver_member_id} options={drivers} placeholder="ドライバー"
-                      />
-                      <ChildDetailSelect
-                        detailId={detail.id} field="vehicle_id"
-                        value={detail.vehicle_id} options={vehicles} placeholder="車種"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => onRemove(detail)}
-                    disabled={updating === detail.id}
-                    className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 shrink-0"
-                    title="欠席にして外す"
-                  >
-                    <XCircle className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          )
-        })}
-      </div>
-    )
-  }
-
-  // ─── お送り：既存のカードレイアウト ─────────────────────────────────────────
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Car className="h-5 w-5 text-indigo-500" />
-          {title}
-          {schedule && (
-            <span className="ml-auto text-xs text-gray-500 font-normal">
-              {schedule.transport_details.length}名
-            </span>
-          )}
-          {schedule && (
-            <>
-              <button
-                onClick={() => setShowAddPanel((v) => !v)}
-                className={`ml-1 flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
-                  showAddPanel ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'
-                }`}
-              >
-                <UserPlus className="h-3.5 w-3.5" />追加
-              </button>
-              {localDetails.length >= 2 && (
-                <button
-                  onClick={() => { setShowSplit((v) => !v); setSplitSelected(new Set()) }}
-                  className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
-                    showSplit ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-orange-600 border-orange-200 hover:bg-orange-50'
-                  }`}
-                >
-                  <Split className="h-3.5 w-3.5" />分割
-                </button>
-              )}
-              <button
-                onClick={handleDeleteSchedule}
-                className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border border-red-200 bg-white text-red-500 hover:bg-red-50 transition-colors"
-              >
-                <Trash2 className="h-3.5 w-3.5" />削除
-              </button>
-            </>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {schedule ? (
-          <div className="space-y-3">
-            {showAddPanel && (
-              <AddChildPanel
-                schedule={schedule} direction={direction} date={date}
-                unitId={unitId} allChildren={allChildren} onClose={() => setShowAddPanel(false)}
-              />
-            )}
-
-            {/* 分割パネル */}
-            {showSplit && (
-              <div className="border border-orange-200 rounded-lg bg-orange-50/40 p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-orange-700 flex items-center gap-1.5">
-                    <Split className="h-3.5 w-3.5" />
-                    新しい便に移す生徒を選択
-                  </p>
-                  <button onClick={() => setShowSplit(false)} className="p-1 text-gray-400 hover:text-gray-600">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="space-y-1.5">
-                  {localDetails.map((detail) => (
-                    <label key={detail.id} className="flex items-center gap-2.5 bg-white rounded px-3 py-2 cursor-pointer hover:bg-orange-50 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={splitSelected.has(detail.id)}
-                        onChange={(e) => {
-                          const next = new Set(splitSelected)
-                          if (e.target.checked) next.add(detail.id)
-                          else next.delete(detail.id)
-                          setSplitSelected(next)
-                        }}
-                        className="rounded border-gray-300 text-orange-500 focus:ring-orange-400"
-                      />
-                      <span className="text-sm text-gray-800">{detail.children?.name ?? '不明'}</span>
-                      <span className="text-xs text-gray-400 truncate">{detail.pickup_location ?? ''}</span>
-                    </label>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => void handleSplit()}
-                    disabled={splitting || splitSelected.size === 0 || splitSelected.size === localDetails.length}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50 font-medium"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    {splitting ? '分割中...' : `${splitSelected.size}名を新しい便へ移動`}
-                  </button>
-                  <button onClick={() => setShowSplit(false)} className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">
-                    キャンセル
-                  </button>
-                </div>
-                {splitSelected.size > 0 && splitSelected.size < localDetails.length && (
-                  <p className="text-xs text-orange-600">
-                    この便: {localDetails.length - splitSelected.size}名 ／ 新しい便: {splitSelected.size}名
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* 共有ドライバー・車種選択 */}
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                <select
-                  value={schedule.driver_member_id ?? ''}
-                  onChange={(e) => handleDriverChange(e.target.value)}
-                  disabled={driverSaving}
-                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
-                >
-                  <option value="">ドライバー未設定</option>
-                  {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <Car className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                <select
-                  value={schedule.transport_vehicles?.id ?? ''}
-                  onChange={(e) => handleVehicleChange(e.target.value)}
-                  disabled={vehicleSaving}
-                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
-                >
-                  <option value="">車種未設定</option>
-                  {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
-              </div>
-            </div>
-            {/* ルートヘッダー */}
-            <div className="flex items-center gap-1.5">
-              <Navigation className="h-3.5 w-3.5 text-indigo-500" />
-              <p className="text-xs font-semibold text-gray-500 flex-1">
-                ルート順
-                {schedule.departure_time && (
-                  <span className="ml-2 font-normal text-gray-400">
-                    <Clock className="h-3 w-3 inline mr-0.5" />
-                    出発 {schedule.departure_time.slice(0, 5)}
-                  </span>
-                )}
-              </p>
-              {reordering && <span className="text-xs text-gray-400">保存中…</span>}
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500 pl-1">
-              <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">出</span>
-              <span>施設（富士河口湖町小立）</span>
-            </div>
-            {/* 児童リスト */}
-            <div className="space-y-1">
-              {localDetails.map((detail, i) => {
-                const isSchool = !!(detail.pickup_location && /学校|校$/.test(detail.pickup_location))
-                const isDragging = dragIndex === i
-                const isOver = dragOverIndex === i
-                return (
-                  <div
-                    key={detail.id}
-                    draggable
-                    onDragStart={() => handleDragStart(i)}
-                    onDragOver={(e) => handleDragOver(e, i)}
-                    onDrop={() => handleDrop(i)}
-                    onDragEnd={handleDragEnd}
-                    className={`flex items-center gap-2 py-1.5 px-2 rounded text-sm transition-colors ${
-                      isDragging ? 'opacity-40 bg-indigo-50 border border-dashed border-indigo-300'
-                      : isOver ? 'bg-indigo-50 border border-indigo-300'
-                      : 'bg-gray-50 border border-transparent'
-                    }`}
-                  >
-                    <GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing flex-shrink-0" />
-                    <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                      {i + 1}
-                    </span>
-                    {isSchool
-                      ? <SchoolIcon className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
-                      : <MapPin className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
-                    }
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-800 truncate">{detail.children?.name ?? '不明'}</p>
-                      <p className="text-xs text-gray-400 truncate">{detail.pickup_location ?? '場所未設定'}</p>
-                    </div>
-                    <button
-                      onClick={() => onRemove(detail)}
-                      disabled={updating === detail.id}
-                      className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
-                      title="欠席にして外す"
-                    >
-                      <XCircle className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500 pl-1">
-              <span className="w-5 h-5 rounded-full bg-gray-400 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">着</span>
-              <span>施設に帰着</span>
-            </div>
-          </div>
-        ) : showCreator ? (
-          <TransportScheduleCreator
-            date={date} unitId={unitId} direction={direction} vehicles={vehicles}
-            onCreated={() => setShowCreator(false)} onCancel={() => setShowCreator(false)}
-          />
-        ) : (
-          <div className="py-6 text-center space-y-3">
-            <p className="text-sm text-gray-400">スケジュールが未設定です</p>
-            <p className="text-xs text-gray-400">お送り対象: {targetChildren.length}名</p>
-            {unitId && (
-              <Button size="sm" variant="outline" onClick={() => setShowCreator(true)} className="mt-1">
-                <Plus className="h-3.5 w-3.5" />スケジュールを作成
-              </Button>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
   )
 }

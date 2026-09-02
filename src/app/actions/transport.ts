@@ -127,6 +127,10 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   const childrenMap = new Map<string, ChildRow>()
   const pickupTimeMap = new Map<string, string | null>()
   const dropoffTimeMap = new Map<string, string | null>()
+  // 便のグループ化には時単位スロット（pickupTimeMap）を使うが、
+  // transport_details.pickup_time には丸めていない実際の時刻を保存する
+  const rawPickupTimeMap = new Map<string, string | null>()
+  const rawDropoffTimeMap = new Map<string, string | null>()
   const transportTypeMap = new Map<string, string>()
   const pickupLocationTypeMap = new Map<string, string>()
 
@@ -139,6 +143,8 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       childrenMap.set(p.child_id, p.children as unknown as ChildRow)
       pickupTimeMap.set(p.child_id, toHourSlot((override?.pickup_time ?? p.pickup_time) as string | null))
       dropoffTimeMap.set(p.child_id, toHourSlot((override?.dropoff_time ?? p.dropoff_time) as string | null))
+      rawPickupTimeMap.set(p.child_id, (override?.pickup_time ?? p.pickup_time) as string | null)
+      rawDropoffTimeMap.set(p.child_id, (override?.dropoff_time ?? p.dropoff_time) as string | null)
       transportTypeMap.set(p.child_id, (override?.transport_type ?? p.transport_type ?? 'both') as string)
       pickupLocationTypeMap.set(p.child_id, (override?.pickup_location_type ?? p.pickup_location_type ?? 'home') as string)
     }
@@ -152,6 +158,8 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       childrenMap.set(r.child_id, r.children as unknown as ChildRow)
       pickupTimeMap.set(r.child_id, toHourSlot(rPickupTime))
       dropoffTimeMap.set(r.child_id, toHourSlot(rDropoffTime))
+      rawPickupTimeMap.set(r.child_id, rPickupTime)
+      rawDropoffTimeMap.set(r.child_id, rDropoffTime)
       transportTypeMap.set(r.child_id, (r.transport_type ?? 'both') as string)
       pickupLocationTypeMap.set(r.child_id, (r.pickup_location_type ?? 'home') as string)
     } else {
@@ -166,9 +174,11 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       }
       if (pickupTimeMap.get(r.child_id) === null && rPickupTime) {
         pickupTimeMap.set(r.child_id, toHourSlot(rPickupTime))
+        rawPickupTimeMap.set(r.child_id, rPickupTime)
       }
       if (dropoffTimeMap.get(r.child_id) === null && rDropoffTime) {
         dropoffTimeMap.set(r.child_id, toHourSlot(rDropoffTime))
+        rawDropoffTimeMap.set(r.child_id, rDropoffTime)
       }
     }
   }
@@ -255,9 +265,11 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     for (const id of nullTimeChildIds) {
       if (pickupTimeMap.get(id) === null && broaderPickup.has(id)) {
         pickupTimeMap.set(id, toHourSlot(broaderPickup.get(id)!))
+        rawPickupTimeMap.set(id, broaderPickup.get(id)!)
       }
       if (dropoffTimeMap.get(id) === null && broaderDropoff.has(id)) {
         dropoffTimeMap.set(id, toHourSlot(broaderDropoff.get(id)!))
+        rawDropoffTimeMap.set(id, broaderDropoff.get(id)!)
       }
     }
   }
@@ -371,11 +383,13 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       if (missing.length === 0) continue
 
       const nextOrder = sched.transport_details.length
+      const rawTimeMap = direction === 'pickup' ? rawPickupTimeMap : rawDropoffTimeMap
       await supabase.from('transport_details').insert(
         missing.map((c, idx) => ({
           schedule_id: sched.id,
           child_id: c.child_id,
           pickup_location: getPickupLocation(c, direction),
+          pickup_time: rawTimeMap.get(c.child_id) ?? slot,
           status: 'scheduled',
           sort_order: nextOrder + idx,
         }))
