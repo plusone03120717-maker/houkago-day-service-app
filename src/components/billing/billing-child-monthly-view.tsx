@@ -9,8 +9,11 @@ import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 import {
   calcHours,
   computeBillingDay,
+  extensionThresholdMinutes,
+  formatMinutes,
   getBillingCategory,
   getCircleValue,
+  getExtensionLevel,
   isAutoTriggered,
   isHolidayDate,
   isItemChecked as isItemCheckedShared,
@@ -635,15 +638,8 @@ export function BillingChildMonthlyView({
   const countChecked = (item: ServiceItem) =>
     days.filter((d) => isItemChecked(item, d, dayDataMap.get(d)!)).length
 
-  // 延長加算は日数でなく合計時間数を返す
-  const getTotalUnits = (item: ServiceItem) => {
-    if (item.trigger_field === 'extension') {
-      return days
-        .filter((d) => isItemChecked(item, d, dayDataMap.get(d)!))
-        .reduce((sum, d) => sum + dayDataMap.get(d)!.extensionHours, 0)
-    }
-    return countChecked(item)
-  }
+  // 延長加算も区分ごとに1日1回の算定なので、日数を返す
+  const getTotalUnits = (item: ServiceItem) => countChecked(item)
 
   const isDaytimeItem = (item: ServiceItem) =>
     ['daytime_support', 'daytime_pickup', 'daytime_dropoff'].includes(item.trigger_field)
@@ -985,8 +981,11 @@ export function BillingChildMonthlyView({
                       ? Math.max(0, timeToMinutes(endTimeVal) - timeToMinutes(startTimeVal))
                       : 0
                     const overriddenCategory = getBillingCategory(overriddenMinutes, startTimeVal !== '' && endTimeVal !== '')
-                    const extThreshold = d.serviceFormType === 1 ? 180 : 300
-                    const overriddenExtensionHours = Math.max(0, Math.floor((overriddenMinutes - extThreshold) / 60))
+                    const overriddenExtensionMinutes = Math.max(
+                      0,
+                      overriddenMinutes - extensionThresholdMinutes(d.serviceFormType),
+                    )
+                    const overriddenExtensionLevel = getExtensionLevel(overriddenExtensionMinutes)
 
 
                     return (
@@ -1122,11 +1121,18 @@ export function BillingChildMonthlyView({
                         )}
                         {hasAbsentItems && renderAbsentAdditionCell(dateStr, d)}
                         {hasExtensionItems && (
-                          <td className="border border-gray-200 px-1 py-1 text-center bg-green-50/30">
-                            {overriddenExtensionHours > 0 ? (
+                          <td
+                            className="border border-gray-200 px-1 py-1 text-center bg-green-50/30"
+                            title={
+                              overriddenExtensionLevel > 0
+                                ? `延長 ${formatMinutes(overriddenExtensionMinutes)}（基準 ${d.serviceFormType === 1 ? '平日3時間' : '休業日5時間'}）`
+                                : undefined
+                            }
+                          >
+                            {overriddenExtensionLevel > 0 ? (
                               <div>
-                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-600 text-white text-[10px] font-bold">{overriddenExtensionHours}</span>
-                                <div className="text-[9px] text-gray-400 mt-0.5">時間</div>
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-600 text-white text-[10px] font-bold">{overriddenExtensionLevel}</span>
+                                <div className="text-[9px] text-gray-400 mt-0.5">{formatMinutes(overriddenExtensionMinutes)}</div>
                               </div>
                             ) : (
                               <span className="text-gray-300 text-xs">—</span>
@@ -1181,7 +1187,7 @@ export function BillingChildMonthlyView({
                       )}
                       {hasExtensionItems && extensionItem && (
                         <td className="border border-gray-300 text-center text-xs font-bold text-green-700 bg-green-50/30">
-                          {attendedDays.reduce((sum, d) => sum + d.extensionHours, 0)}h
+                          {days.filter((dateStr) => isItemChecked(extensionItem, dateStr, dayDataMap.get(dateStr)!)).length}
                         </td>
                       )}
                       <td className="border border-gray-300" />
@@ -1250,15 +1256,27 @@ export function BillingChildMonthlyView({
             </span>
             <span className="flex items-center gap-1">
               <BillingCircle value={0} small />
-              算定区分0 30分未満
+              算定時間数0 30分未満（算定対象外）
             </span>
             <span className="flex items-center gap-1">
               <BillingCircle value={1} small />
-              算定区分① 30分以上〜1時間30分以下
+              算定時間数1 30分以上〜1時間30分以下
             </span>
             <span className="flex items-center gap-1">
               <BillingCircle value={2} small />
-              算定区分② 1時間30分超〜3時間以下
+              算定時間数2 1時間30分超〜3時間以下
+            </span>
+            <span className="flex items-center gap-1">
+              <BillingCircle value={3} small />
+              算定時間数3 3時間超〜5時間以下
+            </span>
+            <span className="flex items-center gap-1">
+              <BillingCircle value={4} small />
+              算定時間数4 5時間超（休業日の6〜7時間利用など）
+            </span>
+            <span className="text-gray-400">
+              ※ 延長加算欄の番号は延長時間の区分です（1: 30分以上1時間未満／2: 1時間以上2時間未満／3: 2時間以上）。
+              延長時間は平日3時間・学校休業日5時間を超えた分で判定します
             </span>
             <span className="text-gray-400">※ 月次グリッドのセルをクリックでチェックのオン/オフが切り替えられます</span>
             <span className="text-gray-400">※ 出欠記録がない日に「放デイ基本報酬」をチェックすると、その日は出席として登録され、日別表で時間・送迎・日中一時を入力できるようになります（欠席時対応加算のチェックなら欠席として登録）</span>

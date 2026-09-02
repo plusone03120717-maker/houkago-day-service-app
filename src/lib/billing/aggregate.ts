@@ -5,7 +5,6 @@
 import type { createClient } from '@/lib/supabase/server'
 import {
   computeBillingDay,
-  extensionThresholdMinutes,
   getItemQuantity,
   isItemChecked,
   isHolidayDate,
@@ -42,7 +41,7 @@ export type ServiceDayRecord = {
   transportDropoff: boolean
   /** 欠席時対応加算を算定する欠席日 */
   absent: boolean
-  /** 延長支援加算の区分（0=なし 1=1時間未満 2=1〜2時間 3=2時間以上） */
+  /** 延長支援加算の区分（0=なし 1=30分以上1時間未満 2=1時間以上2時間未満 3=2時間以上） */
   extensionLevel: 0 | 1 | 2 | 3
 }
 
@@ -90,6 +89,12 @@ type BasicRateRow = {
   billing_code: string | null
 }
 
+type ExtensionRateRow = {
+  extension_level: number
+  unit_count: number
+  billing_code: string | null
+}
+
 type CertRow = {
   id: string
   child_id: string
@@ -104,8 +109,15 @@ type CertRow = {
 
 const CATEGORY_LABEL: Record<number, string> = {
   0: '30分未満',
-  1: '区分1',
-  2: '区分2',
+  1: '算定1',
+  2: '算定2',
+  3: '算定3',
+  4: '算定4',
+}
+const EXTENSION_LABEL: Record<number, string> = {
+  1: '30分以上1時間未満',
+  2: '1時間以上2時間未満',
+  3: '2時間以上',
 }
 const FORM_LABEL: Record<number, string> = {
   1: '平日',
@@ -155,7 +167,7 @@ export async function aggregateUnitMonth(
   }
 
   // ── 単位数マスタ ──────────────────────────────────────────
-  const [{ data: itemsRaw }, { data: ratesRaw }] = await Promise.all([
+  const [{ data: itemsRaw }, { data: ratesRaw }, { data: extRatesRaw }] = await Promise.all([
     supabase
       .from('billing_service_items')
       .select('id, name, category, trigger_field, billing_code, unit_count')
@@ -166,9 +178,16 @@ export async function aggregateUnitMonth(
       .from('billing_basic_rates')
       .select('service_form_type, billing_category, unit_count, billing_code')
       .eq('unit_id', unitId),
+    supabase
+      .from('billing_extension_rates')
+      .select('extension_level, unit_count, billing_code')
+      .eq('unit_id', unitId),
   ])
   const serviceItems = (itemsRaw ?? []) as ServiceItemRow[]
   const basicRates = (ratesRaw ?? []) as BasicRateRow[]
+  const extensionRateMap = new Map(
+    ((extRatesRaw ?? []) as ExtensionRateRow[]).map((r) => [r.extension_level, r]),
+  )
   if (serviceItems.length === 0) {
     return empty('サービス項目が登録されていません（児童別の月次サービス実績で「標準項目を追加」を実行してください）')
   }
@@ -378,6 +397,24 @@ export async function aggregateUnitMonth(
           continue
         }
 
+        // 延長支援加算は延長時間の区分ごとに単位数・サービスコードが異なる
+        if (item.trigger_field === 'extension') {
+          if (day.extensionLevel === 0) continue
+          const extRate = extensionRateMap.get(day.extensionLevel)
+          const extUnits = extRate && extRate.unit_count > 0 ? extRate.unit_count : item.unit_count
+          if (extUnits <= 0) {
+            missingItemUnits.add(`${item.name}（${EXTENSION_LABEL[day.extensionLevel]}）`)
+            continue
+          }
+          addLine(
+            extRate?.billing_code ?? item.billing_code,
+            `${item.name}（${EXTENSION_LABEL[day.extensionLevel]}）`,
+            extUnits,
+            1,
+          )
+          continue
+        }
+
         const quantity = getItemQuantity(item, day)
         if (quantity <= 0) continue
         if (item.unit_count <= 0) {
@@ -390,11 +427,7 @@ export async function aggregateUnitMonth(
       // 実績記録票の明細行（記録すべきことが何もない日は作らない）
       if (checked.basic || checked.absent || checked.pickup || checked.dropoff) {
         // 延長支援加算の区分は基準時間の超過分から決める（仕様 2.1.3.6 明細情報 項番111）
-        const overMinutes = day.durationMinutes - extensionThresholdMinutes(day.serviceFormType)
-        let extensionLevel: 0 | 1 | 2 | 3 = 0
-        if (checked.extension) {
-          extensionLevel = overMinutes >= 120 ? 3 : overMinutes >= 60 ? 2 : 1
-        }
+        const extensionLevel = checked.extension ? day.extensionLevel : 0
         dayRecords.push({
           date,
           serviceFormType: day.serviceFormType,

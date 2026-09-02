@@ -3,7 +3,12 @@ import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft } from 'lucide-react'
-import { ServiceCodeForm, type BasicRateRow, type ServiceItemRow } from '@/components/settings/service-code-form'
+import {
+  ServiceCodeForm,
+  type BasicRateRow,
+  type ExtensionRateRow,
+  type ServiceItemRow,
+} from '@/components/settings/service-code-form'
 
 type Unit = { id: string; name: string }
 
@@ -28,6 +33,11 @@ export default async function ServiceCodesSettingsPage() {
     .from('billing_basic_rates')
     .select('unit_id, service_form_type, billing_category, unit_count, billing_code')
   const rates = (ratesRaw ?? []) as unknown as (BasicRateRow & { unit_id: string })[]
+
+  const { data: extRatesRaw } = await supabase
+    .from('billing_extension_rates')
+    .select('unit_id, extension_level, unit_count, billing_code')
+  const extensionRates = (extRatesRaw ?? []) as unknown as (ExtensionRateRow & { unit_id: string })[]
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -68,6 +78,7 @@ export default async function ServiceCodesSettingsPage() {
               unitId={unit.id}
               items={items.filter((i) => i.unit_id === unit.id)}
               rates={rates.filter((r) => r.unit_id === unit.id)}
+              extensionRates={extensionRates.filter((r) => r.unit_id === unit.id)}
             />
           </CardContent>
         </Card>

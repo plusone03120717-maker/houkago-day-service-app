@@ -51,6 +51,11 @@ export type SchoolHolidayLike = {
   end_date: string
 }
 
+/** 算定時間数の入力番号（0 は 30 分未満で算定対象外） */
+export type BillingCategory = 0 | 1 | 2 | 3 | 4
+/** 延長支援加算の入力番号（0 は加算なし） */
+export type ExtensionLevel = 0 | 1 | 2 | 3
+
 export type ComputedDay = {
   date: string
   isAttended: boolean
@@ -62,14 +67,17 @@ export type ComputedDay = {
   endTime: string | null
   durationMinutes: number
   hoursCalculated: number
-  /** 0=30分未満 1=30分以上90分以下 2=90分超 / null=時刻未入力 */
-  billingCategory: 0 | 1 | 2 | null
+  /** 算定時間数。0=30分未満（算定対象外） 1〜4=実績記録票の入力番号 / null=時刻未入力 */
+  billingCategory: BillingCategory | null
   transportPickup: boolean
   transportDropoff: boolean
   daytimeSupport: boolean
   daytimeTransportPickup: boolean
   daytimeTransportDropoff: boolean
-  extensionHours: number
+  /** 基準時間（平日3時間・学校休業日5時間）を超えた分数。欠席日は0 */
+  extensionMinutes: number
+  /** 延長支援加算の区分。0=なし 1=30分以上1時間未満 2=1時間以上2時間未満 3=2時間以上 */
+  extensionLevel: ExtensionLevel
   participatedActivities: Set<string>
 }
 
@@ -85,11 +93,35 @@ export function calcHours(startTime: string | null, endTime: string | null): num
   return Math.floor(dur / 30) * 0.5
 }
 
-export function getBillingCategory(minutes: number, hasValidTimes: boolean): 0 | 1 | 2 | null {
+/**
+ * 算定時間数（実績記録票の入力番号）。令和6年度改定の入力マニュアル準拠。
+ * 平日・学校休業日で区分は共通で、利用時間だけで決まる。
+ *   1: 30分以上〜1時間30分以下（放デイ411）
+ *   2: 1時間30分超〜3時間以下（放デイ412）
+ *   3: 3時間超〜5時間以下（放デイ412）
+ *   4: 5時間超（放デイ413）※休業日の6〜7時間利用など
+ *   0: 30分未満（算定対象外）
+ */
+export function getBillingCategory(minutes: number, hasValidTimes: boolean): BillingCategory | null {
   if (!hasValidTimes) return null
-  if (minutes < 30) return 0   // 30分未満
-  if (minutes <= 90) return 1  // 30分以上〜90分以下
-  return 2                     // 90分超
+  if (minutes < 30) return 0
+  if (minutes <= 90) return 1
+  if (minutes <= 180) return 2
+  if (minutes <= 300) return 3
+  return 4
+}
+
+/**
+ * 延長支援加算の区分。基準時間を超えた分数で決まる。
+ *   1: 30分以上〜1時間未満（延長支援加算111）
+ *   2: 1時間以上〜2時間未満（延長支援加算112）
+ *   3: 2時間以上（延長支援加算113）
+ */
+export function getExtensionLevel(overMinutes: number): ExtensionLevel {
+  if (overMinutes < 30) return 0
+  if (overMinutes < 60) return 1
+  if (overMinutes < 120) return 2
+  return 3
 }
 
 /** 土日・児童個別の学校休日・施設カレンダーの休日・国民の祝日のいずれかなら true */
@@ -107,7 +139,7 @@ export function isHolidayDate(
   return isJapaneseNationalHoliday(dateStr)
 }
 
-/** 延長加算の算定基準時間（分）。平日3時間・休日5時間を超えた分を1時間単位で数える */
+/** 延長支援加算の算定基準時間（分）。平日は3時間、学校休業日は5時間を超えた分が延長時間 */
 export function extensionThresholdMinutes(serviceFormType: 1 | 2): number {
   return serviceFormType === 1 ? 180 : 300
 }
@@ -137,9 +169,10 @@ export function computeBillingDay(params: {
 
   const rawMinutes = startTime && endTime ? Math.max(0, timeToMinutes(endTime) - timeToMinutes(startTime)) : 0
   const billingCategory = getBillingCategory(rawMinutes, startTime !== null && endTime !== null)
-  const extensionHours = isAttended
-    ? Math.max(0, Math.floor((rawMinutes - extensionThresholdMinutes(serviceFormType)) / 60))
+  const extensionMinutes = isAttended
+    ? Math.max(0, rawMinutes - extensionThresholdMinutes(serviceFormType))
     : 0
+  const extensionLevel = getExtensionLevel(extensionMinutes)
 
   return {
     date,
@@ -163,7 +196,8 @@ export function computeBillingDay(params: {
     daytimeTransportDropoff: att
       ? att.daytime_dropoff_arrival_time != null && att.daytime_dropoff_arrival_time > '00:00:00'
       : false,
-    extensionHours,
+    extensionMinutes,
+    extensionLevel,
     participatedActivities,
   }
 }
@@ -180,7 +214,7 @@ export function isAutoTriggered(item: ServiceItemLike, d: ComputedDay): boolean 
     case 'daytime_support': return d.daytimeSupport
     case 'daytime_pickup': return d.daytimeSupport && d.daytimeTransportPickup
     case 'daytime_dropoff': return d.daytimeSupport && d.daytimeTransportDropoff
-    case 'extension': return d.extensionHours > 0
+    case 'extension': return d.extensionLevel > 0
     case 'manual': return d.participatedActivities.has(item.name)
     default: return false
   }
@@ -196,15 +230,27 @@ export function isItemChecked(
   return isAutoTriggered(item, d)
 }
 
-/** その日その項目の算定回数。延長加算のみ時間数、それ以外は1回 */
+/**
+ * その日その項目の算定回数。
+ * 延長支援加算は「時間数×単位」ではなく区分ごとの単位数で1日1回算定するため、常に1回。
+ */
 export function getItemQuantity(item: ServiceItemLike, d: ComputedDay): number {
-  if (item.trigger_field === 'extension') return d.extensionHours
+  void item
+  void d
   return 1
 }
 
-/** 月次グリッドの〇の中に表示する値 */
+/** 月次グリッドの〇の中に表示する値（実績記録票に入力する番号） */
 export function getCircleValue(item: ServiceItemLike, d: ComputedDay): number {
   if (item.trigger_field === 'basic') return d.billingCategory ?? 1
-  if (item.trigger_field === 'extension') return d.extensionHours
+  if (item.trigger_field === 'extension') return d.extensionLevel
   return 1
+}
+
+/** 延長時間の表示用。「1時間30分」「45分」 */
+export function formatMinutes(mins: number): string {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  if (h === 0) return `${m}分`
+  return m === 0 ? `${h}時間` : `${h}時間${m}分`
 }
