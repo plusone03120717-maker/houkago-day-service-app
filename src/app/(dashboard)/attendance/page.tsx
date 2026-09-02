@@ -4,7 +4,11 @@ import { getTodayJST } from '@/lib/utils'
 import { loadAttendanceBoardData } from '@/lib/attendance-board-data'
 import { AttendanceBoard } from '@/components/attendance/attendance-board'
 import type { Unit, Reservation, Attendance, PrevAttendanceRow } from '@/components/attendance/attendance-board'
-import type { ScheduleDefaults } from '@/components/transport/transport-daytime-panel'
+import {
+  resolveScheduleDefaults,
+  type PlanRow as SchedulePlanRow,
+  type OverrideRow as ScheduleOverrideRow,
+} from '@/lib/schedule-defaults'
 
 /** 送迎・時間系の入力が一つでも入っている行か */
 function hasAnyTransportInput(r: PrevAttendanceRow): boolean {
@@ -92,29 +96,12 @@ export default async function AttendancePage({
     planRows.filter((p) => !cancelledPlanIds.has(p.id)).map((p) => p.child_id)
   )
 
-  const daySettingByPlanId = Object.fromEntries(
-    (data.daySettings as unknown as DaySettingRow[]).map((d) => [d.plan_id, d])
+  // 優先順位の判断は送迎管理と同じ実装を使う（@/lib/schedule-defaults）
+  const scheduleDefaultsByChildId = resolveScheduleDefaults(
+    planRows as unknown as SchedulePlanRow[],
+    data.daySettings as unknown as ScheduleOverrideRow[],
+    overrideRows as unknown as ScheduleOverrideRow[]
   )
-  const overrideByPlanId = Object.fromEntries(
-    overrideRows.filter((o) => !o.is_cancelled).map((o) => [o.plan_id, o])
-  )
-
-  const scheduleDefaultsByChildId: Record<string, ScheduleDefaults> = {}
-  for (const plan of planRows) {
-    if (cancelledPlanIds.has(plan.id) || scheduleDefaultsByChildId[plan.child_id]) continue
-    const ov = overrideByPlanId[plan.id]
-    const ds = daySettingByPlanId[plan.id]
-    scheduleDefaultsByChildId[plan.child_id] = {
-      transportType: ov?.transport_type ?? ds?.transport_type ?? plan.transport_type,
-      pickupTime: ov?.pickup_time ?? ds?.pickup_time ?? plan.pickup_time,
-      dropoffTime: ov?.dropoff_time ?? ds?.dropoff_time ?? plan.dropoff_time,
-      serviceStartTime: ov?.service_start_time ?? ds?.service_start_time ?? plan.service_start_time,
-      serviceEndTime: ov?.service_end_time ?? ds?.service_end_time ?? plan.service_end_time,
-      daytimeSupport: plan.daytime_support ?? false,
-      daytimeSupportStartTime: plan.daytime_support_start_time,
-      daytimeSupportEndTime: plan.daytime_support_end_time,
-    }
-  }
 
   // 予約フィルタリング:
   // - 有効な計画あり → 常に表示

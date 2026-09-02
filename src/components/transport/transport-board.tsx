@@ -17,7 +17,7 @@ import {
 import { formatDate } from '@/lib/utils'
 import {
   deleteAndRecreateTransportSchedules,
-  syncTransportToAttendance,
+  saveTransportRecord,
   clearTransportDirection,
 } from '@/app/actions/transport'
 
@@ -33,11 +33,12 @@ export type TransportRow = {
   direction: Direction
   name: string
   nameKana: string | null
-  /** 表示中の送迎時間 'HH:MM'（個別未設定なら便の出発時刻） */
+  /** 送迎時間 'HH:MM'。記録が無ければ利用スケジュールの予定値 */
   time: string | null
-  /** 児童個別に時間が設定されているか（false は便の出発時刻を暫定表示中） */
-  hasOwnTime: boolean
-  actualTime: string | null
+  /** その日の記録として確定済みか（false は利用スケジュールからの予定表示） */
+  isConfirmed: boolean
+  /** その日を欠席として記録済みか（編集不可にする） */
+  isAbsent: boolean
   location: string | null
   driverMemberId: string | null
   vehicleId: string | null
@@ -311,11 +312,19 @@ export function TransportManageBoard({
         </div>
       )}
 
-      <p className="text-xs text-gray-400">
-        並びは送迎時間の早い順です。同じ時間内の順番は
-        <GripVertical className="h-3 w-3 inline mx-0.5 -mt-0.5" />
-        をドラッグして入れ替えられます。
-      </p>
+      <div className="text-xs text-gray-400 space-y-1">
+        <p>
+          <span className="text-indigo-600 font-medium">青い時刻</span>
+          は利用スケジュールの予定を表示しているだけで、まだ記録として保存されていません。
+          触れて確定すると通常の色になります。
+        </p>
+        <p>
+          並びは送迎時間の早い順です。同じ時間内の順番は
+          <GripVertical className="h-3 w-3 inline mx-0.5 -mt-0.5" />
+          をドラッグして入れ替えられます。
+        </p>
+        <p>時刻・ドライバー・車種は日々の記録と同じデータです。どちらの画面で直しても両方に反映されます。</p>
+      </div>
     </div>
   )
 }
@@ -357,30 +366,40 @@ function TransportRowItem({
   const supabase = createClient()
   const [saving, setSaving] = useState(false)
   const [time, setTime] = useState(row.time ?? '')
+  // 欠席として記録済みの日は書き込みを受け付けないので、入力も閉じておく
+  const locked = saving || row.isAbsent
 
-  /** transport_details を更新し、必要なら日々の記録（daily_attendance）にも反映する */
-  const update = async (
-    patch: Record<string, unknown>,
-    sync?: { time?: string | null; driverMemberId?: string | null; vehicleId?: string | null }
-  ) => {
+  /** 乗降場所・並び順は送迎明細（transport_details）に保存する */
+  const updateDetail = async (patch: Record<string, unknown>) => {
     setSaving(true)
     await supabase.from('transport_details').update(patch).eq('id', row.id)
-    if (sync) {
-      await syncTransportToAttendance({
-        childId: row.childId,
-        unitId,
-        date,
-        direction: row.direction,
-        ...sync,
-      })
-    }
+    setSaving(false)
+    onSaved()
+  }
+
+  /** 時刻・ドライバー・車種はその日の記録（daily_attendance）に保存する */
+  const saveRecord = async (fields: {
+    time?: string | null
+    driverMemberId?: string | null
+    vehicleId?: string | null
+  }) => {
+    setSaving(true)
+    await saveTransportRecord({
+      childId: row.childId,
+      unitId,
+      date,
+      direction: row.direction,
+      ...fields,
+    })
     setSaving(false)
     onSaved()
   }
 
   const handleTimeBlur = () => {
-    if ((time || null) === (row.hasOwnTime ? row.time : null)) return
-    void update({ pickup_time: time || null }, { time: time || null })
+    const next = time || null
+    // 未確定（利用スケジュールの予定を表示中）なら、同じ値でも触れた時点で確定させる
+    if (row.isConfirmed ? next === row.time : next === null) return
+    void saveRecord({ time: next })
   }
 
   const handleDirectionChange = async (direction: Direction) => {
@@ -389,9 +408,9 @@ function TransportRowItem({
     const scheduleId = await ensureScheduleId(direction)
     if (scheduleId) {
       await supabase.from('transport_details').update({ schedule_id: scheduleId }).eq('id', row.id)
-      // 日々の記録側も、元の方向の欄を空にして新しい方向へ付け替える
+      // 記録側も、元の方向の欄を空にして新しい方向へ付け替える
       await clearTransportDirection(row.childId, unitId, date, row.direction)
-      await syncTransportToAttendance({
+      await saveTransportRecord({
         childId: row.childId,
         unitId,
         date,
@@ -445,7 +464,7 @@ function TransportRowItem({
         <select
           value={row.direction}
           onChange={(e) => void handleDirectionChange(e.target.value as Direction)}
-          disabled={saving}
+          disabled={locked}
           aria-label="区分"
           className={`text-xs font-semibold rounded px-1.5 py-1 border cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 ${
             isPickup
@@ -466,6 +485,11 @@ function TransportRowItem({
           <MapPin className="h-3.5 w-3.5 text-green-500 shrink-0" />
         )}
         <span className="font-medium text-gray-800 text-sm truncate">{row.name}</span>
+        {row.isAbsent && (
+          <span className="shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">
+            欠席
+          </span>
+        )}
       </div>
 
       {/* 送迎場所 */}
@@ -473,8 +497,8 @@ function TransportRowItem({
         <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">送迎場所</span>
         <select
           value={row.location ?? ''}
-          onChange={(e) => void update({ pickup_location: e.target.value || null })}
-          disabled={saving}
+          onChange={(e) => void updateDetail({ pickup_location: e.target.value || null })}
+          disabled={locked}
           className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
         >
           <option value="">場所未設定</option>
@@ -495,13 +519,14 @@ function TransportRowItem({
           value={time}
           onChange={(e) => setTime(e.target.value)}
           onBlur={handleTimeBlur}
-          disabled={saving}
+          disabled={locked}
+          title={row.isConfirmed ? undefined : '利用スケジュールの予定を表示中（未保存）'}
           className={`w-full md:w-auto text-xs border rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 ${
-            row.hasOwnTime ? 'border-gray-200 text-gray-800' : 'border-amber-200 text-amber-700'
+            row.isConfirmed ? 'border-gray-200 text-gray-800' : 'border-indigo-200 text-indigo-600'
           }`}
         />
-        {row.actualTime && (
-          <span className="text-[10px] text-teal-600 md:mt-0.5 whitespace-nowrap">実績 {row.actualTime}</span>
+        {!row.isConfirmed && row.time && (
+          <span className="text-[10px] text-indigo-500 md:mt-0.5 whitespace-nowrap">予定</span>
         )}
       </label>
 
@@ -510,10 +535,8 @@ function TransportRowItem({
         <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">ドライバー</span>
         <select
           value={row.driverMemberId ?? ''}
-          onChange={(e) =>
-            void update({ driver_member_id: e.target.value || null }, { driverMemberId: e.target.value || null })
-          }
-          disabled={saving}
+          onChange={(e) => void saveRecord({ driverMemberId: e.target.value || null })}
+          disabled={locked}
           className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
         >
           <option value="">未設定</option>
@@ -530,8 +553,8 @@ function TransportRowItem({
         <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">車種</span>
         <select
           value={row.vehicleId ?? ''}
-          onChange={(e) => void update({ vehicle_id: e.target.value || null }, { vehicleId: e.target.value || null })}
-          disabled={saving}
+          onChange={(e) => void saveRecord({ vehicleId: e.target.value || null })}
+          disabled={locked}
           className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
         >
           <option value="">未設定</option>

@@ -250,41 +250,6 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
     }
   }
 
-  const syncTransportSchedules = async (unitId: string, date: string) => {
-    const { data: schedules } = await supabase
-      .from('transport_schedules')
-      .select('id, direction')
-      .eq('unit_id', unitId)
-      .eq('date', date)
-
-    if (!schedules || schedules.length === 0) return
-
-    const scheduleIds = schedules.map((s) => s.id)
-    // この児童が属している transport_details を取得
-    const { data: childDetails } = await supabase
-      .from('transport_details')
-      .select('id, schedule_id')
-      .eq('child_id', childId)
-      .in('schedule_id', scheduleIds)
-
-    if (!childDetails || childDetails.length === 0) return
-
-    const scheduleMap = new Map(schedules.map((s) => [s.id as string, s.direction as string]))
-    for (const detail of childDetails) {
-      const direction = scheduleMap.get(detail.schedule_id as string)
-      // 児童個人の実績お迎え・お送り時刻を actual_pickup_time に保存
-      // (transport_schedules.departure_time は変更しない：他の児童のスケジュールに影響するため)
-      const actualTime =
-        direction === 'pickup' ? (pickupDeparture || null)
-        : direction === 'dropoff' ? (dropoffDeparture || null)
-        : null
-      await supabase
-        .from('transport_details')
-        .update({ actual_pickup_time: actualTime })
-        .eq('id', detail.id as string)
-    }
-  }
-
   const handleSave = async () => {
     if (!selectedDate) return
     setSaving(true)
@@ -309,8 +274,6 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
       daytime_dropoff_vehicle_id: daytimeSupport ? (daytimeDropoffVehicleId || null) : null,
     }
 
-    let unitId: string
-
     setSaveError(null)
 
     if (selected) {
@@ -323,7 +286,6 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
         setSaving(false)
         return
       }
-      unitId = selected.unit_id
     } else {
       const resolvedUnitId = newUnitId || (units.length === 1 ? units[0].id : '')
       if (!resolvedUnitId) {
@@ -342,11 +304,6 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
         setSaving(false)
         return
       }
-      unitId = resolvedUnitId
-    }
-
-    if (unitId) {
-      await syncTransportSchedules(unitId, selectedDate)
     }
 
     setSaving(false)

@@ -278,8 +278,7 @@ export interface Database {
           child_id: string
           attendance_id: string | null
           pickup_location: string | null
-          pickup_time: string | null
-          actual_pickup_time: string | null
+          sort_order: number
           status: TransportStatus
           parent_notified: boolean
           notification_sent_at: string | null

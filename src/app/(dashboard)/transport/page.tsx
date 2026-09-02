@@ -5,35 +5,36 @@ import { getTodayJST } from '@/lib/utils'
 import { TransportManageBoard } from '@/components/transport/transport-board'
 import type { TransportRow, UnitChild } from '@/components/transport/transport-board'
 import { autoCreateTransportSchedules } from '@/app/actions/transport'
+import { fetchScheduleDefaults } from '@/lib/schedule-defaults'
 
 type Unit = { id: string; name: string; service_type: string }
 type Vehicle = { id: string; name: string; capacity: number }
 type Driver = { id: string; name: string }
 
+// 送迎明細が持つのは「誰を・どこで・どの順に」だけ。
+// 時刻・ドライバー・車種はその日の記録（daily_attendance）が唯一の正。
 const SCHEDULE_SELECT = `
-  id, direction, departure_time,
+  id, direction,
   transport_details (
-    id, child_id, pickup_location, pickup_time, actual_pickup_time, status, sort_order,
-    driver_member_id, vehicle_id,
+    id, child_id, pickup_location, sort_order,
     children (id, name, name_kana, address, school_id, schools(id, name))
   )
 `
 
-/** ページ内で使う生スケジュール（クライアントには行に平坦化して渡す） */
+const ATTENDANCE_SELECT = `
+  child_id, status,
+  pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id,
+  dropoff_departure_time, dropoff_arrival_time, dropoff_driver_member_id, dropoff_vehicle_id
+`
+
 type RawSchedule = {
   id: string
   direction: string
-  departure_time: string | null
   transport_details: {
     id: string
     child_id: string
     pickup_location: string | null
-    pickup_time: string | null
-    actual_pickup_time: string | null
-    status: string
     sort_order: number
-    driver_member_id: string | null
-    vehicle_id: string | null
     children: {
       id: string
       name: string
@@ -43,6 +44,19 @@ type RawSchedule = {
       schools: { id: string; name: string } | null
     } | null
   }[]
+}
+
+type AttendanceRow = {
+  child_id: string
+  status: string
+  pickup_departure_time: string | null
+  pickup_arrival_time: string | null
+  pickup_driver_member_id: string | null
+  pickup_vehicle_id: string | null
+  dropoff_departure_time: string | null
+  dropoff_arrival_time: string | null
+  dropoff_driver_member_id: string | null
+  dropoff_vehicle_id: string | null
 }
 
 export default async function TransportPage({
@@ -67,17 +81,18 @@ export default async function TransportPage({
 
   const selectedUnitId = params.unit ?? units[0]?.id ?? ''
 
-  // 利用計画から送迎スケジュールを生成・補完（未追加の児童を自動追加）
+  // 利用計画から送迎対象の児童を補完（未追加の児童を自動追加）
   if (selectedUnitId) {
     await autoCreateTransportSchedules(selectedUnitId, today)
   }
 
-  // スケジュール生成後に一括取得
   const [
     { data: schedulesRaw },
     { data: vehiclesRaw },
     { data: driversRaw },
+    { data: attendanceRaw },
     { data: allChildrenRaw },
+    scheduleDefaults,
   ] = await Promise.all([
     selectedUnitId
       ? supabase
@@ -90,16 +105,29 @@ export default async function TransportPage({
     driversPromise,
     selectedUnitId
       ? supabase
+          .from('daily_attendance')
+          .select(ATTENDANCE_SELECT)
+          .eq('unit_id', selectedUnitId)
+          .eq('date', today)
+      : ({ data: [] } as { data: unknown[] }),
+    selectedUnitId
+      ? supabase
           .from('usage_plans')
           .select('child_id, children(id, name, name_kana, address, school_id, schools(id, name))')
           .eq('unit_id', selectedUnitId)
           .eq('is_active', true)
       : ({ data: [] } as { data: unknown[] }),
+    fetchScheduleDefaults(supabase, selectedUnitId, today),
   ])
 
   const schedules = (schedulesRaw ?? []) as unknown as RawSchedule[]
   const vehicles = (vehiclesRaw ?? []) as Vehicle[]
   const drivers = (driversRaw ?? []) as Driver[]
+
+  const attendanceByChild = new Map<string, AttendanceRow>()
+  for (const a of (attendanceRaw ?? []) as unknown as AttendanceRow[]) {
+    attendanceByChild.set(a.child_id, a)
+  }
 
   // 便ごとの入れ子をやめ、児童1人1行のフラットな一覧に変換する。
   // 便は表からは消えたが DB 上は方向ごとの入れ物として残るため、
@@ -115,20 +143,27 @@ export default async function TransportPage({
     if (!scheduleIdByDirection[direction]) scheduleIdByDirection[direction] = sched.id
 
     for (const d of sched.transport_details ?? []) {
-      // 児童個別の時刻が未設定なら便の出発時刻を暫定値として表示する
-      const time = (d.pickup_time ?? sched.departure_time)?.slice(0, 5) ?? null
+      const att = attendanceByChild.get(d.child_id)
+      const plan = scheduleDefaults[d.child_id]
+
+      // お迎えは「子どもと合流する時刻」＝到着、お送りは「施設を出る時刻」＝出発。
+      // 記録が無ければ利用スケジュールの予定値を未確定として表示する。
+      const recorded = direction === 'pickup' ? att?.pickup_arrival_time : att?.dropoff_departure_time
+      const planned = direction === 'pickup' ? plan?.pickupTime : plan?.dropoffTime
+
       rows.push({
         id: d.id,
         childId: d.child_id,
         direction,
         name: d.children?.name ?? '不明',
         nameKana: d.children?.name_kana ?? null,
-        time,
-        hasOwnTime: !!d.pickup_time,
-        actualTime: d.actual_pickup_time?.slice(0, 5) ?? null,
+        time: (recorded ?? planned)?.slice(0, 5) ?? null,
+        isConfirmed: !!recorded,
+        isAbsent: att?.status === 'absent',
         location: d.pickup_location,
-        driverMemberId: d.driver_member_id,
-        vehicleId: d.vehicle_id,
+        driverMemberId:
+          (direction === 'pickup' ? att?.pickup_driver_member_id : att?.dropoff_driver_member_id) ?? null,
+        vehicleId: (direction === 'pickup' ? att?.pickup_vehicle_id : att?.dropoff_vehicle_id) ?? null,
         sortOrder: d.sort_order,
         schoolName: d.children?.schools?.name ?? null,
         homeAddress: d.children?.address ?? null,

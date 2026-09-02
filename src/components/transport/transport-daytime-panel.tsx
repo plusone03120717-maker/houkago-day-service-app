@@ -33,17 +33,9 @@ export type TransportRow = {
   daytime_dropoff_vehicle_id: string | null
 }
 
-/** 利用スケジュール（usage_plans）から解決した当日の初期値 */
-export type ScheduleDefaults = {
-  transportType: string
-  pickupTime: string | null
-  dropoffTime: string | null
-  serviceStartTime: string | null
-  serviceEndTime: string | null
-  daytimeSupport: boolean
-  daytimeSupportStartTime: string | null
-  daytimeSupportEndTime: string | null
-}
+/** 利用スケジュール（usage_plans）から解決した当日の初期値。定義は共通ライブラリ側にある */
+export type { ScheduleDefaults } from '@/lib/schedule-defaults'
+import type { ScheduleDefaults } from '@/lib/schedule-defaults'
 
 export type TransportFields = {
   basicService: boolean

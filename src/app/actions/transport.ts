@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { buildRouteGroups, nearestNeighborSort, type RouteChildData } from '@/lib/transport-route'
+import { fetchScheduleDefaults, scheduleDefaultsToAttendanceFields } from '@/lib/schedule-defaults'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -129,10 +130,6 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   const childrenMap = new Map<string, ChildRow>()
   const pickupTimeMap = new Map<string, string | null>()
   const dropoffTimeMap = new Map<string, string | null>()
-  // 便のグループ化には時単位スロット（pickupTimeMap）を使うが、
-  // transport_details.pickup_time には丸めていない実際の時刻を保存する
-  const rawPickupTimeMap = new Map<string, string | null>()
-  const rawDropoffTimeMap = new Map<string, string | null>()
   const transportTypeMap = new Map<string, string>()
   const pickupLocationTypeMap = new Map<string, string>()
 
@@ -145,8 +142,6 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       childrenMap.set(p.child_id, p.children as unknown as ChildRow)
       pickupTimeMap.set(p.child_id, toHourSlot((override?.pickup_time ?? p.pickup_time) as string | null))
       dropoffTimeMap.set(p.child_id, toHourSlot((override?.dropoff_time ?? p.dropoff_time) as string | null))
-      rawPickupTimeMap.set(p.child_id, (override?.pickup_time ?? p.pickup_time) as string | null)
-      rawDropoffTimeMap.set(p.child_id, (override?.dropoff_time ?? p.dropoff_time) as string | null)
       transportTypeMap.set(p.child_id, (override?.transport_type ?? p.transport_type ?? 'both') as string)
       pickupLocationTypeMap.set(p.child_id, (override?.pickup_location_type ?? p.pickup_location_type ?? 'home') as string)
     }
@@ -160,8 +155,6 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       childrenMap.set(r.child_id, r.children as unknown as ChildRow)
       pickupTimeMap.set(r.child_id, toHourSlot(rPickupTime))
       dropoffTimeMap.set(r.child_id, toHourSlot(rDropoffTime))
-      rawPickupTimeMap.set(r.child_id, rPickupTime)
-      rawDropoffTimeMap.set(r.child_id, rDropoffTime)
       transportTypeMap.set(r.child_id, (r.transport_type ?? 'both') as string)
       pickupLocationTypeMap.set(r.child_id, (r.pickup_location_type ?? 'home') as string)
     } else {
@@ -176,11 +169,9 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       }
       if (pickupTimeMap.get(r.child_id) === null && rPickupTime) {
         pickupTimeMap.set(r.child_id, toHourSlot(rPickupTime))
-        rawPickupTimeMap.set(r.child_id, rPickupTime)
       }
       if (dropoffTimeMap.get(r.child_id) === null && rDropoffTime) {
         dropoffTimeMap.set(r.child_id, toHourSlot(rDropoffTime))
-        rawDropoffTimeMap.set(r.child_id, rDropoffTime)
       }
     }
   }
@@ -267,11 +258,9 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     for (const id of nullTimeChildIds) {
       if (pickupTimeMap.get(id) === null && broaderPickup.has(id)) {
         pickupTimeMap.set(id, toHourSlot(broaderPickup.get(id)!))
-        rawPickupTimeMap.set(id, broaderPickup.get(id)!)
       }
       if (dropoffTimeMap.get(id) === null && broaderDropoff.has(id)) {
         dropoffTimeMap.set(id, toHourSlot(broaderDropoff.get(id)!))
-        rawDropoffTimeMap.set(id, broaderDropoff.get(id)!)
       }
     }
   }
@@ -385,13 +374,12 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       if (missing.length === 0) continue
 
       const nextOrder = sched.transport_details.length
-      const rawTimeMap = direction === 'pickup' ? rawPickupTimeMap : rawDropoffTimeMap
+      // 時刻・ドライバー・車種は daily_attendance が正なのでここでは持たせない
       await supabase.from('transport_details').insert(
         missing.map((c, idx) => ({
           schedule_id: sched.id,
           child_id: c.child_id,
           pickup_location: getPickupLocation(c, direction),
-          pickup_time: rawTimeMap.get(c.child_id) ?? slot,
           status: 'scheduled',
           sort_order: nextOrder + idx,
         }))
@@ -402,11 +390,12 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
 }
 
 // =====================================================
-// 送迎管理 → 日々の記録（daily_attendance）への一方向同期
+// 送迎管理からその日の記録（daily_attendance）を書き込む
 //
-// 送迎管理で組んだ配車を、スタッフスケジュール・LINE・国保連請求が読む
-// daily_attendance 側にも反映する。日々の記録側での編集は送迎管理には
-// 戻さない（同期は送迎管理→日々の記録の一方向のみ）。
+// 時刻・ドライバー・車種は daily_attendance が唯一の正。
+// 送迎管理・日々の記録・出席カレンダーはいずれもこの同じ行を編集するため、
+// 画面間の同期は存在しない（＝食い違いようがない）。
+// 送迎明細（transport_details）が持つのは乗降場所と並び順だけ。
 // =====================================================
 
 /** 'HH:MM' を分単位でずらす。日をまたぐ場合は null */
@@ -462,68 +451,19 @@ function isBlankAttendance(a: AttendanceRow | null): boolean {
   )
 }
 
-type PlanTimeKey = 'pickup_time' | 'dropoff_time' | 'service_start_time' | 'service_end_time'
-
-/** その日の利用スケジュール（特定日上書き > 曜日別設定 > プラン）から利用時間・日中一時を解決 */
+/** その日の利用スケジュールから、確定させる利用時間・日中一時を組み立てる */
 async function resolveScheduleDefaults(
   supabase: SupabaseServerClient,
   childId: string,
   unitId: string,
   date: string
 ): Promise<Record<string, unknown>> {
-  const dow = new Date(date).getDay()
-  const { data: plans } = await supabase
-    .from('usage_plans')
-    .select('id, pickup_time, dropoff_time, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time')
-    .eq('child_id', childId)
-    .eq('unit_id', unitId)
-    .eq('is_active', true)
-    .lte('start_date', date)
-    .or(`end_date.is.null,end_date.gte.${date}`)
-    .contains('day_of_week', [dow])
-    .limit(1)
-
-  const plan = plans?.[0]
-  if (!plan) return {}
-
-  const [{ data: daySetting }, { data: override }] = await Promise.all([
-    supabase
-      .from('usage_plan_day_settings')
-      .select('pickup_time, dropoff_time, service_start_time, service_end_time')
-      .eq('plan_id', plan.id)
-      .eq('day_of_week', dow)
-      .maybeSingle(),
-    supabase
-      .from('usage_plan_date_overrides')
-      .select('pickup_time, dropoff_time, service_start_time, service_end_time, is_cancelled')
-      .eq('plan_id', plan.id)
-      .eq('date', date)
-      .maybeSingle(),
-  ])
-
-  const ov = (override?.is_cancelled ? null : override) as Record<string, unknown> | null
-  const ds = daySetting as Record<string, unknown> | null
-  const pl = plan as unknown as Record<string, unknown>
-  const pick = (key: PlanTimeKey) =>
-    (ov?.[key] ?? ds?.[key] ?? pl[key] ?? null) as string | null
-
-  // 利用開始が未設定ならお迎え時刻を充てる（送迎・日中一時パネルと同じ規則）
-  const start = pick('service_start_time') ?? pick('pickup_time')
-  const end = pick('service_end_time')
-  const daytime = (pl.daytime_support as boolean | null) ?? false
-
-  return {
-    service_start_time: start,
-    check_in_time: start,
-    service_end_time: end,
-    check_out_time: end,
-    daytime_support: daytime,
-    daytime_support_start_time: daytime ? pl.daytime_support_start_time : null,
-    daytime_support_end_time: daytime ? pl.daytime_support_end_time : null,
-  }
+  const defaults = await fetchScheduleDefaults(supabase, unitId, date, childId)
+  const own = defaults[childId]
+  return own ? scheduleDefaultsToAttendanceFields(own) : {}
 }
 
-type SyncInput = {
+type TransportRecordInput = {
   childId: string
   unitId: string
   date: string
@@ -535,11 +475,11 @@ type SyncInput = {
 }
 
 /**
- * 送迎管理での編集内容を daily_attendance に反映する。
+ * 送迎管理で編集した1行分を、その日の記録に保存する。
  * お迎えの時刻は「到着時刻」、お送りの時刻は「施設の出発時刻」に対応させ、
  * 対になる時刻（お迎えの出発／お送りの到着）は空のときだけ ±10 分で補完する。
  */
-export async function syncTransportToAttendance(input: SyncInput) {
+export async function saveTransportRecord(input: TransportRecordInput) {
   const { childId, unitId, date, direction, time, driverMemberId, vehicleId } = input
   const supabase = await createClient()
 
