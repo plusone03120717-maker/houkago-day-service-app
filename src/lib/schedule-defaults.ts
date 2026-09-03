@@ -25,6 +25,8 @@ export type ScheduleDefaults = {
 export type PlanRow = {
   id: string
   child_id: string
+  /** 重複した計画から1本を選ぶのに使う。取得していない画面もあるため任意 */
+  start_date?: string | null
   transport_type: string | null
   pickup_time: string | null
   dropoff_time: string | null
@@ -46,11 +48,44 @@ export type OverrideRow = {
 }
 
 const PLAN_SELECT =
-  'id, child_id, transport_type, pickup_time, dropoff_time, service_start_time, service_end_time, ' +
+  'id, child_id, start_date, transport_type, pickup_time, dropoff_time, service_start_time, service_end_time, ' +
   'daytime_support, daytime_support_start_time, daytime_support_end_time'
 
 const OVERRIDE_SELECT =
   'plan_id, transport_type, pickup_time, dropoff_time, service_start_time, service_end_time'
+
+/**
+ * 同じ児童に該当する利用計画が複数あるときの優先順位。
+ *
+ * 本来1人1本のはずだが、古い計画に終了日を入れずに新しい計画を足すと
+ * 期間・曜日が重なった計画が2本並ぶ。そのままだと出席管理に同じ児童が
+ * 2行出たり、どちらの時刻が採用されるかが取得順まかせになるため、
+ * 「開始日が新しい方＝あとから決めた取り決め」を採用する。
+ * 開始日が同じときは id 順にして、画面をまたいでも結果がぶれないようにする。
+ *
+ * 重複そのものはデータの誤りなので、入力チェックの overlapping_plans が
+ * 別途知らせる（ここは表示を壊さないための受け止めであって、解決ではない）。
+ */
+export function comparePlanPriority(
+  a: { id: string; start_date?: string | null },
+  b: { id: string; start_date?: string | null }
+): number {
+  const as = a.start_date ?? ''
+  const bs = b.start_date ?? ''
+  if (as !== bs) return as < bs ? 1 : -1
+  return a.id.localeCompare(b.id)
+}
+
+/** 児童ごとに計画を1本へ絞る（同一ユニット・同一日で絞り込み済みの配列を渡すこと） */
+export function pickPrimaryPlanPerChild<T extends { id: string; child_id: string; start_date?: string | null }>(
+  plans: T[]
+): T[] {
+  const byChild = new Map<string, T>()
+  for (const p of [...plans].sort(comparePlanPriority)) {
+    if (!byChild.has(p.child_id)) byChild.set(p.child_id, p)
+  }
+  return [...byChild.values()]
+}
 
 /**
  * そのユニット・その日に有効な利用計画から、児童ごとの予定値を解決する。
@@ -116,9 +151,12 @@ export function resolveScheduleDefaults(
   const daySettingByPlan = new Map(daySettings.map((d) => [d.plan_id, d]))
   const overrideByPlan = new Map(overrides.filter((o) => !o.is_cancelled).map((o) => [o.plan_id, o]))
 
+  // キャンセル済みを外してから1本に絞る。順序を逆にすると、優先された計画が
+  // その日だけキャンセルされていた児童の予定値がまるごと消えてしまう。
+  const livePlans = pickPrimaryPlanPerChild(plans.filter((p) => !cancelledPlanIds.has(p.id)))
+
   const result: Record<string, ScheduleDefaults> = {}
-  for (const plan of plans) {
-    if (cancelledPlanIds.has(plan.id) || result[plan.child_id]) continue
+  for (const plan of livePlans) {
     const ov = overrideByPlan.get(plan.id)
     const ds = daySettingByPlan.get(plan.id)
     result[plan.child_id] = {

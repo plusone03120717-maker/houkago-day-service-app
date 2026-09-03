@@ -2,7 +2,11 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { buildRouteGroups, nearestNeighborSort, type RouteChildData } from '@/lib/transport-route'
-import { fetchScheduleDefaults, scheduleDefaultsToAttendanceFields } from '@/lib/schedule-defaults'
+import {
+  fetchScheduleDefaults,
+  pickPrimaryPlanPerChild,
+  scheduleDefaultsToAttendanceFields,
+} from '@/lib/schedule-defaults'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -50,7 +54,7 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     // 利用計画から今日の対象児童を取得（送迎設定・時間も含む）
     supabase
       .from('usage_plans')
-      .select('id, child_id, pickup_time, dropoff_time, transport_type, pickup_location_type, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
+      .select('id, child_id, start_date, pickup_time, dropoff_time, transport_type, pickup_location_type, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
       .eq('unit_id', unitId)
       .eq('is_active', true)
       .lte('start_date', date)
@@ -133,7 +137,14 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   const transportTypeMap = new Map<string, string>()
   const pickupLocationTypeMap = new Map<string, string>()
 
-  for (const p of plansRaw ?? []) {
+  // 同じ児童に期間・曜日の重なる計画が2本あるとき、どちらの送迎設定を採るかが
+  // 取得順まかせだと「送迎あり／なし」が日によって入れ替わる。
+  // 出席管理・日々の記録と同じ規則（開始日が新しい方）で1本に絞る。
+  const primaryPlans = pickPrimaryPlanPerChild(
+    (plansRaw ?? []) as unknown as { id: string; child_id: string; start_date: string }[]
+  ) as unknown as NonNullable<typeof plansRaw>
+
+  for (const p of primaryPlans) {
     if (p.child_id && !childrenMap.has(p.child_id)) {
       // 優先順位: 特定日上書き > 曜日別設定 > プランのデフォルト
       const dateOverride = dateOverridesMap.get(p.id as string)

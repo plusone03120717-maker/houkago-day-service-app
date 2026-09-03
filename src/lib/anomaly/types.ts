@@ -26,6 +26,8 @@ export type AttendanceRow = {
 export type PlanRow = {
   id: string
   child_id: string
+  /** 計画の重複判定はユニットごとに行う（別ユニットの計画は重なっていてよい） */
+  unit_id: string | null
   day_of_week: number[]
   start_date: string
   end_date: string | null

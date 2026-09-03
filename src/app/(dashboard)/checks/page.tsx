@@ -15,6 +15,7 @@ type FindingRow = {
   severity: 'high' | 'medium' | 'low'
   child_id: string | null
   target_date: string | null
+  table_name: string | null
   message: string
   detail: Record<string, unknown>
   status: 'open' | 'resolved' | 'dismissed'
@@ -57,7 +58,7 @@ export default async function ChecksPage() {
   const [{ data: findingsRaw }, { data: runsRaw }] = await Promise.all([
     supabase
       .from('anomaly_findings')
-      .select('id, rule, severity, child_id, target_date, message, detail, status, detected_at, children(name)')
+      .select('id, rule, severity, child_id, target_date, table_name, message, detail, status, detected_at, children(name)')
       .order('target_date', { ascending: true })
       .limit(500),
     supabase
@@ -192,6 +193,15 @@ export default async function ChecksPage() {
                           className="text-indigo-600 hover:underline"
                         >
                           出席管理で開く
+                        </Link>
+                      )}
+                      {/* 利用スケジュールの指摘は、直す場所がその児童の設定画面にある */}
+                      {f.table_name === 'usage_plans' && f.child_id && (
+                        <Link
+                          href={`/children/${f.child_id}/schedule`}
+                          className="text-indigo-600 hover:underline"
+                        >
+                          利用スケジュールを開く
                         </Link>
                       )}
                     </div>

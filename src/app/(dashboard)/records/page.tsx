@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getTodayJST } from '@/lib/utils'
 import { RecordsListBoard } from '@/components/records/records-list-board'
+import { comparePlanPriority } from '@/lib/schedule-defaults'
 
 type AttendedChild = {
   id: string
@@ -238,10 +239,12 @@ export default async function RecordsPage({
   // ── スケジュール初期値: 特定日上書き > 曜日別設定 > プランのデフォルト ──
   const dow = new Date(targetDate).getDay()
   const allPlans = (plansRaw ?? []) as unknown as UsagePlanRow[]
-  // 対象日の曜日を含むプラン（start=endの一回限りプランは日付フィルタ済みなので常に対象）
-  const plansForDate = allPlans.filter(
-    (p) => (p.day_of_week ?? []).includes(dow) || (!!p.end_date && p.start_date === p.end_date)
-  )
+  // 対象日の曜日を含むプラン（start=endの一回限りプランは日付フィルタ済みなので常に対象）。
+  // 期間・曜日の重なる計画が2本ある児童でも、出席管理・送迎管理と同じ計画が
+  // 選ばれるように並べておく（下の find が先頭から拾うため）。
+  const plansForDate = allPlans
+    .filter((p) => (p.day_of_week ?? []).includes(dow) || (!!p.end_date && p.start_date === p.end_date))
+    .sort(comparePlanPriority)
   const planIds = plansForDate.map((p) => p.id)
 
   const [{ data: daySettingsRaw }, { data: overridesRaw }] = planIds.length > 0

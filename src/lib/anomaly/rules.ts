@@ -406,6 +406,74 @@ const rapidBulkEntry: Rule = {
   },
 }
 
+const overlappingPlans: Rule = {
+  key: 'overlapping_plans',
+  label: '利用スケジュールが重複している',
+  description:
+    '同じ児童・同じユニットに、期間も曜日も重なる利用スケジュールが2本以上あります。古い方に終了日を入れずに新しい予定を足したときに起きます。出席管理に同じ児童が2行出たり、送迎の時間・送迎区分がどちらの計画のものか定まらなくなります。',
+  enabled: true,
+  run: (ctx) => {
+    // ユニットごとに見る。別ユニットを掛け持ちしている児童は重複ではない。
+    const byChildUnit = new Map<string, typeof ctx.plans>()
+    for (const p of ctx.plans) {
+      if (!p.is_active) continue
+      const key = `${p.child_id}|${p.unit_id ?? '-'}`
+      const list = byChildUnit.get(key)
+      if (list) list.push(p)
+      else byChildUnit.set(key, [p])
+    }
+
+    const out: Finding[] = []
+    for (const plans of byChildUnit.values()) {
+      if (plans.length < 2) continue
+
+      // 期間と曜日の両方が重なる組み合わせだけが実害のある重複。
+      // 「4〜5月の旧計画 ＋ 6月からの新計画」のような正しい引き継ぎは除かれる。
+      for (let i = 0; i < plans.length; i++) {
+        for (let j = i + 1; j < plans.length; j++) {
+          const a = plans[i]
+          const b = plans[j]
+          const days = (a.day_of_week ?? []).filter((d) => (b.day_of_week ?? []).includes(d))
+          if (days.length === 0) continue
+
+          const from = a.start_date > b.start_date ? a.start_date : b.start_date
+          const ends = [a.end_date, b.end_date].filter((e): e is string => !!e)
+          const to = ends.length === 2 ? (ends[0] < ends[1] ? ends[0] : ends[1]) : (ends[0] ?? null)
+          if (to !== null && to < from) continue
+          // すでに終わった重複は知らせない。過ぎた日の二重表示は直せないし、
+          // 夏休みなどの臨時計画を重ねた形が過去分に何件も残っているため、
+          // そのまま出すと本当に直すべき指摘が埋もれる。
+          if (to !== null && to < ctx.today) continue
+          if (from > ctx.to) continue
+
+          // 実際に採用される方（開始日が新しい方）を先に挙げる
+          const [primary, ignored] = a.start_date >= b.start_date ? [a, b] : [b, a]
+          const weekdays = days.sort().map((d) => WEEKDAYS[d]).join('・')
+          out.push({
+            rule: 'overlapping_plans',
+            severity: 'high',
+            childId: a.child_id,
+            targetDate: from,
+            tableName: 'usage_plans',
+            recordId: ignored.id,
+            message:
+              `${weekdays}曜の利用スケジュールが2本重なっています` +
+              `（${from} 〜${to ? ` ${to}` : ''}）。使われていない方に終了日を入れてください`,
+            detail: {
+              weekdays: days.map((d) => WEEKDAYS[d]),
+              from,
+              to,
+              使われる計画: { id: primary.id, start_date: primary.start_date, end_date: primary.end_date },
+              使われない計画: { id: ignored.id, start_date: ignored.start_date, end_date: ignored.end_date },
+            },
+          })
+        }
+      }
+    }
+    return out
+  },
+}
+
 /**
  * ルール一覧。追加するときはここに足すだけでよい。
  * 画面（/checks）はこの配列から説明とオン・オフ状況を表示する。
@@ -419,6 +487,7 @@ export const RULES: Rule[] = [
   lockedMonthChanged,
   pastMonthEdit,
   rapidBulkEntry,
+  overlappingPlans,
 ]
 
 export const RULE_LABELS: Record<string, string> = Object.fromEntries(

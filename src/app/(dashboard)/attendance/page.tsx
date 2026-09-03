@@ -5,6 +5,7 @@ import { loadAttendanceBoardData } from '@/lib/attendance-board-data'
 import { AttendanceBoard } from '@/components/attendance/attendance-board'
 import type { Unit, Reservation, Attendance, PrevAttendanceRow } from '@/components/attendance/attendance-board'
 import {
+  pickPrimaryPlanPerChild,
   resolveScheduleDefaults,
   type PlanRow as SchedulePlanRow,
   type OverrideRow as ScheduleOverrideRow,
@@ -114,10 +115,13 @@ export default async function AttendancePage({
     return r.requested_by != null
   }) as unknown as Reservation[]
 
-  // 予約に含まれていない利用計画の児童をマージ（キャンセル済みは除外）
+  // 予約に含まれていない利用計画の児童をマージ（キャンセル済みは除外）。
+  // 同じ児童に期間・曜日の重なる計画が2本あっても行は1つにする。
   const reservedChildIds = new Set(reservations.map((r) => r.child_id))
-  const planReservations: Reservation[] = planRows
-    .filter((p) => !reservedChildIds.has(p.child_id) && !cancelledPlanIds.has(p.id))
+  const planReservations: Reservation[] = pickPrimaryPlanPerChild(
+    planRows.filter((p) => !cancelledPlanIds.has(p.id))
+  )
+    .filter((p) => !reservedChildIds.has(p.child_id))
     .map((p) => ({
       id: p.id,
       child_id: p.child_id,
@@ -145,7 +149,15 @@ export default async function AttendancePage({
       status: 'scheduled',
       children: child,
     }))
-  const finalReservations: Reservation[] = [...allReservations, ...extraReservations]
+  // 1児童1行にする。どのカードも同じ出席記録（daily_attendance）を編集するため、
+  // 同じ児童が2行あっても意味が無いばかりか、別々に保存できてしまい混乱の元になる。
+  // 計画の重複はここまでで潰してあるが、予約が二重登録されている場合もここで受け止める。
+  const seenChildIds = new Set<string>()
+  const finalReservations: Reservation[] = [...allReservations, ...extraReservations].filter((r) => {
+    if (seenChildIds.has(r.child_id)) return false
+    seenChildIds.add(r.child_id)
+    return true
+  })
 
   // ── 前回コピー用: 児童ごとに、送迎・時間の入力がある直近の出席行を1件だけ採用 ──
   // RPC 経路では DB 側の DISTINCT ON で既に1児童1行に絞られている。

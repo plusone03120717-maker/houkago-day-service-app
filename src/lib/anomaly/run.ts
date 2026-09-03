@@ -81,7 +81,7 @@ export async function runAnomalyCheck(
           .lte('date', to),
         supabase
           .from('usage_plans')
-          .select('id, child_id, day_of_week, start_date, end_date, is_active'),
+          .select('id, child_id, unit_id, day_of_week, start_date, end_date, is_active'),
         supabase
           .from('usage_reservations')
           .select('child_id, date, status')
