@@ -593,6 +593,16 @@ export function AttendanceBoard({
                 const departureRange =
                   departureStart || departureEnd ? `${departureStart || '—'}〜${departureEnd || '—'}` : ''
 
+                // 日中一時利用の出発時間（お迎え出発 〜 送り事務所出発）
+                // 日中一時まで残る児童は放デイ側の送りが空になるため、
+                // 実際の最終お送りはこちらに入る
+                const daytimeDepartureStart = fmtTime(att?.daytime_pickup_departure_time)
+                const daytimeDepartureEnd = fmtTime(att?.daytime_dropoff_departure_time)
+                const daytimeDepartureRange =
+                  att?.daytime_support && (daytimeDepartureStart || daytimeDepartureEnd)
+                    ? `${daytimeDepartureStart || '—'}〜${daytimeDepartureEnd || '—'}`
+                    : ''
+
                 return (
                   <div key={res.id}>
                   <Card
@@ -629,11 +639,25 @@ export function AttendanceBoard({
                     </div>
 
                     {/* 出発時間（表示のみ・入力は下の「送迎・日中一時入力」から） */}
-                    {isPresent && departureRange && (
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                        <span className="text-gray-500 w-16 flex-shrink-0">出発時間</span>
-                        <span className="text-gray-700">{departureRange}</span>
+                    {isPresent && (departureRange || daytimeDepartureRange) && (
+                      <div className="flex flex-col gap-0.5">
+                        {departureRange && (
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                            <span className="text-gray-500 w-16 flex-shrink-0">出発時間</span>
+                            <span className="text-gray-700">{departureRange}</span>
+                          </div>
+                        )}
+                        {daytimeDepartureRange && (
+                          <div
+                            className="flex items-center gap-1.5 text-xs"
+                            title="日中一時利用のお迎え出発〜送り事務所出発"
+                          >
+                            <Clock className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                            <span className="text-purple-600 w-16 flex-shrink-0">日中一時</span>
+                            <span className="text-gray-700">{daytimeDepartureRange}</span>
+                          </div>
+                        )}
                       </div>
                     )}
 
