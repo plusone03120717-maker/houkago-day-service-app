@@ -16,7 +16,7 @@ type Driver = { id: string; name: string }
 const SCHEDULE_SELECT = `
   id, direction,
   transport_details (
-    id, child_id, pickup_location, sort_order,
+    id, child_id, pickup_location, sort_order, trip_group_id,
     children (id, name, name_kana, address, school_id, schools(id, name))
   )
 `
@@ -35,6 +35,7 @@ type RawSchedule = {
     child_id: string
     pickup_location: string | null
     sort_order: number
+    trip_group_id: string | null
     children: {
       id: string
       name: string
@@ -165,27 +166,63 @@ export default async function TransportPage({
           (direction === 'pickup' ? att?.pickup_driver_member_id : att?.dropoff_driver_member_id) ?? null,
         vehicleId: (direction === 'pickup' ? att?.pickup_vehicle_id : att?.dropoff_vehicle_id) ?? null,
         sortOrder: d.sort_order,
+        // 手動で組み分けされていれば その ID、なければ 区分・時間・場所で自動判定
+        groupKey:
+          d.trip_group_id ??
+          `auto|${direction}|${(recorded ?? planned)?.slice(0, 5) ?? ''}|${d.pickup_location ?? ''}`,
+        isManualGroup: !!d.trip_group_id,
         schoolName: d.children?.schools?.name ?? null,
         homeAddress: d.children?.address ?? null,
       })
     }
   }
 
-  // 送迎時間の早い順。時間未設定は末尾。
-  // 同時刻内は「区分 → 送迎場所」でまとめ、その中を sort_order → 名前順にする。
-  // 同じ便（同じ時間・同じ場所）の児童が隣り合うので、まとめて設定できる。
-  rows.sort((a, b) => {
-    if (a.time && b.time) {
-      if (a.time !== b.time) return a.time < b.time ? -1 : 1
-    } else if (a.time) return -1
-    else if (b.time) return 1
-    if (a.direction !== b.direction) return a.direction === 'pickup' ? -1 : 1
-    const locA = a.location ?? ''
-    const locB = b.location ?? ''
-    if (locA !== locB) return locA.localeCompare(locB, 'ja')
-    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
-    return (a.nameKana ?? a.name).localeCompare(b.nameKana ?? b.name, 'ja')
-  })
+  // 便（groupKey）ごとにまとめてから並べる。
+  // 手動でまとめた便は時間や場所がばらばらでも1つの塊として扱うため、
+  // 行単体ではなく便単位で並べないと画面上で離れてしまう。
+  const byGroup = new Map<string, TransportRow[]>()
+  for (const r of rows) {
+    const list = byGroup.get(r.groupKey)
+    if (list) list.push(r)
+    else byGroup.set(r.groupKey, [r])
+  }
+
+  /** 便の代表値。並び順は「一番早い送迎時間」で決める */
+  const groupSortKey = (members: TransportRow[]) => {
+    const times = members.map((m) => m.time).filter((t): t is string => !!t)
+    return {
+      time: times.length > 0 ? times.sort()[0] : null,
+      direction: members[0].direction,
+      location: members[0].location ?? '',
+      sortOrder: Math.min(...members.map((m) => m.sortOrder)),
+    }
+  }
+
+  // 便の中は 送迎時間 → sort_order → 名前順
+  const sortMembers = (members: TransportRow[]) =>
+    members.sort((a, b) => {
+      if (a.time && b.time) {
+        if (a.time !== b.time) return a.time < b.time ? -1 : 1
+      } else if (a.time) return -1
+      else if (b.time) return 1
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
+      return (a.nameKana ?? a.name).localeCompare(b.nameKana ?? b.name, 'ja')
+    })
+
+  // 送迎時間の早い順。時間未設定の便は末尾。同時刻は 区分 → 場所 → sort_order
+  const sortedGroups = [...byGroup.values()]
+    .map((members) => ({ members: sortMembers(members), key: groupSortKey(members) }))
+    .sort((a, b) => {
+      if (a.key.time && b.key.time) {
+        if (a.key.time !== b.key.time) return a.key.time < b.key.time ? -1 : 1
+      } else if (a.key.time) return -1
+      else if (b.key.time) return 1
+      if (a.key.direction !== b.key.direction) return a.key.direction === 'pickup' ? -1 : 1
+      if (a.key.location !== b.key.location) return a.key.location.localeCompare(b.key.location, 'ja')
+      return a.key.sortOrder - b.key.sortOrder
+    })
+
+  const orderedRows = sortedGroups.flatMap((g) => g.members)
 
   // child_id で重複除去
   const allChildrenMap = new Map<string, UnitChild>()
@@ -204,7 +241,7 @@ export default async function TransportPage({
       date={today}
       units={units}
       selectedUnitId={selectedUnitId}
-      rows={rows}
+      rows={orderedRows}
       scheduleIdByDirection={scheduleIdByDirection}
       vehicles={vehicles}
       drivers={drivers}

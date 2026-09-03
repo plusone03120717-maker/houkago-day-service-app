@@ -13,6 +13,8 @@ import {
   X,
   RefreshCw,
   GripVertical,
+  Scissors,
+  Merge,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import {
@@ -43,6 +45,10 @@ export type TransportRow = {
   driverMemberId: string | null
   vehicleId: string | null
   sortOrder: number
+  /** 同じ便かどうかの判定キー。手動でまとめた便はその ID、未指定なら自動判定キー */
+  groupKey: string
+  /** 手動でまとめた／分解した便か（自動判定ではないか） */
+  isManualGroup: boolean
   schoolName: string | null
   homeAddress: string | null
 }
@@ -71,48 +77,38 @@ interface Props {
 
 const DIRECTION_LABEL: Record<Direction, string> = { pickup: 'お迎え', dropoff: 'お送り' }
 
-/** 一覧の列幅（ヘッダーと各行で共有） */
-const GRID_COLS = 'md:grid md:grid-cols-[2rem_1.5rem_4.5rem_minmax(6rem,1fr)_minmax(8rem,1.4fr)_6.5rem_minmax(6rem,1fr)_minmax(6rem,1fr)_2rem] md:items-center md:gap-2'
+/** 児童ごとの列（番号・ドラッグ・区分・名前・送迎場所・送迎時間・削除） */
+const MEMBER_COLS = 'md:grid md:grid-cols-[2rem_1.5rem_4.5rem_minmax(5rem,1fr)_minmax(7rem,1.3fr)_6.5rem_2rem] md:items-center md:gap-2'
+/** 便でまとめる列（ドライバー・車種・便の操作）。児童が何人でも1つ分の高さに揃える */
+const TRIP_COL = 'md:w-[21rem] md:shrink-0'
 
-/** 同じ便としてまとめられる行のかたまり（区分・送迎時間・送迎場所がすべて同じ） */
+/** 一緒に回る便（同じ車・同じドライバー）としてまとめて表示する行のかたまり */
 type RowGroup = {
-  /** React キー兼「保存中」判定用。同条件の便が2つできても衝突しない */
   key: string
-  /** 隣り合う行が同じ便かの判定用 */
-  matchKey: string
   direction: Direction
-  time: string | null
-  location: string | null
   rows: TransportRow[]
-  /** まとめて設定できるか（2名以上で、時間・場所がどちらも決まっている） */
-  canBulk: boolean
+  /** 手動でまとめた便か（自動判定ではないか） */
+  isManual: boolean
 }
 
 /**
- * 並び順を保ったまま、隣り合う「区分・送迎時間・送迎場所が同じ」行をまとめる。
- * 一覧は時間 → 区分 → 場所の順に並んでいるため、同じ便は必ず連続する。
+ * 並び順を保ったまま、隣り合う同じ便の行をまとめる。
+ * サーバー側で便ごとに並べ替えてあるため、同じ便は必ず連続する。
  */
 function buildRowGroups(rows: TransportRow[]): RowGroup[] {
   const groups: RowGroup[] = []
   for (const row of rows) {
-    const matchKey = `${row.direction}|${row.time ?? ''}|${row.location ?? ''}`
     const last = groups[groups.length - 1]
-    if (last && last.matchKey === matchKey) {
+    if (last && last.key === row.groupKey) {
       last.rows.push(row)
       continue
     }
     groups.push({
-      key: `${matchKey}#${row.id}`,
-      matchKey,
+      key: row.groupKey,
       direction: row.direction,
-      time: row.time,
-      location: row.location,
       rows: [row],
-      canBulk: false,
+      isManual: row.isManualGroup,
     })
-  }
-  for (const g of groups) {
-    g.canBulk = g.rows.length >= 2 && !!g.time && !!g.location
   }
   return groups
 }
@@ -146,6 +142,7 @@ export function TransportManageBoard({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [reordering, setReordering] = useState(false)
   const [bulkSavingKey, setBulkSavingKey] = useState<string | null>(null)
+  const [mergePickerKey, setMergePickerKey] = useState<string | null>(null)
 
   // サーバーから新しい行が届いたらレンダー中に同期する（effect 経由の再レンダーを避ける）
   if (syncedRows !== rows) {
@@ -236,6 +233,58 @@ export function TransportManageBoard({
       })
     }
     setBulkSavingKey(null)
+    refresh()
+  }
+
+  /** 便を分解して、児童ごとに単独の便にする */
+  const splitGroup = async (group: RowGroup) => {
+    setBulkSavingKey(group.key)
+    // それぞれに別の ID を振ることで、条件が同じでも再び自動でまとまらないようにする
+    await Promise.all(
+      group.rows.map((row) =>
+        supabase
+          .from('transport_details')
+          .update({ trip_group_id: crypto.randomUUID() })
+          .eq('id', row.id)
+      )
+    )
+    setBulkSavingKey(null)
+    refresh()
+  }
+
+  /** 選んだ児童を今の便に合流させる（1つの便にまとめる） */
+  const mergeIntoGroup = async (group: RowGroup, targetRowIds: string[]) => {
+    if (targetRowIds.length === 0) return
+    setBulkSavingKey(group.key)
+
+    // すでに手動でまとめた便ならその ID を使い回し、自動判定の便なら新しく採番する
+    const groupId = group.isManual ? group.key : crypto.randomUUID()
+    const ids = [...new Set([...group.rows.map((r) => r.id), ...targetRowIds])]
+    await Promise.all(
+      ids.map((id) =>
+        supabase.from('transport_details').update({ trip_group_id: groupId }).eq('id', id)
+      )
+    )
+
+    // 合流した児童のドライバー・車種を、この便の設定に揃える
+    const driverMemberId = sharedValue(group.rows, (r) => r.driverMemberId)
+    const vehicleId = sharedValue(group.rows, (r) => r.vehicleId)
+    if (driverMemberId || vehicleId) {
+      const joined = localRows.filter((r) => targetRowIds.includes(r.id) && !r.isAbsent)
+      for (const row of joined) {
+        await saveTransportRecord({
+          childId: row.childId,
+          unitId: selectedUnitId,
+          date,
+          direction: row.direction,
+          ...(driverMemberId ? { driverMemberId } : {}),
+          ...(vehicleId ? { vehicleId } : {}),
+        })
+      }
+    }
+
+    setBulkSavingKey(null)
+    setMergePickerKey(null)
     refresh()
   }
 
@@ -339,16 +388,21 @@ export function TransportManageBoard({
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           {/* ヘッダー行（PCのみ） */}
-          <div className={`hidden ${GRID_COLS} px-3 py-2 bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-500`}>
-            <span />
-            <span />
-            <span>区分</span>
-            <span>名前</span>
-            <span>送迎場所</span>
-            <span>送迎時間</span>
-            <span>ドライバー</span>
-            <span>車種</span>
-            <span />
+          <div className="hidden md:flex px-3 py-2 bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-500">
+            <div className={`flex-1 min-w-0 ${MEMBER_COLS}`}>
+              <span />
+              <span />
+              <span>区分</span>
+              <span>名前</span>
+              <span>送迎場所</span>
+              <span>送迎時間</span>
+              <span />
+            </div>
+            <div className={`${TRIP_COL} flex items-center gap-2 pl-3`}>
+              <span className="flex-1">ドライバー</span>
+              <span className="flex-1">車種</span>
+              <span className="w-[3.75rem] text-center">便</span>
+            </div>
           </div>
 
           <div className="divide-y divide-gray-100">
@@ -356,49 +410,64 @@ export function TransportManageBoard({
               let flatIndex = -1
               return groups.map((group) => (
                 <div key={group.key}>
-                  {group.canBulk && (
-                    <GroupBandRow
+                  <div className="md:flex md:items-stretch">
+                    {/* 児童ごとの行 */}
+                    <div className="flex-1 min-w-0 divide-y divide-gray-100">
+                      {group.rows.map((row) => {
+                        flatIndex += 1
+                        const i = flatIndex
+                        return (
+                          <TransportRowItem
+                            // 保存後にサーバーの時刻が変わったら行を作り直して入力欄を同期する
+                            key={`${row.id}:${row.time ?? ''}`}
+                            row={row}
+                            index={i}
+                            unitId={selectedUnitId}
+                            date={date}
+                            isDragging={dragIndex === i}
+                            isOver={dragOverIndex === i}
+                            onDragStart={() => setDragIndex(i)}
+                            onDragOver={(e) => {
+                              e.preventDefault()
+                              setDragOverIndex(i)
+                            }}
+                            onDrop={() => handleDrop(i)}
+                            onDragEnd={() => {
+                              setDragIndex(null)
+                              setDragOverIndex(null)
+                            }}
+                            ensureScheduleId={ensureScheduleId}
+                            onRemove={() => handleRemove(row)}
+                            onSaved={refresh}
+                          />
+                        )
+                      })}
+                    </div>
+
+                    {/* 便のドライバー・車種（何人いても1つ） */}
+                    <TripCell
                       group={group}
                       drivers={drivers}
                       vehicles={vehicles}
                       saving={bulkSavingKey === group.key}
+                      pickerOpen={mergePickerKey === group.key}
                       onApply={(fields) => void applyToGroup(group, fields)}
+                      onSplit={() => void splitGroup(group)}
+                      onTogglePicker={() =>
+                        setMergePickerKey((k) => (k === group.key ? null : group.key))
+                      }
+                    />
+                  </div>
+
+                  {mergePickerKey === group.key && (
+                    <MergePicker
+                      group={group}
+                      allRows={localRows}
+                      saving={bulkSavingKey === group.key}
+                      onMerge={(ids) => void mergeIntoGroup(group, ids)}
+                      onClose={() => setMergePickerKey(null)}
                     />
                   )}
-                  <div className="divide-y divide-gray-100">
-                  {group.rows.map((row) => {
-                    flatIndex += 1
-                    const i = flatIndex
-                    return (
-                      <TransportRowItem
-                        // 保存後にサーバーの時刻が変わったら行を作り直して入力欄を同期する
-                        key={`${row.id}:${row.time ?? ''}`}
-                        row={row}
-                        index={i}
-                        grouped={group.canBulk}
-                        unitId={selectedUnitId}
-                        date={date}
-                        drivers={drivers}
-                        vehicles={vehicles}
-                        isDragging={dragIndex === i}
-                        isOver={dragOverIndex === i}
-                        onDragStart={() => setDragIndex(i)}
-                        onDragOver={(e) => {
-                          e.preventDefault()
-                          setDragOverIndex(i)
-                        }}
-                        onDrop={() => handleDrop(i)}
-                        onDragEnd={() => {
-                          setDragIndex(null)
-                          setDragOverIndex(null)
-                        }}
-                        ensureScheduleId={ensureScheduleId}
-                        onRemove={() => handleRemove(row)}
-                        onSaved={refresh}
-                      />
-                    )
-                  })}
-                  </div>
                 </div>
               ))
             })()}
@@ -418,9 +487,12 @@ export function TransportManageBoard({
           をドラッグして入れ替えられます。
         </p>
         <p>
-          送迎時間と送迎場所が同じ児童は1つの便としてまとめて表示されます。見出しの
-          <span className="text-gray-500 font-medium">「まとめて設定」</span>
-          から、その便の全員にドライバー・車種を一度に設定できます（個別に変えることもできます）。
+          <span className="text-gray-500 font-medium">ドライバー・車種は便ごとに1つ</span>
+          です。送迎時間と送迎場所が同じ児童は自動で同じ便になります。
+          <Scissors className="h-3 w-3 inline mx-0.5 -mt-0.5" />
+          でひとりずつに分解、
+          <Merge className="h-3 w-3 inline mx-0.5 -mt-0.5" />
+          でほかの児童をこの便に合流させられます。
         </p>
         <p>時刻・ドライバー・車種は日々の記録と同じデータです。どちらの画面で直しても両方に反映されます。</p>
       </div>
@@ -429,75 +501,194 @@ export function TransportManageBoard({
 }
 
 /**
- * 同じ便（区分・送迎時間・送迎場所が同じ）の見出し帯。
- * ここでドライバー・車種を選ぶと、その便の児童全員に一度に入る。
+ * 便のドライバー・車種。児童が何人いても1つだけ表示し、選ぶと便の全員に入る。
+ * 「分解」でひとりずつの便に分け、「まとめる」で他の児童を同じ便に合流させる。
  */
-function GroupBandRow({
+function TripCell({
   group,
   drivers,
   vehicles,
   saving,
+  pickerOpen,
   onApply,
+  onSplit,
+  onTogglePicker,
 }: {
   group: RowGroup
   drivers: Driver[]
   vehicles: Vehicle[]
   saving: boolean
+  pickerOpen: boolean
   onApply: (fields: { driverMemberId?: string | null; vehicleId?: string | null }) => void
+  onSplit: () => void
+  onTogglePicker: () => void
 }) {
-  const isPickup = group.direction === 'pickup'
   const sharedDriver = sharedValue(group.rows, (r) => r.driverMemberId)
   const sharedVehicle = sharedValue(group.rows, (r) => r.vehicleId)
+  const mixedDriver = sharedDriver === null && group.rows.length > 1
+  const mixedVehicle = sharedVehicle === null && group.rows.length > 1
+  const canSplit = group.rows.length >= 2
+  const allAbsent = group.rows.every((r) => r.isAbsent)
+
   const selectCls =
-    'text-xs border rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 min-w-0'
+    'flex-1 min-w-0 text-xs border rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50'
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-gray-50/80 border-b border-gray-100">
-      <span
-        className={`text-[11px] font-semibold px-1.5 py-0.5 rounded border shrink-0 ${
-          isPickup
-            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-        }`}
-      >
-        {DIRECTION_LABEL[group.direction]}
-      </span>
-      <span className="text-sm font-semibold text-gray-700 tabular-nums shrink-0">{group.time}</span>
-      <span className="text-xs text-gray-500 truncate min-w-0">{group.location}</span>
-      <span className="text-xs text-gray-400 shrink-0">{group.rows.length}名</span>
+    <div
+      className={`${TRIP_COL} border-t border-gray-100 md:border-t-0 md:border-l md:flex md:items-center px-3 py-2 md:py-2.5 bg-gray-50/40 md:bg-transparent`}
+    >
+      <div className="w-full space-y-1.5">
+        {group.rows.length > 1 && (
+          <p className="md:hidden text-[11px] text-gray-400">
+            この便（{group.rows.length}名）のドライバー・車種
+          </p>
+        )}
+        <div className="flex items-center gap-2">
+          <select
+            value={sharedDriver ?? ''}
+            onChange={(e) => onApply({ driverMemberId: e.target.value || null })}
+            disabled={saving || allAbsent}
+            aria-label="この便のドライバー"
+            className={`${selectCls} ${mixedDriver ? 'border-dashed border-gray-300 text-gray-500' : 'border-gray-200'}`}
+          >
+            <option value="">{mixedDriver ? '混在' : '未設定'}</option>
+            {drivers.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={sharedVehicle ?? ''}
+            onChange={(e) => onApply({ vehicleId: e.target.value || null })}
+            disabled={saving || allAbsent}
+            aria-label="この便の車種"
+            className={`${selectCls} ${mixedVehicle ? 'border-dashed border-gray-300 text-gray-500' : 'border-gray-200'}`}
+          >
+            <option value="">{mixedVehicle ? '混在' : '未設定'}</option>
+            {vehicles.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
 
-      <div className="flex items-center gap-1.5 ml-auto flex-wrap">
-        <span className="text-[11px] text-gray-400 shrink-0">まとめて設定</span>
-        <select
-          value={sharedDriver ?? ''}
-          onChange={(e) => onApply({ driverMemberId: e.target.value || null })}
-          disabled={saving}
-          aria-label="この便のドライバーをまとめて設定"
-          className={`${selectCls} ${sharedDriver ? 'border-gray-200' : 'border-dashed border-gray-300 text-gray-500'}`}
-        >
-          <option value="">{sharedDriver ? '未設定' : 'ドライバー（混在）'}</option>
-          {drivers.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={sharedVehicle ?? ''}
-          onChange={(e) => onApply({ vehicleId: e.target.value || null })}
-          disabled={saving}
-          aria-label="この便の車種をまとめて設定"
-          className={`${selectCls} ${sharedVehicle ? 'border-gray-200' : 'border-dashed border-gray-300 text-gray-500'}`}
-        >
-          <option value="">{sharedVehicle ? '未設定' : '車種（混在）'}</option>
-          {vehicles.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
-        {saving && <span className="text-[11px] text-gray-400 shrink-0">保存中…</span>}
+          <div className="flex items-center gap-1 shrink-0 w-[3.75rem] justify-end">
+            {canSplit && (
+              <button
+                onClick={onSplit}
+                disabled={saving}
+                title="この便をひとりずつに分解する"
+                aria-label="この便を分解する"
+                className="p-1 rounded border border-gray-200 bg-white text-gray-500 hover:text-orange-600 hover:border-orange-200 hover:bg-orange-50 disabled:opacity-50 transition-colors"
+              >
+                <Scissors className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <button
+              onClick={onTogglePicker}
+              disabled={saving}
+              title="ほかの児童をこの便にまとめる"
+              aria-label="ほかの児童をこの便にまとめる"
+              className={`p-1 rounded border transition-colors disabled:opacity-50 ${
+                pickerOpen
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-gray-500 border-gray-200 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50'
+              }`}
+            >
+              <Merge className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+        {saving && <p className="text-[11px] text-gray-400">保存中…</p>}
       </div>
+    </div>
+  )
+}
+
+/** 「まとめる」で合流させる児童を選ぶパネル */
+function MergePicker({
+  group,
+  allRows,
+  saving,
+  onMerge,
+  onClose,
+}: {
+  group: RowGroup
+  allRows: TransportRow[]
+  saving: boolean
+  onMerge: (rowIds: string[]) => void
+  onClose: () => void
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  // 同じ区分（お迎えどうし・お送りどうし）で、まだこの便にいない児童だけが対象
+  const candidates = allRows.filter(
+    (r) => r.direction === group.direction && r.groupKey !== group.key
+  )
+
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  return (
+    <div className="border-t border-indigo-100 bg-indigo-50/60 px-3 py-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-indigo-700 flex items-center gap-1.5">
+          <Merge className="h-3.5 w-3.5" />
+          {group.rows.map((r) => r.name).join('・')} と同じ便にする児童を選ぶ
+        </p>
+        <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-white transition-colors">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {candidates.length === 0 ? (
+        <p className="text-xs text-gray-400 text-center py-2">
+          まとめられる児童がいません（同じ区分の児童がこの便だけです）
+        </p>
+      ) : (
+        <>
+          <div className="space-y-1 max-h-64 overflow-y-auto">
+            {candidates.map((r) => (
+              <label
+                key={r.id}
+                className="flex items-center gap-2.5 bg-white rounded px-3 py-1.5 cursor-pointer hover:bg-indigo-50/50 transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.has(r.id)}
+                  onChange={() => toggle(r.id)}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-400"
+                />
+                <span className="text-sm text-gray-800 shrink-0">{r.name}</span>
+                <span className="text-xs text-gray-400 tabular-nums shrink-0">{r.time ?? '時間未設定'}</span>
+                <span className="text-xs text-gray-400 truncate">{r.location ?? '場所未設定'}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onMerge([...selected])}
+              disabled={saving || selected.size === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 font-medium"
+            >
+              <Merge className="h-3.5 w-3.5" />
+              {saving ? 'まとめ中...' : `${selected.size}名をこの便にまとめる`}
+            </button>
+            <button onClick={onClose} className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50">
+              キャンセル
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-500">
+            まとめると、選んだ児童のドライバー・車種はこの便の設定に揃います（この便が「混在」の場合は揃えません）。送迎時間・送迎場所は児童ごとのまま変わりません。
+          </p>
+        </>
+      )}
     </div>
   )
 }
@@ -506,11 +697,8 @@ function GroupBandRow({
 function TransportRowItem({
   row,
   index,
-  grouped,
   unitId,
   date,
-  drivers,
-  vehicles,
   isDragging,
   isOver,
   onDragStart,
@@ -523,12 +711,8 @@ function TransportRowItem({
 }: {
   row: TransportRow
   index: number
-  /** まとめ帯の下に属する行か（見出しと重複する情報を控えめにする） */
-  grouped: boolean
   unitId: string
   date: string
-  drivers: Driver[]
-  vehicles: Vehicle[]
   isDragging: boolean
   isOver: boolean
   onDragStart: () => void
@@ -618,9 +802,7 @@ function TransportRowItem({
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
-      className={`px-3 py-2.5 space-y-2 md:space-y-0 ${GRID_COLS} transition-colors ${
-        grouped ? 'border-l-2 border-gray-100 pl-2 md:pl-2.5' : ''
-      } ${
+      className={`px-3 py-2.5 space-y-2 md:space-y-0 ${MEMBER_COLS} transition-colors ${
         isDragging ? 'opacity-40 bg-indigo-50' : isOver ? 'bg-indigo-50' : saving ? 'bg-amber-50/50' : 'hover:bg-gray-50'
       }`}
     >
@@ -706,42 +888,6 @@ function TransportRowItem({
         {!row.isConfirmed && row.time && (
           <span className="text-[10px] text-indigo-500 md:mt-0.5 whitespace-nowrap">予定</span>
         )}
-      </label>
-
-      {/* ドライバー */}
-      <label className="flex items-center gap-1.5 md:gap-0 min-w-0">
-        <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">ドライバー</span>
-        <select
-          value={row.driverMemberId ?? ''}
-          onChange={(e) => void saveRecord({ driverMemberId: e.target.value || null })}
-          disabled={locked}
-          className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
-        >
-          <option value="">未設定</option>
-          {drivers.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {/* 車種 */}
-      <label className="flex items-center gap-1.5 md:gap-0 min-w-0">
-        <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">車種</span>
-        <select
-          value={row.vehicleId ?? ''}
-          onChange={(e) => void saveRecord({ vehicleId: e.target.value || null })}
-          disabled={locked}
-          className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
-        >
-          <option value="">未設定</option>
-          {vehicles.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
       </label>
 
       {/* 削除 */}

@@ -279,6 +279,7 @@ export interface Database {
           attendance_id: string | null
           pickup_location: string | null
           sort_order: number
+          trip_group_id: string | null
           status: TransportStatus
           parent_notified: boolean
           notification_sent_at: string | null
