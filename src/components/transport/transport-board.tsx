@@ -73,6 +73,8 @@ interface Props {
   vehicles: Vehicle[]
   drivers: Driver[]
   allChildren: UnitChild[]
+  /** 一覧の取得に失敗した場合のメッセージ（成功時は null） */
+  loadError: string | null
 }
 
 const DIRECTION_LABEL: Record<Direction, string> = { pickup: 'お迎え', dropoff: 'お送り' }
@@ -128,6 +130,7 @@ export function TransportManageBoard({
   vehicles,
   drivers,
   allChildren,
+  loadError,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -380,7 +383,16 @@ export function TransportManageBoard({
         />
       )}
 
-      {localRows.length === 0 ? (
+      {loadError ? (
+        <div className="py-8 px-4 border border-red-200 rounded-xl bg-red-50 space-y-2">
+          <p className="text-sm font-semibold text-red-700">送迎一覧を読み込めませんでした</p>
+          <p className="text-xs text-red-600">
+            データベースの構成がアプリより古い可能性があります。未適用のマイグレーションがないか確認してください
+            （<code className="px-1 rounded bg-white/70">supabase db push</code>）。
+          </p>
+          <p className="text-xs text-red-500 break-all font-mono">{loadError}</p>
+        </div>
+      ) : localRows.length === 0 ? (
         <div className="py-12 text-center border border-dashed border-gray-200 rounded-xl bg-white space-y-2">
           <p className="text-sm text-gray-400">この日の送迎予定はまだありません</p>
           <p className="text-xs text-gray-400">「再生成」で利用スケジュールから作成するか、「児童を追加」で個別に登録してください</p>

@@ -88,10 +88,10 @@ export default async function TransportPage({
   }
 
   const [
-    { data: schedulesRaw },
+    { data: schedulesRaw, error: schedulesError },
     { data: vehiclesRaw },
     { data: driversRaw },
-    { data: attendanceRaw },
+    { data: attendanceRaw, error: attendanceError },
     { data: allChildrenRaw },
     scheduleDefaults,
   ] = await Promise.all([
@@ -101,7 +101,7 @@ export default async function TransportPage({
           .select(SCHEDULE_SELECT)
           .eq('unit_id', selectedUnitId)
           .eq('date', today)
-      : ({ data: [] } as { data: unknown[] }),
+      : ({ data: [], error: null } as { data: unknown[]; error: null }),
     vehiclesPromise,
     driversPromise,
     selectedUnitId
@@ -110,7 +110,7 @@ export default async function TransportPage({
           .select(ATTENDANCE_SELECT)
           .eq('unit_id', selectedUnitId)
           .eq('date', today)
-      : ({ data: [] } as { data: unknown[] }),
+      : ({ data: [], error: null } as { data: unknown[]; error: null }),
     selectedUnitId
       ? supabase
           .from('usage_plans')
@@ -120,6 +120,13 @@ export default async function TransportPage({
       : ({ data: [] } as { data: unknown[] }),
     fetchScheduleDefaults(supabase, selectedUnitId, today),
   ])
+
+  // 取得に失敗したときは「0件」として黙って空表示にせず、原因をそのまま画面に出す。
+  // 未適用のマイグレーションで列が無い、といった不具合が「予定なし」に化けるのを防ぐ。
+  const loadError = schedulesError?.message ?? attendanceError?.message ?? null
+  if (loadError) {
+    console.error('[transport] 送迎一覧の取得に失敗しました', schedulesError ?? attendanceError)
+  }
 
   const schedules = (schedulesRaw ?? []) as unknown as RawSchedule[]
   const vehicles = (vehiclesRaw ?? []) as Vehicle[]
@@ -246,6 +253,7 @@ export default async function TransportPage({
       vehicles={vehicles}
       drivers={drivers}
       allChildren={allChildren}
+      loadError={loadError}
     />
   )
 }
