@@ -115,6 +115,12 @@ function buildRowGroups(rows: TransportRow[]): RowGroup[] {
   return groups
 }
 
+/** グループ内で値が全員そろっているか */
+function allEqual(rows: TransportRow[], pick: (r: TransportRow) => string | null): boolean {
+  const first = pick(rows[0])
+  return rows.every((r) => pick(r) === first)
+}
+
 /** グループ内で値が揃っていればその値、混在していれば null */
 function sharedValue(rows: TransportRow[], pick: (r: TransportRow) => string | null): string | null {
   const first = pick(rows[0])
@@ -198,22 +204,26 @@ export function TransportManageBoard({
     refresh()
   }
 
+  /** 表示行（まとまった便は1行）の単位で並び替える */
   const handleDrop = async (dropIdx: number) => {
     if (dragIndex === null || dragIndex === dropIdx) {
       setDragIndex(null)
       setDragOverIndex(null)
       return
     }
-    const next = [...localRows]
+    const next = [...displayRows]
     const [moved] = next.splice(dragIndex, 1)
     next.splice(dropIdx, 0, moved)
-    setLocalRows(next)
+    const flattened = next.flat()
+    setLocalRows(flattened)
     setDragIndex(null)
     setDragOverIndex(null)
 
     setReordering(true)
     await Promise.all(
-      next.map((r, i) => supabase.from('transport_details').update({ sort_order: i }).eq('id', r.id))
+      flattened.map((r, i) =>
+        supabase.from('transport_details').update({ sort_order: i }).eq('id', r.id)
+      )
     )
     setReordering(false)
     refresh()
@@ -292,6 +302,17 @@ export function TransportManageBoard({
   }
 
   const groups = buildRowGroups(localRows)
+
+  // 送迎時間と送迎場所が全員そろっている便は1行にまとめて表示する。
+  // ばらばらな便（手動でまとめたものなど）は中身が見えるよう児童ごとの行にする。
+  const displayRowsByGroup = new Map<string, TransportRow[][]>()
+  const displayRows: TransportRow[][] = []
+  for (const g of groups) {
+    const collapsed = allEqual(g.rows, (r) => r.time) && allEqual(g.rows, (r) => r.location)
+    const forGroup = collapsed ? [g.rows] : g.rows.map((r) => [r])
+    displayRowsByGroup.set(g.key, forGroup)
+    displayRows.push(...forGroup)
+  }
   const pickupCount = localRows.filter((r) => r.direction === 'pickup').length
   const dropoffCount = localRows.filter((r) => r.direction === 'dropoff').length
 
@@ -423,16 +444,16 @@ export function TransportManageBoard({
               return groups.map((group) => (
                 <div key={group.key}>
                   <div className="md:flex md:items-stretch">
-                    {/* 児童ごとの行 */}
+                    {/* 児童の行（同じ送迎時間・送迎場所なら1行にまとまる） */}
                     <div className="flex-1 min-w-0 divide-y divide-gray-100">
-                      {group.rows.map((row) => {
+                      {(displayRowsByGroup.get(group.key) ?? []).map((rowsOfLine) => {
                         flatIndex += 1
                         const i = flatIndex
                         return (
                           <TransportRowItem
                             // 保存後にサーバーの時刻が変わったら行を作り直して入力欄を同期する
-                            key={`${row.id}:${row.time ?? ''}`}
-                            row={row}
+                            key={`${rowsOfLine.map((r) => r.id).join(',')}:${rowsOfLine[0].time ?? ''}`}
+                            rows={rowsOfLine}
                             index={i}
                             unitId={selectedUnitId}
                             date={date}
@@ -449,7 +470,7 @@ export function TransportManageBoard({
                               setDragOverIndex(null)
                             }}
                             ensureScheduleId={ensureScheduleId}
-                            onRemove={() => handleRemove(row)}
+                            onRemove={handleRemove}
                             onSaved={refresh}
                           />
                         )
@@ -494,17 +515,17 @@ export function TransportManageBoard({
           触れて確定すると通常の色になります。
         </p>
         <p>
-          並びは送迎時間の早い順です。同じ時間内の順番は
+          並びは送迎時間の早い順です。順番は
           <GripVertical className="h-3 w-3 inline mx-0.5 -mt-0.5" />
-          をドラッグして入れ替えられます。
+          をドラッグして入れ替えられます（まとまった行はそのまま一緒に動きます）。
         </p>
         <p>
-          <span className="text-gray-500 font-medium">ドライバー・車種は便ごとに1つ</span>
-          です。送迎時間と送迎場所が同じ児童は自動で同じ便になります。
+          <span className="text-gray-500 font-medium">送迎時間と送迎場所が同じ児童は1行にまとまります。</span>
+          区分・送迎場所・送迎時間・ドライバー・車種は、その行の全員に反映されます。
           <Scissors className="h-3 w-3 inline mx-0.5 -mt-0.5" />
-          でひとりずつに分解、
+          でひとりずつの行に分解、
           <Merge className="h-3 w-3 inline mx-0.5 -mt-0.5" />
-          でほかの児童をこの便に合流させられます。
+          でほかの児童を同じ便に合流させられます（時間や場所が違う児童をまとめた場合は、児童ごとの行のままドライバー・車種だけが共通になります）。
         </p>
         <p>時刻・ドライバー・車種は日々の記録と同じデータです。どちらの画面で直しても両方に反映されます。</p>
       </div>
@@ -705,9 +726,12 @@ function MergePicker({
   )
 }
 
-/** 一覧の1行。各項目はその場で編集して即保存する */
+/**
+ * 一覧の1行。送迎時間と送迎場所が同じ児童は、この1行にまとめて表示する。
+ * 区分・送迎場所・送迎時間を変えると、その行の児童全員に反映される。
+ */
 function TransportRowItem({
-  row,
+  rows,
   index,
   unitId,
   date,
@@ -721,7 +745,8 @@ function TransportRowItem({
   onRemove,
   onSaved,
 }: {
-  row: TransportRow
+  /** 同じ区分・送迎時間・送迎場所を共有する児童（1名以上） */
+  rows: TransportRow[]
   index: number
   unitId: string
   date: string
@@ -732,37 +757,44 @@ function TransportRowItem({
   onDrop: () => void
   onDragEnd: () => void
   ensureScheduleId: (direction: Direction) => Promise<string | null>
-  onRemove: () => void
+  onRemove: (row: TransportRow) => void
   onSaved: () => void
 }) {
   const supabase = createClient()
+  const head = rows[0]
   const [saving, setSaving] = useState(false)
-  const [time, setTime] = useState(row.time ?? '')
-  // 欠席として記録済みの日は書き込みを受け付けないので、入力も閉じておく
-  const locked = saving || row.isAbsent
+  const [time, setTime] = useState(head.time ?? '')
 
-  /** 乗降場所・並び順は送迎明細（transport_details）に保存する */
+  // 全員が欠席の行は書き込みを受け付けないので、入力も閉じておく
+  const allAbsent = rows.every((r) => r.isAbsent)
+  const locked = saving || allAbsent
+  // ひとりでも未確定なら「利用スケジュールの予定を表示中」として扱う
+  const isConfirmed = rows.every((r) => r.isConfirmed)
+  const writable = rows.filter((r) => !r.isAbsent)
+
+  /** 乗降場所は送迎明細（transport_details）に保存する。行の全員に同じ値を入れる */
   const updateDetail = async (patch: Record<string, unknown>) => {
     setSaving(true)
-    await supabase.from('transport_details').update(patch).eq('id', row.id)
+    await supabase
+      .from('transport_details')
+      .update(patch)
+      .in('id', rows.map((r) => r.id))
     setSaving(false)
     onSaved()
   }
 
-  /** 時刻・ドライバー・車種はその日の記録（daily_attendance）に保存する */
-  const saveRecord = async (fields: {
-    time?: string | null
-    driverMemberId?: string | null
-    vehicleId?: string | null
-  }) => {
+  /** 時刻はその日の記録（daily_attendance）に保存する。行の全員に同じ値を入れる */
+  const saveRecord = async (fields: { time?: string | null }) => {
     setSaving(true)
-    await saveTransportRecord({
-      childId: row.childId,
-      unitId,
-      date,
-      direction: row.direction,
-      ...fields,
-    })
+    for (const row of writable) {
+      await saveTransportRecord({
+        childId: row.childId,
+        unitId,
+        date,
+        direction: row.direction,
+        ...fields,
+      })
+    }
     setSaving(false)
     onSaved()
   }
@@ -770,42 +802,52 @@ function TransportRowItem({
   const handleTimeBlur = () => {
     const next = time || null
     // 未確定（利用スケジュールの予定を表示中）なら、同じ値でも触れた時点で確定させる
-    if (row.isConfirmed ? next === row.time : next === null) return
+    if (isConfirmed ? next === head.time : next === null) return
     void saveRecord({ time: next })
   }
 
   const handleDirectionChange = async (direction: Direction) => {
-    if (direction === row.direction) return
+    if (direction === head.direction) return
     setSaving(true)
     const scheduleId = await ensureScheduleId(direction)
     if (scheduleId) {
-      await supabase.from('transport_details').update({ schedule_id: scheduleId }).eq('id', row.id)
+      await supabase
+        .from('transport_details')
+        .update({ schedule_id: scheduleId })
+        .in('id', rows.map((r) => r.id))
       // 記録側も、元の方向の欄を空にして新しい方向へ付け替える
-      await clearTransportDirection(row.childId, unitId, date, row.direction)
-      await saveTransportRecord({
-        childId: row.childId,
-        unitId,
-        date,
-        direction,
-        time: row.time,
-        driverMemberId: row.driverMemberId,
-        vehicleId: row.vehicleId,
-      })
+      for (const row of rows) {
+        await clearTransportDirection(row.childId, unitId, date, row.direction)
+        await saveTransportRecord({
+          childId: row.childId,
+          unitId,
+          date,
+          direction,
+          time: row.time,
+          driverMemberId: row.driverMemberId,
+          vehicleId: row.vehicleId,
+        })
+      }
     }
     setSaving(false)
     onSaved()
   }
 
-  // 送迎場所の選択肢（学校・自宅＋既存の任意入力値）
+  // 送迎場所の選択肢（行にいる児童全員の学校・自宅＋いま入っている値）
   const locationOptions: { value: string; label: string }[] = []
-  if (row.schoolName) locationOptions.push({ value: row.schoolName, label: `学校：${row.schoolName}` })
-  if (row.homeAddress) locationOptions.push({ value: row.homeAddress, label: `自宅：${row.homeAddress}` })
-  if (row.location && !locationOptions.some((o) => o.value === row.location)) {
-    locationOptions.unshift({ value: row.location, label: row.location })
+  const pushOption = (value: string | null, label: string) => {
+    if (!value || locationOptions.some((o) => o.value === value)) return
+    locationOptions.push({ value, label })
+  }
+  if (head.location) pushOption(head.location, head.location)
+  for (const r of rows) {
+    pushOption(r.schoolName, `学校：${r.schoolName}`)
+    pushOption(r.homeAddress, `自宅：${r.homeAddress}`)
   }
 
-  const isSchool = !!(row.location && row.schoolName && row.location === row.schoolName)
-  const isPickup = row.direction === 'pickup'
+  const isSchool = !!head.location && rows.some((r) => r.schoolName === head.location)
+  const isPickup = head.direction === 'pickup'
+  const isMerged = rows.length > 1
 
   return (
     <div
@@ -834,7 +876,7 @@ function TransportRowItem({
           {index + 1}
         </span>
         <select
-          value={row.direction}
+          value={head.direction}
           onChange={(e) => void handleDirectionChange(e.target.value as Direction)}
           disabled={locked}
           aria-label="区分"
@@ -849,18 +891,44 @@ function TransportRowItem({
         </select>
       </div>
 
-      {/* 名前 */}
-      <div className="flex items-center gap-1.5 min-w-0">
+      {/* 名前（同じ時間・場所の児童はここに並ぶ） */}
+      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
         {isSchool ? (
           <SchoolIcon className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
         ) : (
           <MapPin className="h-3.5 w-3.5 text-green-500 shrink-0" />
         )}
-        <span className="font-medium text-gray-800 text-sm truncate">{row.name}</span>
-        {row.isAbsent && (
-          <span className="shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">
-            欠席
-          </span>
+        {isMerged ? (
+          rows.map((r) => (
+            <span
+              key={r.id}
+              className={`group inline-flex items-center gap-0.5 pl-1.5 pr-0.5 py-0.5 rounded border text-xs ${
+                r.isAbsent
+                  ? 'bg-red-50 border-red-100 text-red-600 line-through'
+                  : 'bg-gray-50 border-gray-200 text-gray-800'
+              }`}
+            >
+              {r.name}
+              <button
+                onClick={() => onRemove(r)}
+                disabled={saving}
+                title={`${r.name} をこの送迎から外す`}
+                aria-label={`${r.name} をこの送迎から外す`}
+                className="p-0.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 transition-colors"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))
+        ) : (
+          <>
+            <span className="font-medium text-gray-800 text-sm truncate">{head.name}</span>
+            {head.isAbsent && (
+              <span className="shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">
+                欠席
+              </span>
+            )}
+          </>
         )}
       </div>
 
@@ -868,7 +936,7 @@ function TransportRowItem({
       <label className="flex items-center gap-1.5 md:gap-0 min-w-0">
         <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">送迎場所</span>
         <select
-          value={row.location ?? ''}
+          value={head.location ?? ''}
           onChange={(e) => void updateDetail({ pickup_location: e.target.value || null })}
           disabled={locked}
           className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
@@ -892,25 +960,29 @@ function TransportRowItem({
           onChange={(e) => setTime(e.target.value)}
           onBlur={handleTimeBlur}
           disabled={locked}
-          title={row.isConfirmed ? undefined : '利用スケジュールの予定を表示中（未保存）'}
+          title={isConfirmed ? undefined : '利用スケジュールの予定を表示中（未保存）'}
           className={`w-full md:w-auto text-xs border rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 ${
-            row.isConfirmed ? 'border-gray-200 text-gray-800' : 'border-indigo-200 text-indigo-600'
+            isConfirmed ? 'border-gray-200 text-gray-800' : 'border-indigo-200 text-indigo-600'
           }`}
         />
-        {!row.isConfirmed && row.time && (
+        {!isConfirmed && head.time && (
           <span className="text-[10px] text-indigo-500 md:mt-0.5 whitespace-nowrap">予定</span>
         )}
       </label>
 
-      {/* 削除 */}
-      <button
-        onClick={onRemove}
-        disabled={saving}
-        className="justify-self-end p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50"
-        title="この送迎を一覧から外す"
-      >
-        <XCircle className="h-4 w-4" />
-      </button>
+      {/* 削除（1名の行のみ。まとまった行は名前ごとの×を使う） */}
+      {isMerged ? (
+        <span className="hidden md:block" />
+      ) : (
+        <button
+          onClick={() => onRemove(head)}
+          disabled={saving}
+          className="justify-self-end p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50"
+          title="この送迎を一覧から外す"
+        >
+          <XCircle className="h-4 w-4" />
+        </button>
+      )}
     </div>
   )
 }
