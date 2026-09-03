@@ -308,19 +308,29 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     departure_time: string | null
     transport_details: { child_id: string }[]
   }
-  // unit_id + date + direction にユニーク制約があるため方向ごとに最大1件
-  const scheduleByDirection = new Map<string, ExistingSchedule>()
-  for (const s of (existingSchedulesRaw ?? []) as unknown as ExistingSchedule[]) {
-    if (scheduleByDirection.has(s.direction)) continue
-    scheduleByDirection.set(s.direction, { ...s, transport_details: s.transport_details ?? [] })
-  }
+  /** TIME 型は 'HH:MM:SS' で返るが 'HH:MM' の可能性もあるため先頭5文字で揃える */
+  const slotKey = (direction: string, time: string | null) =>
+    `${direction}|${(time ?? '').slice(0, 5)}`
 
-  /** TIME 型は 'HH:MM:SS' で返るが 'HH:MM' の可能性もあるため先頭5文字で比較 */
-  const sameSlot = (a: string | null, b: string | null) =>
-    (a ?? '').slice(0, 5) === (b ?? '').slice(0, 5)
+  // スケジュール（＝便）は unit_id + date + direction + departure_time で一意。
+  // 方向ごとに1件だと決めつけると、時間帯が複数ある日に
+  // 「最初の時間帯の児童しか登録されない」ため、必ず時刻まで含めて引き当てる。
+  const scheduleBySlot = new Map<string, ExistingSchedule>()
+  // 同じ方向で既にどこかの便に載っている児童は二重に載せない
+  // （手動で別の便へ移した児童や、予定時刻が変わった児童が複製されるのを防ぐ）
+  const placedByDirection = new Map<string, Set<string>>()
+  for (const s of (existingSchedulesRaw ?? []) as unknown as ExistingSchedule[]) {
+    const details = s.transport_details ?? []
+    scheduleBySlot.set(slotKey(s.direction, s.departure_time), { ...s, transport_details: details })
+    let placed = placedByDirection.get(s.direction)
+    if (!placed) placedByDirection.set(s.direction, (placed = new Set()))
+    for (const d of details) placed.add(d.child_id)
+  }
 
   for (const direction of ['pickup', 'dropoff'] as const) {
     const slotsMap = direction === 'pickup' ? pickupSlots : dropoffSlots
+    let placed = placedByDirection.get(direction)
+    if (!placed) placedByDirection.set(direction, (placed = new Set()))
 
     for (const [slot, candidates] of slotsMap) {
       if (candidates.length === 0) continue
@@ -329,8 +339,11 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
 
       const groups = nearestNeighborSort(buildRouteGroups(candidates, direction))
       const orderedChildren = groups.flatMap((g) => g.children)
+      const missing = orderedChildren.filter((c) => !placed.has(c.child_id))
+      if (missing.length === 0) continue
 
-      let existing = scheduleByDirection.get(direction)
+      const key = slotKey(direction, slot)
+      let existing = scheduleBySlot.get(key)
 
       if (!existing) {
         const { data: schedule, error: schedErr } = await supabase
@@ -355,6 +368,7 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
             .eq('unit_id', unitId)
             .eq('date', date)
             .eq('direction', direction)
+            .eq('departure_time', slot)
             .maybeSingle()
           if (!refetched) continue
           const r = refetched as unknown as ExistingSchedule
@@ -362,21 +376,19 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
         } else {
           existing = { id: schedule.id, direction, departure_time: slot, transport_details: [] }
         }
-        scheduleByDirection.set(direction, existing)
+        scheduleBySlot.set(key, existing)
+        for (const d of existing.transport_details) placed.add(d.child_id)
       }
 
       const sched = existing
-      // 既存スケジュールの出発時刻が違うスロットは対象外（従来どおり何もしない）
-      if (!sameSlot(sched.departure_time, slot)) continue
-
-      const existingIds = new Set(sched.transport_details.map((d) => d.child_id))
-      const missing = orderedChildren.filter((c) => !existingIds.has(c.child_id))
-      if (missing.length === 0) continue
+      // 同時実行で取得し直した便に既に載っていた分をここで落とす
+      const toInsert = missing.filter((c) => !placed.has(c.child_id))
+      if (toInsert.length === 0) continue
 
       const nextOrder = sched.transport_details.length
       // 時刻・ドライバー・車種は daily_attendance が正なのでここでは持たせない
       await supabase.from('transport_details').insert(
-        missing.map((c, idx) => ({
+        toInsert.map((c, idx) => ({
           schedule_id: sched.id,
           child_id: c.child_id,
           pickup_location: getPickupLocation(c, direction),
@@ -384,7 +396,8 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
           sort_order: nextOrder + idx,
         }))
       )
-      sched.transport_details.push(...missing.map((c) => ({ child_id: c.child_id })))
+      for (const c of toInsert) placed.add(c.child_id)
+      sched.transport_details.push(...toInsert.map((c) => ({ child_id: c.child_id })))
     }
   }
 }
