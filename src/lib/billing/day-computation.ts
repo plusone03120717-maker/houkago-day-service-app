@@ -67,7 +67,7 @@ export type ComputedDay = {
   endTime: string | null
   durationMinutes: number
   hoursCalculated: number
-  /** 算定時間数。0=30分未満（算定対象外） 1〜4=実績記録票の入力番号 / null=時刻未入力 */
+  /** 算定時間数。0=30分未満（算定対象外） 1〜4=実績記録票の入力番号（4は休業日のみ） / null=時刻未入力 */
   billingCategory: BillingCategory | null
   transportPickup: boolean
   transportDropoff: boolean
@@ -95,24 +95,31 @@ export function calcHours(startTime: string | null, endTime: string | null): num
 
 /**
  * 算定時間数（実績記録票の入力番号）。令和6年度改定の入力マニュアル準拠。
- * 平日・学校休業日で区分は共通で、利用時間だけで決まる。
  *   1: 30分以上〜1時間30分以下（放デイ411）
  *   2: 1時間30分超〜3時間以下（放デイ412）
  *   3: 3時間超〜5時間以下（放デイ412）
- *   4: 5時間超（放デイ413）※休業日の6〜7時間利用など
+ *   4: 5時間超（放デイ413）※学校休業日のみ
  *   0: 30分未満（算定対象外）
+ *
+ * 区分1〜3の区切りは平日・学校休業日で共通。区分4は休業日のみで、
+ * 平日は5時間を超えても区分3のまま（超過分は延長支援加算で算定する）。
  */
-export function getBillingCategory(minutes: number, hasValidTimes: boolean): BillingCategory | null {
+export function getBillingCategory(
+  minutes: number,
+  hasValidTimes: boolean,
+  serviceFormType: 1 | 2,
+): BillingCategory | null {
   if (!hasValidTimes) return null
   if (minutes < 30) return 0
   if (minutes <= 90) return 1
   if (minutes <= 180) return 2
   if (minutes <= 300) return 3
-  return 4
+  return serviceFormType === 2 ? 4 : 3
 }
 
 /**
- * 延長支援加算の区分。基準時間を超えた分数で決まる。
+ * 延長支援加算の区分。基準時間（平日3時間・学校休業日5時間）を超えた分数で決まる。
+ * 超過が30分未満の日は算定しない。
  *   1: 30分以上〜1時間未満（延長支援加算111）
  *   2: 1時間以上〜2時間未満（延長支援加算112）
  *   3: 2時間以上（延長支援加算113）
@@ -168,7 +175,11 @@ export function computeBillingDay(params: {
   const endTime = basicRecord?.billing_end_time ?? att?.service_end_time ?? att?.check_out_time ?? null
 
   const rawMinutes = startTime && endTime ? Math.max(0, timeToMinutes(endTime) - timeToMinutes(startTime)) : 0
-  const billingCategory = getBillingCategory(rawMinutes, startTime !== null && endTime !== null)
+  const billingCategory = getBillingCategory(
+    rawMinutes,
+    startTime !== null && endTime !== null,
+    serviceFormType,
+  )
   const extensionMinutes = isAttended
     ? Math.max(0, rawMinutes - extensionThresholdMinutes(serviceFormType))
     : 0

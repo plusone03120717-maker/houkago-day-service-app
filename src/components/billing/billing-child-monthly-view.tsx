@@ -980,7 +980,11 @@ export function BillingChildMonthlyView({
                     const overriddenMinutes = startTimeVal && endTimeVal
                       ? Math.max(0, timeToMinutes(endTimeVal) - timeToMinutes(startTimeVal))
                       : 0
-                    const overriddenCategory = getBillingCategory(overriddenMinutes, startTimeVal !== '' && endTimeVal !== '')
+                    const overriddenCategory = getBillingCategory(
+                      overriddenMinutes,
+                      startTimeVal !== '' && endTimeVal !== '',
+                      d.serviceFormType,
+                    )
                     const overriddenExtensionMinutes = Math.max(
                       0,
                       overriddenMinutes - extensionThresholdMinutes(d.serviceFormType),
@@ -1272,7 +1276,7 @@ export function BillingChildMonthlyView({
             </span>
             <span className="flex items-center gap-1">
               <BillingCircle value={4} small />
-              算定時間数4 5時間超（休業日の6〜7時間利用など）
+              算定時間数4 5時間超（学校休業日のみ／平日は5時間を超えても3）
             </span>
             <span className="text-gray-400">
               ※ 延長加算欄の番号は延長時間の区分です（1: 30分以上1時間未満／2: 1時間以上2時間未満／3: 2時間以上）。
