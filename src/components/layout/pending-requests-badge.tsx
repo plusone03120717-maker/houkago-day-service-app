@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { NotificationBell } from '@/components/layout/notification-bell'
 
-// ヘッダーのお知らせベル。未確認のスタッフ申請と保護者利用連絡を集計する。
+// ヘッダーのお知らせベル。未確認のスタッフ申請・保護者利用連絡・サポート問い合わせを集計する。
 // layout の表示をブロックしないよう Suspense 配下でストリーミング取得する。
-export async function PendingRequestsBadge() {
+export async function PendingRequestsBadge({ role }: { role: string }) {
   const supabase = await createClient()
 
   const [
@@ -25,8 +25,18 @@ export async function PendingRequestsBadge() {
       .limit(5),
   ])
 
+  // サポート問い合わせは管理者だけの対応待ち行列なので、管理者にだけ出す
+  const { count: supportCountRaw } =
+    role === 'admin'
+      ? await supabase
+          .from('support_inquiries')
+          .select('id', { count: 'exact', head: true })
+          .eq('is_new', true)
+      : { count: 0 }
+
   const staffCount = (overtimeCount ?? 0) + (leaveCount ?? 0) + (breakCount ?? 0)
   const parentCount = parentContactCount ?? 0
+  const supportCount = supportCountRaw ?? 0
 
   type RecentRow = {
     id: string
@@ -49,6 +59,7 @@ export async function PendingRequestsBadge() {
     <NotificationBell
       staffCount={staffCount}
       parentCount={parentCount}
+      supportCount={supportCount}
       recentContacts={recentContacts}
     />
   )

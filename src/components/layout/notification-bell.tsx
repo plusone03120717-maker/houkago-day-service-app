@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Bell, ClipboardList, CalendarCheck } from 'lucide-react'
+import { Bell, ClipboardList, CalendarCheck, LifeBuoy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export type RecentContact = {
@@ -15,6 +15,8 @@ export type RecentContact = {
 interface Props {
   staffCount: number
   parentCount: number
+  /** 管理者にだけ渡される、未読のサポート問い合わせ件数 */
+  supportCount: number
   recentContacts: RecentContact[]
 }
 
@@ -23,10 +25,15 @@ function formatMonthDay(dateStr: string) {
   return `${Number(m)}/${Number(d)}`
 }
 
-export function NotificationBell({ staffCount, parentCount, recentContacts }: Props) {
+export function NotificationBell({
+  staffCount,
+  parentCount,
+  supportCount,
+  recentContacts,
+}: Props) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const total = staffCount + parentCount
+  const total = staffCount + parentCount + supportCount
 
   // メニュー外クリック・Escで閉じる
   useEffect(() => {
@@ -123,6 +130,28 @@ export function NotificationBell({ staffCount, parentCount, recentContacts }: Pr
                     </span>
                   </div>
                   <p className="mt-1.5 pl-6 text-xs text-gray-500">残業・有給・中抜けの未確認申請</p>
+                </Link>
+              )}
+
+              {/* サポート問い合わせ */}
+              {supportCount > 0 && (
+                <Link
+                  href="/support"
+                  onClick={() => setOpen(false)}
+                  className="block px-4 py-3 hover:bg-gray-50"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-sm font-medium text-gray-800">
+                      <LifeBuoy className="h-4 w-4 text-amber-600" />
+                      サポート問い合わせ
+                    </span>
+                    <span className="shrink-0 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                      {supportCount}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 pl-6 text-xs text-gray-500">
+                    ボットで解決せず報告された不具合・質問
+                  </p>
                 </Link>
               )}
             </div>

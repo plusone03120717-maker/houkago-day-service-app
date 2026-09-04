@@ -29,6 +29,7 @@ import {
   KeyRound,
   Inbox,
   ListChecks,
+  LifeBuoy,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -80,6 +81,7 @@ const adminNav = [
     items: [
       { href: '/children', label: '児童管理', icon: Users },
       { href: '/documents', label: '帳票出力', icon: FileText },
+      { href: '/support', label: 'サポート問い合わせ', icon: LifeBuoy },
       { href: '/settings', label: '設定', icon: Settings },
     ],
   },
@@ -126,6 +128,7 @@ const staffNav = [
     items: [
       { href: '/children', label: '児童管理', icon: Users },
       { href: '/documents', label: '帳票出力', icon: FileText },
+      { href: '/support', label: 'サポート問い合わせ', icon: LifeBuoy },
     ],
   },
 ]

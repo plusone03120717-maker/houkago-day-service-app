@@ -78,6 +78,11 @@ const withPWA = require('next-pwa')({
 })
 
 const nextConfig: NextConfig = {
+  // サポートボットの知識源。docs/ は public/ の外にあり、参照が動的なので
+  // 自動トレースでは関数バンドルに含まれない。明示的に同梱する。
+  outputFileTracingIncludes: {
+    '/api/support/chat': ['docs/manual.html'],
+  },
   // 既定の .next ディレクトリがファイルシステム破損で削除不能になったため出力先を変更
   // （ドライブを chkdsk で修復後は .next に戻してよい）
   distDir: 'build',
