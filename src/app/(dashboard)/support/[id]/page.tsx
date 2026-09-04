@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { MessageSquare, User, Bot } from 'lucide-react'
+import { MessageSquare, User, Bot, Database } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSessionUser } from '@/lib/auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,6 +9,7 @@ import {
   CATEGORY_LABELS,
   SEVERITY_LABELS,
   STATUS_LABELS,
+  toolLabel,
   type InquiryCategory,
   type InquirySeverity,
   type InquiryStatus,
@@ -69,7 +70,7 @@ export default async function SupportInquiryPage({
 
   const { data: messagesRaw } = await supabase
     .from('support_inquiry_messages')
-    .select('id, role, content, created_at')
+    .select('id, role, content, created_at, tool_calls')
     .eq('inquiry_id', id)
     .order('created_at', { ascending: true })
 
@@ -78,6 +79,7 @@ export default async function SupportInquiryPage({
     role: 'user' | 'assistant'
     content: string
     created_at: string
+    tool_calls: { name: string; input: Record<string, unknown> }[] | null
   }[]
 
   const severity = SEVERITY_LABELS[inquiry.severity ?? 'low']
@@ -177,6 +179,28 @@ export default async function SupportInquiryPage({
                   <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-gray-800">
                     {m.content}
                   </p>
+                  {/* ボットの回答が何を根拠にしているか。検算できないAIの指摘で
+                      記録を直させないために、必ず並べて見せる */}
+                  {m.tool_calls && m.tool_calls.length > 0 && (
+                    <div className="mt-1.5 rounded border border-gray-200 bg-gray-50 p-2">
+                      <p className="flex items-center gap-1 text-[11px] font-medium text-gray-600">
+                        <Database className="h-3 w-3" />
+                        確認したデータ
+                      </p>
+                      <ul className="mt-1 space-y-0.5">
+                        {m.tool_calls.map((call, idx) => (
+                          <li key={idx} className="text-[11px] text-gray-500">
+                            {toolLabel(call.name)}
+                            <span className="ml-1 font-mono text-gray-400">
+                              {Object.entries(call.input ?? {})
+                                .map(([k, v]) => `${k}=${String(v)}`)
+                                .join(' ')}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               </div>
             ))

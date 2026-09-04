@@ -3,14 +3,20 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LifeBuoy, X, Send, Loader2, Flag, CheckCircle2, RotateCcw } from 'lucide-react'
+import { LifeBuoy, X, Send, Loader2, Flag, CheckCircle2, RotateCcw, Database } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type ChatMessage = { role: 'user' | 'assistant'; content: string }
+type ChatMessage = {
+  role: 'user' | 'assistant'
+  content: string
+  /** ボットが回答の根拠として参照したデータの表示名 */
+  checked?: string[]
+}
 
 const GREETING =
   'アプリのことでお困りですか。使い方でも、「入力を間違えた」「表示がおかしい」といった相談でも大丈夫です。\n' +
-  'できるだけ具体的に、どの画面で何をしたときのことか教えてください。'
+  '児童名と日付を教えていただければ、実際の記録を確認して原因をお調べします。\n' +
+  '例：「山田さんの8月12日の送迎時間がおかしい」'
 
 export function SupportBot() {
   const pathname = usePathname()
@@ -69,7 +75,10 @@ export function SupportBot() {
       }
 
       setInquiryId(data.inquiryId)
-      setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }])
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: data.reply, checked: data.checked ?? [] },
+      ])
     } catch {
       setError('通信に失敗しました。電波状況をご確認ください。')
       setMessages((prev) => prev.slice(0, -1))
@@ -144,13 +153,14 @@ export function SupportBot() {
         <Bubble role="assistant" content={GREETING} />
 
         {messages.map((m, i) => (
-          <Bubble key={i} role={m.role} content={m.content} />
+          <Bubble key={i} role={m.role} content={m.content} checked={m.checked} />
         ))}
 
         {sending && (
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            マニュアルを確認しています…
+            マニュアルと記録を確認しています…
+            <span className="text-gray-400">（データを調べる場合は30秒ほどかかります）</span>
           </div>
         )}
 
@@ -218,7 +228,7 @@ export function SupportBot() {
               }}
               rows={2}
               maxLength={2000}
-              placeholder="例：8月12日の送迎時間を間違えて入力しました"
+              placeholder="例：山田さんの8月12日の送迎時間が直りません"
               className="flex-1 resize-none rounded-md border border-gray-300 px-2.5 py-2 text-sm focus:border-indigo-500 focus:outline-none"
             />
             <button
@@ -240,17 +250,26 @@ export function SupportBot() {
   )
 }
 
-function Bubble({ role, content }: ChatMessage) {
+function Bubble({ role, content, checked }: ChatMessage) {
   const isUser = role === 'user'
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
-      <div
-        className={cn(
-          'max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm leading-relaxed',
-          isUser ? 'bg-indigo-600 text-white' : 'border border-gray-200 bg-white text-gray-800'
+      <div className={cn('max-w-[85%]', isUser ? 'text-right' : '')}>
+        <div
+          className={cn(
+            'whitespace-pre-wrap rounded-lg px-3 py-2 text-left text-sm leading-relaxed',
+            isUser ? 'bg-indigo-600 text-white' : 'border border-gray-200 bg-white text-gray-800'
+          )}
+        >
+          {content}
+        </div>
+        {/* 何を見て答えたのかを必ず示す。根拠の分からない指摘で記録を直させないため */}
+        {!isUser && checked && checked.length > 0 && (
+          <p className="mt-1 flex items-start gap-1 text-[10px] leading-relaxed text-gray-500">
+            <Database className="mt-0.5 h-3 w-3 shrink-0" />
+            <span>確認したデータ：{checked.join('、')}</span>
+          </p>
         )}
-      >
-        {content}
       </div>
     </div>
   )

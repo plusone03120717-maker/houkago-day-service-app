@@ -3,6 +3,9 @@
   "outputDirectory": "build",
   "regions": ["hnd1"],
   "functions": {
+    "src/app/api/support/chat/route.ts": {
+      "maxDuration": 60
+    },
     "src/app/api/**/*.ts": {
       "maxDuration": 30
     }

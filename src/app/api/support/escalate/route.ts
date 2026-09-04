@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getSessionUser } from '@/lib/auth'
 import { SUPPORT_MODEL, createAdminClient } from '@/lib/support/bot'
-import type { InquiryCategory, InquirySeverity } from '@/lib/support/labels'
+import { toolLabel, type InquiryCategory, type InquirySeverity } from '@/lib/support/labels'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -116,17 +116,31 @@ export async function POST(request: NextRequest) {
 
   const { data: messagesRaw } = await admin
     .from('support_inquiry_messages')
-    .select('role, content')
+    .select('role, content, tool_calls')
     .eq('inquiry_id', inquiryId)
     .order('created_at', { ascending: true })
 
-  const conversation = (messagesRaw ?? []) as { role: string; content: string }[]
+  const conversation = (messagesRaw ?? []) as {
+    role: string
+    content: string
+    tool_calls: { name: string; input: Record<string, unknown> }[] | null
+  }[]
   if (conversation.length === 0) {
     return NextResponse.json({ error: 'まだ会話がありません' }, { status: 400 })
   }
 
   const transcript = conversation
-    .map((m) => `${m.role === 'user' ? '職員' : 'ボット'}: ${m.content}`)
+    .map((m) => {
+      const speaker = m.role === 'user' ? '職員' : 'ボット'
+      // 実データを見て答えた発言は、何を見たかも一緒に渡す。
+      // 「確認済みの事実」と「聞いただけの話」を要約で混ぜないため。
+      const checked = m.tool_calls?.length
+        ? `\n（このときボットが確認した実データ: ${m.tool_calls
+            .map((c) => `${toolLabel(c.name)} ${JSON.stringify(c.input)}`)
+            .join(' / ')}）`
+        : ''
+      return `${speaker}: ${m.content}${checked}`
+    })
     .join('\n\n')
 
   let ticket: TicketInput

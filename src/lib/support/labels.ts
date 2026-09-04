@@ -8,6 +8,23 @@ export type InquiryCategory = 'bug' | 'input_mistake' | 'how_to' | 'request' | '
 export type InquirySeverity = 'high' | 'medium' | 'low'
 export type InquiryStatus = 'bot_only' | 'open' | 'in_progress' | 'resolved' | 'dismissed'
 
+/**
+ * ボットが参照したデータの表示名。
+ * 「ボットが何を見て答えたのか」を職員と管理者に見せるために使う。
+ */
+export const TOOL_LABELS: Record<string, string> = {
+  search_children: '児童の検索',
+  get_child_day: 'その日の記録・利用計画',
+  get_child_month: '月別の出席状況・受給者証',
+  get_change_history: '変更履歴',
+  get_check_findings: '入力チェックの指摘',
+  get_transport_day: 'その日の送迎便',
+}
+
+export function toolLabel(name: string): string {
+  return TOOL_LABELS[name] ?? name
+}
+
 export const CATEGORY_LABELS: Record<InquiryCategory, string> = {
   bug: '不具合',
   input_mistake: '入力ミス・データ修正',
