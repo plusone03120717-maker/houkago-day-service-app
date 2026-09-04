@@ -60,10 +60,21 @@ const INSTRUCTIONS = `あなたは放課後等デイサービス管理アプリ�
   そのまま出さないでください。「提供時間」「出席状況」など画面上の言葉に直します。
 ・ツールで確認できなかったことを、確認したかのように言ってはいけません。
 
+【2種類のマニュアルがあります】
+・操作マニュアル … アプリの使い方。画面名・ボタン・手順のこと
+・社内マニュアル … 法人の運用ルール・支援の方針など、事業所の中の決めごと
+どちらに書かれていたことなのかが職員に伝わるよう、答えるときは
+「操作マニュアルでは」「社内マニュアルでは」と根拠を示してください。
+社内マニュアルが渡されていない場合は、社内ルールについては答えられません。
+
 【絶対に守ること】
-1. 回答の根拠は、後述する「操作マニュアル」に書かれている内容だけです。
-   マニュアルに載っていないことを、あたかも事実であるかのように答えてはいけません。
+1. 回答の根拠は、後述する「操作マニュアル」と「社内マニュアル」に
+   書かれている内容だけです。
+   どちらにも載っていないことを、あたかも事実であるかのように答えてはいけません。
    分からないときは「マニュアルには記載がありません」と正直に伝えてください。
+   とくに社内ルール（勤務・手当・報告義務・支援の方針など）は、
+   一般論で答えると事実と食い違います。社内マニュアルに記載がなければ、
+   推測せず「管理者に確認しましょう」と案内してください。
 2. 画面名・メニュー名・ボタン名は、マニュアルの表記をそのまま使ってください。
    それらしい名前を創作してはいけません。
 3. あなたはデータを書き換えることも、アプリを修正することもできません。
@@ -129,18 +140,19 @@ export function stripMarkdown(text: string): string {
  */
 export function buildSystemBlocks(params: {
   manual: string | null
+  internalManual: string | null
   userName: string
   role: string
   pagePath: string | null
 }): Anthropic.TextBlockParam[] {
-  const { manual, userName, role, pagePath } = params
+  const { manual, internalManual, userName, role, pagePath } = params
 
   const blocks: Anthropic.TextBlockParam[] = [{ type: 'text', text: INSTRUCTIONS }]
 
   if (manual) {
     blocks.push({
       type: 'text',
-      text: `【操作マニュアル（これが唯一の根拠です）】\n${manual}`,
+      text: `【操作マニュアル（アプリの使い方の根拠）】\n${manual}`,
       cache_control: { type: 'ephemeral' },
     })
   } else {
@@ -151,6 +163,17 @@ export function buildSystemBlocks(params: {
         '【重要】操作マニュアルを読み込めませんでした。' +
         '具体的な操作手順は案内せず、状況の聞き取りだけを行い、' +
         '「管理者に報告」ボタンからの報告を案内してください。',
+    })
+  }
+
+  // 社内マニュアルは運用中に書き換わる。操作マニュアルの後ろに置き、
+  // ここにも区切りを打つことで、社内マニュアルを直しても
+  // 操作マニュアル分（4万トークン超）のキャッシュは効いたままになる。
+  if (internalManual) {
+    blocks.push({
+      type: 'text',
+      text: `【社内マニュアル（法人の運用ルール・支援方針の根拠）】\n${internalManual}`,
+      cache_control: { type: 'ephemeral' },
     })
   }
 

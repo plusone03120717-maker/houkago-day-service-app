@@ -26,10 +26,11 @@ const TICKET_TOOL: Anthropic.Tool = {
       },
       category: {
         type: 'string',
-        enum: ['bug', 'input_mistake', 'how_to', 'request', 'other'],
+        enum: ['bug', 'input_mistake', 'how_to', 'internal_rule', 'request', 'other'],
         description:
           'bug=アプリの動作がおかしい / input_mistake=入力ミスやデータの修正依頼 / ' +
-          'how_to=使い方が分からない / request=機能の追加・変更の要望 / other=それ以外',
+          'how_to=アプリの使い方が分からない / internal_rule=社内の運用ルールや支援方針についての質問 / ' +
+          'request=機能の追加・変更の要望 / other=それ以外',
       },
       severity: {
         type: 'string',

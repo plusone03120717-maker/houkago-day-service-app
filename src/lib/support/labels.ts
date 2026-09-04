@@ -4,7 +4,13 @@
  * Node固有のモジュールに依存しないファイルに分けている。
  */
 
-export type InquiryCategory = 'bug' | 'input_mistake' | 'how_to' | 'request' | 'other'
+export type InquiryCategory =
+  | 'bug'
+  | 'input_mistake'
+  | 'how_to'
+  | 'internal_rule'
+  | 'request'
+  | 'other'
 export type InquirySeverity = 'high' | 'medium' | 'low'
 export type InquiryStatus = 'bot_only' | 'open' | 'in_progress' | 'resolved' | 'dismissed'
 
@@ -28,7 +34,8 @@ export function toolLabel(name: string): string {
 export const CATEGORY_LABELS: Record<InquiryCategory, string> = {
   bug: '不具合',
   input_mistake: '入力ミス・データ修正',
-  how_to: '使い方',
+  how_to: 'アプリの使い方',
+  internal_rule: '社内ルール',
   request: '要望',
   other: 'その他',
 }

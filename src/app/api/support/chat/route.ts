@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getSessionUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { loadManualText } from '@/lib/support/manual'
+import { loadInternalManualText } from '@/lib/internal-manual/knowledge'
 import { SUPPORT_TOOLS, runSupportTool } from '@/lib/support/tools'
 import { toolLabel } from '@/lib/support/labels'
 import {
@@ -113,7 +114,14 @@ export async function POST(request: NextRequest) {
   }
 
   // --- Claude に投げる -----------------------------------------------
-  const manual = await loadManualText()
+  // データ参照は「ログイン中の職員のセッション」で行う。service_role を渡すと
+  // RLS が外れ、その職員が画面で見られない情報までボットが読めてしまう。
+  const supabaseAsUser = await createClient()
+
+  const [manual, internalManual] = await Promise.all([
+    loadManualText(),
+    loadInternalManualText(supabaseAsUser),
+  ])
 
   const messages: Anthropic.MessageParam[] = [
     // 履歴が伸びても入力が膨らみ続けないよう、直近だけを渡す
@@ -123,14 +131,11 @@ export async function POST(request: NextRequest) {
 
   const system = buildSystemBlocks({
     manual,
+    internalManual,
     userName: user.name ?? '職員',
     role: user.role ?? 'staff',
     pagePath: pagePath ?? null,
   })
-
-  // データ参照は「ログイン中の職員のセッション」で行う。service_role を渡すと
-  // RLS が外れ、その職員が画面で見られない情報までボットが読めてしまう。
-  const supabaseAsUser = await createClient()
 
   const toolCalls: { name: string; input: unknown }[] = []
   const startedAt = Date.now()

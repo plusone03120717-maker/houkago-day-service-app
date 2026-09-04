@@ -30,6 +30,7 @@ import {
   Inbox,
   ListChecks,
   LifeBuoy,
+  BookMarked,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -81,6 +82,7 @@ const adminNav = [
     items: [
       { href: '/children', label: '児童管理', icon: Users },
       { href: '/documents', label: '帳票出力', icon: FileText },
+      { href: '/internal-manual', label: '社内マニュアル', icon: BookMarked },
       { href: '/support', label: 'サポート問い合わせ', icon: LifeBuoy },
       { href: '/settings', label: '設定', icon: Settings },
     ],
@@ -128,6 +130,7 @@ const staffNav = [
     items: [
       { href: '/children', label: '児童管理', icon: Users },
       { href: '/documents', label: '帳票出力', icon: FileText },
+      { href: '/internal-manual', label: '社内マニュアル', icon: BookMarked },
       { href: '/support', label: 'サポート問い合わせ', icon: LifeBuoy },
     ],
   },
