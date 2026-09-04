@@ -29,6 +29,7 @@ type NoteRow = {
   created_by: string | null
   created_by_name: string | null
   created_at: string
+  source_minutes_id: string | null
 }
 
 function jst(iso: string): string {
@@ -63,7 +64,7 @@ export default async function InternalManualCategoryPage({
       .order('created_at'),
     supabase
       .from('internal_notes')
-      .select('id, content, status, article_id, created_by, created_by_name, created_at')
+      .select('id, content, status, article_id, created_by, created_by_name, created_at, source_minutes_id')
       .eq('category', category)
       .order('created_at', { ascending: false })
       .limit(200),
@@ -186,6 +187,7 @@ export default async function InternalManualCategoryPage({
                   authorName={n.created_by_name}
                   createdAt={jst(n.created_at)}
                   linkedToArticle={Boolean(n.article_id)}
+                  sourceMinutesId={n.source_minutes_id}
                   canEdit={isAdmin || n.created_by === user.id}
                 />
               ))}

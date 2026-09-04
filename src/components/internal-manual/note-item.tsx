@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Loader2, Pencil, Trash2, Archive, Check, X } from 'lucide-react'
+import Link from 'next/link'
+import { Loader2, Pencil, Trash2, Archive, Check, X, NotebookPen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { deleteNote, setNoteStatus, updateNote } from '@/app/actions/internal-manual'
 
@@ -11,6 +12,7 @@ export function NoteItem({
   authorName,
   createdAt,
   linkedToArticle,
+  sourceMinutesId,
   canEdit,
 }: {
   id: string
@@ -19,6 +21,8 @@ export function NoteItem({
   createdAt: string
   /** すでにAIの下書きに取り込まれているか */
   linkedToArticle: boolean
+  /** 議事録から反映されたメモなら、その議事録のID */
+  sourceMinutesId?: string | null
   canEdit: boolean
 }) {
   const [editing, setEditing] = useState(false)
@@ -36,6 +40,15 @@ export function NoteItem({
       <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
         <span>{authorName ?? '職員'}</span>
         <span>{createdAt}</span>
+        {sourceMinutesId && (
+          <Link
+            href={`/minutes/${sourceMinutesId}`}
+            className="inline-flex items-center gap-1 rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100"
+          >
+            <NotebookPen className="h-3 w-3" />
+            議事録より
+          </Link>
+        )}
         {linkedToArticle && (
           <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
             下書きに取り込み済み（公開待ち）
