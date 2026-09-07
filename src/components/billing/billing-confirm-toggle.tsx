@@ -17,22 +17,42 @@ export function BillingConfirmToggle({ billingDetailId, initialConfirmed }: Prop
   const [saving, setSaving] = useState(false)
   const [, startTransition] = useTransition()
 
+  // 月を切り替えても、児童の行は同じ key で描画されるためこのボタンは
+  // 作り直されない。その結果 useState の初期値が前の月のままになり、
+  // 「8月は確定済なのに9月を見て戻ると未確定に見える」状態が起きていた。
+  // サーバーから届いた明細（行のIDまたは確定状態）が変わったら state を作り直す。
+  const [serverState, setServerState] = useState({ id: billingDetailId, confirmed: initialConfirmed })
+  if (serverState.id !== billingDetailId || serverState.confirmed !== initialConfirmed) {
+    setServerState({ id: billingDetailId, confirmed: initialConfirmed })
+    setConfirmed(initialConfirmed)
+  }
+
   const toggle = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     if (saving) return
     setSaving(true)
     const next = !confirmed
-    const { error } = await supabase
+    // 確定状態が保存できたことを実際に確かめる。件数を見ないと、行が既に
+    // 消えている場合や権限がない場合にエラーなしで素通りしてしまう。
+    const { data, error } = await supabase
       .from('billing_details')
       .update({ is_confirmed: next })
       .eq('id', billingDetailId)
+      .select('id')
     if (error) {
       alert(`確定状態を保存できませんでした: ${error.message}`)
       setSaving(false)
       return
     }
+    if (!data || data.length === 0) {
+      alert('確定状態を保存できませんでした。この請求明細は作り直されている可能性があります。画面を再読み込みしてからもう一度お試しください。')
+      setSaving(false)
+      startTransition(() => router.refresh())
+      return
+    }
     setConfirmed(next)
+    setServerState({ id: billingDetailId, confirmed: next })
     setSaving(false)
     // クライアントのルーターキャッシュを破棄する。
     // これがないと「明細を見る」等で遷移して戻ったとき、確定前の
