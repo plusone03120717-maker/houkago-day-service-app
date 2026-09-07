@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Save, Search, Loader2, Plus, Trash2, Star, Phone } from 'lucide-react'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type Unit = { id: string; name: string; service_type: string }
 export type School = { id: string; municipality: string; name: string; address: string; facility_type: string }
@@ -802,32 +803,32 @@ export function ChildForm({ units, schools, initial, initialAddresses, initialPh
           </div>
           <div>
             <label className="text-xs font-medium text-gray-700 mb-1 block">アレルギー情報</label>
-            <textarea
+            <AutoTextarea
               value={form.allergy_info}
               onChange={set('allergy_info')}
-              rows={2}
+              minRows={2}
               placeholder="食物アレルギーなどを記入"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
           <div>
             <label className="text-xs font-medium text-gray-700 mb-1 block">医療的ケア</label>
-            <textarea
+            <AutoTextarea
               value={form.medical_info}
               onChange={set('medical_info')}
-              rows={2}
+              minRows={2}
               placeholder="服薬、医療的ケアなどを記入"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
           <div>
             <label className="text-xs font-medium text-gray-700 mb-1 block">特記事項・備考</label>
-            <textarea
+            <AutoTextarea
               value={form.notes}
               onChange={set('notes')}
-              rows={3}
+              minRows={3}
               placeholder="支援上の注意事項など"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
         </CardContent>

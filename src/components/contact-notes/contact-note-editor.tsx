@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Sparkles, Send, Save } from 'lucide-react'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 interface Props {
   noteId: string
@@ -88,12 +89,12 @@ export function ContactNoteEditor({
           </div>
         )}
 
-        <textarea
+        <AutoTextarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          rows={8}
+          minRows={8}
           placeholder="今日の活動や様子を記入してください"
-          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
 
         <div className="flex gap-2">

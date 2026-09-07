@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { MedicationLogForm } from '@/components/medications/medication-log-form'
 import { formatDate } from '@/lib/utils'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type Child = {
   id: string
@@ -505,12 +506,12 @@ export function DailyRecordForm({
               <Bot className="h-3.5 w-3.5" />
               箇条書きから文章を生成（個別支援計画と照合）
             </p>
-            <textarea
+            <AutoTextarea
               value={bulletPoints}
               onChange={(e) => setBulletPoints(e.target.value)}
               placeholder={"・〇〇に積極的に取り組んだ\n・△△で支援が必要だった\n・□□ができるようになった"}
-              rows={3}
-              className="w-full text-sm border border-indigo-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400 resize-none bg-white"
+              minRows={3}
+              className="w-full text-sm leading-relaxed border border-indigo-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
             />
             <Button
               variant="outline"
@@ -524,12 +525,12 @@ export function DailyRecordForm({
             </Button>
           </div>
 
-          <textarea
+          <AutoTextarea
             value={dailyContent}
             onChange={(e) => setDailyContent(e.target.value)}
             placeholder="本日の様子、活動内容、気づいたことなどを記入してください..."
-            rows={4}
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            minRows={4}
+            className="w-full text-sm leading-relaxed border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
 
           <div>
@@ -547,12 +548,12 @@ export function DailyRecordForm({
             </label>
             {hasNotable && (
               <div className="mt-2 space-y-1.5">
-                <textarea
+                <AutoTextarea
                   value={notableContent}
                   onChange={(e) => setNotableContent(e.target.value)}
                   placeholder="特記事項の内容（保護者への報告・ヒヤリハット・体調異変など）"
-                  rows={3}
-                  className="w-full text-sm border border-red-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-red-400 resize-none bg-red-50"
+                  minRows={3}
+                  className="w-full text-sm leading-relaxed border border-red-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-red-400 bg-red-50"
                 />
                 <button
                   type="button"
@@ -622,12 +623,12 @@ export function DailyRecordForm({
           </div>
         </CardHeader>
         <CardContent>
-          <textarea
+          <AutoTextarea
             value={contactNoteContent}
             onChange={(e) => setContactNoteContent(e.target.value)}
             placeholder="保護者へのメッセージを入力してください..."
-            rows={5}
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            minRows={5}
+            className="w-full text-sm leading-relaxed border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
           <p className="text-xs text-gray-400 mt-1.5">
             ※ AI生成後、内容を確認・編集してから保存してください

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 import { Pencil, Wand2, ChevronUp, Bot, Plus, Trash2 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
@@ -37,6 +38,16 @@ const statusConfig: Record<string, { label: string; variant: 'success' | 'warnin
   achieved:     { label: '目標達成',  variant: 'success' },
   revised:      { label: '計画見直し', variant: 'warning' },
   needs_review: { label: '要検討',    variant: 'destructive' },
+}
+
+/** 記述量が多い項目を、枠付きで読みやすく表示する（改行・長文をそのまま表示） */
+function ViewField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-2 print:break-inside-avoid">
+      <p className="text-[11px] font-medium text-gray-500 mb-1">{label}</p>
+      <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap break-words">{value}</p>
+    </div>
+  )
 }
 
 interface Props {
@@ -142,7 +153,7 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
   ] as const
 
   return (
-    <div className="p-3 rounded-lg border border-gray-100 bg-white space-y-2">
+    <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-2 print:break-inside-avoid">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-gray-800">{formatDate(record.record_date)}</span>
         <div className="flex items-center gap-2">
@@ -160,57 +171,29 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
       </div>
 
       {!editing ? (
-        <>
-          {record.long_term_progress && (
-            <div>
-              <p className="text-xs text-gray-400 mb-0.5">長期目標の達成状況</p>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{record.long_term_progress}</p>
-            </div>
-          )}
-          {record.short_term_progress && (
-            <div>
-              <p className="text-xs text-gray-400 mb-0.5">短期目標の達成状況</p>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{record.short_term_progress}</p>
-            </div>
-          )}
-          {record.issues && (
-            <div>
-              <p className="text-xs text-gray-400 mb-0.5">課題</p>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{record.issues}</p>
-            </div>
-          )}
-          {record.next_actions && (
-            <div>
-              <p className="text-xs text-gray-400 mb-0.5">今後の対応</p>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{record.next_actions}</p>
-            </div>
-          )}
-          {record.specialized_support && (
-            <div>
-              <p className="text-xs text-gray-400 mb-0.5">専門的支援</p>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{record.specialized_support}</p>
-            </div>
-          )}
-          {record.family_wishes && (
-            <div>
-              <p className="text-xs text-gray-400 mb-0.5">家族の要望</p>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{record.family_wishes}</p>
-            </div>
-          )}
+        <div className="space-y-2">
+          {record.long_term_progress && <ViewField label="長期目標の達成状況" value={record.long_term_progress} />}
+          {record.short_term_progress && <ViewField label="短期目標の達成状況" value={record.short_term_progress} />}
+          {record.issues && <ViewField label="課題" value={record.issues} />}
+          {record.next_actions && <ViewField label="今後の対応" value={record.next_actions} />}
+          {record.specialized_support && <ViewField label="専門的支援" value={record.specialized_support} />}
+          {record.family_wishes && <ViewField label="家族の要望" value={record.family_wishes} />}
           {record.agency_notes && record.agency_notes.length > 0 && (
             <div>
-              <p className="text-xs text-gray-400 mb-1">関係事業所の記録</p>
+              <p className="text-[11px] font-medium text-gray-500 mb-1">関係事業所の記録</p>
               <div className="space-y-1.5">
                 {record.agency_notes.map((note, i) => (
-                  <div key={i} className="bg-gray-50 rounded-lg px-3 py-2">
+                  <div key={i} className="rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-2 print:break-inside-avoid">
                     {note.name && <p className="text-xs font-medium text-gray-600 mb-0.5">{note.name}</p>}
-                    {note.content && <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>}
+                    {note.content && (
+                      <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap break-words">{note.content}</p>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           )}
-        </>
+        </div>
       ) : (
         <div className="space-y-3 pt-1">
           <div className="grid grid-cols-2 gap-3">
@@ -263,11 +246,11 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
                   </button>
                 </div>
               </div>
-              <textarea
+              <AutoTextarea
                 value={value}
                 onChange={(e) => (setter as (v: string) => void)(e.target.value)}
-                rows={rows}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                minRows={rows}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
           ))}
@@ -286,12 +269,12 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
                 {refining === 'family_wishes' ? '整えています...' : '文章を整える'}
               </button>
             </div>
-            <textarea
+            <AutoTextarea
               value={familyWishes}
               onChange={(e) => setFamilyWishes(e.target.value)}
-              rows={3}
+              minRows={3}
               placeholder="保護者・家族からの要望や意見"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -330,12 +313,12 @@ export function MonitoringRecordEditCard({ record, supportPlanId, childId, readO
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <textarea
+                  <AutoTextarea
                     value={note.content}
                     onChange={(e) => updateAgencyNote(i, 'content', e.target.value)}
-                    rows={2}
+                    minRows={2}
                     placeholder="この事業所との連携内容・情報共有事項"
-                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none bg-white"
+                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                   />
                 </div>
               ))}

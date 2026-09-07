@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Save, CheckCircle } from 'lucide-react'
 import { updateIncidentStatus } from '@/app/actions/incidents'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 interface Props {
   incidentId: string
@@ -107,12 +108,12 @@ export function IncidentStatusForm({
       {/* フォローアップ記録 */}
       <div>
         <label className="text-xs font-medium text-gray-700 block mb-1">フォローアップ記録</label>
-        <textarea
+        <AutoTextarea
           value={followUpNotes}
           onChange={(e) => { setFollowUpNotes(e.target.value); setSaved(false) }}
           placeholder="その後の経過・対応内容を記録してください"
-          rows={3}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+          minRows={3}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
       </div>
 

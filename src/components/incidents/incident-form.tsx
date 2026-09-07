@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Save } from 'lucide-react'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type Child = { id: string; name: string }
 
@@ -203,24 +204,24 @@ export function IncidentForm({ children, facilityId }: Props) {
         <label className="text-xs font-medium text-gray-700 block mb-1">
           状況説明 <span className="text-red-500">*</span>
         </label>
-        <textarea
+        <AutoTextarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="何が起きたかを具体的に記入してください"
-          rows={3}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+          minRows={3}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
       </div>
 
       {/* 即時対応 */}
       <div>
         <label className="text-xs font-medium text-gray-700 block mb-1">即時対応内容</label>
-        <textarea
+        <AutoTextarea
           value={immediateResponse}
           onChange={(e) => setImmediateResponse(e.target.value)}
           placeholder="その場でとった対応を記入してください"
-          rows={2}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+          minRows={2}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
       </div>
 
@@ -228,22 +229,22 @@ export function IncidentForm({ children, facilityId }: Props) {
       <div className="grid grid-cols-1 gap-3">
         <div>
           <label className="text-xs font-medium text-gray-700 block mb-1">原因・背景</label>
-          <textarea
+          <AutoTextarea
             value={rootCause}
             onChange={(e) => setRootCause(e.target.value)}
             placeholder="なぜ起きたか"
-            rows={2}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            minRows={2}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </div>
         <div>
           <label className="text-xs font-medium text-gray-700 block mb-1">再発防止策</label>
-          <textarea
+          <AutoTextarea
             value={preventiveMeasures}
             onChange={(e) => setPreventiveMeasures(e.target.value)}
             placeholder="今後の対策"
-            rows={2}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            minRows={2}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </div>
       </div>

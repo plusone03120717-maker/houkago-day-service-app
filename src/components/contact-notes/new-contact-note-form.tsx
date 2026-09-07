@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Sparkles, Send, Save, ArrowRight } from 'lucide-react'
 import { PhotoManager } from '@/components/contact-notes/photo-manager'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type AttendedChild = {
   child_id: string
@@ -142,12 +143,12 @@ export function NewContactNoteForm({ date, attended, defaultChildId, staffId }: 
         {/* 本文 */}
         <div>
           <label className="text-xs font-medium text-gray-700 mb-1 block">内容</label>
-          <textarea
+          <AutoTextarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            rows={8}
+            minRows={8}
             placeholder="今日の活動や様子を記入してください"
-            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </div>
 

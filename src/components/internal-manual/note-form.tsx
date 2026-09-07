@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { Loader2, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { addNote } from '@/app/actions/internal-manual'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 /**
  * メモの投稿欄。
@@ -32,7 +33,7 @@ export function NoteForm({ category }: { category: string }) {
 
   return (
     <div>
-      <textarea
+      <AutoTextarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
         onKeyDown={(e) => {
@@ -42,14 +43,14 @@ export function NoteForm({ category }: { category: string }) {
             submit()
           }
         }}
-        rows={4}
+        minRows={4}
         maxLength={2000}
         placeholder={
           '例：送迎中に体調不良が出たら、事業所に戻らず先に保護者へ電話する\n' +
           '例：初回面談の持ち物は受給者証・母子手帳・印鑑\n' +
           '箇条書きでも、言い切らない書き方でも大丈夫です。'
         }
-        className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none"
       />
       <div className="mt-2 flex flex-wrap items-center gap-3">
         <Button size="sm" disabled={pending || !content.trim()} onClick={submit}>

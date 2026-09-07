@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { markInquiryRead, saveAdminNote, updateInquiryStatus } from '@/app/actions/support'
 import type { InquiryStatus } from '@/lib/support/labels'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 /**
  * 管理者が詳細を開いた時点で未読を落とす。
@@ -88,13 +89,13 @@ export function InquiryAdminPanel({
           <label htmlFor="admin-note" className="text-xs font-semibold text-gray-500">
             対応メモ（職員にも表示されます）
           </label>
-          <textarea
+          <AutoTextarea
             id="admin-note"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            rows={3}
+            minRows={3}
             placeholder="例：8/12の送迎時間を修正済み。原因は利用スケジュールの重複登録。"
-            className="mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none"
           />
           <div className="mt-2 flex items-center gap-3">
             <Button size="sm" disabled={pending || note === savedNote} onClick={save}>

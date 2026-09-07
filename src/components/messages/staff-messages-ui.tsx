@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Send, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type Message = {
   id: string
@@ -180,13 +181,14 @@ export function StaffMessagesUI({ currentUserId, parents, messages, unreadByPare
 
             {/* 入力エリア */}
             <div className="flex gap-2 p-4 border-t border-gray-200">
-              <textarea
+              <AutoTextarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="メッセージを入力..."
-                rows={2}
-                className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                minRows={2}
+                maxRows={8}
+                className="flex-1 text-sm leading-relaxed border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
               <Button
                 onClick={handleSend}

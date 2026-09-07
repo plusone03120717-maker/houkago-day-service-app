@@ -6,6 +6,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 import { Plus, ChevronDown, ChevronUp, Wand2, Bot, Trash2 } from 'lucide-react'
 
 const STATUS_OPTIONS = [
@@ -205,12 +206,12 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
                   </button>
                 </div>
               </div>
-              <textarea
+              <AutoTextarea
                 value={value}
                 onChange={(e) => (setter as (v: string) => void)(e.target.value)}
-                rows={2}
+                minRows={3}
                 placeholder={placeholder}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
           ))}
@@ -229,12 +230,12 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
                 {refining === 'family_wishes' ? '整えています...' : '文章を整える'}
               </button>
             </div>
-            <textarea
+            <AutoTextarea
               value={familyWishes}
               onChange={(e) => setFamilyWishes(e.target.value)}
-              rows={2}
+              minRows={3}
               placeholder="保護者・家族からの要望や意見"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -273,12 +274,12 @@ export function MonitoringRecordForm({ supportPlanId, childId, readOnly }: Props
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <textarea
+                  <AutoTextarea
                     value={note.content}
                     onChange={(e) => updateAgencyNote(i, 'content', e.target.value)}
-                    rows={2}
+                    minRows={2}
                     placeholder="この事業所との連携内容・情報共有事項"
-                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none bg-white"
+                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                   />
                 </div>
               ))}

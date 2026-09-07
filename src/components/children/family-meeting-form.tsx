@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Bot, Loader2, Save, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type Meeting = {
   id: string
@@ -133,12 +134,12 @@ export function FamilyMeetingForm({ childId, initial, onSaved, onDeleted }: Prop
                 文章を整える
               </button>
             </div>
-            <textarea
+            <AutoTextarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              rows={6}
+              minRows={6}
               placeholder="話し合いの内容、決定事項、今後の方針などをメモしてください..."
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Save, Car } from 'lucide-react'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type LocationType = 'home' | 'school'
 type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
@@ -199,12 +200,12 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
       {/* 備考 */}
       <div>
         <label className="text-xs font-medium text-gray-600 block mb-1">備考</label>
-        <textarea
+        <AutoTextarea
           value={settings.notes}
           onChange={(e) => setSettings((prev) => ({ ...prev, notes: e.target.value }))}
-          rows={3}
+          minRows={3}
           placeholder="送迎に関する注意事項など"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
       </div>
 

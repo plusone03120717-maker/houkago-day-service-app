@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LifeBuoy, X, Send, Loader2, Flag, CheckCircle2, RotateCcw, Database } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type ChatMessage = {
   role: 'user' | 'assistant'
@@ -215,7 +216,7 @@ export function SupportBot() {
           </button>
         ) : (
           <div className="flex items-end gap-2">
-            <textarea
+            <AutoTextarea
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -226,10 +227,11 @@ export function SupportBot() {
                   send()
                 }
               }}
-              rows={2}
+              minRows={2}
+              maxRows={8}
               maxLength={2000}
               placeholder="例：山田さんの8月12日の送迎時間が直りません"
-              className="flex-1 resize-none rounded-md border border-gray-300 px-2.5 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+              className="flex-1 rounded-md border border-gray-300 px-2.5 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none"
             />
             <button
               onClick={send}

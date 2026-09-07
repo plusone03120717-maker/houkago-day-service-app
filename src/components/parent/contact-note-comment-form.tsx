@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Send } from 'lucide-react'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 export function ContactNoteCommentForm({ noteId }: { noteId: string }) {
   const router = useRouter()
@@ -32,12 +33,13 @@ export function ContactNoteCommentForm({ noteId }: { noteId: string }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-2">
-      <textarea
+      <AutoTextarea
         value={comment}
         onChange={(e) => setComment(e.target.value)}
         placeholder="施設へのコメントを入力してください..."
-        rows={3}
-        className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+        minRows={3}
+        maxRows={12}
+        className="w-full text-sm leading-relaxed border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
       />
       <div className="flex justify-end">
         <Button type="submit" size="sm" disabled={loading || !comment.trim()}>

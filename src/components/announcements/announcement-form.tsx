@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Plus, Send } from 'lucide-react'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type Unit = { id: string; name: string }
 
@@ -75,12 +76,12 @@ export function AnnouncementForm({ units, facilityId }: Props) {
 
           <div>
             <label className="text-xs font-medium text-gray-700 mb-1 block">内容</label>
-            <textarea
+            <AutoTextarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              rows={5}
+              minRows={5}
               placeholder="お知らせの内容を入力してください"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 

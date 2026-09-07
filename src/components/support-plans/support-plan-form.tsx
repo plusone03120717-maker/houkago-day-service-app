@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Sparkles, Wand2, Plus, ChevronDown, ChevronUp } from 'lucide-react'
 import { StarRating } from '@/components/ui/star-rating'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 interface Props {
   childId: string
@@ -258,12 +259,12 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
                 {refining === 'family_wishes' ? '整えています...' : '文章を整える'}
               </button>
             </div>
-            <textarea
+            <AutoTextarea
               value={familyWishes}
               onChange={(e) => setFamilyWishes(e.target.value)}
-              rows={3}
+              minRows={3}
               placeholder="例：集団の中でも自分らしく過ごせるようになってほしい"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -281,12 +282,12 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
                 {refining === 'support_policy' ? '整えています...' : '文章を整える'}
               </button>
             </div>
-            <textarea
+            <AutoTextarea
               value={supportPolicy}
               onChange={(e) => setSupportPolicy(e.target.value)}
-              rows={3}
+              minRows={3}
               placeholder="例：本人のペースを尊重し、安心できる環境の中で主体的な活動参加を促す"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -304,12 +305,12 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
                 {refining === 'long_term_goals' ? '整えています...' : '文章を整える'}
               </button>
             </div>
-            <textarea
+            <AutoTextarea
               value={longTermGoals}
               onChange={(e) => setLongTermGoals(e.target.value)}
-              rows={3}
+              minRows={3}
               placeholder="例：自分の気持ちを言葉で伝えられるようになる"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs text-gray-500">達成度評価:</span>
@@ -331,12 +332,12 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
                 {refining === 'short_term_goals' ? '整えています...' : '文章を整える'}
               </button>
             </div>
-            <textarea
+            <AutoTextarea
               value={shortTermGoals}
               onChange={(e) => setShortTermGoals(e.target.value)}
-              rows={3}
+              minRows={3}
               placeholder="例：スタッフに要求を伝えるサインを使える"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs text-gray-500">達成度評価:</span>
@@ -361,12 +362,12 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
                     {refining === area.key ? '整えています...' : '文章を整える'}
                   </button>
                 </div>
-                <textarea
+                <AutoTextarea
                   value={areaValues[area.stateKey]}
                   onChange={(e) => setArea(area.stateKey, e.target.value)}
-                  rows={2}
+                  minRows={2}
                   placeholder={area.placeholder}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none bg-white"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                 />
               </div>
             ))}
@@ -386,12 +387,12 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
                 {refining === 'support_specialized' ? '整えています...' : '文章を整える'}
               </button>
             </div>
-            <textarea
+            <AutoTextarea
               value={specializedSupport}
               onChange={(e) => setSpecializedSupport(e.target.value)}
-              rows={3}
+              minRows={3}
               placeholder="例：OT（作業療法士）による感覚統合訓練を月2回実施し、手先の巧緻性向上と感覚過敏への対応を行う"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -409,12 +410,12 @@ export function SupportPlanForm({ childId, childName, diagnosis, readOnly }: Pro
                 {refining === 'monitoring_notes' ? '整えています...' : '文章を整える'}
               </button>
             </div>
-            <textarea
+            <AutoTextarea
               value={monitoringNotes}
               onChange={(e) => setMonitoringNotes(e.target.value)}
-              rows={3}
+              minRows={3}
               placeholder="目標の達成状況・今後の課題など"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 

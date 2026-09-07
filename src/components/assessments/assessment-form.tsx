@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { ChevronDown, ChevronUp, Save } from 'lucide-react'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type Props = {
   childId: string
@@ -130,12 +131,12 @@ export function AssessmentForm({ childId, staffId }: Props) {
       {SECTIONS.map((section) => (
         <div key={section.key}>
           <label className="text-xs font-medium text-gray-700 block mb-1">{section.label}</label>
-          <textarea
+          <AutoTextarea
             value={fields[section.key]}
             onChange={(e) => setFields((prev) => ({ ...prev, [section.key]: e.target.value }))}
             placeholder={section.placeholder}
-            rows={3}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+            minRows={3}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </div>
       ))}

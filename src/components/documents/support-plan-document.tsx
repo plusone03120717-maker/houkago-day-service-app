@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Pencil, Eye, Minus, Plus, AlignJustify, Save, CheckCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 export type AreaData = {
   label: string
@@ -141,7 +142,7 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
     color: 'inherit',
     lineHeight: 1.45,
     padding: '1px 3px',
-    resize: 'vertical',
+    resize: 'none',
     boxSizing: 'border-box',
   }
 
@@ -150,9 +151,10 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
     value, minHeight, onChange,
   }: { value: string; minHeight: number; onChange: (v: string) => void }) =>
     editMode ? (
-      <textarea
+      <AutoTextarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        minRows={1}
         style={{ ...taBase, minHeight }}
       />
     ) : (

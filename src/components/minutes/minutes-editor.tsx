@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { deleteMinutes, saveMinutes, setMinutesStatus } from '@/app/actions/minutes'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 /**
  * 議事録の編集。
@@ -172,16 +173,16 @@ export function MinutesEditor({
           )}
         </CardHeader>
         <CardContent className="pt-0">
-          <textarea
+          <AutoTextarea
             value={rawBody}
             onChange={(e) => setRawBody(e.target.value)}
             disabled={!canEdit}
-            rows={10}
+            minRows={10}
             placeholder={
               '話が出た順に、そのまま書いて構いません。\n' +
               '例：\n・送迎の人数確認、乗る前と降りた後の2回にする\n・山田→ヒヤリハットは当日中に入力で\n・次回の行事の話は来週まとめる'
             }
-            className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none disabled:bg-gray-50"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none disabled:bg-gray-50"
           />
         </CardContent>
       </Card>
@@ -196,11 +197,11 @@ export function MinutesEditor({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 pt-0">
-            <textarea
+            <AutoTextarea
               value={proposal}
               onChange={(e) => setProposal(e.target.value)}
-              rows={16}
-              className="w-full resize-y rounded-md border border-indigo-200 bg-white px-3 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none"
+              minRows={16}
+              className="w-full rounded-md border border-indigo-200 bg-white px-3 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none"
             />
             <p className="text-xs text-gray-600">
               内容を確かめ、必要なら直してから保存してください。走り書きは残ります。
@@ -233,13 +234,13 @@ export function MinutesEditor({
         </CardHeader>
         <CardContent className="pt-0">
           {formatted || canEdit ? (
-            <textarea
+            <AutoTextarea
               value={formatted}
               onChange={(e) => setFormatted(e.target.value)}
               disabled={!canEdit}
-              rows={16}
+              minRows={16}
               placeholder="「AIで議事録に整える」を押すか、ここに直接書いてください"
-              className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none disabled:bg-gray-50"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none disabled:bg-gray-50"
             />
           ) : (
             <p className="text-sm text-gray-500">まだ議事録がまとめられていません。</p>

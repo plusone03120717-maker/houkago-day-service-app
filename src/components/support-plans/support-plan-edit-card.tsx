@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Pencil, Wand2, ChevronUp, RefreshCw } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { StarRating } from '@/components/ui/star-rating'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type SupportPlan = {
   id: string
@@ -564,11 +565,11 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
                 <label className="text-xs font-medium text-gray-700">家族の意向</label>
                 <RefineButton fieldType="family_wishes" disabled={refining === 'family_wishes' || !familyWishes.trim()} />
               </div>
-              <textarea
+              <AutoTextarea
                 value={familyWishes}
                 onChange={(e) => setFamilyWishes(e.target.value)}
-                rows={3}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                minRows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
 
@@ -578,11 +579,11 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
                 <label className="text-xs font-medium text-gray-700">支援の方針</label>
                 <RefineButton fieldType="support_policy" disabled={refining === 'support_policy' || !supportPolicy.trim()} />
               </div>
-              <textarea
+              <AutoTextarea
                 value={supportPolicy}
                 onChange={(e) => setSupportPolicy(e.target.value)}
-                rows={3}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                minRows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
 
@@ -600,11 +601,11 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
                   {refining === 'long_term_goals' ? '整えています...' : '文章を整える'}
                 </button>
               </div>
-              <textarea
+              <AutoTextarea
                 value={longTermGoals}
                 onChange={(e) => setLongTermGoals(e.target.value)}
-                rows={3}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                minRows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-xs text-gray-500">達成度評価:</span>
@@ -626,11 +627,11 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
                   {refining === 'short_term_goals' ? '整えています...' : '文章を整える'}
                 </button>
               </div>
-              <textarea
+              <AutoTextarea
                 value={shortTermGoals}
                 onChange={(e) => setShortTermGoals(e.target.value)}
-                rows={3}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                minRows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-xs text-gray-500">達成度評価:</span>
@@ -682,23 +683,23 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
                         {refining === area.key ? '整えています...' : '文章を整える'}
                       </button>
                     </div>
-                    <textarea
+                    <AutoTextarea
                       value={areaValues[area.key]}
                       onChange={(e) => setArea(area.key, e.target.value)}
-                      rows={2}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none bg-white"
+                      minRows={2}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                     />
                   </div>
 
                   {/* 評価（2枚目のシート用） */}
                   <div>
                     <label className="text-xs font-medium text-orange-700 mb-1 block">評価（2枚目シート）</label>
-                    <textarea
+                    <AutoTextarea
                       value={evaluationValues[area.evaluationKey]}
                       onChange={(e) => setEvaluation(area.evaluationKey, e.target.value)}
-                      rows={2}
+                      minRows={2}
                       placeholder="目標達成の評価・振り返りを記入"
-                      className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400 resize-none bg-orange-50/30"
+                      className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-orange-400 bg-orange-50/30"
                     />
                   </div>
 
@@ -762,12 +763,12 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
                         {generatingGoal === area.goalKey ? 'AI生成中...' : 'AI で生成'}
                       </button>
                     </div>
-                    <textarea
+                    <AutoTextarea
                       value={goalValues[area.goalKey]}
                       onChange={(e) => setGoal(area.goalKey, e.target.value)}
-                      rows={2}
+                      minRows={2}
                       placeholder="支援内容を入力後、「AI で生成」で自動作成できます"
-                      className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400 resize-none bg-indigo-50/40"
+                      className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-indigo-50/40"
                     />
                   </div>
                 </div>
@@ -799,12 +800,12 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
                   </button>
                 </div>
               </div>
-              <textarea
+              <AutoTextarea
                 value={specializedSupport}
                 onChange={(e) => setSpecializedSupport(e.target.value)}
-                rows={3}
+                minRows={3}
                 placeholder="例：OT（作業療法士）による感覚統合訓練を月2回実施し、手先の巧緻性向上と感覚過敏への対応を行う"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
 
@@ -834,11 +835,11 @@ export function SupportPlanEditCard({ plan, childId, readOnly }: Props) {
                   {refining === 'monitoring_notes' ? '整えています...' : '文章を整える'}
                 </button>
               </div>
-              <textarea
+              <AutoTextarea
                 value={monitoringNotes}
                 onChange={(e) => setMonitoringNotes(e.target.value)}
-                rows={3}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                minRows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
 

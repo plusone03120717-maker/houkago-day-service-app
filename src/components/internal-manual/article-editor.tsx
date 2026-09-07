@@ -13,6 +13,7 @@ import {
   saveArticle,
   unpublishArticle,
 } from '@/app/actions/internal-manual'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 /**
  * 管理者向けの記事編集。
@@ -137,13 +138,13 @@ export function ArticleEditor({
             <label htmlFor="article-body" className="text-xs font-semibold text-gray-500">
               本文
             </label>
-            <textarea
+            <AutoTextarea
               id="article-body"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              rows={18}
+              minRows={18}
               placeholder={'■ 見出し\n・箇条書き\n\n※ 見出しは「■」、箇条書きは「・」で書いてください'}
-              className="mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 font-mono text-sm leading-relaxed focus:border-indigo-500 focus:outline-none"
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm leading-relaxed focus:border-indigo-500 focus:outline-none"
             />
           </div>
 

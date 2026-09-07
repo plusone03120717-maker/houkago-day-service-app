@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Loader2, Pencil, Trash2, Archive, Check, X, NotebookPen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { deleteNote, setNoteStatus, updateNote } from '@/app/actions/internal-manual'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 export function NoteItem({
   id,
@@ -58,12 +59,12 @@ export function NoteItem({
 
       {editing ? (
         <div className="mt-2">
-          <textarea
+          <AutoTextarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            rows={4}
+            minRows={4}
             maxLength={2000}
-            className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none"
           />
           <div className="mt-2 flex gap-2">
             <Button size="sm" disabled={pending || !draft.trim()} onClick={save}>

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useLiff } from '@/hooks/use-liff'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { Loader2, AlertCircle, ChevronLeft, ChevronRight, X, Car, Clock } from 'lucide-react'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type Child = { id: string; name: string }
 
@@ -601,12 +602,13 @@ export default function LiffAttendancePage() {
                     )}
 
                     {/* 備考 */}
-                    <textarea
+                    <AutoTextarea
                       value={entry.note}
                       onChange={(e) => updateEntry(child.id, { note: e.target.value })}
                       placeholder="備考（任意）"
-                      rows={2}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 placeholder-gray-300 resize-none bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      minRows={2}
+                      maxRows={10}
+                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm leading-relaxed text-gray-700 placeholder-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
                     />
                   </div>
                 )

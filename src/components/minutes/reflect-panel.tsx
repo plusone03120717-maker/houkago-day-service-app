@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { reflectToInternalManual } from '@/app/actions/minutes'
 import { CATEGORIES, CATEGORY_META, type Category } from '@/lib/internal-manual/categories'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type Item = {
   category: Category
@@ -165,11 +166,11 @@ export function ReflectPanel({
                     ))}
                   </div>
 
-                  <textarea
+                  <AutoTextarea
                     value={item.content}
                     onChange={(e) => update(index, { content: e.target.value })}
-                    rows={3}
-                    className="w-full resize-y rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none"
+                    minRows={3}
+                    className="w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm leading-relaxed focus:border-indigo-500 focus:outline-none"
                   />
 
                   {/* 議事録のどこから拾ったのかを見せる。抽出の当たり外れを判断できるように */}

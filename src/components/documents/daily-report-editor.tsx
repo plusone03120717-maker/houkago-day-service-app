@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Save, Printer, CheckCircle, Users, UserCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type ShiftEntry = {
   id: string
@@ -220,12 +221,12 @@ export function DailyReportEditor({
             <label className="text-xs font-medium text-gray-700 mb-1 block">
               管理者コメント・申し送り事項
             </label>
-            <textarea
+            <AutoTextarea
               value={managerComment}
               onChange={(e) => { setManagerComment(e.target.value); setSaved(false) }}
-              rows={3}
+              minRows={3}
               placeholder="本日の業務全般・申し送り事項など"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -233,12 +234,12 @@ export function DailyReportEditor({
             <label className="text-xs font-medium text-gray-700 mb-1 block">
               服薬記録
             </label>
-            <textarea
+            <AutoTextarea
               value={medicationRecords}
               onChange={(e) => { setMedicationRecords(e.target.value); setSaved(false) }}
-              rows={2}
+              minRows={2}
               placeholder="服薬が必要な児童の記録（児童名・薬名・時間・確認者）"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -246,12 +247,12 @@ export function DailyReportEditor({
             <label className="text-xs font-medium text-gray-700 mb-1 block">
               事故・ヒヤリハット記録
             </label>
-            <textarea
+            <AutoTextarea
               value={incidentNotes}
               onChange={(e) => { setIncidentNotes(e.target.value); setSaved(false) }}
-              rows={2}
+              minRows={2}
               placeholder="事故・ヒヤリハット・保護者からのクレーム等"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
         </CardContent>
