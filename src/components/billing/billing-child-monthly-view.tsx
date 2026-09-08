@@ -177,13 +177,18 @@ export function BillingChildMonthlyView({
   const [newItemName, setNewItemName] = useState('')
   const [newItemCategory, setNewItemCategory] = useState<'基本' | '加算' | '保険外'>('加算')
   const [newItemTrigger, setNewItemTrigger] = useState<ServiceItem['trigger_field']>('manual')
-  const [monthOffset, setMonthOffset] = useState(0)
-
-  // Compute effective yearMonth with offset
-  const [y, m] = yearMonth.split('-').map(Number)
-  const effDate = new Date(y, m - 1 + monthOffset, 1)
-  const effYearMonth = `${effDate.getFullYear()}-${String(effDate.getMonth() + 1).padStart(2, '0')}`
+  // 表示中の月は URL（?month=）で持つ。画面内だけで月を持つと、ヘッダーの
+  // 確定ボタンや「戻る」が URL の月（＝入ってきた月）を指したままになり、
+  // 別の月を見ながら確定したり、戻ると違う月の一覧に飛んだりしていた。
+  const effYearMonth = yearMonth
   const days = getDaysInMonth(effYearMonth)
+
+  const goToMonth = (offset: number) => {
+    const [y, m] = effYearMonth.split('-').map(Number)
+    const d = new Date(y, m - 1 + offset, 1)
+    const nextYearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    router.replace(`/billing/child/${childId}?month=${nextYearMonth}&unit=${unitId}`, { scroll: false })
+  }
 
   // ── Fetch data ──────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -709,11 +714,11 @@ export function BillingChildMonthlyView({
     <div className="space-y-5">
       {/* 月選択 */}
       <div className="flex items-center gap-3">
-        <button onClick={() => setMonthOffset((o) => o - 1)} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
+        <button onClick={() => goToMonth(-1)} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
           <ChevronLeft className="h-4 w-4" />
         </button>
         <span className="text-lg font-semibold text-gray-900 min-w-[100px] text-center">{monthLabel}</span>
-        <button onClick={() => setMonthOffset((o) => o + 1)} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
+        <button onClick={() => goToMonth(1)} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>

@@ -31,6 +31,10 @@ export default async function BillingChildPage({
   const now = new Date()
   const yearMonth = sp.month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
+  // 一覧へ戻るときは、今見ている月の一覧に戻す（今月に戻ってしまわないように）
+  const [backYear, backMonth] = yearMonth.split('-').map(Number)
+  const backHref = `/billing?year=${backYear}&month=${backMonth}`
+
   // 児童情報・所属ユニット・受給者証はいずれも childId だけで引けるので並列取得
   // （以前は3本を直列に await していた）
   const [{ data: childRaw }, { data: unitsRaw }, { data: certRaw }] = await Promise.all([
@@ -56,7 +60,7 @@ export default async function BillingChildPage({
     return (
       <div className="text-center py-12 text-gray-400">
         <p>児童が見つかりません</p>
-        <Link href="/billing" className="mt-3 inline-block text-indigo-600 hover:underline text-sm">
+        <Link href={backHref} className="mt-3 inline-block text-indigo-600 hover:underline text-sm">
           国保連請求に戻る
         </Link>
       </div>
@@ -174,7 +178,7 @@ export default async function BillingChildPage({
     <div className="space-y-4">
       {/* ヘッダー */}
       <div className="flex items-center gap-3">
-        <Link href="/billing" className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
+        <Link href={backHref} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div className="flex-1 min-w-0">
