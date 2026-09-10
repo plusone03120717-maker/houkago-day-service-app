@@ -36,6 +36,7 @@ type MonthAttendance = {
   service_end_time: string | null
   check_in_time: string | null
   check_out_time: string | null
+  children: { id: string; name: string; name_kana: string | null } | null
 }
 
 type PlanInfo = {
@@ -96,17 +97,18 @@ export function MonthlyAttendanceView({
         .in('status', ['confirmed', 'reserved', 'cancel_waiting']),
       supabase
         .from('daily_attendance')
-        .select('child_id, date, status, service_start_time, service_end_time, check_in_time, check_out_time')
+        .select('child_id, date, status, service_start_time, service_end_time, check_in_time, check_out_time, children(id, name, name_kana)')
         .eq('unit_id', selectedUnitId)
         .gte('date', monthStart)
         .lte('date', monthEnd),
     ]).then(async ([{ data: resData }, { data: attData }]) => {
       const res = (resData ?? []) as unknown as MonthReservation[]
+      const att = (attData ?? []) as unknown as MonthAttendance[]
       setReservations(res)
-      setAttendances((attData ?? []) as unknown as MonthAttendance[])
+      setAttendances(att)
 
       // 記録がない日の利用時間は利用計画（予定）から補完する
-      const childIds = [...new Set(res.map((r) => r.child_id))]
+      const childIds = [...new Set([...res.map((r) => r.child_id), ...att.map((a) => a.child_id)])]
       if (childIds.length > 0) {
         const { data: planData } = await supabase
           .from('usage_plans')
@@ -126,7 +128,12 @@ export function MonthlyAttendanceView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedUnitId, monthStart])
 
-  const attMap = new Map(attendances.map((a) => [`${a.child_id}-${a.date}`, a]))
+  const attMap = new Map(attendances.map((a) => [`${a.child_id}|${a.date}`, a]))
+
+  // 児童名は予約・出席記録のどちらの経路で来た行でも引けるようにしておく
+  const childNameById = new Map<string, string>()
+  for (const r of reservations) if (r.children) childNameById.set(r.child_id, r.children.name)
+  for (const a of attendances) if (a.children) childNameById.set(a.child_id, a.children.name)
 
   // 予定の利用時間（記録がない日のフォールバック）
   const getPlannedTime = (childId: string, dateStr: string) => {
@@ -156,27 +163,50 @@ export function MonthlyAttendanceView({
   }
   const dayMap = new Map<string, { entries: DayEntry[]; count: number; absentCount: number }>()
 
+  // 「予約(usage_reservations)」と「出席記録(daily_attendance)」の和集合で作る。
+  // 予約は利用計画から自動生成されるが、計画にない曜日に来た日や、児童のスケジュール
+  // 画面から直接足した日には予約が無い。予約だけを見ていると、その児童がカレンダーから
+  // 丸ごと抜け、人数も日別ビュー・請求と食い違ってしまう。
+  // 児童×日付で1件に寄せるので、両方にある日が二重に数えられることはない。
+  type DayKey = {
+    childId: string
+    date: string
+    reservationId: string | null
+    reservationStatus: string | null
+  }
+  const dayKeys = new Map<string, DayKey>()
   for (const r of reservations) {
-    let day = dayMap.get(r.date)
+    dayKeys.set(`${r.child_id}|${r.date}`, {
+      childId: r.child_id,
+      date: r.date,
+      reservationId: r.id,
+      reservationStatus: r.status,
+    })
+  }
+  for (const a of attendances) {
+    const key = `${a.child_id}|${a.date}`
+    if (dayKeys.has(key)) continue
+    dayKeys.set(key, { childId: a.child_id, date: a.date, reservationId: null, reservationStatus: null })
+  }
+
+  for (const k of dayKeys.values()) {
+    let day = dayMap.get(k.date)
     if (!day) {
       day = { entries: [], count: 0, absentCount: 0 }
-      dayMap.set(r.date, day)
+      dayMap.set(k.date, day)
     }
-    if (r.status === 'cancel_waiting') {
-      day.absentCount += 1
-      continue
-    }
-    const att = attMap.get(`${r.child_id}-${r.date}`)
-    const absent = att?.status === 'absent'
+    const att = attMap.get(`${k.childId}|${k.date}`)
+    // 実際の記録が最優先。記録が無い日だけ、予約のキャンセル待ちを欠席として扱う
+    const absent = att ? att.status === 'absent' : k.reservationStatus === 'cancel_waiting'
     if (absent) day.absentCount += 1
     else day.count += 1
 
     // 利用時間は service_* を正とし、旧データは check_*_time、記録がなければ予定にフォールバック
-    const planned = getPlannedTime(r.child_id, r.date)
+    const planned = getPlannedTime(k.childId, k.date)
     day.entries.push({
-      id: r.id,
-      childId: r.child_id,
-      name: r.children?.name ?? '',
+      id: k.reservationId ?? `att-${k.childId}-${k.date}`,
+      childId: k.childId,
+      name: childNameById.get(k.childId) ?? '',
       absent,
       start: fmtTime(att?.service_start_time) ?? fmtTime(att?.check_in_time) ?? planned.start,
       end: fmtTime(att?.service_end_time) ?? fmtTime(att?.check_out_time) ?? planned.end,
