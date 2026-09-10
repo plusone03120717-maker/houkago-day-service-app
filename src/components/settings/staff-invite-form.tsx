@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { UserPlus, Copy, Check, KeyRound } from 'lucide-react'
+import { UserPlus, Copy, Check, KeyRound, AlertTriangle } from 'lucide-react'
 import { SERVICE_MANAGER } from '@/lib/roles'
 
 // 役職オプション（needsAuth=trueはアプリログイン・電話番号が必要）
@@ -25,7 +25,12 @@ function getAuthRole(selected: Set<string>): 'admin' | 'staff' | null {
   return null
 }
 
-type InviteResult = { isExisting: boolean; phone: string; tempPassword: string }
+type InviteResult = {
+  isExisting: boolean
+  phone: string
+  tempPassword: string
+  overwrittenName: string | null
+}
 
 export function StaffInviteForm() {
   const supabase = createClient()
@@ -34,6 +39,8 @@ export function StaffInviteForm() {
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set(['staff']))
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  // 同じ電話番号の既存スタッフがいたときに、上書きするか確認するための名前
+  const [conflictName, setConflictName] = useState('')
   const [result, setResult] = useState<InviteResult | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -48,6 +55,7 @@ export function StaffInviteForm() {
       return next
     })
     setError('')
+    setConflictName('')
     setResult(null)
   }
 
@@ -57,42 +65,57 @@ export function StaffInviteForm() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const submitInvite = async (overwrite: boolean) => {
+    const nonAuthRoles = [...selectedRoles].filter((r) => !['admin', 'staff'].includes(r))
+    setLoading(true)
+    setError('')
+    setConflictName('')
+    setResult(null)
+
+    const res = await fetch('/api/staff/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: phone.trim(),
+        name: name.trim(),
+        role: authRole,
+        jobTitles: nonAuthRoles,
+        overwrite,
+      }),
+    })
+    setLoading(false)
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setError(json.error ?? '登録に失敗しました')
+      if (json.conflictName) setConflictName(json.conflictName)
+      return
+    }
+    setResult({
+      isExisting: json.isExisting,
+      phone: json.phone,
+      tempPassword: json.tempPassword,
+      overwrittenName: json.overwrittenName ?? null,
+    })
+    setPhone('')
+    setName('')
+    setSelectedRoles(new Set(['staff']))
+  }
+
   const handleSubmit = async (ev: React.BaseSyntheticEvent) => {
     ev.preventDefault()
     if (!name.trim() || selectedRoles.size === 0) return
-    setLoading(true)
-    setError('')
-    setResult(null)
-
-    const nonAuthRoles = [...selectedRoles].filter((r) => !['admin', 'staff'].includes(r))
 
     if (needsPhone) {
       if (!phone.trim()) {
         setError('電話番号を入力してください')
-        setLoading(false)
         return
       }
-      const res = await fetch('/api/staff/invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: phone.trim(),
-          name: name.trim(),
-          role: authRole,
-          jobTitles: nonAuthRoles,
-        }),
-      })
-      setLoading(false)
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setError(json.error ?? '登録に失敗しました')
-        return
-      }
-      setResult({ isExisting: json.isExisting, phone: json.phone, tempPassword: json.tempPassword })
-      setPhone('')
-      setName('')
-      setSelectedRoles(new Set(['staff']))
+      await submitInvite(false)
     } else {
+      setLoading(true)
+      setError('')
+      setConflictName('')
+      setResult(null)
       // ログイン不要 → staff_members に登録
       const { error: err } = await supabase
         .from('staff_members')
@@ -105,7 +128,7 @@ export function StaffInviteForm() {
       if (err) {
         setError('登録に失敗しました: ' + err.message)
       } else {
-        setResult({ isExisting: false, phone: '', tempPassword: '' })
+        setResult({ isExisting: false, phone: '', tempPassword: '', overwrittenName: null })
         setName('')
         setSelectedRoles(new Set(['driver']))
         window.location.reload()
@@ -130,7 +153,7 @@ export function StaffInviteForm() {
               </label>
               <Input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { setName(e.target.value); setError(''); setConflictName('') }}
                 placeholder="山田 太郎"
                 required
               />
@@ -146,7 +169,7 @@ export function StaffInviteForm() {
               <Input
                 type="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => { setPhone(e.target.value); setError(''); setConflictName('') }}
                 placeholder="090-1234-5678"
                 disabled={!needsPhone}
                 required={needsPhone}
@@ -192,7 +215,46 @@ export function StaffInviteForm() {
             )}
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && !conflictName && <p className="text-sm text-red-600">{error}</p>}
+
+          {/* 同じ電話番号の既存スタッフがいる場合の確認 */}
+          {conflictName && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+              <div className="flex items-center gap-1.5 text-sm font-medium text-amber-800">
+                <AlertTriangle className="h-4 w-4" />
+                この電話番号は使用済みです
+              </div>
+              <p className="text-xs text-amber-700 leading-relaxed">
+                「{conflictName}」さんが同じ電話番号で登録されています。
+                このまま登録すると<strong>「{conflictName}」さんのアカウントが「{name.trim()}」さんに置き換わり、
+                {conflictName}さんはスタッフ一覧から消えます</strong>。
+                別人の場合は、電話番号を確認して入力し直してください。
+              </p>
+              <p className="text-xs text-amber-700">
+                改姓などで同じ人の名前を変更したい場合のみ、下のボタンで続行してください。
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => { setConflictName(''); setError('') }}
+                  className="border-amber-300 text-amber-800 hover:bg-amber-100"
+                >
+                  電話番号を入力し直す
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={loading}
+                  onClick={() => submitInvite(true)}
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  {loading ? '処理中...' : `「${conflictName}」さんを上書きする`}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* 登録結果 */}
           {result && (
@@ -203,9 +265,11 @@ export function StaffInviteForm() {
                   {result.isExisting ? 'パスワードをリセットしました' : 'スタッフを登録しました'}
                 </div>
                 <p className="text-xs text-indigo-600">
-                  {result.isExisting
-                    ? '登録済みの電話番号です。情報を更新し新しい仮パスワードを発行しました。以下をスタッフにお伝えください。'
-                    : '以下のログイン情報をスタッフにお伝えください。初回ログイン後にパスワードの変更が求められます。'
+                  {result.overwrittenName
+                    ? `「${result.overwrittenName}」さんのアカウントを上書きしました。「${result.overwrittenName}」さんはスタッフ一覧から消えています。`
+                    : result.isExisting
+                      ? '登録済みの電話番号です。情報を更新し新しい仮パスワードを発行しました。以下をスタッフにお伝えください。'
+                      : '以下のログイン情報をスタッフにお伝えください。初回ログイン後にパスワードの変更が求められます。'
                   }
                 </p>
                 <div className="space-y-1.5">

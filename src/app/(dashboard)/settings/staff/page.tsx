@@ -2,8 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, User, Mail, Car } from 'lucide-react'
+import { ArrowLeft, User, Phone, Car } from 'lucide-react'
 import { StaffInviteForm } from '@/components/settings/staff-invite-form'
 import { roleLabel, roleBadgeClass } from '@/lib/roles'
 
@@ -11,8 +10,16 @@ type StaffUser = {
   id: string
   name: string
   email: string
+  phone: string | null
   role: string
   job_titles: string[] | null
+}
+
+/** ログインIDは電話番号。疑似メール（0901234@staff.internal）は番号だけ見せる。 */
+function loginIdLabel(s: StaffUser): string {
+  if (s.phone) return s.phone
+  if (s.email?.endsWith('@staff.internal')) return s.email.replace('@staff.internal', '')
+  return s.email
 }
 
 type StaffMember = {
@@ -29,7 +36,7 @@ export default async function SettingsStaffPage() {
 
   const { data: staffRaw } = await supabase
     .from('users')
-    .select('id, name, email, role, job_titles')
+    .select('id, name, email, phone, role, job_titles')
     .in('role', ['admin', 'staff'])
     .order('name')
   const staffList = (staffRaw ?? []) as unknown as StaffUser[]
@@ -71,8 +78,8 @@ export default async function SettingsStaffPage() {
                     <div>
                       <p className="text-sm font-medium text-gray-900">{s.name}</p>
                       <p className="text-xs text-gray-400 flex items-center gap-1">
-                        <Mail className="h-3 w-3" />
-                        {s.email}
+                        <Phone className="h-3 w-3" />
+                        {loginIdLabel(s)}
                       </p>
                     </div>
                   </div>
