@@ -10,6 +10,7 @@ import {
   Calendar, BookOpen, ArrowRight, TrendingUp, Pill, TriangleAlert, FileText,
 } from 'lucide-react'
 import { formatDate, getTodayJST } from '@/lib/utils'
+import { buildUsageRoster } from '@/lib/usage-roster'
 
 type ExpiringCert = {
   id: string
@@ -71,17 +72,19 @@ export default async function DashboardPage() {
     activeMedsCountResult,
     unpublishedNotesResult,
     writtenRecordsResult,
+    todayOverridesResult,
+    todayAttendanceResult,
   ] = await Promise.all([
     supabase
       .from('usage_reservations')
-      .select('id, child_id, status, date, children(name), units(name)')
+      .select('id, child_id, status, date, requested_by, children(name), units(name)')
       .eq('date', today)
-      .in('status', ['confirmed', 'reserved']),
+      .in('status', ['confirmed', 'reserved', 'cancel_waiting']),
 
     // 有効な利用計画から今日の曜日に該当する児童
     supabase
       .from('usage_plans')
-      .select('id, child_id, unit_id, children(name), units(name)')
+      .select('id, child_id, unit_id, start_date, end_date, day_of_week, children(name), units(name)')
       .eq('is_active', true)
       .lte('start_date', today)
       .or(`end_date.is.null,end_date.gte.${today}`)
@@ -181,23 +184,78 @@ export default async function DashboardPage() {
       .select('id, daily_attendance!inner(date, status)', { count: 'exact', head: true })
       .eq('daily_attendance.date', today)
       .eq('daily_attendance.status', 'attended'),
+
+    // 当日キャンセルされた利用計画
+    supabase
+      .from('usage_plan_date_overrides')
+      .select('plan_id, date, is_cancelled')
+      .eq('date', today),
+
+    // 当日の出欠記録（予約も計画も無い日に来た児童を拾う）
+    supabase
+      .from('daily_attendance')
+      .select('child_id, date, status, children(name), units(name)')
+      .eq('date', today),
   ])
 
-  // 予約 + 有効な利用計画から今日の予定をマージ（重複child_idは予約優先）
+  // 今日の利用予定は「予約・利用計画・出欠記録」の3つをまとめて決める。
+  // 出席管理・利用状況と同じ判定を使うので、画面によって人数が違うことはない。
   const reservations = (todayReservationsResult.data ?? []) as unknown as Reservation[]
-  const reservedChildIds = new Set(reservations.map((r) => r.child_id))
-  type PlanEntry = { id: string; child_id: string; unit_id: string; children: { name: string } | null; units: { name: string } | null }
+  type PlanEntry = {
+    id: string
+    child_id: string
+    unit_id: string
+    start_date: string
+    end_date: string | null
+    day_of_week: number[]
+    children: { name: string } | null
+    units: { name: string } | null
+  }
+  type AttendanceEntry = {
+    child_id: string
+    date: string
+    status: string
+    children: { name: string } | null
+    units: { name: string } | null
+  }
   const planEntries = (todayPlansResult.data ?? []) as unknown as PlanEntry[]
-  const planOnlyChildren = planEntries.filter((p) => !reservedChildIds.has(p.child_id))
-  const planAsReservations: Reservation[] = planOnlyChildren.map((p) => ({
-    id: p.id,
-    child_id: p.child_id,
-    status: 'plan',
+  const todayAttendances = (todayAttendanceResult.data ?? []) as unknown as AttendanceEntry[]
+
+  // 児童名・ユニット名は予約 → 計画 → 出欠記録の順に拾う
+  const childDisplay = new Map<string, { name: string; unitName: string | null }>()
+  for (const a of todayAttendances) {
+    if (a.children) childDisplay.set(a.child_id, { name: a.children.name, unitName: a.units?.name ?? null })
+  }
+  for (const p of planEntries) {
+    if (p.children) childDisplay.set(p.child_id, { name: p.children.name, unitName: p.units?.name ?? null })
+  }
+  for (const r of reservations) {
+    if (r.children) childDisplay.set(r.child_id, { name: r.children.name, unitName: r.units?.name ?? null })
+  }
+
+  const attendanceStatusByChild = new Map(todayAttendances.map((a) => [a.child_id, a.status]))
+  const todayRoster = (
+    buildUsageRoster({
+      dates: [today],
+      reservations: reservations as unknown as { id: string; child_id: string; date: string; status: string; requested_by: string | null }[],
+      plans: planEntries,
+      overrides: (todayOverridesResult.data ?? []) as { plan_id: string; date: string; is_cancelled: boolean }[],
+      attendances: todayAttendances,
+    }).get(today) ?? []
+  ).filter((e) => e.counts)
+
+  const todayReservations = todayRoster.map((e) => ({
+    id: `${e.childId}-${today}`,
+    child_id: e.childId,
+    // 表示用の区分: 出席済み → 確定済みの予約 → 手で足した予約 → 計画
+    status:
+      attendanceStatusByChild.get(e.childId) === 'attended'
+        ? 'attended'
+        : e.reservation?.status ?? 'plan',
     date: today,
-    children: p.children,
-    units: p.units,
-  }))
-  const todayReservations = [...reservations, ...planAsReservations]
+    children: { name: childDisplay.get(e.childId)?.name ?? '—' },
+    units: { name: childDisplay.get(e.childId)?.unitName ?? '' },
+  })) as unknown as Reservation[]
 
   const expiringCerts = (expiringCertsResult.data ?? []) as unknown as ExpiringCert[]
   const notableRecords = (notableRecordsResult.data ?? []) as unknown as NotableRecord[]
@@ -432,10 +490,16 @@ export default async function DashboardPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500">{res.units?.name}</span>
                       <Badge
-                        variant={res.status === 'confirmed' ? 'success' : res.status === 'plan' ? 'secondary' : 'secondary'}
+                        variant={res.status === 'confirmed' || res.status === 'attended' ? 'success' : 'secondary'}
                         className="text-xs"
                       >
-                        {res.status === 'confirmed' ? '確定' : res.status === 'plan' ? '定期' : '予約済'}
+                        {res.status === 'attended'
+                          ? '出席済'
+                          : res.status === 'confirmed'
+                          ? '確定'
+                          : res.status === 'plan'
+                          ? '定期'
+                          : '予約済'}
                       </Badge>
                     </div>
                   </div>

@@ -12,14 +12,29 @@ import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { deleteUsageDay, markUsageDayAbsent, clearUsageDayAbsence } from '@/lib/usage-day'
 
 type Unit = { id: string; name: string; capacity: number }
-type Reservation = {
+
+/**
+ * カレンダーに並ぶ「その日の利用者」1件。
+ * 予約から来た行と、利用計画・出欠記録から来た行（予約が無い日）が混ざる。
+ * 判定は @/lib/usage-roster が行うため、出席管理・ダッシュボードと同じ顔ぶれになる。
+ */
+export type UsageEntry = {
+  /** 予約があれば予約ID、無ければ合成ID（Reactのkey用） */
   id: string
   child_id: string
   unit_id: string
   date: string
+  /** 予約の状態、または予約が無い行の区分（'attended' | 'absent' | 'plan'） */
   status: string
+  /** 承認・復元に使う予約ID。予約が無い行は null */
+  reservationId: string | null
+  /** 予約そのものの状態。予約が無い行は null（承認待ちの判定に使う） */
+  reservationStatus: string | null
   children: { name: string } | null
+  /** 利用人数として数える行か（キャンセル・欠席は false） */
+  counts: boolean
 }
+
 type ChildOption = { id: string; name: string }
 
 interface Props {
@@ -27,7 +42,7 @@ interface Props {
   month: number
   units: Unit[]
   selectedUnitId: string
-  reservations: Reservation[]
+  entries: UsageEntry[]
   childOptions: ChildOption[]
   summary: { confirmed: number; reserved: number; cancelled: number }
   /** `${childId}_${date}` → daily_attendance.status */
@@ -39,6 +54,9 @@ const STATUS_LABELS: Record<string, string> = {
   reserved: '予約',
   cancelled: 'キャンセル',
   cancel_waiting: 'キャンセル待ち',
+  attended: '出席済み',
+  absent: '欠席',
+  plan: '予定',
 }
 
 const STATUS_VARIANTS: Record<string, 'success' | 'default' | 'secondary' | 'warning'> = {
@@ -46,12 +64,15 @@ const STATUS_VARIANTS: Record<string, 'success' | 'default' | 'secondary' | 'war
   reserved: 'default',
   cancelled: 'secondary',
   cancel_waiting: 'warning',
+  attended: 'success',
+  absent: 'secondary',
+  plan: 'default',
 }
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
 export function UsageCalendar({
-  year, month, units, selectedUnitId, reservations, childOptions, summary, attendanceStatusByKey,
+  year, month, units, selectedUnitId, entries, childOptions, summary, attendanceStatusByKey,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -63,7 +84,7 @@ export function UsageCalendar({
   const [addStatus, setAddStatus] = useState<'confirmed' | 'reserved'>('confirmed')
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<Reservation | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<UsageEntry | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   const changeMonth = (delta: number) => {
@@ -85,9 +106,9 @@ export function UsageCalendar({
     return `${year}-${String(month).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
   })
 
-  // 予約マップ
-  const resByDate: Record<string, Reservation[]> = {}
-  reservations.forEach((r) => {
+  // 日付ごとの利用者（予約・利用計画・出欠記録をまとめたもの）
+  const resByDate: Record<string, UsageEntry[]> = {}
+  entries.forEach((r) => {
     if (!resByDate[r.date]) resByDate[r.date] = []
     resByDate[r.date].push(r)
   })
@@ -95,8 +116,8 @@ export function UsageCalendar({
   const selectedUnit = units.find((u) => u.id === selectedUnitId)
   const selectedDateReservations = selectedDate ? (resByDate[selectedDate] ?? []) : []
 
-  const pendingReservations = reservations
-    .filter((r) => r.status === 'reserved')
+  const pendingReservations = entries
+    .filter((r) => r.reservationStatus === 'reserved')
     .sort((a, b) => a.date.localeCompare(b.date))
 
   const handleConfirm = async (reservationId: string) => {
@@ -109,7 +130,7 @@ export function UsageCalendar({
   const handleConfirmAll = async () => {
     if (!confirm(`承認待ちの予約 ${pendingReservations.length}件をすべて確定しますか？`)) return
     setUpdating(true)
-    await confirmAllReservations(pendingReservations.map((r) => r.id))
+    await confirmAllReservations(pendingReservations.map((r) => r.reservationId!))
     setUpdating(false)
     startTransition(() => router.refresh())
   }
@@ -154,7 +175,7 @@ export function UsageCalendar({
   // お休みは「欠席」（記録が残る）、誤登録は「削除」（なかったことにする）で使い分ける。
   // 子ども管理などで付いた既存のキャンセルは、下の復元ボタンで戻せる。
   const handleRestore = async (reservationId: string) => {
-    const reservation = reservations.find((r) => r.id === reservationId)
+    const reservation = entries.find((r) => r.reservationId === reservationId)
     setUpdating(true)
     const { error } = await supabase
       .from('usage_reservations')
@@ -170,12 +191,12 @@ export function UsageCalendar({
     startTransition(() => router.refresh())
   }
 
-  const isAbsent = (r: Reservation) =>
+  const isAbsent = (r: UsageEntry) =>
     attendanceStatusByKey[`${r.child_id}_${r.date}`] === 'absent'
 
   // その日を欠席として記録する（予定は残るので出席管理にも欠席として出る）
   // もう一度押すと欠席を取り消して未記録に戻す
-  const handleToggleAbsent = async (reservation: Reservation) => {
+  const handleToggleAbsent = async (reservation: UsageEntry) => {
     const args = {
       childId: reservation.child_id,
       unitId: reservation.unit_id,
@@ -195,7 +216,7 @@ export function UsageCalendar({
 
   // 誤って入れた予定を「なかったこと」にする（欠席とは別物）
   // 出席管理にも出てこないよう、利用計画からの自動生成もこの日だけ止める
-  const handleDelete = async (reservation: Reservation) => {
+  const handleDelete = async (reservation: UsageEntry) => {
     setDeleting(true)
     const { error } = await deleteUsageDay(supabase, {
       childId: reservation.child_id,
@@ -328,7 +349,7 @@ export function UsageCalendar({
                   </span>
                   <div className="flex gap-1 shrink-0">
                     <button
-                      onClick={() => handleConfirm(r.id)}
+                      onClick={() => handleConfirm(r.reservationId!)}
                       disabled={updating}
                       className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-50 transition-colors"
                     >
@@ -377,8 +398,8 @@ export function UsageCalendar({
           {cells.map((date, idx) => {
             if (!date) return <div key={idx} className="h-16 border-b border-r border-gray-50" />
             const dayReservations = resByDate[date] ?? []
-            const activeCount = dayReservations.filter((r) => r.status !== 'cancelled').length
-            const pendingCount = dayReservations.filter((r) => r.status === 'reserved').length
+            const activeCount = dayReservations.filter((r) => r.counts).length
+            const pendingCount = dayReservations.filter((r) => r.reservationStatus === 'reserved').length
             const capacity = selectedUnit?.capacity ?? 0
             const isFull = capacity > 0 && activeCount >= capacity
             const isSelected = date === selectedDate
@@ -449,11 +470,11 @@ export function UsageCalendar({
         <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
           <h2 className="font-semibold text-gray-900">
             {new Date(selectedDate).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })}
-            の予約（{selectedDateReservations.length}件）
+            の利用（{selectedDateReservations.length}件）
           </h2>
 
           {selectedDateReservations.length === 0 ? (
-            <p className="text-sm text-gray-400">この日の予約はありません</p>
+            <p className="text-sm text-gray-400">この日の利用予定はありません</p>
           ) : (
             <div className="space-y-2">
               {selectedDateReservations.map((r) => {
@@ -465,9 +486,9 @@ export function UsageCalendar({
                     <Badge variant={STATUS_VARIANTS[r.status] ?? 'secondary'} className="text-xs">
                       {STATUS_LABELS[r.status] ?? r.status}
                     </Badge>
-                    {r.status === 'reserved' && (
+                    {r.reservationStatus === 'reserved' && (
                       <button
-                        onClick={() => handleConfirm(r.id)}
+                        onClick={() => handleConfirm(r.reservationId!)}
                         disabled={updating}
                         className="p-1 text-green-600 hover:bg-green-50 rounded"
                         title="承認"
@@ -477,7 +498,7 @@ export function UsageCalendar({
                     )}
                     {r.status === 'cancelled' && (
                       <button
-                        onClick={() => handleRestore(r.id)}
+                        onClick={() => handleRestore(r.reservationId!)}
                         disabled={updating}
                         className="p-1 text-indigo-500 hover:bg-indigo-50 rounded"
                         title="予約を復元"
@@ -518,13 +539,13 @@ export function UsageCalendar({
           )}
 
           {/* 一括承認ボタン */}
-          {selectedDateReservations.some((r) => r.status === 'reserved') && (
+          {selectedDateReservations.some((r) => r.reservationStatus === 'reserved') && (
             <Button
               onClick={async () => {
                 setUpdating(true)
                 const ids = selectedDateReservations
-                  .filter((r) => r.status === 'reserved')
-                  .map((r) => r.id)
+                  .filter((r) => r.reservationStatus === 'reserved')
+                  .map((r) => r.reservationId!)
                 await Promise.all(ids.map((id) => confirmReservation(id)))
                 setUpdating(false)
                 startTransition(() => router.refresh())

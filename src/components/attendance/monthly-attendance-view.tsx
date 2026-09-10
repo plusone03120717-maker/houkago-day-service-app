@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { buildUsageRoster, eachDate } from '@/lib/usage-roster'
 import type { Unit } from './attendance-board'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -25,6 +26,7 @@ type MonthReservation = {
   child_id: string
   date: string
   status: string
+  requested_by: string | null
   children: { id: string; name: string; name_kana: string | null } | null
 }
 
@@ -40,6 +42,7 @@ type MonthAttendance = {
 }
 
 type PlanInfo = {
+  id: string
   child_id: string
   pickup_time: string | null
   dropoff_time: string | null
@@ -48,6 +51,13 @@ type PlanInfo = {
   day_of_week: number[]
   start_date: string
   end_date: string | null
+  children: { id: string; name: string; name_kana: string | null } | null
+}
+
+type MonthOverride = {
+  plan_id: string
+  date: string
+  is_cancelled: boolean
 }
 
 /** "16:30:00" → "16:30"（未入力・00:00 は空扱い） */
@@ -75,6 +85,7 @@ export function MonthlyAttendanceView({
   const [reservations, setReservations] = useState<MonthReservation[]>([])
   const [attendances, setAttendances] = useState<MonthAttendance[]>([])
   const [plans, setPlans] = useState<PlanInfo[]>([])
+  const [overrides, setOverrides] = useState<MonthOverride[]>([])
 
   const base = new Date(baseDate + 'T00:00:00')
   const firstDay = new Date(base.getFullYear(), base.getMonth() + monthOffset, 1)
@@ -87,10 +98,12 @@ export function MonthlyAttendanceView({
     if (!selectedUnitId) return
     setLoading(true)
 
+    // 予約・出欠記録・利用計画・特定日キャンセルの4本。
+    // 依存関係が無いので同時に投げる（以前は計画だけ後追いで取っていた）。
     Promise.all([
       supabase
         .from('usage_reservations')
-        .select('id, child_id, date, status, children(id, name, name_kana)')
+        .select('id, child_id, date, status, requested_by, children(id, name, name_kana)')
         .eq('unit_id', selectedUnitId)
         .gte('date', monthStart)
         .lte('date', monthEnd)
@@ -101,28 +114,23 @@ export function MonthlyAttendanceView({
         .eq('unit_id', selectedUnitId)
         .gte('date', monthStart)
         .lte('date', monthEnd),
-    ]).then(async ([{ data: resData }, { data: attData }]) => {
-      const res = (resData ?? []) as unknown as MonthReservation[]
-      const att = (attData ?? []) as unknown as MonthAttendance[]
-      setReservations(res)
-      setAttendances(att)
-
-      // 記録がない日の利用時間は利用計画（予定）から補完する
-      const childIds = [...new Set([...res.map((r) => r.child_id), ...att.map((a) => a.child_id)])]
-      if (childIds.length > 0) {
-        const { data: planData } = await supabase
-          .from('usage_plans')
-          .select('child_id, pickup_time, dropoff_time, service_start_time, service_end_time, day_of_week, start_date, end_date')
-          .eq('unit_id', selectedUnitId)
-          .eq('is_active', true)
-          .in('child_id', childIds)
-          .lte('start_date', monthEnd)
-          .or(`end_date.is.null,end_date.gte.${monthStart}`)
-        setPlans((planData ?? []) as PlanInfo[])
-      } else {
-        setPlans([])
-      }
-
+      supabase
+        .from('usage_plans')
+        .select('id, child_id, pickup_time, dropoff_time, service_start_time, service_end_time, day_of_week, start_date, end_date, children(id, name, name_kana)')
+        .eq('unit_id', selectedUnitId)
+        .eq('is_active', true)
+        .lte('start_date', monthEnd)
+        .or(`end_date.is.null,end_date.gte.${monthStart}`),
+      supabase
+        .from('usage_plan_date_overrides')
+        .select('plan_id, date, is_cancelled')
+        .gte('date', monthStart)
+        .lte('date', monthEnd),
+    ]).then(([{ data: resData }, { data: attData }, { data: planData }, { data: overrideData }]) => {
+      setReservations((resData ?? []) as unknown as MonthReservation[])
+      setAttendances((attData ?? []) as unknown as MonthAttendance[])
+      setPlans((planData ?? []) as unknown as PlanInfo[])
+      setOverrides((overrideData ?? []) as unknown as MonthOverride[])
       setLoading(false)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,9 +138,10 @@ export function MonthlyAttendanceView({
 
   const attMap = new Map(attendances.map((a) => [`${a.child_id}|${a.date}`, a]))
 
-  // 児童名は予約・出席記録のどちらの経路で来た行でも引けるようにしておく
+  // 児童名は予約・利用計画・出席記録のどの経路で来た行でも引けるようにしておく
   const childNameById = new Map<string, string>()
   for (const r of reservations) if (r.children) childNameById.set(r.child_id, r.children.name)
+  for (const p of plans) if (p.children) childNameById.set(p.child_id, p.children.name)
   for (const a of attendances) if (a.children) childNameById.set(a.child_id, a.children.name)
 
   // 予定の利用時間（記録がない日のフォールバック）
@@ -163,54 +172,40 @@ export function MonthlyAttendanceView({
   }
   const dayMap = new Map<string, { entries: DayEntry[]; count: number; absentCount: number }>()
 
-  // 「予約(usage_reservations)」と「出席記録(daily_attendance)」の和集合で作る。
-  // 予約は利用計画から自動生成されるが、計画にない曜日に来た日や、児童のスケジュール
-  // 画面から直接足した日には予約が無い。予約だけを見ていると、その児童がカレンダーから
-  // 丸ごと抜け、人数も日別ビュー・請求と食い違ってしまう。
-  // 児童×日付で1件に寄せるので、両方にある日が二重に数えられることはない。
-  type DayKey = {
-    childId: string
-    date: string
-    reservationId: string | null
-    reservationStatus: string | null
-  }
-  const dayKeys = new Map<string, DayKey>()
-  for (const r of reservations) {
-    dayKeys.set(`${r.child_id}|${r.date}`, {
-      childId: r.child_id,
-      date: r.date,
-      reservationId: r.id,
-      reservationStatus: r.status,
-    })
-  }
-  for (const a of attendances) {
-    const key = `${a.child_id}|${a.date}`
-    if (dayKeys.has(key)) continue
-    dayKeys.set(key, { childId: a.child_id, date: a.date, reservationId: null, reservationStatus: null })
-  }
+  // 誰がその日の利用者かは共通ロジック（@/lib/usage-roster）で決める。
+  // 予約・利用計画・出欠記録の3つを児童×日付で1行にまとめるので、
+  // 日別ビュー・利用状況・ダッシュボードと必ず同じ顔ぶれ・同じ人数になる。
+  const roster = buildUsageRoster({
+    dates: eachDate(monthStart, monthEnd),
+    reservations,
+    plans,
+    overrides,
+    attendances,
+  })
 
-  for (const k of dayKeys.values()) {
-    let day = dayMap.get(k.date)
-    if (!day) {
-      day = { entries: [], count: 0, absentCount: 0 }
-      dayMap.set(k.date, day)
+  for (const [date, entries] of roster) {
+    for (const e of entries) {
+      if (!e.planned) continue
+      let day = dayMap.get(date)
+      if (!day) {
+        day = { entries: [], count: 0, absentCount: 0 }
+        dayMap.set(date, day)
+      }
+      if (e.absent) day.absentCount += 1
+      else day.count += 1
+
+      // 利用時間は service_* を正とし、旧データは check_*_time、記録がなければ予定にフォールバック
+      const att = attMap.get(`${e.childId}|${date}`)
+      const planned = getPlannedTime(e.childId, date)
+      day.entries.push({
+        id: e.reservation?.id ?? `roster-${e.childId}-${date}`,
+        childId: e.childId,
+        name: childNameById.get(e.childId) ?? '',
+        absent: e.absent,
+        start: fmtTime(att?.service_start_time) ?? fmtTime(att?.check_in_time) ?? planned.start,
+        end: fmtTime(att?.service_end_time) ?? fmtTime(att?.check_out_time) ?? planned.end,
+      })
     }
-    const att = attMap.get(`${k.childId}|${k.date}`)
-    // 実際の記録が最優先。記録が無い日だけ、予約のキャンセル待ちを欠席として扱う
-    const absent = att ? att.status === 'absent' : k.reservationStatus === 'cancel_waiting'
-    if (absent) day.absentCount += 1
-    else day.count += 1
-
-    // 利用時間は service_* を正とし、旧データは check_*_time、記録がなければ予定にフォールバック
-    const planned = getPlannedTime(k.childId, k.date)
-    day.entries.push({
-      id: k.reservationId ?? `att-${k.childId}-${k.date}`,
-      childId: k.childId,
-      name: childNameById.get(k.childId) ?? '',
-      absent,
-      start: fmtTime(att?.service_start_time) ?? fmtTime(att?.check_in_time) ?? planned.start,
-      end: fmtTime(att?.service_end_time) ?? fmtTime(att?.check_out_time) ?? planned.end,
-    })
   }
   for (const day of dayMap.values()) {
     day.entries.sort(
