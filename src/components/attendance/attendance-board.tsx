@@ -21,6 +21,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { ALL_UNITS, unitChildKey } from '@/lib/attendance-board-data'
 import { deleteUsageDay, ABSENT_CLEARED_FIELDS } from '@/lib/usage-day'
 import { MonthlyAttendanceView } from './monthly-attendance-view'
 import {
@@ -48,6 +49,8 @@ export type Unit = {
 export type Reservation = {
   id: string
   child_id: string
+  /** どのユニットの行か（「すべて」表示ではユニットをまたいで並ぶ） */
+  unit_id: string
   date: string
   status: string
   children: {
@@ -76,6 +79,7 @@ export type PrevAttendanceRow = TransportRow & { child_id: string; date: string 
 interface Props {
   date: string
   units: Unit[]
+  /** 選択中のユニットID。ALL_UNITS（'all'）なら全ユニットまとめて表示 */
   selectedUnitId: string
   reservations: Reservation[]
   attendances: Attendance[]
@@ -84,7 +88,8 @@ interface Props {
   vehicles: Vehicle[]
   defaultServiceEndTime: string
   prevByChildId: Record<string, PrevAttendanceRow>
-  scheduleDefaultsByChildId: Record<string, ScheduleDefaults>
+  /** キーは unitChildKey(unitId, childId) */
+  scheduleDefaultsByKey: Record<string, ScheduleDefaults>
 }
 
 /** "16:30:00" → "16:30"。未設定・00:00 は空文字として扱う */
@@ -110,9 +115,11 @@ export function AttendanceBoard({
   vehicles,
   defaultServiceEndTime,
   prevByChildId,
-  scheduleDefaultsByChildId,
+  scheduleDefaultsByKey,
 }: Props) {
   const router = useRouter()
+  // ユニット未選択（＝すべて）。既定はこちらで、ユニットボタンで絞り込む
+  const isAllUnits = selectedUnitId === ALL_UNITS
   const supabase = createClient()
   const [saving, setSaving] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -140,7 +147,13 @@ export function AttendanceBoard({
     setResList(reservations)
   }
 
-  const attendanceMap = Object.fromEntries(rows.map((a) => [a.child_id, a]))
+  // 「すべて」表示では同じ児童が別ユニットの行として並びうるため、
+  // 出席記録はユニット×児童で引く
+  const attendanceMap = Object.fromEntries(
+    rows.map((a) => [unitChildKey(a.unit_id, a.child_id), a])
+  )
+  const attOf = (r: { child_id: string; unit_id: string }) =>
+    attendanceMap[unitChildKey(r.unit_id, r.child_id)]
 
   /** 保存結果の行を反映（同じidがあれば置換、なければ追加） */
   const applyRow = (row: Attendance) =>
@@ -153,8 +166,8 @@ export function AttendanceBoard({
     })
 
   /** 児童の出席行をローカルから除去 */
-  const dropRow = (childId: string) =>
-    setRows((prev) => prev.filter((a) => a.child_id !== childId))
+  const dropRow = (unitId: string, childId: string) =>
+    setRows((prev) => prev.filter((a) => !(a.child_id === childId && a.unit_id === unitId)))
 
   // 他の職員による変更の取り込み。
   // 保存ごとの router.refresh() が副次的に担っていた同期を、Realtime と
@@ -165,11 +178,9 @@ export function AttendanceBoard({
     let timer: ReturnType<typeof setTimeout> | null = null
 
     const reload = async () => {
-      const { data } = await supabase
-        .from('daily_attendance')
-        .select('*')
-        .eq('unit_id', selectedUnitId)
-        .eq('date', date)
+      let query = supabase.from('daily_attendance').select('*').eq('date', date)
+      if (!isAllUnits) query = query.eq('unit_id', selectedUnitId)
+      const { data } = await query
       if (!cancelled && data) setRows(data as unknown as Attendance[])
     }
     // 自分の保存でも通知が飛ぶため、連続保存はまとめて1回だけ取り直す
@@ -178,13 +189,19 @@ export function AttendanceBoard({
       timer = setTimeout(() => { void reload() }, 500)
     }
 
+    // 「すべて」表示では unit_id で絞らず、全ユニットの変更を受け取る
+    const changeFilter = isAllUnits
+      ? { event: '*' as const, schema: 'public', table: 'daily_attendance' }
+      : {
+          event: '*' as const,
+          schema: 'public',
+          table: 'daily_attendance',
+          filter: `unit_id=eq.${selectedUnitId}`,
+        }
+
     const channel = supabase
       .channel(`attendance:${selectedUnitId}:${date}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'daily_attendance', filter: `unit_id=eq.${selectedUnitId}` },
-        scheduleReload
-      )
+      .on('postgres_changes', changeFilter, scheduleReload)
       .subscribe()
 
     const onVisible = () => {
@@ -198,12 +215,12 @@ export function AttendanceBoard({
       document.removeEventListener('visibilitychange', onVisible)
       void supabase.removeChannel(channel)
     }
-  }, [supabase, selectedUnitId, date])
+  }, [supabase, selectedUnitId, isAllUnits, date])
 
   // DBの値が空の場合は利用スケジュールの初期値を自動セット
   const buildInitialFields = (a: Attendance): TransportFields => {
     const base = initFields(a, defaultServiceEndTime)
-    const sched = scheduleDefaultsByChildId[a.child_id]
+    const sched = scheduleDefaultsByKey[unitChildKey(a.unit_id, a.child_id)]
     if (sched && isBlankFields(base)) {
       return applyScheduleDefaults(base, sched, defaultServiceEndTime)
     }
@@ -212,7 +229,7 @@ export function AttendanceBoard({
 
   // スケジュール初期値が表示中（未保存）かどうか
   const isSchedulePreset = (a: Attendance): boolean => {
-    const sched = scheduleDefaultsByChildId[a.child_id]
+    const sched = scheduleDefaultsByKey[unitChildKey(a.unit_id, a.child_id)]
     return !!sched && !savedOnce.has(a.id) && isBlankFields(initFields(a, defaultServiceEndTime))
   }
 
@@ -274,9 +291,9 @@ export function AttendanceBoard({
   // 利用スケジュールから当日の利用時間を取得（特定日上書き > 曜日別設定 > プランのデフォルト）
   // 以前はブラウザから usage_plans / usage_plan_date_overrides / usage_plan_day_settings を
   // 引き直していたが（児童1人につき2〜3往復）、サーバーが同じ優先順で計算した
-  // scheduleDefaultsByChildId を props で受け取っているため往復ゼロで求められる。
-  const getScheduledTimes = (childId: string): UsageTimes => {
-    const sched = scheduleDefaultsByChildId[childId]
+  // scheduleDefaultsByKey を props で受け取っているため往復ゼロで求められる。
+  const getScheduledTimes = (unitId: string, childId: string): UsageTimes => {
+    const sched = scheduleDefaultsByKey[unitChildKey(unitId, childId)]
     if (!sched) return {}
     const result: UsageTimes = {}
     if (sched.pickupTime) {
@@ -291,9 +308,13 @@ export function AttendanceBoard({
   }
 
   // 出席記録を作成/更新
-  const upsertAttendance = async (childId: string, updates: Partial<Attendance>) => {
-    setSaving(childId)
-    const existing = attendanceMap[childId]
+  const upsertAttendance = async (
+    unitId: string,
+    childId: string,
+    updates: Partial<Attendance>
+  ) => {
+    setSaving(unitChildKey(unitId, childId))
+    const existing = attendanceMap[unitChildKey(unitId, childId)]
 
     // 出席マーク時に利用スケジュールの時間を自動同期する。
     // ただし「すでに時刻が入っている項目」は上書きしない。
@@ -301,7 +322,7 @@ export function AttendanceBoard({
     // ここで一律にスケジュールの時刻を入れると、直した時刻が消えてしまう。
     let scheduledTimes: UsageTimes = {}
     if (updates.status === 'attended' && existing?.status !== 'attended') {
-      scheduledTimes = getScheduledTimes(childId)
+      scheduledTimes = getScheduledTimes(unitId, childId)
       if (existing) {
         if (hasTime(existing.service_start_time) || hasTime(existing.check_in_time)) {
           delete scheduledTimes.service_start_time
@@ -333,7 +354,7 @@ export function AttendanceBoard({
         .from('daily_attendance')
         .insert({
           child_id: childId,
-          unit_id: selectedUnitId,
+          unit_id: unitId,
           date,
           status: 'attended',
           pickup_type: 'none',
@@ -351,7 +372,7 @@ export function AttendanceBoard({
       const { data: schedules } = await supabase
         .from('transport_schedules')
         .select('id')
-        .eq('unit_id', selectedUnitId)
+        .eq('unit_id', unitId)
         .eq('date', date)
       if (schedules && schedules.length > 0) {
         const scheduleIds = schedules.map((s: { id: string }) => s.id)
@@ -367,13 +388,13 @@ export function AttendanceBoard({
   }
 
   // 出席取り消し（レコードを削除して未記録に戻す）
-  const cancelAttendance = async (childId: string) => {
-    const existing = attendanceMap[childId]
+  const cancelAttendance = async (unitId: string, childId: string) => {
+    const existing = attendanceMap[unitChildKey(unitId, childId)]
     if (!existing) return
-    setSaving(childId)
+    setSaving(unitChildKey(unitId, childId))
     const { error } = await supabase.from('daily_attendance').delete().eq('id', existing.id)
     if (error) { alert(`取り消しエラー: ${error.message}`); setSaving(null); return }
-    dropRow(childId)
+    dropRow(unitId, childId)
     setSaving(null)
   }
 
@@ -382,15 +403,17 @@ export function AttendanceBoard({
   // 一覧の行は予約由来・利用計画由来・出欠記録由来が混在するため、
   // 予約IDではなく児童・ユニット・日付で消す（利用状況ページと共通処理）
   const deleteReservation = async (res: Reservation) => {
-    setDeleting(res.child_id)
+    setDeleting(unitChildKey(res.unit_id, res.child_id))
     const { error } = await deleteUsageDay(supabase, {
       childId: res.child_id,
-      unitId: selectedUnitId,
+      unitId: res.unit_id,
       date,
     })
     if (error) { alert(`削除エラー: ${error}`); setDeleting(null); return }
-    setResList((prev) => prev.filter((r) => r.child_id !== res.child_id))
-    dropRow(res.child_id)
+    setResList((prev) =>
+      prev.filter((r) => !(r.child_id === res.child_id && r.unit_id === res.unit_id))
+    )
+    dropRow(res.unit_id, res.child_id)
     setDeleting(null)
     setConfirmDelete(null)
   }
@@ -398,9 +421,7 @@ export function AttendanceBoard({
   // 一括出席登録
   const markAllPresent = async () => {
     setSaving('all')
-    const unrecorded = resList.filter(
-      (r) => r.status !== 'cancel_waiting' && !attendanceMap[r.child_id]
-    )
+    const unrecorded = resList.filter((r) => r.status !== 'cancel_waiting' && !attOf(r))
 
     // スケジュール時間は props から求まるので、追加の取得往復は発生しない。
     // 他の職員が同じ児童を先に登録していた場合に一括処理ごと失敗しないよう、
@@ -410,12 +431,12 @@ export function AttendanceBoard({
       .upsert(
         unrecorded.map((r) => ({
           child_id: r.child_id,
-          unit_id: selectedUnitId,
+          unit_id: r.unit_id,
           date,
           status: 'attended',
           pickup_type: 'none',
           created_by: staffId,
-          ...getScheduledTimes(r.child_id),
+          ...getScheduledTimes(r.unit_id, r.child_id),
         })),
         { onConflict: 'child_id,unit_id,date', ignoreDuplicates: true }
       )
@@ -425,19 +446,19 @@ export function AttendanceBoard({
     if (data) for (const row of data as unknown as Attendance[]) applyRow(row)
   }
 
-  const attending = resList.filter((r) => {
-    const att = attendanceMap[r.child_id]
-    return att?.status === 'attended'
-  })
+  const attending = resList.filter((r) => attOf(r)?.status === 'attended')
   const absent = resList.filter((r) => {
-    const att = attendanceMap[r.child_id]
+    const att = attOf(r)
     return att?.status === 'absent' || r.status === 'cancel_waiting'
   })
-  const unrecorded = resList.filter((r) => {
-    return !attendanceMap[r.child_id] && r.status !== 'cancel_waiting'
-  })
+  const unrecorded = resList.filter((r) => !attOf(r) && r.status !== 'cancel_waiting')
 
   const selectedUnit = units.find((u) => u.id === selectedUnitId)
+  const unitNameById = new Map(units.map((u) => [u.id, u.name]))
+  // 「すべて」表示の定員は全ユニットの合計
+  const capacity = isAllUnits
+    ? units.reduce((sum, u) => sum + (u.capacity ?? 0), 0)
+    : selectedUnit?.capacity ?? 0
 
   return (
     <div className="space-y-4">
@@ -476,6 +497,17 @@ export function AttendanceBoard({
         </div>
 
         <div className="flex gap-2 flex-wrap flex-1">
+          {/* 既定は「すべて」。そこからユニットごとに絞り込む */}
+          <button
+            onClick={() => changeUnit(ALL_UNITS)}
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              isAllUnits
+                ? 'bg-indigo-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            すべて
+          </button>
           {units.map((u) => (
             <button
               key={u.id}
@@ -549,9 +581,11 @@ export function AttendanceBoard({
         <Card className="hidden sm:block">
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-gray-700">
-              {attending.length}/{selectedUnit?.capacity ?? '-'}
+              {attending.length}/{capacity || '-'}
             </div>
-            <div className="text-xs text-gray-500 mt-1">定員充足率</div>
+            <div className="text-xs text-gray-500 mt-1">
+              定員充足率{isAllUnits ? '（全ユニット）' : ''}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -566,7 +600,9 @@ export function AttendanceBoard({
 
       {/* 児童一覧 */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-500 mb-2 px-1">利用予定児童一覧</h2>
+        <h2 className="text-sm font-semibold text-gray-500 mb-2 px-1">
+          利用予定児童一覧{isAllUnits ? '（全ユニット）' : selectedUnit ? `（${selectedUnit.name}）` : ''}
+        </h2>
         <div className="space-y-3">
             {resList.length === 0 ? (
               <Card>
@@ -578,7 +614,9 @@ export function AttendanceBoard({
               resList.map((res) => {
                 const child = res.children
                 if (!child) return null
-                const att = attendanceMap[child.id]
+                const att = attOf(res)
+                const rowKey = unitChildKey(res.unit_id, child.id)
+                const unitName = unitNameById.get(res.unit_id)
                 const isPresent = att?.status === 'attended'
                 const isAbsent = att?.status === 'absent' || res.status === 'cancel_waiting'
                 const isUnrecorded = !att && res.status !== 'cancel_waiting'
@@ -604,7 +642,7 @@ export function AttendanceBoard({
                     : ''
 
                 return (
-                  <div key={res.id}>
+                  <div key={`${res.unit_id}|${res.id}`}>
                   <Card
                     className={`overflow-hidden ${isUnrecorded ? 'bg-yellow-50' : ''} ${
                       isAbsent ? 'opacity-70' : ''
@@ -627,6 +665,10 @@ export function AttendanceBoard({
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <Link href={`/attendance/child/${child.id}`} className="font-medium text-gray-900 hover:text-indigo-600 hover:underline">{child.name}</Link>
+                          {/* 「すべて」表示ではどのユニットの子か分かるようにする */}
+                          {isAllUnits && unitName && (
+                            <Badge variant="secondary" className="text-xs">{unitName}</Badge>
+                          )}
                           {child.allergy_info && (
                             <Badge variant="destructive" className="text-xs">アレルギー</Badge>
                           )}
@@ -666,8 +708,10 @@ export function AttendanceBoard({
                       {res.status !== 'cancel_waiting' && (
                         <>
                           <button
-                            onClick={() => isPresent ? cancelAttendance(child.id) : upsertAttendance(child.id, { status: 'attended' })}
-                            disabled={saving === child.id}
+                            onClick={() => isPresent
+                              ? cancelAttendance(res.unit_id, child.id)
+                              : upsertAttendance(res.unit_id, child.id, { status: 'attended' })}
+                            disabled={saving === rowKey}
                             title={isPresent ? 'もう一度押すと取り消し' : '出席にする'}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                               isPresent
@@ -679,8 +723,8 @@ export function AttendanceBoard({
                             出席
                           </button>
                           <button
-                            onClick={() => upsertAttendance(child.id, { status: 'absent' })}
-                            disabled={saving === child.id}
+                            onClick={() => upsertAttendance(res.unit_id, child.id, { status: 'absent' })}
+                            disabled={saving === rowKey}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                               isAbsent && res.status !== 'cancel_waiting'
                                 ? 'bg-red-500 text-white'
@@ -700,7 +744,7 @@ export function AttendanceBoard({
                       {/* 記録ページへのリンク */}
                       {isPresent && (
                         <Link
-                          href={`/records/${child.id}?date=${date}&unit=${selectedUnitId}`}
+                          href={`/records/${child.id}?date=${date}&unit=${res.unit_id}`}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
                         >
                           <ClipboardEdit className="h-4 w-4" />
@@ -711,11 +755,11 @@ export function AttendanceBoard({
                       {/* 利用予定ごと削除（誤って予定に入れた児童を一覧から消す） */}
                       <button
                         onClick={() => setConfirmDelete(res)}
-                        disabled={deleting === child.id}
+                        disabled={deleting === rowKey}
                         title="この日の利用予定を削除（欠席にするのではなく、一覧から消して未登録に戻す）"
                         className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
                       >
-                        {deleting === child.id
+                        {deleting === rowKey
                           ? <Loader2 className="h-4 w-4 animate-spin" />
                           : <Trash2 className="h-4 w-4" />}
                       </button>
@@ -765,8 +809,8 @@ export function AttendanceBoard({
       {/* ── 利用予定の削除確認ダイアログ ─────────────────────── */}
       {confirmDelete && (() => {
         const childName = confirmDelete.children?.name ?? 'この児童'
-        const isDeleting = deleting === confirmDelete.child_id
-        const hasAttendance = !!attendanceMap[confirmDelete.child_id]
+        const isDeleting = deleting === unitChildKey(confirmDelete.unit_id, confirmDelete.child_id)
+        const hasAttendance = !!attOf(confirmDelete)
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"

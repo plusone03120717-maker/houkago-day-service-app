@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { buildUsageRoster, eachDate } from '@/lib/usage-roster'
+import { ALL_UNITS } from '@/lib/attendance-board-data'
 import type { Unit } from './attendance-board'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -24,6 +25,7 @@ function toDateStr(d: Date): string {
 type MonthReservation = {
   id: string
   child_id: string
+  unit_id: string
   date: string
   status: string
   requested_by: string | null
@@ -32,6 +34,7 @@ type MonthReservation = {
 
 type MonthAttendance = {
   child_id: string
+  unit_id: string
   date: string
   status: string
   service_start_time: string | null
@@ -44,6 +47,7 @@ type MonthAttendance = {
 type PlanInfo = {
   id: string
   child_id: string
+  unit_id: string
   pickup_time: string | null
   dropoff_time: string | null
   service_start_time: string | null
@@ -94,33 +98,37 @@ export function MonthlyAttendanceView({
   const monthEnd = toDateStr(lastDay)
   const monthLabel = `${firstDay.getFullYear()}年${firstDay.getMonth() + 1}月`
 
+  const isAllUnits = selectedUnitId === ALL_UNITS
+
   useEffect(() => {
     if (!selectedUnitId) return
     setLoading(true)
 
     // 予約・出欠記録・利用計画・特定日キャンセルの4本。
     // 依存関係が無いので同時に投げる（以前は計画だけ後追いで取っていた）。
+    // 「すべて」表示のときは unit_id で絞らない。
+    const resQuery = supabase
+      .from('usage_reservations')
+      .select('id, child_id, unit_id, date, status, requested_by, children(id, name, name_kana)')
+      .gte('date', monthStart)
+      .lte('date', monthEnd)
+      .in('status', ['confirmed', 'reserved', 'cancel_waiting'])
+    const attQuery = supabase
+      .from('daily_attendance')
+      .select('child_id, unit_id, date, status, service_start_time, service_end_time, check_in_time, check_out_time, children(id, name, name_kana)')
+      .gte('date', monthStart)
+      .lte('date', monthEnd)
+    const planQuery = supabase
+      .from('usage_plans')
+      .select('id, child_id, unit_id, pickup_time, dropoff_time, service_start_time, service_end_time, day_of_week, start_date, end_date, children(id, name, name_kana)')
+      .eq('is_active', true)
+      .lte('start_date', monthEnd)
+      .or(`end_date.is.null,end_date.gte.${monthStart}`)
+
     Promise.all([
-      supabase
-        .from('usage_reservations')
-        .select('id, child_id, date, status, requested_by, children(id, name, name_kana)')
-        .eq('unit_id', selectedUnitId)
-        .gte('date', monthStart)
-        .lte('date', monthEnd)
-        .in('status', ['confirmed', 'reserved', 'cancel_waiting']),
-      supabase
-        .from('daily_attendance')
-        .select('child_id, date, status, service_start_time, service_end_time, check_in_time, check_out_time, children(id, name, name_kana)')
-        .eq('unit_id', selectedUnitId)
-        .gte('date', monthStart)
-        .lte('date', monthEnd),
-      supabase
-        .from('usage_plans')
-        .select('id, child_id, pickup_time, dropoff_time, service_start_time, service_end_time, day_of_week, start_date, end_date, children(id, name, name_kana)')
-        .eq('unit_id', selectedUnitId)
-        .eq('is_active', true)
-        .lte('start_date', monthEnd)
-        .or(`end_date.is.null,end_date.gte.${monthStart}`),
+      isAllUnits ? resQuery : resQuery.eq('unit_id', selectedUnitId),
+      isAllUnits ? attQuery : attQuery.eq('unit_id', selectedUnitId),
+      isAllUnits ? planQuery : planQuery.eq('unit_id', selectedUnitId),
       supabase
         .from('usage_plan_date_overrides')
         .select('plan_id, date, is_cancelled')
@@ -134,9 +142,17 @@ export function MonthlyAttendanceView({
       setLoading(false)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedUnitId, monthStart])
+  }, [selectedUnitId, isAllUnits, monthStart])
 
   const attMap = new Map(attendances.map((a) => [`${a.child_id}|${a.date}`, a]))
+
+  // どのユニットの利用かを引けるようにする（「すべて」表示の放/児バッジ用）。
+  // 出席記録 > 予約 > 利用計画 の順に確かな情報を採用する。
+  const unitIdByChildDate = new Map<string, string>()
+  for (const r of reservations) unitIdByChildDate.set(`${r.child_id}|${r.date}`, r.unit_id)
+  for (const a of attendances) unitIdByChildDate.set(`${a.child_id}|${a.date}`, a.unit_id)
+  const unitIdByChild = new Map<string, string>()
+  for (const p of plans) unitIdByChild.set(p.child_id, p.unit_id)
 
   // 児童名は予約・利用計画・出席記録のどの経路で来た行でも引けるようにしておく
   const childNameById = new Map<string, string>()
@@ -165,6 +181,7 @@ export function MonthlyAttendanceView({
   type DayEntry = {
     id: string
     childId: string
+    unitId: string | null
     name: string
     absent: boolean
     start: string | null
@@ -200,6 +217,10 @@ export function MonthlyAttendanceView({
       day.entries.push({
         id: e.reservation?.id ?? `roster-${e.childId}-${date}`,
         childId: e.childId,
+        unitId:
+          unitIdByChildDate.get(`${e.childId}|${date}`) ??
+          unitIdByChild.get(e.childId) ??
+          null,
         name: childNameById.get(e.childId) ?? '',
         absent: e.absent,
         start: fmtTime(att?.service_start_time) ?? fmtTime(att?.check_in_time) ?? planned.start,
@@ -214,13 +235,18 @@ export function MonthlyAttendanceView({
     )
   }
 
+  // 「すべて」表示は全ユニットの合計人数になるため、しきい値もユニット数ぶん引き上げる
+  const crowdedThreshold = isAllUnits
+    ? CROWDED_THRESHOLD * Math.max(units.length, 1)
+    : CROWDED_THRESHOLD
+
   // 月間サマリー
   const dayCounts = [...dayMap.values()].map((d) => d.count)
   const totalUsage = dayCounts.reduce((sum, c) => sum + c, 0)
   const activeDays = dayCounts.filter((c) => c > 0).length
   const averageUsage = activeDays > 0 ? totalUsage / activeDays : 0
   const maxUsage = dayCounts.length > 0 ? Math.max(...dayCounts) : 0
-  const crowdedDays = dayCounts.filter((c) => c >= CROWDED_THRESHOLD).length
+  const crowdedDays = dayCounts.filter((c) => c >= crowdedThreshold).length
 
   // カレンダーのマス（月初の曜日ぶん先頭を空ける）
   const leadingBlanks = firstDay.getDay()
@@ -232,12 +258,17 @@ export function MonthlyAttendanceView({
   ]
   while (cells.length % 7 !== 0) cells.push(null)
 
+  // 行ごとのユニットでサービス種別（放課後等デイ/児童発達支援）を出し分ける
+  const unitById = new Map(units.map((u) => [u.id, u]))
   const selectedUnit = units.find((u) => u.id === selectedUnitId)
-  const isAfterSchool = selectedUnit?.service_type !== 'child_development'
-  const serviceLabel = isAfterSchool ? '放' : '児'
-  const serviceBadgeClass = isAfterSchool
-    ? 'bg-indigo-100 text-indigo-700'
-    : 'bg-teal-100 text-teal-700'
+  const serviceBadge = (unitId: string | null) => {
+    const unit = (unitId ? unitById.get(unitId) : undefined) ?? selectedUnit
+    const isAfterSchool = unit?.service_type !== 'child_development'
+    return {
+      label: isAfterSchool ? '放' : '児',
+      className: isAfterSchool ? 'bg-indigo-100 text-indigo-700' : 'bg-teal-100 text-teal-700',
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -263,7 +294,7 @@ export function MonthlyAttendanceView({
           <div className="text-xs text-gray-500 mt-1">1日平均（{activeDays}日稼働）</div>
         </div>
         <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
-          <div className={`text-2xl font-bold ${maxUsage >= CROWDED_THRESHOLD ? 'text-red-600' : 'text-gray-900'}`}>
+          <div className={`text-2xl font-bold ${maxUsage >= crowdedThreshold ? 'text-red-600' : 'text-gray-900'}`}>
             {maxUsage}
           </div>
           <div className="text-xs text-gray-500 mt-1">最大人数/日</div>
@@ -272,7 +303,7 @@ export function MonthlyAttendanceView({
           <div className={`text-2xl font-bold ${crowdedDays > 0 ? 'text-red-600' : 'text-gray-900'}`}>
             {crowdedDays}
           </div>
-          <div className="text-xs text-gray-500 mt-1">{CROWDED_THRESHOLD}名以上の日</div>
+          <div className="text-xs text-gray-500 mt-1">{crowdedThreshold}名以上の日</div>
         </div>
       </div>
 
@@ -312,7 +343,7 @@ export function MonthlyAttendanceView({
                 const day = dayMap.get(dateStr)
                 const count = day?.count ?? 0
                 const absentCount = day?.absentCount ?? 0
-                const isCrowded = count >= CROWDED_THRESHOLD
+                const isCrowded = count >= crowdedThreshold
 
                 return (
                   <div
@@ -349,7 +380,9 @@ export function MonthlyAttendanceView({
                         isCrowded ? 'border-red-200 bg-red-50/40' : 'border-gray-200 bg-white'
                       }`}
                     >
-                      {(day?.entries ?? []).map((entry) => (
+                      {(day?.entries ?? []).map((entry) => {
+                        const badge = serviceBadge(entry.unitId)
+                        return (
                         <div
                           key={entry.id}
                           onClick={(e) => {
@@ -360,8 +393,8 @@ export function MonthlyAttendanceView({
                             entry.absent ? 'opacity-40' : ''
                           }`}
                         >
-                          <span className={`inline-block px-0.5 rounded text-[9px] mr-0.5 font-medium ${serviceBadgeClass}`}>
-                            {serviceLabel}
+                          <span className={`inline-block px-0.5 rounded text-[9px] mr-0.5 font-medium ${badge.className}`}>
+                            {badge.label}
                           </span>
                           {(entry.start || entry.end) && (
                             <span className="text-gray-500">
@@ -372,7 +405,8 @@ export function MonthlyAttendanceView({
                             {entry.name}
                           </span>
                         </div>
-                      ))}
+                        )
+                      })}
 
                       {count === 0 && absentCount === 0 && (
                         <div className="text-[11px] text-gray-300 text-center mt-6">-</div>

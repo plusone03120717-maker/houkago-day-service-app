@@ -1,12 +1,18 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSessionUserId } from '@/lib/auth'
 import { getTodayJST } from '@/lib/utils'
-import { loadAttendanceBoardData } from '@/lib/attendance-board-data'
+import {
+  loadAttendanceBoardData,
+  ALL_UNITS,
+  unitChildKey,
+  type AttendanceBoardData,
+} from '@/lib/attendance-board-data'
 import { AttendanceBoard } from '@/components/attendance/attendance-board'
 import type { Unit, Reservation, Attendance, PrevAttendanceRow } from '@/components/attendance/attendance-board'
 import {
   pickPrimaryPlanPerChild,
   resolveScheduleDefaults,
+  type ScheduleDefaults,
   type PlanRow as SchedulePlanRow,
   type OverrideRow as ScheduleOverrideRow,
 } from '@/lib/schedule-defaults'
@@ -31,27 +37,20 @@ type ChildInfo = {
   medical_info: string | null
 }
 
-export default async function AttendancePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ date?: string; unit?: string }>
-}) {
-  const params = await searchParams
-  const today = params.date ?? getTodayJST()
+type UnitBoard = {
+  reservations: Reservation[]
+  attendances: Attendance[]
+  scheduleDefaults: Record<string, ScheduleDefaults>
+  prevByChildId: Record<string, PrevAttendanceRow>
+}
+
+/**
+ * 1ユニット分の生データを、画面に出す「児童の行」にまとめる。
+ * 予約・利用計画・キャンセル・出欠記録のマージ判定はここに集約してあり、
+ * 「すべて」表示のときはユニットごとにこの関数を通した結果を連結する。
+ */
+function buildUnitBoard(data: AttendanceBoardData, unitId: string, today: string): UnitBoard {
   const todayDow = new Date(today).getDay()
-  const supabase = await createClient()
-
-  // データ取得は1回にまとめてある（Postgres 関数 get_attendance_board）。
-  // 依存関係のあるクエリ（plan_id → 曜日別設定、child_id → 前回コピー用）も
-  // DB内で解決されるため、以前のような4段のウォーターフォールは発生しない。
-  // 予約・計画・キャンセルのマージ判定は従来どおりここで行う。
-  const [userId, data] = await Promise.all([
-    getSessionUserId(),
-    loadAttendanceBoardData(supabase, params.unit, today),
-  ])
-
-  const units = data.units as unknown as Unit[]
-  const selectedUnitId = data.selectedUnitId
   const attendances = data.attendances as unknown as Attendance[]
 
   type PlanRow = {
@@ -98,7 +97,7 @@ export default async function AttendancePage({
   )
 
   // 優先順位の判断は送迎管理と同じ実装を使う（@/lib/schedule-defaults）
-  const scheduleDefaultsByChildId = resolveScheduleDefaults(
+  const scheduleDefaults = resolveScheduleDefaults(
     planRows as unknown as SchedulePlanRow[],
     data.daySettings as unknown as ScheduleOverrideRow[],
     overrideRows as unknown as ScheduleOverrideRow[]
@@ -125,6 +124,7 @@ export default async function AttendancePage({
     .map((p) => ({
       id: p.id,
       child_id: p.child_id,
+      unit_id: unitId,
       date: today,
       status: 'plan',
       children: p.children,
@@ -145,6 +145,7 @@ export default async function AttendancePage({
     .map((child) => ({
       id: `da-${child.id}`,
       child_id: child.id,
+      unit_id: unitId,
       date: today,
       status: 'scheduled',
       children: child,
@@ -152,12 +153,16 @@ export default async function AttendancePage({
   // 1児童1行にする。どのカードも同じ出席記録（daily_attendance）を編集するため、
   // 同じ児童が2行あっても意味が無いばかりか、別々に保存できてしまい混乱の元になる。
   // 計画の重複はここまでで潰してあるが、予約が二重登録されている場合もここで受け止める。
+  // （別ユニットに同じ児童がいる場合は、記録先が別なので行も分かれたままでよい）
   const seenChildIds = new Set<string>()
-  const finalReservations: Reservation[] = [...allReservations, ...extraReservations].filter((r) => {
-    if (seenChildIds.has(r.child_id)) return false
-    seenChildIds.add(r.child_id)
-    return true
-  })
+  const finalReservations: Reservation[] = [...allReservations, ...extraReservations]
+    .filter((r) => {
+      if (seenChildIds.has(r.child_id)) return false
+      seenChildIds.add(r.child_id)
+      return true
+    })
+    // ユニットをまたいで連結するので、どのユニットの行かを必ず持たせる
+    .map((r) => ({ ...r, unit_id: unitId }))
 
   // ── 前回コピー用: 児童ごとに、送迎・時間の入力がある直近の出席行を1件だけ採用 ──
   // RPC 経路では DB 側の DISTINCT ON で既に1児童1行に絞られている。
@@ -168,19 +173,85 @@ export default async function AttendancePage({
     }
   }
 
+  return { reservations: finalReservations, attendances, scheduleDefaults, prevByChildId }
+}
+
+export default async function AttendancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string; unit?: string }>
+}) {
+  const params = await searchParams
+  const today = params.date ?? getTodayJST()
+  const supabase = await createClient()
+
+  // ユニット未指定は「すべて」。まず全ユニットの顔ぶれを見せ、
+  // そこからユニットボタンで絞り込めるようにする。
+  const showAllUnits = !params.unit || params.unit === ALL_UNITS
+
+  // データ取得は1ユニットにつき1回（Postgres 関数 get_attendance_board）。
+  // 依存関係のあるクエリ（plan_id → 曜日別設定、child_id → 前回コピー用）も
+  // DB内で解決されるため、以前のような4段のウォーターフォールは発生しない。
+  // 「すべて」のときは1回目の結果に入っているユニット一覧を使って
+  // 残りのユニットを並列で取りにいく（サーバー往復は最大2段）。
+  const [userId, firstData] = await Promise.all([
+    getSessionUserId(),
+    loadAttendanceBoardData(supabase, showAllUnits ? undefined : params.unit, today),
+  ])
+
+  const units = firstData.units as unknown as Unit[]
+  const selectedUnitId = showAllUnits ? ALL_UNITS : firstData.selectedUnitId
+
+  const boards: { unitId: string; board: UnitBoard }[] = [
+    {
+      unitId: firstData.selectedUnitId,
+      board: buildUnitBoard(firstData, firstData.selectedUnitId, today),
+    },
+  ]
+
+  if (showAllUnits) {
+    const restUnits = units.filter((u) => u.id !== firstData.selectedUnitId)
+    const restData = await Promise.all(
+      restUnits.map((u) => loadAttendanceBoardData(supabase, u.id, today))
+    )
+    restUnits.forEach((u, i) => {
+      boards.push({ unitId: u.id, board: buildUnitBoard(restData[i], u.id, today) })
+    })
+    // 同じユニットの児童がまとまって並ぶよう、ユニット名順に整える
+    const order = new Map(units.map((u, i) => [u.id, i]))
+    boards.sort((a, b) => (order.get(a.unitId) ?? 0) - (order.get(b.unitId) ?? 0))
+  }
+
+  const reservations = boards.flatMap((b) => b.board.reservations)
+  const attendances = boards.flatMap((b) => b.board.attendances)
+
+  // 同じ児童が複数ユニットに在籍していても取り違えないよう、
+  // スケジュール初期値は「ユニット×児童」で引けるようにしておく。
+  const scheduleDefaultsByKey: Record<string, ScheduleDefaults> = {}
+  // 前回コピー用は児童単位（ユニットに依存しない）なので先勝ちでマージする
+  const prevByChildId: Record<string, PrevAttendanceRow> = {}
+  for (const { unitId, board } of boards) {
+    for (const [childId, sched] of Object.entries(board.scheduleDefaults)) {
+      scheduleDefaultsByKey[unitChildKey(unitId, childId)] = sched
+    }
+    for (const [childId, row] of Object.entries(board.prevByChildId)) {
+      if (!prevByChildId[childId]) prevByChildId[childId] = row
+    }
+  }
+
   return (
     <AttendanceBoard
       date={today}
       units={units}
       selectedUnitId={selectedUnitId}
-      reservations={finalReservations}
+      reservations={reservations}
       attendances={attendances}
       staffId={userId ?? ''}
-      staffMembers={data.staffMembers}
-      vehicles={data.vehicles}
-      defaultServiceEndTime={data.defaultServiceEndTime}
+      staffMembers={firstData.staffMembers}
+      vehicles={firstData.vehicles}
+      defaultServiceEndTime={firstData.defaultServiceEndTime}
       prevByChildId={prevByChildId}
-      scheduleDefaultsByChildId={scheduleDefaultsByChildId}
+      scheduleDefaultsByKey={scheduleDefaultsByKey}
     />
   )
 }

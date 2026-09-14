@@ -18,6 +18,21 @@ const CHILD_COLUMNS = 'id, name, name_kana, photo_url, allergy_info, medical_inf
 const RESERVATION_STATUSES = ['confirmed', 'reserved', 'cancel_waiting']
 
 /**
+ * ユニット未選択（＝全ユニットまとめて表示）を表す URL パラメータの値。
+ * 出席管理は既定でこの状態になり、ユニットボタンで絞り込む。
+ */
+export const ALL_UNITS = 'all'
+
+/**
+ * 出席まわりの「児童 × ユニット」をひとつのキーにする。
+ * 全ユニット表示では同じ児童が別ユニットの行として並びうるため、
+ * 児童IDだけをキーにすると別ユニットの記録を取り違える。
+ */
+export function unitChildKey(unitId: string, childId: string): string {
+  return `${unitId}|${childId}`
+}
+
+/**
  * 出席管理ページが必要とする生データ一式。
  * 予約・利用計画・キャンセルのマージ判定は呼び出し側（page.tsx）が行う。
  */
