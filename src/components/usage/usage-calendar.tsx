@@ -10,6 +10,7 @@ import { ChevronLeft, ChevronRight, Check, CheckCheck, XCircle, Plus, AlertTrian
 import { cn } from '@/lib/utils'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { deleteUsageDay, markUsageDayAbsent, clearUsageDayAbsence } from '@/lib/usage-day'
+import { ALL_UNITS } from '@/lib/attendance-board-data'
 
 type Unit = { id: string; name: string; capacity: number }
 
@@ -81,6 +82,10 @@ export function UsageCalendar({
   const [updating, setUpdating] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [addChildId, setAddChildId] = useState('')
+  // 予約の追加先ユニット。「すべて」表示のときはフォームで選ぶ
+  const [addUnitId, setAddUnitId] = useState(
+    selectedUnitId === ALL_UNITS ? units[0]?.id ?? '' : selectedUnitId
+  )
   const [addStatus, setAddStatus] = useState<'confirmed' | 'reserved'>('confirmed')
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
@@ -113,7 +118,14 @@ export function UsageCalendar({
     resByDate[r.date].push(r)
   })
 
+  // ユニット未選択（＝すべて）。既定はこちらで、ユニットボタンで絞り込む
+  const isAllUnits = selectedUnitId === ALL_UNITS
   const selectedUnit = units.find((u) => u.id === selectedUnitId)
+  const unitNameById = new Map(units.map((u) => [u.id, u.name]))
+  // 「すべて」表示の定員は全ユニットの合計
+  const totalCapacity = isAllUnits
+    ? units.reduce((sum, u) => sum + (u.capacity ?? 0), 0)
+    : selectedUnit?.capacity ?? 0
   const selectedDateReservations = selectedDate ? (resByDate[selectedDate] ?? []) : []
 
   const pendingReservations = entries
@@ -233,7 +245,7 @@ export function UsageCalendar({
   }
 
   const handleAddReservation = async () => {
-    if (!addChildId || !selectedDate) return
+    if (!addChildId || !selectedDate || !addUnitId) return
     setAdding(true)
     setAddError(null)
     // requested_by を入れて「手動で追加した予約」と分かるようにする。
@@ -242,7 +254,7 @@ export function UsageCalendar({
     const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase.from('usage_reservations').insert({
       child_id: addChildId,
-      unit_id: selectedUnitId,
+      unit_id: addUnitId,
       date: selectedDate,
       status: addStatus,
       requested_by: user?.id ?? null,
@@ -275,6 +287,16 @@ export function UsageCalendar({
           </button>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {/* 既定は「すべて」。そこからユニットごとに絞り込む */}
+          <button
+            onClick={() => changeUnit(ALL_UNITS)}
+            className={cn(
+              'px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
+              isAllUnits ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            )}
+          >
+            すべて
+          </button>
           {units.map((u) => (
             <button
               key={u.id}
@@ -400,7 +422,7 @@ export function UsageCalendar({
             const dayReservations = resByDate[date] ?? []
             const activeCount = dayReservations.filter((r) => r.counts).length
             const pendingCount = dayReservations.filter((r) => r.reservationStatus === 'reserved').length
-            const capacity = selectedUnit?.capacity ?? 0
+            const capacity = totalCapacity
             const isFull = capacity > 0 && activeCount >= capacity
             const isSelected = date === selectedDate
             const dayOfWeek = new Date(date).getDay()
@@ -481,7 +503,15 @@ export function UsageCalendar({
                 const absent = isAbsent(r)
                 return (
                 <div key={r.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                  <p className="text-sm font-medium text-gray-900">{r.children?.name ?? '—'}</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {r.children?.name ?? '—'}
+                    {/* 「すべて」表示ではどのユニットの利用か分かるようにする */}
+                    {isAllUnits && unitNameById.get(r.unit_id) && (
+                      <span className="ml-1.5 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-normal text-gray-600">
+                        {unitNameById.get(r.unit_id)}
+                      </span>
+                    )}
+                  </p>
                   <div className="flex items-center gap-2">
                     <Badge variant={STATUS_VARIANTS[r.status] ?? 'secondary'} className="text-xs">
                       {STATUS_LABELS[r.status] ?? r.status}
@@ -574,6 +604,21 @@ export function UsageCalendar({
           ) : (
             <div className="border border-indigo-200 rounded-lg p-3 space-y-3 bg-indigo-50">
               <p className="text-xs font-semibold text-indigo-700">施設側で予約を追加</p>
+              {/* 「すべて」表示ではどのユニットに追加するかを選ぶ */}
+              {isAllUnits && (
+                <div>
+                  <label className="text-xs text-gray-600 block mb-1">ユニット</label>
+                  <select
+                    value={addUnitId}
+                    onChange={(e) => setAddUnitId(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                  >
+                    {units.map((u) => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="text-xs text-gray-600 block mb-1">児童</label>
                 <select

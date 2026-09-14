@@ -5,7 +5,8 @@ import { getTodayJST } from '@/lib/utils'
 import { TransportManageBoard } from '@/components/transport/transport-board'
 import type { TransportRow, UnitChild } from '@/components/transport/transport-board'
 import { autoCreateTransportSchedules } from '@/app/actions/transport'
-import { fetchScheduleDefaults } from '@/lib/schedule-defaults'
+import { fetchScheduleDefaults, type ScheduleDefaults } from '@/lib/schedule-defaults'
+import { ALL_UNITS, unitChildKey } from '@/lib/attendance-board-data'
 
 type Unit = { id: string; name: string; service_type: string }
 type Vehicle = { id: string; name: string; capacity: number }
@@ -14,7 +15,7 @@ type Driver = { id: string; name: string }
 // 送迎明細が持つのは「誰を・どこで・どの順に」だけ。
 // 時刻・ドライバー・車種はその日の記録（daily_attendance）が唯一の正。
 const SCHEDULE_SELECT = `
-  id, direction,
+  id, unit_id, direction,
   transport_details (
     id, child_id, pickup_location, sort_order, trip_group_id,
     children (id, name, name_kana, address, school_id, schools(id, name))
@@ -22,13 +23,14 @@ const SCHEDULE_SELECT = `
 `
 
 const ATTENDANCE_SELECT = `
-  child_id, status,
+  child_id, unit_id, status,
   pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id,
   dropoff_departure_time, dropoff_arrival_time, dropoff_driver_member_id, dropoff_vehicle_id
 `
 
 type RawSchedule = {
   id: string
+  unit_id: string
   direction: string
   transport_details: {
     id: string
@@ -49,6 +51,7 @@ type RawSchedule = {
 
 type AttendanceRow = {
   child_id: string
+  unit_id: string
   status: string
   pickup_departure_time: string | null
   pickup_arrival_time: string | null
@@ -80,12 +83,16 @@ export default async function TransportPage({
     .order('name')
   const units = (unitsRaw ?? []) as Unit[]
 
-  const selectedUnitId = params.unit ?? units[0]?.id ?? ''
+  // ユニット未指定は「すべて」。まず全ユニットの送迎をまとめて見せ、
+  // そこからユニットボタンで絞り込む。
+  const showAllUnits = !params.unit || params.unit === ALL_UNITS
+  const selectedUnitId = showAllUnits ? ALL_UNITS : params.unit ?? ''
+  const targetUnitIds = showAllUnits
+    ? units.map((u) => u.id)
+    : units.filter((u) => u.id === selectedUnitId).map((u) => u.id)
 
   // 利用計画から送迎対象の児童を補完（未追加の児童を自動追加）
-  if (selectedUnitId) {
-    await autoCreateTransportSchedules(selectedUnitId, today)
-  }
+  await Promise.all(targetUnitIds.map((id) => autoCreateTransportSchedules(id, today)))
 
   const [
     { data: schedulesRaw, error: schedulesError },
@@ -95,30 +102,41 @@ export default async function TransportPage({
     { data: allChildrenRaw },
     scheduleDefaults,
   ] = await Promise.all([
-    selectedUnitId
+    targetUnitIds.length > 0
       ? supabase
           .from('transport_schedules')
           .select(SCHEDULE_SELECT)
-          .eq('unit_id', selectedUnitId)
+          .in('unit_id', targetUnitIds)
           .eq('date', today)
       : ({ data: [], error: null } as { data: unknown[]; error: null }),
     vehiclesPromise,
     driversPromise,
-    selectedUnitId
+    targetUnitIds.length > 0
       ? supabase
           .from('daily_attendance')
           .select(ATTENDANCE_SELECT)
-          .eq('unit_id', selectedUnitId)
+          .in('unit_id', targetUnitIds)
           .eq('date', today)
       : ({ data: [], error: null } as { data: unknown[]; error: null }),
-    selectedUnitId
+    targetUnitIds.length > 0
       ? supabase
           .from('usage_plans')
-          .select('child_id, children(id, name, name_kana, address, school_id, schools(id, name))')
-          .eq('unit_id', selectedUnitId)
+          .select('child_id, unit_id, children(id, name, name_kana, address, school_id, schools(id, name))')
+          .in('unit_id', targetUnitIds)
           .eq('is_active', true)
       : ({ data: [] } as { data: unknown[] }),
-    fetchScheduleDefaults(supabase, selectedUnitId, today),
+    // 予定値はユニットごとに解決する（計画はユニット単位なので混ぜられない）
+    Promise.all(targetUnitIds.map((id) => fetchScheduleDefaults(supabase, id, today))).then(
+      (list) => {
+        const byKey: Record<string, ScheduleDefaults> = {}
+        list.forEach((defaults, i) => {
+          for (const [childId, v] of Object.entries(defaults)) {
+            byKey[unitChildKey(targetUnitIds[i], childId)] = v
+          }
+        })
+        return byKey
+      }
+    ),
   ])
 
   // 取得に失敗したときは「0件」として黙って空表示にせず、原因をそのまま画面に出す。
@@ -132,27 +150,29 @@ export default async function TransportPage({
   const vehicles = (vehiclesRaw ?? []) as Vehicle[]
   const drivers = (driversRaw ?? []) as Driver[]
 
+  // 「すべて」表示ではユニットをまたぐため、出席記録はユニット×児童で引く
   const attendanceByChild = new Map<string, AttendanceRow>()
   for (const a of (attendanceRaw ?? []) as unknown as AttendanceRow[]) {
-    attendanceByChild.set(a.child_id, a)
+    attendanceByChild.set(unitChildKey(a.unit_id, a.child_id), a)
   }
+  const unitNameById = new Map(units.map((u) => [u.id, u.name]))
 
   // 便ごとの入れ子をやめ、児童1人1行のフラットな一覧に変換する。
   // 便は表からは消えたが DB 上は方向ごとの入れ物として残るため、
   // 追加・方向変更で使う schedule_id を方向別に控えておく。
-  const scheduleIdByDirection: { pickup: string | null; dropoff: string | null } = {
-    pickup: null,
-    dropoff: null,
-  }
+  // ユニットごと・方向ごとの入れ物スケジュール
+  const scheduleIdsByUnit: Record<string, { pickup: string | null; dropoff: string | null }> = {}
+  for (const id of targetUnitIds) scheduleIdsByUnit[id] = { pickup: null, dropoff: null }
   const rows: TransportRow[] = []
 
   for (const sched of schedules) {
     const direction = sched.direction === 'pickup' ? 'pickup' : 'dropoff'
-    if (!scheduleIdByDirection[direction]) scheduleIdByDirection[direction] = sched.id
+    const slot = (scheduleIdsByUnit[sched.unit_id] ??= { pickup: null, dropoff: null })
+    if (!slot[direction]) slot[direction] = sched.id
 
     for (const d of sched.transport_details ?? []) {
-      const att = attendanceByChild.get(d.child_id)
-      const plan = scheduleDefaults[d.child_id]
+      const att = attendanceByChild.get(unitChildKey(sched.unit_id, d.child_id))
+      const plan = scheduleDefaults[unitChildKey(sched.unit_id, d.child_id)]
 
       // お迎えは「子どもと合流する時刻」＝到着、お送りは「施設を出る時刻」＝出発。
       // 記録が無ければ利用スケジュールの予定値を未確定として表示する。
@@ -162,6 +182,8 @@ export default async function TransportPage({
       rows.push({
         id: d.id,
         childId: d.child_id,
+        unitId: sched.unit_id,
+        unitName: unitNameById.get(sched.unit_id) ?? '',
         direction,
         name: d.children?.name ?? '不明',
         nameKana: d.children?.name_kana ?? null,
@@ -174,9 +196,10 @@ export default async function TransportPage({
         vehicleId: (direction === 'pickup' ? att?.pickup_vehicle_id : att?.dropoff_vehicle_id) ?? null,
         sortOrder: d.sort_order,
         // 手動で組み分けされていれば その ID、なければ 区分・時間・場所で自動判定
+        // 自動判定の便はユニットをまたがない（記録先が別のため）
         groupKey:
           d.trip_group_id ??
-          `auto|${direction}|${(recorded ?? planned)?.slice(0, 5) ?? ''}|${d.pickup_location ?? ''}`,
+          `auto|${sched.unit_id}|${direction}|${(recorded ?? planned)?.slice(0, 5) ?? ''}|${d.pickup_location ?? ''}`,
         isManualGroup: !!d.trip_group_id,
         schoolName: d.children?.schools?.name ?? null,
         homeAddress: d.children?.address ?? null,
@@ -231,16 +254,23 @@ export default async function TransportPage({
 
   const orderedRows = sortedGroups.flatMap((g) => g.members)
 
-  // child_id で重複除去
+  // ユニット×児童で重複除去（どのユニットの子かも持たせる）
   const allChildrenMap = new Map<string, UnitChild>()
   for (const p of allChildrenRaw ?? []) {
-    const row = p as { child_id: string; children: unknown }
-    if (row.child_id && !allChildrenMap.has(row.child_id)) {
-      allChildrenMap.set(row.child_id, row.children as unknown as UnitChild)
+    const row = p as { child_id: string; unit_id: string; children: unknown }
+    const key = unitChildKey(row.unit_id, row.child_id)
+    if (row.child_id && row.children && !allChildrenMap.has(key)) {
+      allChildrenMap.set(key, {
+        ...(row.children as unknown as UnitChild),
+        unitId: row.unit_id,
+        unitName: unitNameById.get(row.unit_id) ?? '',
+      })
     }
   }
-  const allChildren = [...allChildrenMap.values()].sort((a, b) =>
-    (a.name_kana ?? a.name).localeCompare(b.name_kana ?? b.name, 'ja')
+  const allChildren = [...allChildrenMap.values()].sort(
+    (a, b) =>
+      a.unitName.localeCompare(b.unitName, 'ja') ||
+      (a.name_kana ?? a.name).localeCompare(b.name_kana ?? b.name, 'ja')
   )
 
   return (
@@ -249,7 +279,7 @@ export default async function TransportPage({
       units={units}
       selectedUnitId={selectedUnitId}
       rows={orderedRows}
-      scheduleIdByDirection={scheduleIdByDirection}
+      scheduleIdsByUnit={scheduleIdsByUnit}
       vehicles={vehicles}
       drivers={drivers}
       allChildren={allChildren}

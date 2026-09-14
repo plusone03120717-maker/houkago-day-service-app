@@ -17,6 +17,7 @@ import {
   Merge,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { ALL_UNITS } from '@/lib/attendance-board-data'
 import {
   deleteAndRecreateTransportSchedules,
   saveTransportRecord,
@@ -32,6 +33,9 @@ export type Direction = 'pickup' | 'dropoff'
 export type TransportRow = {
   id: string
   childId: string
+  /** どのユニットの送迎か（「すべて」表示ではユニットをまたいで並ぶ） */
+  unitId: string
+  unitName: string
   direction: Direction
   name: string
   nameKana: string | null
@@ -60,6 +64,9 @@ export type UnitChild = {
   address: string | null
   school_id: string | null
   schools: { id: string; name: string } | null
+  /** 在籍ユニット（利用計画のユニット） */
+  unitId: string
+  unitName: string
 }
 
 type ScheduleIds = { pickup: string | null; dropoff: string | null }
@@ -67,9 +74,11 @@ type ScheduleIds = { pickup: string | null; dropoff: string | null }
 interface Props {
   date: string
   units: Unit[]
+  /** 選択中のユニットID。ALL_UNITS（'all'）なら全ユニットまとめて表示 */
   selectedUnitId: string
   rows: TransportRow[]
-  scheduleIdByDirection: ScheduleIds
+  /** ユニットID → 方向ごとの入れ物スケジュール */
+  scheduleIdsByUnit: Record<string, ScheduleIds>
   vehicles: Vehicle[]
   drivers: Driver[]
   allChildren: UnitChild[]
@@ -132,13 +141,15 @@ export function TransportManageBoard({
   units,
   selectedUnitId,
   rows,
-  scheduleIdByDirection,
+  scheduleIdsByUnit,
   vehicles,
   drivers,
   allChildren,
   loadError,
 }: Props) {
   const router = useRouter()
+  // ユニット未選択（＝すべて）。既定はこちらで、ユニットボタンで絞り込む
+  const isAllUnits = selectedUnitId === ALL_UNITS
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [regenerating, setRegenerating] = useState(false)
@@ -167,14 +178,14 @@ export function TransportManageBoard({
 
   const refresh = () => startTransition(() => router.refresh())
 
-  /** 方向ごとの入れ物スケジュールを取得（無ければ作成） */
-  const ensureScheduleId = async (direction: Direction): Promise<string | null> => {
-    const known = scheduleIdByDirection[direction]
+  /** ユニット・方向ごとの入れ物スケジュールを取得（無ければ作成） */
+  const ensureScheduleId = async (unitId: string, direction: Direction): Promise<string | null> => {
+    const known = scheduleIdsByUnit[unitId]?.[direction]
     if (known) return known
     const { data: existing } = await supabase
       .from('transport_schedules')
       .select('id')
-      .eq('unit_id', selectedUnitId)
+      .eq('unit_id', unitId)
       .eq('date', date)
       .eq('direction', direction)
       .limit(1)
@@ -182,7 +193,7 @@ export function TransportManageBoard({
     if (existing) return existing.id as string
     const { data: created } = await supabase
       .from('transport_schedules')
-      .insert({ unit_id: selectedUnitId, date, direction, route_order: [] })
+      .insert({ unit_id: unitId, date, direction, route_order: [] })
       .select('id')
       .single()
     return (created?.id as string | undefined) ?? null
@@ -192,14 +203,18 @@ export function TransportManageBoard({
   const handleRemove = async (row: TransportRow) => {
     if (!confirm(`「${row.name}」を${DIRECTION_LABEL[row.direction]}の一覧から外しますか？\n（日々の記録の${DIRECTION_LABEL[row.direction]}欄も消えます）`)) return
     await supabase.from('transport_details').delete().eq('id', row.id)
-    await clearTransportDirection(row.childId, selectedUnitId, date, row.direction)
+    await clearTransportDirection(row.childId, row.unitId, date, row.direction)
     refresh()
   }
 
+  // 「すべて」表示のときは表示中の全ユニットが対象
+  const targetUnitIds = isAllUnits ? units.map((u) => u.id) : [selectedUnitId]
+
   const handleRegenerate = async () => {
-    if (!confirm('既存の送迎予定を削除して、利用スケジュールの時間設定をもとに再生成しますか？\n（日々の記録に保存済みの内容はそのまま残ります）')) return
+    const scope = isAllUnits ? '全ユニット' : units.find((u) => u.id === selectedUnitId)?.name ?? ''
+    if (!confirm(`${scope}の既存の送迎予定を削除して、利用スケジュールの時間設定をもとに再生成しますか？\n（日々の記録に保存済みの内容はそのまま残ります）`)) return
     setRegenerating(true)
-    await deleteAndRecreateTransportSchedules(selectedUnitId, date)
+    await Promise.all(targetUnitIds.map((id) => deleteAndRecreateTransportSchedules(id, date)))
     setRegenerating(false)
     refresh()
   }
@@ -239,7 +254,7 @@ export function TransportManageBoard({
     for (const row of group.rows.filter((r) => !r.isAbsent)) {
       await saveTransportRecord({
         childId: row.childId,
-        unitId: selectedUnitId,
+        unitId: row.unitId,
         date,
         direction: row.direction,
         ...fields,
@@ -287,7 +302,7 @@ export function TransportManageBoard({
       for (const row of joined) {
         await saveTransportRecord({
           childId: row.childId,
-          unitId: selectedUnitId,
+          unitId: row.unitId,
           date,
           direction: row.direction,
           ...(driverMemberId ? { driverMemberId } : {}),
@@ -340,6 +355,17 @@ export function TransportManageBoard({
           </button>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {/* 既定は「すべて」。そこからユニットごとに絞り込む */}
+          <button
+            onClick={() => router.push(`/transport?date=${date}&unit=${ALL_UNITS}`)}
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              isAllUnits
+                ? 'bg-indigo-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            すべて
+          </button>
           {units.map((u) => (
             <button
               key={u.id}
@@ -354,7 +380,7 @@ export function TransportManageBoard({
             </button>
           ))}
         </div>
-        {selectedUnitId && (
+        {targetUnitIds.length > 0 && (
           <>
             <button
               onClick={() => setShowAddPanel((v) => !v)}
@@ -395,7 +421,7 @@ export function TransportManageBoard({
       {showAddPanel && (
         <AddChildPanel
           date={date}
-          unitId={selectedUnitId}
+          showUnit={isAllUnits}
           allChildren={allChildren}
           existing={localRows}
           ensureScheduleId={ensureScheduleId}
@@ -455,7 +481,7 @@ export function TransportManageBoard({
                             key={`${rowsOfLine.map((r) => r.id).join(',')}:${rowsOfLine[0].time ?? ''}`}
                             rows={rowsOfLine}
                             index={i}
-                            unitId={selectedUnitId}
+                            showUnit={isAllUnits}
                             date={date}
                             isDragging={dragIndex === i}
                             isOver={dragOverIndex === i}
@@ -733,7 +759,7 @@ function MergePicker({
 function TransportRowItem({
   rows,
   index,
-  unitId,
+  showUnit,
   date,
   isDragging,
   isOver,
@@ -748,7 +774,8 @@ function TransportRowItem({
   /** 同じ区分・送迎時間・送迎場所を共有する児童（1名以上） */
   rows: TransportRow[]
   index: number
-  unitId: string
+  /** 「すべて」表示のときだけユニット名を出す */
+  showUnit: boolean
   date: string
   isDragging: boolean
   isOver: boolean
@@ -756,7 +783,7 @@ function TransportRowItem({
   onDragOver: (e: React.DragEvent) => void
   onDrop: () => void
   onDragEnd: () => void
-  ensureScheduleId: (direction: Direction) => Promise<string | null>
+  ensureScheduleId: (unitId: string, direction: Direction) => Promise<string | null>
   onRemove: (row: TransportRow) => void
   onSaved: () => void
 }) {
@@ -789,7 +816,7 @@ function TransportRowItem({
     for (const row of writable) {
       await saveTransportRecord({
         childId: row.childId,
-        unitId,
+        unitId: row.unitId,
         date,
         direction: row.direction,
         ...fields,
@@ -809,25 +836,25 @@ function TransportRowItem({
   const handleDirectionChange = async (direction: Direction) => {
     if (direction === head.direction) return
     setSaving(true)
-    const scheduleId = await ensureScheduleId(direction)
-    if (scheduleId) {
+    // 入れ物スケジュールは行のユニットごとに用意する
+    for (const row of rows) {
+      const scheduleId = await ensureScheduleId(row.unitId, direction)
+      if (!scheduleId) continue
       await supabase
         .from('transport_details')
         .update({ schedule_id: scheduleId })
-        .in('id', rows.map((r) => r.id))
+        .eq('id', row.id)
       // 記録側も、元の方向の欄を空にして新しい方向へ付け替える
-      for (const row of rows) {
-        await clearTransportDirection(row.childId, unitId, date, row.direction)
-        await saveTransportRecord({
-          childId: row.childId,
-          unitId,
-          date,
-          direction,
-          time: row.time,
-          driverMemberId: row.driverMemberId,
-          vehicleId: row.vehicleId,
-        })
-      }
+      await clearTransportDirection(row.childId, row.unitId, date, row.direction)
+      await saveTransportRecord({
+        childId: row.childId,
+        unitId: row.unitId,
+        date,
+        direction,
+        time: row.time,
+        driverMemberId: row.driverMemberId,
+        vehicleId: row.vehicleId,
+      })
     }
     setSaving(false)
     onSaved()
@@ -930,6 +957,12 @@ function TransportRowItem({
             )}
           </>
         )}
+        {/* 「すべて」表示ではどのユニットの送迎か分かるようにする */}
+        {showUnit && head.unitName && (
+          <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
+            {head.unitName}
+          </span>
+        )}
       </div>
 
       {/* 送迎場所 */}
@@ -990,7 +1023,7 @@ function TransportRowItem({
 /** 児童追加パネル */
 function AddChildPanel({
   date,
-  unitId,
+  showUnit,
   allChildren,
   existing,
   ensureScheduleId,
@@ -998,10 +1031,11 @@ function AddChildPanel({
   onClose,
 }: {
   date: string
-  unitId: string
+  /** 「すべて」表示のときだけ候補にユニット名を出す */
+  showUnit: boolean
   allChildren: UnitChild[]
   existing: TransportRow[]
-  ensureScheduleId: (direction: Direction) => Promise<string | null>
+  ensureScheduleId: (unitId: string, direction: Direction) => Promise<string | null>
   onDone: () => void
   onClose: () => void
 }) {
@@ -1009,13 +1043,16 @@ function AddChildPanel({
   const [direction, setDirection] = useState<Direction>('pickup')
   const [adding, setAdding] = useState<string | null>(null)
 
-  // 同じ方向にすでに登録済みの児童は候補から除外
-  const registered = new Set(existing.filter((r) => r.direction === direction).map((r) => r.childId))
-  const available = allChildren.filter((c) => !registered.has(c.id))
+  // 同じユニット・同じ方向にすでに登録済みの児童は候補から除外
+  const registered = new Set(
+    existing.filter((r) => r.direction === direction).map((r) => `${r.unitId}|${r.childId}`)
+  )
+  const available = allChildren.filter((c) => !registered.has(`${c.unitId}|${c.id}`))
 
   const handleAdd = async (child: UnitChild, locationType: 'school' | 'home') => {
-    setAdding(child.id)
-    const scheduleId = await ensureScheduleId(direction)
+    setAdding(`${child.unitId}|${child.id}`)
+    const unitId = child.unitId
+    const scheduleId = await ensureScheduleId(unitId, direction)
     if (!scheduleId) {
       setAdding(null)
       return
@@ -1095,13 +1132,24 @@ function AddChildPanel({
       ) : (
         <div className="space-y-1.5 max-h-72 overflow-y-auto">
           {available.map((child) => (
-            <div key={child.id} className="flex items-center gap-2 bg-white rounded px-3 py-2">
-              <span className="flex-1 text-sm text-gray-800 truncate">{child.name}</span>
+            <div
+              key={`${child.unitId}|${child.id}`}
+              className="flex items-center gap-2 bg-white rounded px-3 py-2"
+            >
+              <span className="flex-1 text-sm text-gray-800 truncate">
+                {child.name}
+                {/* 「すべて」表示ではどのユニットに追加されるのかを明示する */}
+                {showUnit && child.unitName && (
+                  <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
+                    {child.unitName}
+                  </span>
+                )}
+              </span>
               <div className="flex gap-1.5 shrink-0">
                 {child.schools?.name && (
                   <button
                     onClick={() => handleAdd(child, 'school')}
-                    disabled={adding === child.id}
+                    disabled={adding === `${child.unitId}|${child.id}`}
                     className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-700 hover:bg-indigo-200 disabled:opacity-50 transition-colors"
                   >
                     <SchoolIcon className="h-3 w-3" />
@@ -1111,7 +1159,7 @@ function AddChildPanel({
                 {child.address && (
                   <button
                     onClick={() => handleAdd(child, 'home')}
-                    disabled={adding === child.id}
+                    disabled={adding === `${child.unitId}|${child.id}`}
                     className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-50 transition-colors"
                   >
                     <MapPin className="h-3 w-3" />

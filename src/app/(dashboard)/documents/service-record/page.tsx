@@ -3,10 +3,12 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { PrintButton } from '@/components/documents/print-button'
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
+import { ALL_UNITS } from '@/lib/attendance-board-data'
 
 type AttendanceRow = {
   id: string
   child_id: string
+  unit_id: string
   date: string
   status: string
   check_in_time: string | null
@@ -48,17 +50,20 @@ export default async function ServiceRecordPage({
     .order('name')
   const units = (unitsRaw ?? []) as unknown as Unit[]
 
-  const selectedUnitId = params.unit ?? units[0]?.id ?? ''
-  const selectedUnit = units.find((u) => u.id === selectedUnitId)
+  // ユニット未指定は「すべて」。帳票は事業所番号ごとに分かれるため、
+  // 「すべて」ではユニットごとの帳票を続けて表示・印刷する。
+  const showAllUnits = !params.unit || params.unit === ALL_UNITS
+  const selectedUnitId = showAllUnits ? ALL_UNITS : params.unit ?? ''
+  const targetUnits = showAllUnits ? units : units.filter((u) => u.id === selectedUnitId)
 
-  const { data: attendanceRaw } = selectedUnitId
+  const { data: attendanceRaw } = targetUnits.length > 0
     ? await supabase
         .from('daily_attendance')
         .select(`
-          id, child_id, date, status, check_in_time, check_out_time, pickup_type,
+          id, child_id, unit_id, date, status, check_in_time, check_out_time, pickup_type,
           children (name, name_kana, benefit_certificates (certificate_number))
         `)
-        .eq('unit_id', selectedUnitId)
+        .in('unit_id', targetUnits.map((u) => u.id))
         .eq('status', 'attended')
         .gte('date', startDate)
         .lte('date', endDate)
@@ -70,19 +75,24 @@ export default async function ServiceRecordPage({
   // 日付一覧
   const days = Array.from({ length: lastDay }, (_, i) => i + 1)
 
-  // 児童ごとにグループ
-  const childMap = new Map<string, {
+  type ChildSummary = {
     name: string
     nameKana: string | null
     certNumber: string
     dates: Set<number>
     pickupDates: Set<number>
     dropoffDates: Set<number>
-  }>()
+  }
+
+  // ユニットごと → 児童ごとにグループ
+  const childMapByUnit = new Map<string, Map<string, ChildSummary>>()
+  for (const u of targetUnits) childMapByUnit.set(u.id, new Map())
 
   attendance.forEach((a) => {
     const child = a.children
     if (!child) return
+    const childMap = childMapByUnit.get(a.unit_id)
+    if (!childMap) return
     const dayNum = parseInt(a.date.slice(8, 10))
     const certNumber = child.benefit_certificates?.[0]?.certificate_number ?? ''
 
@@ -102,7 +112,13 @@ export default async function ServiceRecordPage({
     if (a.pickup_type === 'both' || a.pickup_type === 'dropoff_only') entry.dropoffDates.add(dayNum)
   })
 
-  const children = Array.from(childMap.entries())
+  const blocks = targetUnits.map((unit) => ({
+    unit,
+    children: Array.from(childMapByUnit.get(unit.id)?.entries() ?? []),
+  }))
+  const headerLabel = showAllUnits
+    ? 'すべてのユニット'
+    : targetUnits[0]?.name ?? ''
 
   const pickupLabel: Record<string, string> = {
     both: '送迎',
@@ -121,7 +137,7 @@ export default async function ServiceRecordPage({
           </Link>
           <div>
             <h1 className="text-xl font-bold text-gray-900">サービス提供実績記録票</h1>
-            <p className="text-sm text-gray-500">{year}年{month}月 | {selectedUnit?.name}</p>
+            <p className="text-sm text-gray-500">{year}年{month}月 | {headerLabel}</p>
           </div>
         </div>
         <PrintButton />
@@ -130,6 +146,15 @@ export default async function ServiceRecordPage({
       {/* ユニット選択（印刷時非表示） */}
       {units.length > 1 && (
         <div className="print:hidden flex gap-2 flex-wrap">
+          {/* 既定は「すべて」。そこからユニットごとに絞り込む */}
+          <Link
+            href={`/documents/service-record?year=${year}&month=${month}&unit=${ALL_UNITS}`}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              showAllUnits ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            すべて
+          </Link>
           {units.map((u) => (
             <Link
               key={u.id}
@@ -146,8 +171,14 @@ export default async function ServiceRecordPage({
         </div>
       )}
 
-      {/* 印刷用帳票 */}
-      <div className="bg-white border border-gray-300 rounded-lg p-6 print:border-none print:rounded-none print:p-0">
+      {/* 印刷用帳票（「すべて」ならユニットごとに1枚ずつ） */}
+      {blocks.map(({ unit: selectedUnit, children }, blockIndex) => (
+      <div
+        key={selectedUnit.id}
+        className={`bg-white border border-gray-300 rounded-lg p-6 print:border-none print:rounded-none print:p-0 ${
+          blockIndex > 0 ? 'print:break-before-page' : ''
+        }`}
+      >
         {/* タイトル */}
         <div className="text-center mb-4">
           <h2 className="text-lg font-bold">サービス提供実績記録票</h2>
@@ -271,6 +302,7 @@ export default async function ServiceRecordPage({
           </div>
         </div>
       </div>
+      ))}
 
       <style>{`
         @media print {

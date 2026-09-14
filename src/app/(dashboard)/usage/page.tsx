@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { UsageCalendar, type UsageEntry } from '@/components/usage/usage-calendar'
 import { buildUsageRoster, eachDate } from '@/lib/usage-roster'
+import { ALL_UNITS } from '@/lib/attendance-board-data'
 
 type Unit = { id: string; name: string; capacity: number }
 type Reservation = {
@@ -15,6 +16,7 @@ type Reservation = {
 type PlanRow = {
   id: string
   child_id: string
+  unit_id: string
   start_date: string
   end_date: string | null
   day_of_week: number[]
@@ -22,6 +24,7 @@ type PlanRow = {
 }
 type AttendanceRow = {
   child_id: string
+  unit_id: string
   date: string
   status: string
   children: { name: string } | null
@@ -49,15 +52,22 @@ export default async function UsagePage({
     .order('name')
   const units = (unitsRaw ?? []) as unknown as Unit[]
 
-  const selectedUnitId = params.unit ?? units[0]?.id ?? ''
+  // ユニット未指定は「すべて」。まず全ユニットの利用状況を見せ、
+  // そこからユニットボタンで絞り込む。
+  const showAllUnits = !params.unit || params.unit === ALL_UNITS
+  const selectedUnitId = showAllUnits ? ALL_UNITS : params.unit ?? ''
+  const targetUnitIds = showAllUnits
+    ? units.map((u) => u.id)
+    : units.filter((u) => u.id === selectedUnitId).map((u) => u.id)
+  const hasUnits = targetUnitIds.length > 0
 
   const [reservationsResult, childrenResult, attendanceResult, plansResult, overridesResult] =
     await Promise.all([
-      selectedUnitId
+      hasUnits
         ? supabase
             .from('usage_reservations')
             .select('id, child_id, unit_id, date, status, requested_by, children(name)')
-            .eq('unit_id', selectedUnitId)
+            .in('unit_id', targetUnitIds)
             .gte('date', startDate)
             .lte('date', endDate)
             .order('date')
@@ -69,21 +79,21 @@ export default async function UsagePage({
         .order('name'),
 
       // 出欠の記録（「欠席」ボタンの状態表示と、予約が無い利用日の把握に使う）
-      selectedUnitId
+      hasUnits
         ? supabase
             .from('daily_attendance')
-            .select('child_id, date, status, children(name)')
-            .eq('unit_id', selectedUnitId)
+            .select('child_id, unit_id, date, status, children(name)')
+            .in('unit_id', targetUnitIds)
             .gte('date', startDate)
             .lte('date', endDate)
         : Promise.resolve({ data: [] }),
 
       // 毎週の利用計画（予約が作られていない日をここから拾う）
-      selectedUnitId
+      hasUnits
         ? supabase
             .from('usage_plans')
-            .select('id, child_id, start_date, end_date, day_of_week, children(name)')
-            .eq('unit_id', selectedUnitId)
+            .select('id, child_id, unit_id, start_date, end_date, day_of_week, children(name)')
+            .in('unit_id', targetUnitIds)
             .eq('is_active', true)
             .lte('start_date', endDate)
             .or(`end_date.is.null,end_date.gte.${startDate}`)
@@ -106,6 +116,18 @@ export default async function UsagePage({
   const attendanceStatusByKey = Object.fromEntries(
     attendances.map((a) => [`${a.child_id}_${a.date}`, a.status])
   )
+
+  // その利用がどのユニットのものか（記録 > 予約 > 計画 の順に確かな情報を採用）。
+  // 「すべて」表示では行ごとにユニットが違うので、欠席・削除の書き込み先に使う。
+  const unitIdByChildDate = new Map<string, string>()
+  for (const p of plans) unitIdByChildDate.set(p.child_id, p.unit_id)
+  for (const r of reservations) unitIdByChildDate.set(`${r.child_id}_${r.date}`, r.unit_id)
+  for (const a of attendances) unitIdByChildDate.set(`${a.child_id}_${a.date}`, a.unit_id)
+  const unitIdOf = (childId: string, date: string) =>
+    unitIdByChildDate.get(`${childId}_${date}`) ??
+    unitIdByChildDate.get(childId) ??
+    targetUnitIds[0] ??
+    ''
 
   // その日の利用者は「予約・利用計画・出欠記録」から共通ロジックで決める。
   // 予約が無い利用日（計画にない曜日に来た日・出席カレンダーから足した日）も
@@ -130,7 +152,7 @@ export default async function UsagePage({
       entries.push({
         id: e.reservation?.id ?? `roster-${e.childId}-${date}`,
         child_id: e.childId,
-        unit_id: selectedUnitId,
+        unit_id: unitIdOf(e.childId, date),
         date,
         // 実際の記録がある日はそれを優先して表示する。
         // （予約をキャンセルしたあとに実際に来た日を「キャンセル」と見せないため）

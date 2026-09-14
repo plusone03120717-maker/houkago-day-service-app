@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react'
 import { PrintButton } from '@/components/documents/print-button'
 import { formatDate } from '@/lib/utils'
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
+import { ALL_UNITS } from '@/lib/attendance-board-data'
 
 type Unit = {
   id: string
@@ -14,6 +15,7 @@ type Unit = {
 
 type AttendanceRow = {
   child_id: string
+  unit_id: string
   date: string
   status: string
   children: { name: string; disability_type: string | null } | null
@@ -22,6 +24,7 @@ type AttendanceRow = {
 type StaffShift = {
   date: string
   shift_type: string
+  unit_id: string | null
   users: { name: string } | null
   units: { id: string } | null
 }
@@ -60,69 +63,78 @@ export default async function MonthlyReportPage({
 
   const facility = facilityResult.data as unknown as Facility | null
   const units = (unitsResult.data ?? []) as unknown as Unit[]
-  const selectedUnitId = params.unit ?? units[0]?.id ?? ''
-  const selectedUnit = units.find((u) => u.id === selectedUnitId)
+  // ユニット未指定は「すべて」。報告書は定員・ユニット単位の帳票なので、
+  // 「すべて」ではユニットごとの報告書を続けて表示・印刷する。
+  const showAllUnits = !params.unit || params.unit === ALL_UNITS
+  const selectedUnitId = showAllUnits ? ALL_UNITS : params.unit ?? ''
+  const targetUnits = showAllUnits ? units : units.filter((u) => u.id === selectedUnitId)
+  const targetUnitIds = targetUnits.map((u) => u.id)
+  const headerLabel = showAllUnits ? 'すべてのユニット' : targetUnits[0]?.name ?? ''
 
-  // 出席データ（当月・選択ユニット）
-  const { data: attendanceRaw } = selectedUnitId
-    ? await supabase
-        .from('daily_attendance')
-        .select('child_id, date, status, children(name, disability_type)')
-        .eq('unit_id', selectedUnitId)
-        .gte('date', monthStart)
-        .lte('date', monthEnd)
-    : { data: [] }
+  // 出席・シフトは対象ユニットぶんをまとめて取得し、ユニットごとに集計する
+  const [{ data: attendanceRaw }, { data: shiftsRaw }] = targetUnitIds.length > 0
+    ? await Promise.all([
+        supabase
+          .from('daily_attendance')
+          .select('child_id, unit_id, date, status, children(name, disability_type)')
+          .in('unit_id', targetUnitIds)
+          .gte('date', monthStart)
+          .lte('date', monthEnd),
+        supabase
+          .from('staff_shifts')
+          .select('date, shift_type, users(name), unit_id, units:unit_id(id)')
+          .in('unit_id', targetUnitIds)
+          .gte('date', monthStart)
+          .lte('date', monthEnd)
+          .not('shift_type', 'eq', 'off')
+          .not('shift_type', 'eq', 'holiday'),
+      ])
+    : [{ data: [] }, { data: [] }]
+
   const attendance = (attendanceRaw ?? []) as unknown as AttendanceRow[]
-
-  const attended = attendance.filter((r) => r.status === 'attended')
-
-  // 出席データを日付ごとに集計
-  const dailyCount: Record<string, number> = {}
-  for (const r of attended) {
-    dailyCount[r.date] = (dailyCount[r.date] ?? 0) + 1
-  }
-
-  // 児童ごとの利用日数
-  const childDays = new Map<string, { name: string; days: number }>()
-  for (const r of attended) {
-    const existing = childDays.get(r.child_id) ?? { name: r.children?.name ?? '—', days: 0 }
-    childDays.set(r.child_id, { ...existing, days: existing.days + 1 })
-  }
-  const childRows = Array.from(childDays.values()).sort((a, b) => a.name.localeCompare(b.name, 'ja'))
-
-  // 月間合計
-  const totalDays = attended.length
-  const uniqueChildren = childDays.size
-  const avgDays = uniqueChildren > 0 ? (totalDays / uniqueChildren).toFixed(1) : '—'
-  const openDays = Object.keys(dailyCount).length
-
-  // スタッフ勤務日数（当ユニット）
-  const { data: shiftsRaw } = selectedUnitId
-    ? await supabase
-        .from('staff_shifts')
-        .select('date, shift_type, users(name), units:unit_id(id)')
-        .eq('unit_id', selectedUnitId)
-        .gte('date', monthStart)
-        .lte('date', monthEnd)
-        .not('shift_type', 'eq', 'off')
-        .not('shift_type', 'eq', 'holiday')
-    : { data: [] }
   const shifts = (shiftsRaw ?? []) as unknown as StaffShift[]
 
-  const staffDays = new Map<string, { name: string; days: number }>()
-  for (const s of shifts) {
-    const name = s.users?.name ?? '不明'
-    const existing = staffDays.get(name) ?? { name, days: 0 }
-    staffDays.set(name, { ...existing, days: existing.days + 1 })
-  }
-  const staffRows = Array.from(staffDays.values()).sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+  const reports = targetUnits.map((unit) => {
+    const attended = attendance.filter((r) => r.unit_id === unit.id && r.status === 'attended')
 
-  // 日別利用者数テーブル用データ
-  const dates = Array.from({ length: daysInMonth }, (_, i) => {
-    const d = i + 1
-    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    const dow = new Date(dateStr).getDay()
-    return { dateStr, day: d, dow, count: dailyCount[dateStr] ?? 0 }
+    // 出席データを日付ごとに集計
+    const dailyCount: Record<string, number> = {}
+    for (const r of attended) {
+      dailyCount[r.date] = (dailyCount[r.date] ?? 0) + 1
+    }
+
+    // 児童ごとの利用日数
+    const childDays = new Map<string, { name: string; days: number }>()
+    for (const r of attended) {
+      const existing = childDays.get(r.child_id) ?? { name: r.children?.name ?? '—', days: 0 }
+      childDays.set(r.child_id, { ...existing, days: existing.days + 1 })
+    }
+    const childRows = Array.from(childDays.values()).sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+
+    // 月間合計
+    const totalDays = attended.length
+    const uniqueChildren = childDays.size
+    const avgDays = uniqueChildren > 0 ? (totalDays / uniqueChildren).toFixed(1) : '—'
+    const openDays = Object.keys(dailyCount).length
+
+    // スタッフ勤務日数（当ユニット）
+    const staffDays = new Map<string, { name: string; days: number }>()
+    for (const s of shifts.filter((x) => x.unit_id === unit.id)) {
+      const name = s.users?.name ?? '不明'
+      const existing = staffDays.get(name) ?? { name, days: 0 }
+      staffDays.set(name, { ...existing, days: existing.days + 1 })
+    }
+    const staffRows = Array.from(staffDays.values()).sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+
+    // 日別利用者数テーブル用データ
+    const dates = Array.from({ length: daysInMonth }, (_, i) => {
+      const d = i + 1
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      const dow = new Date(dateStr).getDay()
+      return { dateStr, day: d, dow, count: dailyCount[dateStr] ?? 0 }
+    })
+
+    return { unit, childRows, totalDays, uniqueChildren, avgDays, openDays, staffRows, dates }
   })
 
   return (
@@ -134,7 +146,7 @@ export default async function MonthlyReportPage({
         </Link>
         <div className="flex-1">
           <h1 className="text-xl font-bold text-gray-900">月次運営実績報告書</h1>
-          <p className="text-xs text-gray-400">{monthLabel} {selectedUnit?.name ?? ''}</p>
+          <p className="text-xs text-gray-400">{monthLabel} {headerLabel}</p>
         </div>
 
         {/* 月選択 */}
@@ -156,6 +168,17 @@ export default async function MonthlyReportPage({
 
         {/* ユニット選択 */}
         <div className="flex gap-2 flex-wrap">
+          {/* 既定は「すべて」。そこからユニットごとに絞り込む */}
+          <Link
+            href={`/documents/monthly-report?year=${year}&month=${month}&unit=${ALL_UNITS}`}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+              showAllUnits
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+            }`}
+          >
+            すべて
+          </Link>
           {units.map((u) => (
             <Link
               key={u.id}
@@ -174,8 +197,16 @@ export default async function MonthlyReportPage({
         <PrintButton />
       </div>
 
-      {/* 帳票本体 */}
-      <div className="bg-white print:p-0 p-6 max-w-4xl mx-auto space-y-6 text-sm">
+      {/* 帳票本体（「すべて」ならユニットごとに1枚ずつ） */}
+      {reports.map(({
+        unit: selectedUnit, childRows, totalDays, uniqueChildren, avgDays, openDays, staffRows, dates,
+      }, reportIndex) => (
+      <div
+        key={selectedUnit.id}
+        className={`bg-white print:p-0 p-6 max-w-4xl mx-auto space-y-6 text-sm ${
+          reportIndex > 0 ? 'print:break-before-page' : ''
+        }`}
+      >
         {/* タイトル */}
         <div className="text-center border-b-2 border-gray-800 pb-3">
           <h1 className="text-lg font-bold tracking-wider">月次運営実績報告書</h1>
@@ -341,6 +372,7 @@ export default async function MonthlyReportPage({
           </table>
         </div>
       </div>
+      ))}
     </>
   )
 }

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { ArrowLeft, AlertCircle } from 'lucide-react'
 import { buildMonthInvoices } from '@/lib/billing/copay-invoice'
 import { InvoiceMonthView } from '@/components/billing/invoice-month-view'
+import { ALL_UNITS } from '@/lib/attendance-board-data'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,9 +23,12 @@ export default async function InvoicesPage({
 
   const { data: unitsRaw } = await supabase.from('units').select('id, name').order('name')
   const units = (unitsRaw ?? []) as Array<{ id: string; name: string }>
-  const unitId = unitParam ?? units[0]?.id ?? null
+  // ユニット未指定は「すべて」。まず全ユニットを続けて表示し、
+  // そこからユニットボタンで絞り込む。
+  const showAllUnits = !unitParam || unitParam === ALL_UNITS
+  const targetUnits = showAllUnits ? units : units.filter((u) => u.id === unitParam)
 
-  if (!unitId) {
+  if (targetUnits.length === 0) {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold text-gray-900">利用者負担額</h1>
@@ -33,7 +37,10 @@ export default async function InvoicesPage({
     )
   }
 
-  const result = await buildMonthInvoices(supabase, unitId, yearMonth)
+  // 単位数単価・日中一時の送迎費はユニットごとに違うので、ユニット単位で組み立てる
+  const results = await Promise.all(
+    targetUnits.map((u) => buildMonthInvoices(supabase, u.id, yearMonth))
+  )
 
   return (
     <div className="space-y-5">
@@ -53,12 +60,23 @@ export default async function InvoicesPage({
 
       {units.length > 1 && (
         <div className="flex flex-wrap gap-1.5">
+          {/* 既定は「すべて」。そこからユニットごとに絞り込む */}
+          <Link
+            href={`/billing/${yearMonth}/invoices?unit=${ALL_UNITS}`}
+            className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+              showAllUnits
+                ? 'border-indigo-600 bg-indigo-600 text-white'
+                : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            すべて
+          </Link>
           {units.map((u) => (
             <Link
               key={u.id}
               href={`/billing/${yearMonth}/invoices?unit=${u.id}`}
               className={`rounded-full border px-3 py-1 text-sm transition-colors ${
-                u.id === unitId
+                !showAllUnits && u.id === unitParam
                   ? 'border-indigo-600 bg-indigo-600 text-white'
                   : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
               }`}
@@ -69,27 +87,36 @@ export default async function InvoicesPage({
         </div>
       )}
 
-      {result.fatal ? (
-        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-          {result.fatal}
-        </div>
-      ) : (
-        <InvoiceMonthView
-          unitId={result.unitId}
-          unitName={result.unitName}
-          yearMonth={yearMonth}
-          invoices={result.children}
-        />
-      )}
+      {results.map((result) => (
+        <section key={result.unitId} className="space-y-2">
+          {/* 「すべて」表示ではユニットごとに区切って並べる */}
+          {showAllUnits && (
+            <h2 className="text-sm font-semibold text-gray-700">{result.unitName}</h2>
+          )}
 
-      <p className="text-xs text-gray-400">
-        単位数単価 {result.unitPrice}円 / 日中一時の送迎費 片道{result.daytimeTransportFee}円（
-        <Link href="/settings/daytime-rates" className="text-indigo-600 hover:underline">
-          設定を変更
-        </Link>
-        ）
-      </p>
+          {result.fatal ? (
+            <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              {result.fatal}
+            </div>
+          ) : (
+            <InvoiceMonthView
+              unitId={result.unitId}
+              unitName={result.unitName}
+              yearMonth={yearMonth}
+              invoices={result.children}
+            />
+          )}
+
+          <p className="text-xs text-gray-400">
+            単位数単価 {result.unitPrice}円 / 日中一時の送迎費 片道{result.daytimeTransportFee}円（
+            <Link href="/settings/daytime-rates" className="text-indigo-600 hover:underline">
+              設定を変更
+            </Link>
+            ）
+          </p>
+        </section>
+      ))}
     </div>
   )
 }
