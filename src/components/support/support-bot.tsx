@@ -118,7 +118,7 @@ export function SupportBot() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg transition-colors hover:bg-indigo-700"
+        className="fixed top-20 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg transition-colors hover:bg-indigo-700"
         title="サポートに質問する"
         aria-label="サポートに質問する"
       >
@@ -128,7 +128,7 @@ export function SupportBot() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 flex max-h-[min(38rem,calc(100vh-3rem))] w-[min(24rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl">
+    <div className="fixed top-20 right-5 z-50 flex max-h-[min(38rem,calc(100vh-6.5rem))] w-[min(24rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl">
       {/* ヘッダー */}
       <div className="flex items-center justify-between border-b border-gray-100 bg-indigo-600 px-4 py-3 text-white">
         <div className="flex items-center gap-2">
