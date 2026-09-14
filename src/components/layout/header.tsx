@@ -2,6 +2,7 @@
 
 import { Bell, LogOut, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { SupportBot } from '@/components/support/support-bot'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -29,6 +30,8 @@ export function Header({ userName, facilityName, pendingBadge }: HeaderProps) {
         )}
       </div>
       <div className="flex items-center gap-3">
+        {/* サポートボットはお知らせベルの左隣。どの画面からでも質問できる */}
+        <SupportBot />
         {/* 件数取得中はアイコンだけ先に描画し、取得後にベル本体へ差し替える */}
         {pendingBadge ?? (
           <Button variant="ghost" size="icon" className="relative" disabled>

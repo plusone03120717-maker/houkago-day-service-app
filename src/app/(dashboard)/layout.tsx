@@ -4,7 +4,6 @@ import { requireSessionUser } from '@/lib/auth'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 import { PendingRequestsBadge } from '@/components/layout/pending-requests-badge'
-import { SupportBot } from '@/components/support/support-bot'
 
 // 認証ユーザーごとにデータが異なるため、サーバーキャッシュ・ルーターキャッシュを完全に無効化
 export const dynamic = 'force-dynamic'
@@ -42,8 +41,6 @@ export default async function DashboardLayout({
           {children}
         </main>
       </div>
-      {/* どの画面からでも質問できるよう、レイアウトに常駐させる */}
-      <SupportBot />
     </div>
   )
 }
