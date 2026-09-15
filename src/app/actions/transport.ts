@@ -5,7 +5,9 @@ import { buildRouteGroups, nearestNeighborSort, type RouteChildData } from '@/li
 import {
   fetchScheduleDefaults,
   pickPrimaryPlanPerChild,
+  resolveDropoffIsDaytime,
   scheduleDefaultsToAttendanceFields,
+  type ScheduleDefaults,
 } from '@/lib/schedule-defaults'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
@@ -446,7 +448,12 @@ type AttendanceRow = {
   dropoff_arrival_time: string | null
   dropoff_driver_member_id: string | null
   dropoff_vehicle_id: string | null
+  daytime_dropoff_departure_time: string | null
+  daytime_dropoff_arrival_time: string | null
+  daytime_dropoff_driver_member_id: string | null
+  daytime_dropoff_vehicle_id: string | null
   service_start_time: string | null
+  service_end_time: string | null
   daytime_support: boolean | null
   daytime_support_start_time: string | null
   daytime_support_end_time: string | null
@@ -455,7 +462,10 @@ type AttendanceRow = {
 const ATTENDANCE_SELECT =
   'id, status, pickup_type, pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id, ' +
   'dropoff_departure_time, dropoff_arrival_time, dropoff_driver_member_id, dropoff_vehicle_id, ' +
-  'service_start_time, daytime_support, daytime_support_start_time, daytime_support_end_time'
+  'daytime_dropoff_departure_time, daytime_dropoff_arrival_time, ' +
+  'daytime_dropoff_driver_member_id, daytime_dropoff_vehicle_id, ' +
+  'service_start_time, service_end_time, ' +
+  'daytime_support, daytime_support_start_time, daytime_support_end_time'
 
 /**
  * 送迎・日中一時パネルが「まだ何も入力されていない」と判定する状態か。
@@ -470,6 +480,8 @@ function isBlankAttendance(a: AttendanceRow | null): boolean {
     a.pickup_driver_member_id || a.pickup_vehicle_id ||
     hasTime(a.dropoff_departure_time) || hasTime(a.dropoff_arrival_time) ||
     a.dropoff_driver_member_id || a.dropoff_vehicle_id ||
+    hasTime(a.daytime_dropoff_departure_time) || hasTime(a.daytime_dropoff_arrival_time) ||
+    a.daytime_dropoff_driver_member_id || a.daytime_dropoff_vehicle_id ||
     hasTime(a.service_start_time) || a.daytime_support ||
     hasTime(a.daytime_support_start_time) || hasTime(a.daytime_support_end_time)
   )
@@ -481,10 +493,10 @@ async function resolveScheduleDefaults(
   childId: string,
   unitId: string,
   date: string
-): Promise<Record<string, unknown>> {
+): Promise<{ plan: ScheduleDefaults | null; fields: Record<string, unknown> }> {
   const defaults = await fetchScheduleDefaults(supabase, unitId, date, childId)
-  const own = defaults[childId]
-  return own ? scheduleDefaultsToAttendanceFields(own) : {}
+  const own = defaults[childId] ?? null
+  return { plan: own, fields: own ? scheduleDefaultsToAttendanceFields(own) : {} }
 }
 
 type TransportRecordInput = {
@@ -502,6 +514,10 @@ type TransportRecordInput = {
  * 送迎管理で編集した1行分を、その日の記録に保存する。
  * お迎えの時刻は「到着時刻」、お送りの時刻は「施設の出発時刻」に対応させ、
  * 対になる時刻（お迎えの出発／お送りの到着）は空のときだけ ±10 分で補完する。
+ *
+ * お送りは、放デイのあと日中一時まで残る児童だけ書き込み先が変わり、
+ * 放デイの送り欄ではなく日中一時の送り欄（daytime_dropoff_*）に入る。
+ * 出席管理の表示も請求の送迎加算もその前提で動いているため（@/lib/schedule-defaults）。
  */
 export async function saveTransportRecord(input: TransportRecordInput) {
   const { childId, unitId, date, direction, time, driverMemberId, vehicleId } = input
@@ -519,6 +535,13 @@ export async function saveTransportRecord(input: TransportRecordInput) {
   // 欠席として記録済みの日は送迎管理からの書き込みで復活させない
   if (existing?.status === 'absent') return
 
+  // 未入力の行に書き込むときは、各画面が表示していた利用スケジュールの
+  // 初期値（利用時間・日中一時）も一緒に確定させる
+  const blank = isBlankAttendance(existing)
+  const { plan, fields: defaults } = blank
+    ? await resolveScheduleDefaults(supabase, childId, unitId, date)
+    : { plan: null, fields: {} as Record<string, unknown> }
+
   const patch: Record<string, unknown> = {}
 
   if (direction === 'pickup') {
@@ -530,6 +553,28 @@ export async function saveTransportRecord(input: TransportRecordInput) {
       if (time && !hasTime(existing?.pickup_departure_time)) {
         patch.pickup_departure_time = shiftTime(time, -10)
       }
+    }
+  } else if (resolveDropoffIsDaytime(existing, plan)) {
+    // 日中一時が最後の児童。施設を出るのは日中一時の終わりなので日中一時の送り欄へ。
+    if (driverMemberId !== undefined) patch.daytime_dropoff_driver_member_id = driverMemberId
+    if (vehicleId !== undefined) patch.daytime_dropoff_vehicle_id = vehicleId
+    if (time !== undefined) {
+      patch.daytime_dropoff_departure_time = time
+      // 自宅に着くのは出発の10分後
+      if (time && !hasTime(existing?.daytime_dropoff_arrival_time)) {
+        patch.daytime_dropoff_arrival_time = shiftTime(time, 10)
+      }
+    }
+    // 送りは1日1回。以前この修正前に放デイ側へ入っていた分が残っていると
+    // 放デイと日中一時の送迎加算が二重に立つため、こちらへ移したうえで空にする。
+    if (
+      hasTime(existing?.dropoff_departure_time) || hasTime(existing?.dropoff_arrival_time) ||
+      existing?.dropoff_driver_member_id || existing?.dropoff_vehicle_id
+    ) {
+      patch.dropoff_departure_time = null
+      patch.dropoff_arrival_time = null
+      patch.dropoff_driver_member_id = null
+      patch.dropoff_vehicle_id = null
     }
   } else {
     if (driverMemberId !== undefined) patch.dropoff_driver_member_id = driverMemberId
@@ -553,12 +598,6 @@ export async function saveTransportRecord(input: TransportRecordInput) {
     const next = current === 'both' || current === other ? 'both' : own
     if (next !== current) patch.pickup_type = next
   }
-
-  // 未入力の行に書き込むときは、各画面が表示していた利用スケジュールの
-  // 初期値（利用時間・日中一時）も一緒に確定させる
-  const defaults = isBlankAttendance(existing)
-    ? await resolveScheduleDefaults(supabase, childId, unitId, date)
-    : {}
 
   if (existing) {
     await supabase
@@ -614,10 +653,16 @@ export async function clearTransportDirection(
           pickup_vehicle_id: null,
         }
       : {
+          // お送りは児童によって放デイ側・日中一時側のどちらに入っているかが違う。
+          // 取り下げなのでどちらであっても残らないよう両方を空にする。
           dropoff_departure_time: null,
           dropoff_arrival_time: null,
           dropoff_driver_member_id: null,
           dropoff_vehicle_id: null,
+          daytime_dropoff_departure_time: null,
+          daytime_dropoff_arrival_time: null,
+          daytime_dropoff_driver_member_id: null,
+          daytime_dropoff_vehicle_id: null,
         }
 
   await supabase

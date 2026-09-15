@@ -190,3 +190,61 @@ export function scheduleDefaultsToAttendanceFields(s: ScheduleDefaults): Record<
     daytime_support_end_time: s.daytimeSupport ? s.daytimeSupportEndTime : null,
   }
 }
+
+// =====================================================
+// お送りの記録先（放デイの送り欄／日中一時の送り欄）
+// =====================================================
+
+/** 'HH:MM:SS' / 'HH:MM' を比較用の 'HH:MM' にそろえる。未入力・00:00 は null */
+function hhmm(v: string | null | undefined): string | null {
+  if (!v) return null
+  const s = v.slice(0, 5)
+  return s === '00:00' ? null : s
+}
+
+/** お送りの記録先を決めるのに必要な、その日の時間の材料 */
+export type DropoffSlotSource = {
+  daytime_support?: boolean | null
+  daytime_support_start_time?: string | null
+  daytime_support_end_time?: string | null
+  service_end_time?: string | null
+}
+
+/**
+ * その日の最後のお送りが「日中一時の送り」かどうか。
+ *
+ * 放課後等デイサービスのあと日中一時まで残る児童は、施設を出るのが日中一時の終わり。
+ * この場合の送りは放デイ側の送り欄ではなく日中一時の送り欄（daytime_dropoff_*）に入れる。
+ * 出席管理の表示（「日中一時 ○○〜○○」）も、請求の日中一時支援・送迎加算（復）も
+ * この前提で動いているため、送迎管理からの書き込みも同じ場所に合わせる。
+ *
+ * 日中一時が放デイより先（午前の日中一時→午後は放デイ）のときは最後の送りは放デイ側なので false。
+ */
+export function isDaytimeLastDropoff(s: DropoffSlotSource): boolean {
+  if (!s.daytime_support) return false
+  const serviceEnd = hhmm(s.service_end_time)
+  const daytimeEnd = hhmm(s.daytime_support_end_time)
+  const daytimeStart = hhmm(s.daytime_support_start_time)
+  // 放デイの終了が分からなければ、日中一時の時間が入っている時点で最後とみなす
+  if (!serviceEnd) return !!(daytimeEnd || daytimeStart)
+  if (daytimeEnd) return daytimeEnd > serviceEnd
+  if (daytimeStart) return daytimeStart >= serviceEnd
+  return false
+}
+
+/**
+ * その日の記録と利用スケジュールの予定値から、お送りの記録先を決める。
+ * 記録が無い項目は予定値で補うことで、まだ何も入力していない日でも
+ * 送迎管理の表示と書き込み先が食い違わないようにする。
+ */
+export function resolveDropoffIsDaytime(
+  att: DropoffSlotSource | null | undefined,
+  plan: ScheduleDefaults | null | undefined
+): boolean {
+  return isDaytimeLastDropoff({
+    daytime_support: att?.daytime_support ?? plan?.daytimeSupport ?? false,
+    daytime_support_start_time: att?.daytime_support_start_time ?? plan?.daytimeSupportStartTime ?? null,
+    daytime_support_end_time: att?.daytime_support_end_time ?? plan?.daytimeSupportEndTime ?? null,
+    service_end_time: att?.service_end_time ?? plan?.serviceEndTime ?? null,
+  })
+}
