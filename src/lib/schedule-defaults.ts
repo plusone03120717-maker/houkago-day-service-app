@@ -192,7 +192,7 @@ export function scheduleDefaultsToAttendanceFields(s: ScheduleDefaults): Record<
 }
 
 // =====================================================
-// お送りの記録先（放デイの送り欄／日中一時の送り欄）
+// 送迎の記録先（放デイの送迎欄／日中一時の送迎欄）
 // =====================================================
 
 /** 'HH:MM:SS' / 'HH:MM' を比較用の 'HH:MM' にそろえる。未入力・00:00 は null */
@@ -202,49 +202,76 @@ function hhmm(v: string | null | undefined): string | null {
   return s === '00:00' ? null : s
 }
 
-/** お送りの記録先を決めるのに必要な、その日の時間の材料 */
-export type DropoffSlotSource = {
+/** 送迎の記録先。'basic' は放デイの送迎欄、'daytime' は日中一時の送迎欄 */
+export type TransportSlot = 'basic' | 'daytime'
+
+/** 記録先を決めるのに使う、その日の利用のかたち */
+export type TransportSlotSource = {
+  basic_service?: boolean | null
+  service_start_time?: string | null
+  service_end_time?: string | null
   daytime_support?: boolean | null
   daytime_support_start_time?: string | null
   daytime_support_end_time?: string | null
-  service_end_time?: string | null
 }
 
 /**
- * その日の最後のお送りが「日中一時の送り」かどうか。
+ * その日の「最初のお迎え」「最後のお送り」が、放デイ側・日中一時側のどちらの欄に入るか。
  *
- * 放課後等デイサービスのあと日中一時まで残る児童は、施設を出るのが日中一時の終わり。
- * この場合の送りは放デイ側の送り欄ではなく日中一時の送り欄（daytime_dropoff_*）に入れる。
- * 出席管理の表示（「日中一時 ○○〜○○」）も、請求の日中一時支援・送迎加算（復）も
- * この前提で動いているため、送迎管理からの書き込みも同じ場所に合わせる。
+ * daily_attendance は放デイ（pickup_* / dropoff_*）と日中一時（daytime_pickup_* /
+ * daytime_dropoff_*）で欄が分かれている。送迎管理は児童1人につき「お迎え」「お送り」の
+ * 1行ずつしか持たないため、その1行をどちらの欄に読み書きするかをここで決める。
+ * 出席管理・日々の記録の表示も、国保連請求の送迎加算もこの欄の区別で動いているので、
+ * 判定を1か所に集約して画面間でずれないようにする。
  *
- * 日中一時が放デイより先（午前の日中一時→午後は放デイ）のときは最後の送りは放デイ側なので false。
+ * 判定の考え方:
+ *  - 日中一時を使わない日は放デイ側。
+ *  - 放デイを使わない日（日中一時のみ）は日中一時側。
+ *  - 両方使う日は時刻で前後を決める。日中一時は放デイのあとに付くのが通常のため、
+ *    時刻が入力されておらず前後が分からないときは、お送りは日中一時側・お迎えは放デイ側とみなす。
  */
-export function isDaytimeLastDropoff(s: DropoffSlotSource): boolean {
-  if (!s.daytime_support) return false
-  const serviceEnd = hhmm(s.service_end_time)
-  const daytimeEnd = hhmm(s.daytime_support_end_time)
-  const daytimeStart = hhmm(s.daytime_support_start_time)
-  // 放デイの終了が分からなければ、日中一時の時間が入っている時点で最後とみなす
-  if (!serviceEnd) return !!(daytimeEnd || daytimeStart)
-  if (daytimeEnd) return daytimeEnd > serviceEnd
-  if (daytimeStart) return daytimeStart >= serviceEnd
-  return false
+export function resolveTransportSlot(
+  direction: 'pickup' | 'dropoff',
+  s: TransportSlotSource
+): TransportSlot {
+  if (!s.daytime_support) return 'basic'
+  // 放デイを使わない日は、送迎はすべて日中一時のもの
+  if (s.basic_service === false) return 'daytime'
+
+  if (direction === 'dropoff') {
+    // 最後に施設を出るのはどちらの終わりか。終了が無ければ開始で代用する
+    const daytimeEnd = hhmm(s.daytime_support_end_time) ?? hhmm(s.daytime_support_start_time)
+    const serviceEnd = hhmm(s.service_end_time)
+    // 放デイの方があとに終わる＝日中一時は午前などの先行利用。それ以外は日中一時が最後
+    if (serviceEnd && daytimeEnd && serviceEnd > daytimeEnd) return 'basic'
+    return 'daytime'
+  }
+
+  // 最初に施設へ入るのはどちらの始まりか。開始が無ければ終了で代用する
+  const daytimeStart = hhmm(s.daytime_support_start_time) ?? hhmm(s.daytime_support_end_time)
+  const serviceStart = hhmm(s.service_start_time)
+  // 日中一時の方が先に始まるときだけ日中一時側。分からないときは放デイ側
+  if (serviceStart && daytimeStart && daytimeStart < serviceStart) return 'daytime'
+  return 'basic'
 }
 
 /**
- * その日の記録と利用スケジュールの予定値から、お送りの記録先を決める。
+ * その日の記録と利用スケジュールの予定値から、送迎の記録先を決める。
  * 記録が無い項目は予定値で補うことで、まだ何も入力していない日でも
  * 送迎管理の表示と書き込み先が食い違わないようにする。
  */
-export function resolveDropoffIsDaytime(
-  att: DropoffSlotSource | null | undefined,
+export function resolveSlotFor(
+  direction: 'pickup' | 'dropoff',
+  att: TransportSlotSource | null | undefined,
   plan: ScheduleDefaults | null | undefined
-): boolean {
-  return isDaytimeLastDropoff({
+): TransportSlot {
+  return resolveTransportSlot(direction, {
+    // 放デイの提供有無は利用計画には無いため、記録が無ければ「使う」とみなす
+    basic_service: att?.basic_service ?? true,
+    service_start_time: att?.service_start_time ?? plan?.serviceStartTime ?? plan?.pickupTime ?? null,
+    service_end_time: att?.service_end_time ?? plan?.serviceEndTime ?? plan?.dropoffTime ?? null,
     daytime_support: att?.daytime_support ?? plan?.daytimeSupport ?? false,
     daytime_support_start_time: att?.daytime_support_start_time ?? plan?.daytimeSupportStartTime ?? null,
     daytime_support_end_time: att?.daytime_support_end_time ?? plan?.daytimeSupportEndTime ?? null,
-    service_end_time: att?.service_end_time ?? plan?.serviceEndTime ?? null,
   })
 }

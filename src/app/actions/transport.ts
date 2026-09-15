@@ -5,7 +5,7 @@ import { buildRouteGroups, nearestNeighborSort, type RouteChildData } from '@/li
 import {
   fetchScheduleDefaults,
   pickPrimaryPlanPerChild,
-  resolveDropoffIsDaytime,
+  resolveSlotFor,
   scheduleDefaultsToAttendanceFields,
   type ScheduleDefaults,
 } from '@/lib/schedule-defaults'
@@ -440,6 +440,7 @@ type AttendanceRow = {
   id: string
   status: string
   pickup_type: string
+  basic_service: boolean | null
   pickup_departure_time: string | null
   pickup_arrival_time: string | null
   pickup_driver_member_id: string | null
@@ -448,6 +449,10 @@ type AttendanceRow = {
   dropoff_arrival_time: string | null
   dropoff_driver_member_id: string | null
   dropoff_vehicle_id: string | null
+  daytime_pickup_departure_time: string | null
+  daytime_pickup_arrival_time: string | null
+  daytime_pickup_driver_member_id: string | null
+  daytime_pickup_vehicle_id: string | null
   daytime_dropoff_departure_time: string | null
   daytime_dropoff_arrival_time: string | null
   daytime_dropoff_driver_member_id: string | null
@@ -460,8 +465,11 @@ type AttendanceRow = {
 }
 
 const ATTENDANCE_SELECT =
-  'id, status, pickup_type, pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id, ' +
+  'id, status, pickup_type, basic_service, ' +
+  'pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id, ' +
   'dropoff_departure_time, dropoff_arrival_time, dropoff_driver_member_id, dropoff_vehicle_id, ' +
+  'daytime_pickup_departure_time, daytime_pickup_arrival_time, ' +
+  'daytime_pickup_driver_member_id, daytime_pickup_vehicle_id, ' +
   'daytime_dropoff_departure_time, daytime_dropoff_arrival_time, ' +
   'daytime_dropoff_driver_member_id, daytime_dropoff_vehicle_id, ' +
   'service_start_time, service_end_time, ' +
@@ -480,6 +488,8 @@ function isBlankAttendance(a: AttendanceRow | null): boolean {
     a.pickup_driver_member_id || a.pickup_vehicle_id ||
     hasTime(a.dropoff_departure_time) || hasTime(a.dropoff_arrival_time) ||
     a.dropoff_driver_member_id || a.dropoff_vehicle_id ||
+    hasTime(a.daytime_pickup_departure_time) || hasTime(a.daytime_pickup_arrival_time) ||
+    a.daytime_pickup_driver_member_id || a.daytime_pickup_vehicle_id ||
     hasTime(a.daytime_dropoff_departure_time) || hasTime(a.daytime_dropoff_arrival_time) ||
     a.daytime_dropoff_driver_member_id || a.daytime_dropoff_vehicle_id ||
     hasTime(a.service_start_time) || a.daytime_support ||
@@ -515,9 +525,10 @@ type TransportRecordInput = {
  * お迎えの時刻は「到着時刻」、お送りの時刻は「施設の出発時刻」に対応させ、
  * 対になる時刻（お迎えの出発／お送りの到着）は空のときだけ ±10 分で補完する。
  *
- * お送りは、放デイのあと日中一時まで残る児童だけ書き込み先が変わり、
- * 放デイの送り欄ではなく日中一時の送り欄（daytime_dropoff_*）に入る。
- * 出席管理の表示も請求の送迎加算もその前提で動いているため（@/lib/schedule-defaults）。
+ * 書き込み先は放デイ側（pickup_* / dropoff_*）と日中一時側（daytime_pickup_* /
+ * daytime_dropoff_*）のどちらかで、その日の利用のかたちから決まる（@/lib/schedule-defaults）。
+ * 出席管理・日々の記録の表示も請求の送迎加算もこの欄の区別で動いているため、
+ * 送迎管理の表示（transport/page.tsx）とまったく同じ判定を使う。
  */
 export async function saveTransportRecord(input: TransportRecordInput) {
   const { childId, unitId, date, direction, time, driverMemberId, vehicleId } = input
@@ -535,16 +546,38 @@ export async function saveTransportRecord(input: TransportRecordInput) {
   // 欠席として記録済みの日は送迎管理からの書き込みで復活させない
   if (existing?.status === 'absent') return
 
-  // 未入力の行に書き込むときは、各画面が表示していた利用スケジュールの
-  // 初期値（利用時間・日中一時）も一緒に確定させる
-  const blank = isBlankAttendance(existing)
-  const { plan, fields: defaults } = blank
-    ? await resolveScheduleDefaults(supabase, childId, unitId, date)
-    : { plan: null, fields: {} as Record<string, unknown> }
+  // 記録先の判定には利用スケジュールの予定値も要る。まだ何も入力されていない行なら
+  // 各画面が表示していた初期値（利用時間・日中一時）も一緒に確定させる。
+  const { plan, fields: planFields } = await resolveScheduleDefaults(supabase, childId, unitId, date)
+  const defaults = isBlankAttendance(existing) ? planFields : {}
 
+  // 送迎管理は児童1人につき「お迎え」「お送り」1行ずつ。その1行を放デイ側・
+  // 日中一時側のどちらの欄に書くかは、その日の利用のかたちから決まる。
+  const slot = resolveSlotFor(direction, existing, plan)
   const patch: Record<string, unknown> = {}
 
-  if (direction === 'pickup') {
+  if (direction === 'pickup' && slot === 'daytime') {
+    // 日中一時が先に始まる児童。最初に施設へ入るのは日中一時のお迎え。
+    if (driverMemberId !== undefined) patch.daytime_pickup_driver_member_id = driverMemberId
+    if (vehicleId !== undefined) patch.daytime_pickup_vehicle_id = vehicleId
+    if (time !== undefined) {
+      patch.daytime_pickup_arrival_time = time
+      // 施設を出るのは到着の10分前
+      if (time && !hasTime(existing?.daytime_pickup_departure_time)) {
+        patch.daytime_pickup_departure_time = shiftTime(time, -10)
+      }
+    }
+    // お迎えは1日1回。反対側に残っていると送迎加算が二重に立つため空にする。
+    if (
+      hasTime(existing?.pickup_departure_time) || hasTime(existing?.pickup_arrival_time) ||
+      existing?.pickup_driver_member_id || existing?.pickup_vehicle_id
+    ) {
+      patch.pickup_departure_time = null
+      patch.pickup_arrival_time = null
+      patch.pickup_driver_member_id = null
+      patch.pickup_vehicle_id = null
+    }
+  } else if (direction === 'pickup') {
     if (driverMemberId !== undefined) patch.pickup_driver_member_id = driverMemberId
     if (vehicleId !== undefined) patch.pickup_vehicle_id = vehicleId
     if (time !== undefined) {
@@ -554,7 +587,16 @@ export async function saveTransportRecord(input: TransportRecordInput) {
         patch.pickup_departure_time = shiftTime(time, -10)
       }
     }
-  } else if (resolveDropoffIsDaytime(existing, plan)) {
+    if (
+      hasTime(existing?.daytime_pickup_departure_time) || hasTime(existing?.daytime_pickup_arrival_time) ||
+      existing?.daytime_pickup_driver_member_id || existing?.daytime_pickup_vehicle_id
+    ) {
+      patch.daytime_pickup_departure_time = null
+      patch.daytime_pickup_arrival_time = null
+      patch.daytime_pickup_driver_member_id = null
+      patch.daytime_pickup_vehicle_id = null
+    }
+  } else if (slot === 'daytime') {
     // 日中一時が最後の児童。施設を出るのは日中一時の終わりなので日中一時の送り欄へ。
     if (driverMemberId !== undefined) patch.daytime_dropoff_driver_member_id = driverMemberId
     if (vehicleId !== undefined) patch.daytime_dropoff_vehicle_id = vehicleId
@@ -565,8 +607,8 @@ export async function saveTransportRecord(input: TransportRecordInput) {
         patch.daytime_dropoff_arrival_time = shiftTime(time, 10)
       }
     }
-    // 送りは1日1回。以前この修正前に放デイ側へ入っていた分が残っていると
-    // 放デイと日中一時の送迎加算が二重に立つため、こちらへ移したうえで空にする。
+    // 送りは1日1回。放デイ側に残っていると放デイと日中一時の送迎加算が
+    // 二重に立つため、こちらへ移したうえで空にする。
     if (
       hasTime(existing?.dropoff_departure_time) || hasTime(existing?.dropoff_arrival_time) ||
       existing?.dropoff_driver_member_id || existing?.dropoff_vehicle_id
@@ -585,6 +627,15 @@ export async function saveTransportRecord(input: TransportRecordInput) {
       if (time && !hasTime(existing?.dropoff_arrival_time)) {
         patch.dropoff_arrival_time = shiftTime(time, 10)
       }
+    }
+    if (
+      hasTime(existing?.daytime_dropoff_departure_time) || hasTime(existing?.daytime_dropoff_arrival_time) ||
+      existing?.daytime_dropoff_driver_member_id || existing?.daytime_dropoff_vehicle_id
+    ) {
+      patch.daytime_dropoff_departure_time = null
+      patch.daytime_dropoff_arrival_time = null
+      patch.daytime_dropoff_driver_member_id = null
+      patch.daytime_dropoff_vehicle_id = null
     }
   }
 
@@ -644,6 +695,8 @@ export async function clearTransportDirection(
       ? current === 'both' ? 'dropoff_only' : current === 'pickup_only' ? 'none' : current
       : current === 'both' ? 'pickup_only' : current === 'dropoff_only' ? 'none' : current
 
+  // 送迎は児童によって放デイ側・日中一時側のどちらに入っているかが違う。
+  // 取り下げなのでどちらであっても残らないよう両方を空にする。
   const cleared =
     direction === 'pickup'
       ? {
@@ -651,10 +704,12 @@ export async function clearTransportDirection(
           pickup_arrival_time: null,
           pickup_driver_member_id: null,
           pickup_vehicle_id: null,
+          daytime_pickup_departure_time: null,
+          daytime_pickup_arrival_time: null,
+          daytime_pickup_driver_member_id: null,
+          daytime_pickup_vehicle_id: null,
         }
       : {
-          // お送りは児童によって放デイ側・日中一時側のどちらに入っているかが違う。
-          // 取り下げなのでどちらであっても残らないよう両方を空にする。
           dropoff_departure_time: null,
           dropoff_arrival_time: null,
           dropoff_driver_member_id: null,

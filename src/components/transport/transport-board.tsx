@@ -46,6 +46,8 @@ export type TransportRow = {
   /** その日を欠席として記録済みか（編集不可にする） */
   isAbsent: boolean
   location: string | null
+  /** 日中一時側の送迎欄（daytime_pickup_* / daytime_dropoff_*）に記録する行か */
+  isDaytimeSlot: boolean
   driverMemberId: string | null
   vehicleId: string | null
   sortOrder: number
@@ -87,6 +89,22 @@ interface Props {
 }
 
 const DIRECTION_LABEL: Record<Direction, string> = { pickup: 'お迎え', dropoff: 'お送り' }
+
+/**
+ * この行が日中一時側の送迎欄に記録されることを示す印。
+ * 放デイ側か日中一時側かで請求の送迎加算が変わるため、
+ * どちらに入るのかを入力時点で分かるようにしておく。
+ */
+function DaytimeSlotBadge({ direction }: { direction: Direction }) {
+  return (
+    <span
+      title={`出席管理・日々の記録の「${direction === 'pickup' ? 'お迎え' : '送り'}（日中一時）」欄に記録されます`}
+      className="shrink-0 rounded bg-purple-50 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 border border-purple-100"
+    >
+      日中一時
+    </span>
+  )
+}
 
 /** 児童ごとの列（番号・ドラッグ・区分・名前・送迎場所・送迎時間・削除） */
 const MEMBER_COLS = 'md:grid md:grid-cols-[2rem_1.5rem_4.5rem_minmax(5rem,1fr)_minmax(7rem,1.3fr)_6.5rem_2rem] md:items-center md:gap-2'
@@ -936,6 +954,7 @@ function TransportRowItem({
               }`}
             >
               {r.name}
+              {r.isDaytimeSlot && <DaytimeSlotBadge direction={r.direction} />}
               <button
                 onClick={() => onRemove(r)}
                 disabled={saving}
@@ -950,6 +969,7 @@ function TransportRowItem({
         ) : (
           <>
             <span className="font-medium text-gray-800 text-sm truncate">{head.name}</span>
+            {head.isDaytimeSlot && <DaytimeSlotBadge direction={head.direction} />}
             {head.isAbsent && (
               <span className="shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">
                 欠席

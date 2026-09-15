@@ -7,7 +7,7 @@ import type { TransportRow, UnitChild } from '@/components/transport/transport-b
 import { autoCreateTransportSchedules } from '@/app/actions/transport'
 import {
   fetchScheduleDefaults,
-  resolveDropoffIsDaytime,
+  resolveSlotFor,
   type ScheduleDefaults,
 } from '@/lib/schedule-defaults'
 import { ALL_UNITS, unitChildKey } from '@/lib/attendance-board-data'
@@ -26,15 +26,18 @@ const SCHEDULE_SELECT = `
   )
 `
 
-// 日中一時まで残る児童は、お送りが日中一時側の欄に入る（@/lib/schedule-defaults）。
+// 日中一時の送迎は日中一時側の欄に入る（@/lib/schedule-defaults）。
 // どちらに入っているかを判定するため、利用時間・日中一時の時刻も一緒に読む。
 const ATTENDANCE_SELECT = `
-  child_id, unit_id, status,
+  child_id, unit_id, status, basic_service,
   pickup_departure_time, pickup_arrival_time, pickup_driver_member_id, pickup_vehicle_id,
   dropoff_departure_time, dropoff_arrival_time, dropoff_driver_member_id, dropoff_vehicle_id,
+  daytime_pickup_departure_time, daytime_pickup_arrival_time,
+  daytime_pickup_driver_member_id, daytime_pickup_vehicle_id,
   daytime_dropoff_departure_time, daytime_dropoff_arrival_time,
   daytime_dropoff_driver_member_id, daytime_dropoff_vehicle_id,
-  service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time
+  service_start_time, service_end_time,
+  daytime_support, daytime_support_start_time, daytime_support_end_time
 `
 
 type RawSchedule = {
@@ -62,6 +65,7 @@ type AttendanceRow = {
   child_id: string
   unit_id: string
   status: string
+  basic_service: boolean | null
   pickup_departure_time: string | null
   pickup_arrival_time: string | null
   pickup_driver_member_id: string | null
@@ -70,10 +74,15 @@ type AttendanceRow = {
   dropoff_arrival_time: string | null
   dropoff_driver_member_id: string | null
   dropoff_vehicle_id: string | null
+  daytime_pickup_departure_time: string | null
+  daytime_pickup_arrival_time: string | null
+  daytime_pickup_driver_member_id: string | null
+  daytime_pickup_vehicle_id: string | null
   daytime_dropoff_departure_time: string | null
   daytime_dropoff_arrival_time: string | null
   daytime_dropoff_driver_member_id: string | null
   daytime_dropoff_vehicle_id: string | null
+  service_start_time: string | null
   service_end_time: string | null
   daytime_support: boolean | null
   daytime_support_start_time: string | null
@@ -193,12 +202,14 @@ export default async function TransportPage({
 
       // お迎えは「子どもと合流する時刻」＝到着、お送りは「施設を出る時刻」＝出発。
       // 記録が無ければ利用スケジュールの予定値を未確定として表示する。
-      // お送りは、日中一時まで残る児童だけ日中一時側の欄が記録先になる。
-      const isDaytimeDropoff = direction === 'dropoff' && resolveDropoffIsDaytime(att, plan)
+      // 日中一時の送迎にあたる行は、日中一時側の欄が記録先になる。
+      const isDaytime = resolveSlotFor(direction, att, plan) === 'daytime'
       const recorded =
         direction === 'pickup'
-          ? att?.pickup_arrival_time
-          : isDaytimeDropoff
+          ? isDaytime
+            ? att?.daytime_pickup_arrival_time
+            : att?.pickup_arrival_time
+          : isDaytime
           ? att?.daytime_dropoff_departure_time
           : att?.dropoff_departure_time
       const planned = direction === 'pickup' ? plan?.pickupTime : plan?.dropoffTime
@@ -215,16 +226,21 @@ export default async function TransportPage({
         isConfirmed: !!recorded,
         isAbsent: att?.status === 'absent',
         location: d.pickup_location,
+        isDaytimeSlot: isDaytime,
         driverMemberId:
           (direction === 'pickup'
-            ? att?.pickup_driver_member_id
-            : isDaytimeDropoff
+            ? isDaytime
+              ? att?.daytime_pickup_driver_member_id
+              : att?.pickup_driver_member_id
+            : isDaytime
             ? att?.daytime_dropoff_driver_member_id
             : att?.dropoff_driver_member_id) ?? null,
         vehicleId:
           (direction === 'pickup'
-            ? att?.pickup_vehicle_id
-            : isDaytimeDropoff
+            ? isDaytime
+              ? att?.daytime_pickup_vehicle_id
+              : att?.pickup_vehicle_id
+            : isDaytime
             ? att?.daytime_dropoff_vehicle_id
             : att?.dropoff_vehicle_id) ?? null,
         sortOrder: d.sort_order,
