@@ -50,9 +50,14 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   const supabase = await createClient()
   const todayDow = new Date(date).getDay()
 
-  // 利用計画・個別予約・既存スケジュールは互いに独立しているため並列取得
+  // 利用計画・個別予約・出席記録・既存スケジュールは互いに独立しているため並列取得
   // （既存スケジュールは後段のループで insert 失敗→再select の往復を避けるため先読みする）
-  const [{ data: plansRaw }, { data: reservationsRaw }, { data: existingSchedulesRaw }] = await Promise.all([
+  const [
+    { data: plansRaw },
+    { data: reservationsRaw },
+    { data: attendancesRaw },
+    { data: existingSchedulesRaw },
+  ] = await Promise.all([
     // 利用計画から今日の対象児童を取得（送迎設定・時間も含む）
     supabase
       .from('usage_plans')
@@ -69,6 +74,18 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       .eq('unit_id', unitId)
       .eq('date', date)
       .in('status', ['confirmed', 'reserved']),
+    // 当日の出席記録。出席カレンダーや出席管理から直接足された児童は
+    // 利用計画にも予約にも現れないため、ここからも送迎の対象を拾う。
+    supabase
+      .from('daily_attendance')
+      .select(
+        'child_id, status, pickup_arrival_time, dropoff_departure_time, ' +
+        'daytime_pickup_arrival_time, daytime_dropoff_departure_time, ' +
+        'children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))'
+      )
+      .eq('unit_id', unitId)
+      .eq('date', date)
+      .neq('status', 'absent'),
     // 当日の既存スケジュール（明細の児童IDまで含めて1回で取得）
     supabase
       .from('transport_schedules')
@@ -186,6 +203,84 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       if (dropoffTimeMap.get(r.child_id) === null && rDropoffTime) {
         dropoffTimeMap.set(r.child_id, toHourSlot(rDropoffTime))
       }
+    }
+  }
+
+  // ── 出席記録だけがある児童（出席カレンダー・出席管理からの直接追加）──
+  // 利用計画にも予約にも無いため上のループでは拾えない。その日の記録に
+  // 送迎の時刻が入っていればそれを、無ければその児童の利用計画の送迎設定を使う。
+  type AttendanceSource = {
+    child_id: string
+    pickup_arrival_time: string | null
+    dropoff_departure_time: string | null
+    daytime_pickup_arrival_time: string | null
+    daytime_dropoff_departure_time: string | null
+    children: ChildRow | null
+  }
+  const attendanceOnly = ((attendancesRaw ?? []) as unknown as AttendanceSource[]).filter(
+    (a) => a.child_id && a.children && !childrenMap.has(a.child_id)
+  )
+
+  if (attendanceOnly.length > 0) {
+    // 記録に時刻が無い児童は、その児童の利用計画（曜日は問わない）の送迎設定に従う。
+    // 「いつもは送迎なし」の児童を、別の曜日に足しただけで送迎対象にしないための確認でもある。
+    const needPlan = attendanceOnly
+      .filter((a) => !a.pickup_arrival_time && !a.dropoff_departure_time &&
+        !a.daytime_pickup_arrival_time && !a.daytime_dropoff_departure_time)
+      .map((a) => a.child_id)
+
+    const planByChild = new Map<string, {
+      transport_type: string | null
+      pickup_location_type: string | null
+      pickup_time: string | null
+      dropoff_time: string | null
+    }>()
+    if (needPlan.length > 0) {
+      const { data: ownPlansRaw } = await supabase
+        .from('usage_plans')
+        .select('id, child_id, start_date, transport_type, pickup_location_type, pickup_time, dropoff_time')
+        .eq('unit_id', unitId)
+        .eq('is_active', true)
+        .in('child_id', needPlan)
+      for (const pl of pickPrimaryPlanPerChild(
+        (ownPlansRaw ?? []) as unknown as { id: string; child_id: string; start_date: string }[]
+      ) as unknown as NonNullable<typeof ownPlansRaw>) {
+        planByChild.set(pl.child_id as string, {
+          transport_type: pl.transport_type as string | null,
+          pickup_location_type: pl.pickup_location_type as string | null,
+          pickup_time: pl.pickup_time as string | null,
+          dropoff_time: pl.dropoff_time as string | null,
+        })
+      }
+    }
+
+    for (const a of attendanceOnly) {
+      if (childrenMap.has(a.child_id)) continue
+      // 日中一時側の欄に入っている児童もその時刻で並べる（@/lib/schedule-defaults）
+      const recordedPickup = a.pickup_arrival_time ?? a.daytime_pickup_arrival_time
+      const recordedDropoff = a.dropoff_departure_time ?? a.daytime_dropoff_departure_time
+      const plan = planByChild.get(a.child_id)
+
+      let transportType: string
+      if (recordedPickup || recordedDropoff) {
+        // その日の記録が正。入力された方向だけを送迎の対象にする
+        transportType = recordedPickup && recordedDropoff
+          ? 'both'
+          : recordedPickup ? 'pickup_only' : 'dropoff_only'
+      } else if (plan) {
+        transportType = plan.transport_type ?? 'both'
+      } else {
+        // 送迎の時刻も利用計画も無い児童は、どの便に乗せるか決めようがないので対象外。
+        // 送迎管理の「＋児童を追加」から手動で足せる。
+        continue
+      }
+      if (transportType === 'none') continue
+
+      childrenMap.set(a.child_id, a.children as ChildRow)
+      pickupTimeMap.set(a.child_id, toHourSlot(recordedPickup ?? plan?.pickup_time ?? null))
+      dropoffTimeMap.set(a.child_id, toHourSlot(recordedDropoff ?? plan?.dropoff_time ?? null))
+      transportTypeMap.set(a.child_id, transportType)
+      pickupLocationTypeMap.set(a.child_id, plan?.pickup_location_type ?? 'home')
     }
   }
 
