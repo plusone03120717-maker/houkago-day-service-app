@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { buildRouteGroups, nearestNeighborSort, type RouteChildData } from '@/lib/transport-route'
 import {
   fetchScheduleDefaults,
+  isCancelMarkerOverride,
   pickPrimaryPlanPerChild,
   resolveSlotFor,
   scheduleDefaultsToAttendanceFields,
@@ -107,7 +108,7 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     planIds.length > 0
       ? supabase
           .from('usage_plan_date_overrides')
-          .select('plan_id, date, transport_type, pickup_location_type, pickup_time, dropoff_time')
+          .select('plan_id, date, transport_type, pickup_location_type, pickup_time, dropoff_time, service_start_time, service_end_time, is_cancelled')
           .in('plan_id', planIds)
           .eq('date', date)
       : { data: [] },
@@ -138,15 +139,25 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     pickup_time: string | null
     dropoff_time: string | null
   }>()
+  // その日がキャンセルされた計画。送迎の対象から外す。
+  // （以前はキャンセル時に書かれる transport_type='none' に頼っていたが、
+  //   もともと時刻付きの上書きがあった日はキャンセルしても 'none' にならず、
+  //   逆にキャンセルを取り消した日は 'none' が残ったままになっていた）
+  const cancelledPlanIds = new Set<string>()
   for (const o of dateOverridesRaw ?? []) {
-    if (o.plan_id) {
-      dateOverridesMap.set(o.plan_id as string, {
-        transport_type: o.transport_type as string,
-        pickup_location_type: o.pickup_location_type as string,
-        pickup_time: o.pickup_time as string | null,
-        dropoff_time: o.dropoff_time as string | null,
-      })
+    if (!o.plan_id) continue
+    if (o.is_cancelled) {
+      cancelledPlanIds.add(o.plan_id as string)
+      continue
     }
+    // 中身の無いキャンセル跡は上書きとして扱わない（曜日別設定・プランの値に任せる）
+    if (isCancelMarkerOverride(o)) continue
+    dateOverridesMap.set(o.plan_id as string, {
+      transport_type: o.transport_type as string,
+      pickup_location_type: o.pickup_location_type as string,
+      pickup_time: o.pickup_time as string | null,
+      dropoff_time: o.dropoff_time as string | null,
+    })
   }
 
   // 児童をユニーク化（planが優先 → 曜日別設定 > plan全体設定の優先順）
@@ -164,6 +175,7 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   ) as unknown as NonNullable<typeof plansRaw>
 
   for (const p of primaryPlans) {
+    if (cancelledPlanIds.has(p.id as string)) continue
     if (p.child_id && !childrenMap.has(p.child_id)) {
       // 優先順位: 特定日上書き > 曜日別設定 > プランのデフォルト
       const dateOverride = dateOverridesMap.get(p.id as string)

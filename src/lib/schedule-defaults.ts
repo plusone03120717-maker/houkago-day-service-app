@@ -47,6 +47,29 @@ export type OverrideRow = {
   is_cancelled?: boolean
 }
 
+/**
+ * 「キャンセルのためだけに作られた特定日上書き」か。
+ *
+ * 出席カレンダーで1日をキャンセルすると usage_plan_date_overrides に
+ * transport_type='none' の行が作られる。キャンセルを取り消しても
+ * この 'none' が残ることがあり、特定日上書きは最優先のため
+ * 利用スケジュールに送迎を入れてあっても「送迎なし」と判定されてしまう。
+ * （出席管理には出るのに送迎管理に出てこない、という形で現れる）
+ *
+ * 送迎時刻も利用時間も持たない 'none' は設定としての中身が無いので、
+ * 送迎区分の決定では無かったものとして扱い、曜日別設定・プランの値に任せる。
+ */
+export function isCancelMarkerOverride(o: {
+  transport_type?: string | null
+  pickup_time?: string | null
+  dropoff_time?: string | null
+  service_start_time?: string | null
+  service_end_time?: string | null
+} | null | undefined): boolean {
+  if (!o || o.transport_type !== 'none') return false
+  return !o.pickup_time && !o.dropoff_time && !o.service_start_time && !o.service_end_time
+}
+
 const PLAN_SELECT =
   'id, child_id, start_date, transport_type, pickup_time, dropoff_time, service_start_time, service_end_time, ' +
   'daytime_support, daytime_support_start_time, daytime_support_end_time'
@@ -160,7 +183,12 @@ export function resolveScheduleDefaults(
     const ov = overrideByPlan.get(plan.id)
     const ds = daySettingByPlan.get(plan.id)
     result[plan.child_id] = {
-      transportType: ov?.transport_type ?? ds?.transport_type ?? plan.transport_type ?? 'both',
+      // 中身の無いキャンセル跡（transport_type='none' だけ）は送迎区分として使わない
+      transportType:
+        (isCancelMarkerOverride(ov) ? null : ov?.transport_type) ??
+        ds?.transport_type ??
+        plan.transport_type ??
+        'both',
       pickupTime: ov?.pickup_time ?? ds?.pickup_time ?? plan.pickup_time,
       dropoffTime: ov?.dropoff_time ?? ds?.dropoff_time ?? plan.dropoff_time,
       serviceStartTime: ov?.service_start_time ?? ds?.service_start_time ?? plan.service_start_time,

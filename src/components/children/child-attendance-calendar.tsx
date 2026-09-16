@@ -386,7 +386,28 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
     const info = cancelledPlanDates[selectedDate]
     if (!info) return
     setRestoringPlan(true)
-    await supabase.from('usage_plan_date_overrides').update({ is_cancelled: false }).eq('id', info.overrideId)
+
+    // キャンセル時に作られた上書きは transport_type='none' を持っている。
+    // is_cancelled を戻すだけだとその「送迎なし」がその日の設定として生き続け、
+    // 予定は復活したのに送迎管理に出てこない、という状態になる。
+    // 送迎・利用時間を何も持たない＝キャンセルのためだけの行なら、消して
+    // 利用スケジュール本体（曜日別設定を含む）の設定に戻す。
+    const { data: ov } = await supabase
+      .from('usage_plan_date_overrides')
+      .select('transport_type, pickup_time, dropoff_time, service_start_time, service_end_time')
+      .eq('id', info.overrideId)
+      .maybeSingle()
+    const isCancelMarkerOnly =
+      !!ov &&
+      ov.transport_type === 'none' &&
+      !ov.pickup_time && !ov.dropoff_time &&
+      !ov.service_start_time && !ov.service_end_time
+
+    if (isCancelMarkerOnly) {
+      await supabase.from('usage_plan_date_overrides').delete().eq('id', info.overrideId)
+    } else {
+      await supabase.from('usage_plan_date_overrides').update({ is_cancelled: false }).eq('id', info.overrideId)
+    }
     await supabase
       .from('usage_reservations')
       .update({ status: 'confirmed' })
