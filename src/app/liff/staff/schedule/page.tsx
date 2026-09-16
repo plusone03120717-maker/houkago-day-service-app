@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useLiff } from '@/hooks/use-liff'
+import { usageLabel } from '@/lib/paid-leave'
 import { getTodayJST } from '@/lib/utils'
 import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { formatDuration } from '@/lib/work-time'
@@ -50,7 +51,7 @@ type ScheduleData = {
   transport: TransportItem[]
   events: EventItem[]
   overtime: { actualEndTime: string | null; status: string } | null
-  leave: { daysUsed: number } | null
+  leaves: { id: string; unit: string; daysUsed: number; hoursUsed: number | null }[]
   breaks: { start: string | null; end: string | null }[]
 }
 
@@ -73,12 +74,14 @@ type MonthDay = {
 type MonthData = {
   days: MonthDay[]
   overtimeRequests: { id: string; date: string; actual_end_time: string | null; status: string }[]
-  leaveUsages: { id: string; date: string; days_used: number }[]
+  leaveUsages: { id: string; date: string; unit: string | null; days_used: number; hours_used: number | null }[]
   breakRecords: { date: string; break_start: string | null; break_end: string | null }[]
   summary: {
     workDays: number
     transportCount: number
     leaveDays: number
+    /** 時間単位で取得した有給の合計時間 */
+    leaveHours: number
     /** タイムカード打刻から集計した実働時間（分） */
     workedMinutes: number
     /** シフトの予定勤務時間（分） */
@@ -191,7 +194,7 @@ export default function StaffSchedulePage() {
   const [result, setResult] = useState<FetchResult | null>(null)
   const [monthResult, setMonthResult] = useState<MonthResult | null>(null)
   // 有給取り消しの確認ダイアログ（対象日）
-  const [cancelTarget, setCancelTarget] = useState<string | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<{ date: string; id: string } | null>(null)
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
 
@@ -262,7 +265,7 @@ export default function StaffSchedulePage() {
       const res = await fetch('/api/liff/staff/leave/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken, date: cancelTarget }),
+        body: JSON.stringify({ accessToken, date: cancelTarget.date, id: cancelTarget.id }),
       })
       const json = await res.json() as { error?: string }
       if (!res.ok) {
@@ -355,11 +358,13 @@ export default function StaffSchedulePage() {
     status: string | null
     statusColor: string
     cancelable: boolean
+    usageId: string | null
   }[] = [
     ...(monthData?.leaveUsages ?? []).map((l) => ({
       key: `leave-${l.id}`,
+      usageId: l.id,
       date: l.date,
-      label: `有給${l.days_used === 0.5 ? '（半日）' : '（1日）'}`,
+      label: `有給（${usageLabel(l)}）`,
       dot: 'bg-green-500',
       status: null,
       statusColor: '',
@@ -367,6 +372,7 @@ export default function StaffSchedulePage() {
     })),
     ...(monthData?.overtimeRequests ?? []).map((o) => ({
       key: `overtime-${o.id}`,
+      usageId: null,
       date: o.date,
       label: `残業${o.actual_end_time ? ` ${o.actual_end_time.slice(0, 5)}まで` : ''}`,
       dot: overtimeStyle(o.status).dot,
@@ -376,6 +382,7 @@ export default function StaffSchedulePage() {
     })),
     ...(monthData?.breakRecords ?? []).map((b, i) => ({
       key: `break-${b.date}-${i}`,
+      usageId: null,
       date: b.date,
       label: `中抜け ${b.break_start ?? '?'}〜${b.break_end ?? '?'}`,
       dot: 'bg-sky-400',
@@ -604,7 +611,12 @@ export default function StaffSchedulePage() {
               </div>
               <div className="bg-white rounded-2xl shadow-sm py-3 text-center">
                 <p className="text-xs text-gray-400 mb-0.5">有給取得</p>
-                <p className="text-lg font-bold text-gray-800">{monthData.summary.leaveDays}<span className="text-xs font-normal text-gray-400 ml-0.5">日</span></p>
+                <p className="text-lg font-bold text-gray-800">
+                  {monthData.summary.leaveDays}<span className="text-xs font-normal text-gray-400 ml-0.5">日</span>
+                  {monthData.summary.leaveHours > 0 && (
+                    <span className="ml-1">{monthData.summary.leaveHours}<span className="text-xs font-normal text-gray-400 ml-0.5">時間</span></span>
+                  )}
+                </p>
               </div>
             </div>
             <p className="text-center text-[10px] text-gray-400">
@@ -648,7 +660,11 @@ export default function StaffSchedulePage() {
                       </button>
                       {entry.cancelable && (
                         <button
-                          onClick={() => { setCancelTarget(entry.date); setCancelError(null) }}
+                          onClick={() => {
+                            if (!entry.usageId) return
+                            setCancelTarget({ date: entry.date, id: entry.usageId })
+                            setCancelError(null)
+                          }}
                           className="shrink-0 rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-red-500 active:opacity-70"
                         >
                           取消
@@ -803,24 +819,24 @@ export default function StaffSchedulePage() {
         </div>
 
         {/* 申請状況 */}
-        {(data?.leave || data?.overtime || (data?.breaks.length ?? 0) > 0) && (
+        {((data?.leaves.length ?? 0) > 0 || data?.overtime || (data?.breaks.length ?? 0) > 0) && (
           <div>
             <SectionTitle icon={<FileText className="h-3.5 w-3.5" />}>申請状況</SectionTitle>
             <div className="space-y-2">
-              {data?.leave && (
-                <div className="flex items-center gap-2.5 bg-green-50 rounded-2xl px-4 py-3 border border-green-100">
+              {data?.leaves.map((lv) => (
+                <div key={lv.id} className="flex items-center gap-2.5 bg-green-50 rounded-2xl px-4 py-3 border border-green-100">
                   <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                   <span className="text-sm text-green-800 font-medium flex-1">
-                    有給取得済み{data.leave.daysUsed === 0.5 ? '（半日）' : '（1日）'}
+                    有給取得済み（{lv.unit === 'hour' ? `${lv.hoursUsed ?? 0}時間` : lv.daysUsed === 0.5 ? '半日' : '1日'}）
                   </span>
                   <button
-                    onClick={() => { setCancelTarget(date); setCancelError(null) }}
+                    onClick={() => { setCancelTarget({ date, id: lv.id }); setCancelError(null) }}
                     className="shrink-0 rounded-full border border-green-300 bg-white px-3 py-1.5 text-xs font-medium text-red-500 active:opacity-70"
                   >
                     取り消す
                   </button>
                 </div>
-              )}
+              ))}
               {data?.overtime && (
                 <div className="flex items-center gap-2.5 rounded-2xl px-4 py-3 border bg-orange-50 border-orange-100">
                   <span className={`w-2 h-2 rounded-full shrink-0 ${
@@ -879,7 +895,7 @@ export default function StaffSchedulePage() {
           <div className="relative w-full max-w-xs bg-white rounded-2xl shadow-2xl p-5">
             <p className="text-sm font-bold text-gray-900 mb-1">有給申請を取り消しますか？</p>
             <p className="text-xs text-gray-500 mb-4">
-              {formatMonthDay(cancelTarget)}の有給申請を削除します。元に戻せません。
+              {formatMonthDay(cancelTarget.date)}の有給申請を削除します。元に戻せません。
             </p>
             {cancelError && (
               <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3">

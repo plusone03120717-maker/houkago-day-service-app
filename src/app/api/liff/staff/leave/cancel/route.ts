@@ -10,12 +10,13 @@ const adminClient = createClient(
 
 /**
  * LINEから申請した有給を取り消す（レコードごと削除）。
+ * id を指定すればその1件、指定がなければその日の全件を削除する。
  * 削除対象は必ず「本人（staff_members.id）の指定日」に限定する。
  */
 export async function POST(req: NextRequest) {
   try {
-    const { accessToken, date } = await req.json() as {
-      accessToken?: string; date?: string
+    const { accessToken, date, id } = await req.json() as {
+      accessToken?: string; date?: string; id?: string
     }
     if (!accessToken || !date) {
       return NextResponse.json({ error: 'パラメータが不足しています' }, { status: 400 })
@@ -31,12 +32,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'スタッフが見つかりません' }, { status: 403 })
     }
 
-    const { data, error } = await adminClient
+    let query = adminClient
       .from('paid_leave_usages')
       .delete()
       .eq('staff_id', staff.staffMemberId)
       .eq('date', date)
-      .select('id')
+    if (id) query = query.eq('id', id)
+
+    const { data, error } = await query.select('id')
 
     if (error) {
       console.error('[liff/staff/leave/cancel] delete failed', error)

@@ -25,6 +25,8 @@ export type DailyRow = {
   isConfirmed: boolean
   overtimeMinutes: number | null
   leaveDays: number | null
+  /** 時間単位で取得した有給（労使協定に基づく・年5日分まで） */
+  leaveHours: number | null
 }
 
 const SHIFT_LABELS: Record<string, string> = {
@@ -243,6 +245,11 @@ export function SummaryDailyEditor({
             {row.leaveDays != null && (
               <Badge variant="secondary" className="text-xs flex-shrink-0 bg-blue-100 text-blue-700 border-blue-200">
                 有給{row.leaveDays === 0.5 ? ' 半日' : ''}
+              </Badge>
+            )}
+            {row.leaveHours != null && (
+              <Badge variant="secondary" className="text-xs flex-shrink-0 bg-indigo-100 text-indigo-700 border-indigo-200">
+                有給 {row.leaveHours}時間
               </Badge>
             )}
 

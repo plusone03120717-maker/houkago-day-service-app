@@ -153,10 +153,9 @@ export async function POST(req: NextRequest) {
 
       adminClient
         .from('paid_leave_usages')
-        .select('days_used')
+        .select('id, unit, days_used, hours_used')
         .eq('staff_id', staff.staffMemberId)
-        .eq('date', date)
-        .limit(1),
+        .eq('date', date),
 
       adminClient
         .from('time_records')
@@ -278,7 +277,9 @@ export async function POST(req: NextRequest) {
 
     // --- 申請状況 ---
     const overtimeRows = (overtimeRes.data ?? []) as unknown as { actual_end_time: string | null; status: string }[]
-    const leaveRows = (leaveRes.data ?? []) as unknown as { days_used: number }[]
+    const leaveRows = (leaveRes.data ?? []) as unknown as {
+      id: string; unit: string | null; days_used: number; hours_used: number | null
+    }[]
 
     const rawBreaks = (breakRes.data ?? []) as unknown as { type: string; recorded_at: string }[]
     const breaks: { start: string | null; end: string | null }[] = []
@@ -311,7 +312,12 @@ export async function POST(req: NextRequest) {
       overtime: overtimeRows.length > 0
         ? { actualEndTime: overtimeRows[0].actual_end_time?.slice(0, 5) ?? null, status: overtimeRows[0].status }
         : null,
-      leave: leaveRows.length > 0 ? { daysUsed: leaveRows[0].days_used } : null,
+      leaves: leaveRows.map((l) => ({
+        id: l.id,
+        unit: l.unit === 'hour' ? 'hour' : 'day',
+        daysUsed: Number(l.days_used),
+        hoursUsed: l.hours_used ?? null,
+      })),
       breaks,
     })
   } catch (err) {

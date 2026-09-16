@@ -15,7 +15,7 @@ export default async function StaffRequestsPage() {
       .order('date', { ascending: false }),
     supabase
       .from('paid_leave_usages')
-      .select('id, date, days_used, staff_members(name)')
+      .select('id, date, unit, days_used, hours_used, staff_members(name)')
       .eq('is_new', true)
       .order('date', { ascending: false }),
     supabase

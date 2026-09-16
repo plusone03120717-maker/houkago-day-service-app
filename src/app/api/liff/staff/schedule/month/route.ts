@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
+import { sumDayUnitDays, sumHourUnitHours } from '@/lib/paid-leave'
 import { findStaffByLineUserId } from '@/lib/line/liff-staff'
 import { calcShiftMinutes, buildTCDays } from '@/lib/work-time'
 
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
 
       adminClient
         .from('paid_leave_usages')
-        .select('id, date, days_used')
+        .select('id, date, unit, days_used, hours_used')
         .eq('staff_id', staff.staffMemberId)
         .gte('date', startDate)
         .lte('date', endDate),
@@ -206,7 +207,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const leaveUsages = (leaveRes.data ?? []) as unknown as { id: string; date: string; days_used: number }[]
+    const leaveUsages = (leaveRes.data ?? []) as unknown as {
+      id: string; date: string; unit: string | null; days_used: number; hours_used: number | null
+    }[]
 
     // --- 勤務時間（実績＝タイムカード打刻／予定＝シフト）---
     const workShifts = shiftRows.filter((s) => s.shift_type !== 'off' && s.shift_type !== 'holiday')
@@ -228,7 +231,8 @@ export async function POST(req: NextRequest) {
       summary: {
         workDays: shiftRows.filter((s) => s.shift_type !== 'off' && s.shift_type !== 'holiday').length,
         transportCount: Array.from(transportByDate.values()).reduce((a, b) => a + b, 0),
-        leaveDays: leaveUsages.reduce((a, l) => a + Number(l.days_used), 0),
+        leaveDays: sumDayUnitDays(leaveUsages),
+        leaveHours: sumHourUnitHours(leaveUsages),
         workedMinutes,
         plannedMinutes,
       },

@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { useLiff } from '@/hooks/use-liff'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { Loader2, AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { DEFAULT_HOURS_PER_DAY, usageLabel } from '@/lib/paid-leave'
 
 type StaffInfo = {
   staffMemberId: string
@@ -23,7 +24,17 @@ type OvertimeReq = {
 type LeaveUsage = {
   id: string
   date: string
+  unit: string | null
   days_used: number
+  hours_used: number | null
+}
+
+/** 時間単位年休の枠（労基法39条4項: 年5日分が上限） */
+type LeavePolicy = {
+  fiscalYear: number
+  hoursPerDay: number
+  hourlyLimitHours: number
+  hourlyUsedHours: number
 }
 
 type BreakRecord = {
@@ -84,14 +95,16 @@ function StaffLiffContent() {
   const [selectedDate, setSelectedDate] = useState<string | null>(initialDate)
   const [activeForm, setActiveForm] = useState<'leave' | 'overtime' | 'break' | null>(null)
 
-  const [leaveDays, setLeaveDays] = useState<0.5 | 1.0>(1.0)
+  const [leaveUnit, setLeaveUnit] = useState<'1.0' | '0.5' | 'hour'>('1.0')
+  const [leaveHours, setLeaveHours] = useState(1)
+  const [leavePolicy, setLeavePolicy] = useState<LeavePolicy | null>(null)
   const [overtimeEnd, setOvertimeEnd] = useState('20:00')
   const [breakStart, setBreakStart] = useState('12:00')
   const [breakEnd, setBreakEnd] = useState('13:00')
 
   const [submitting, setSubmitting] = useState(false)
   const [cancellingLeave, setCancellingLeave] = useState(false)
-  const [confirmLeaveCancel, setConfirmLeaveCancel] = useState(false)
+  const [confirmLeaveCancelId, setConfirmLeaveCancelId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ ok: boolean; message: string } | null>(null)
 
   // スタッフ特定
@@ -133,10 +146,16 @@ function StaffLiffContent() {
       body: JSON.stringify({ accessToken, year: y, month: m }),
     })
       .then(r => r.json())
-      .then((json: { overtimeRequests?: OvertimeReq[]; leaveUsages?: LeaveUsage[]; breakRecords?: BreakRecord[] }) => {
+      .then((json: {
+        overtimeRequests?: OvertimeReq[]
+        leaveUsages?: LeaveUsage[]
+        breakRecords?: BreakRecord[]
+        leavePolicy?: LeavePolicy
+      }) => {
         setOvertimeRequests(json.overtimeRequests ?? [])
         setLeaveUsages(json.leaveUsages ?? [])
         setBreakRecords(json.breakRecords ?? [])
+        setLeavePolicy(json.leavePolicy ?? null)
       })
       .finally(() => setLoadingMonth(false))
   }, [liffState])
@@ -157,7 +176,7 @@ function StaffLiffContent() {
 
   function getDateInfo(dateStr: string) {
     return {
-      leave: leaveUsages.find(l => l.date === dateStr) ?? null,
+      leaves: leaveUsages.filter(l => l.date === dateStr),
       overtime: overtimeRequests.find(o => o.date === dateStr) ?? null,
       breaks: breakRecords.filter(b => b.date === dateStr),
     }
@@ -174,10 +193,10 @@ function StaffLiffContent() {
   }
 
   function openDate(dateStr: string) {
-    setSelectedDate(dateStr); setActiveForm(null); setToast(null); setConfirmLeaveCancel(false)
+    setSelectedDate(dateStr); setActiveForm(null); setToast(null); setConfirmLeaveCancelId(null)
   }
   function closeSheet() {
-    setSelectedDate(null); setActiveForm(null); setToast(null); setConfirmLeaveCancel(false)
+    setSelectedDate(null); setActiveForm(null); setToast(null); setConfirmLeaveCancelId(null)
   }
 
   // 申請送信
@@ -209,7 +228,7 @@ function StaffLiffContent() {
   }
 
   // 有給の取り消し（レコードごと削除）
-  async function cancelLeave() {
+  async function cancelLeave(id: string) {
     if (liffState.status !== 'ready' || !selectedDate) return
     const accessToken = liffState.liff.getAccessToken()
     if (!accessToken) return
@@ -219,14 +238,14 @@ function StaffLiffContent() {
       const res = await fetch('/api/liff/staff/leave/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken, date: selectedDate }),
+        body: JSON.stringify({ accessToken, date: selectedDate, id }),
       })
       const json = await res.json() as { error?: string }
       if (!res.ok) {
         setToast({ ok: false, message: json.error ?? '取り消しに失敗しました' })
       } else {
         setToast({ ok: true, message: '有給申請を取り消しました' })
-        setConfirmLeaveCancel(false)
+        setConfirmLeaveCancelId(null)
         loadMonth(year, month)
       }
     } catch {
@@ -324,6 +343,17 @@ function StaffLiffContent() {
   const dateInfo = selectedDate ? getDateInfo(selectedDate) : null
   const selectedHolidayName = selectedDate ? getJapaneseHolidayName(selectedDate) : null
 
+  // 有給の申請可否（1日・半日を取得済みの日は追加で申請できない）
+  const hasDayLeave = (dateInfo?.leaves ?? []).some((l) => l.unit !== 'hour')
+  const hoursPerDay = leavePolicy?.hoursPerDay ?? DEFAULT_HOURS_PER_DAY
+  const hourlyLimit = leavePolicy?.hourlyLimitHours ?? hoursPerDay * 5
+  const hourlyRemaining = Math.max(0, hourlyLimit - (leavePolicy?.hourlyUsedHours ?? 0))
+  const hoursTakenThatDay = (dateInfo?.leaves ?? [])
+    .filter((l) => l.unit === 'hour')
+    .reduce((sum, l) => sum + Number(l.hours_used ?? 0), 0)
+  // 1日に取得できるのは所定労働時間まで。年間の残枠も超えられない
+  const maxLeaveHours = Math.max(0, Math.min(hoursPerDay - hoursTakenThatDay, hourlyRemaining))
+
   return (
     <div className="max-w-sm mx-auto min-h-screen bg-gray-50">
       {/* ヘッダー */}
@@ -399,7 +429,7 @@ function StaffLiffContent() {
                     ) : day}
                   </span>
                   <div className="flex gap-0.5 mt-1">
-                    {info.leave && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                    {info.leaves.length > 0 && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
                     {info.overtime && (
                       <span className={`w-1.5 h-1.5 rounded-full ${
                         info.overtime.status === 'approved' ? 'bg-orange-500' :
@@ -471,37 +501,37 @@ function StaffLiffContent() {
               )}
 
               {/* 既存レコード */}
-              {dateInfo.leave && (
-                <div className="bg-green-50 rounded-2xl px-4 py-3 border border-green-100">
+              {dateInfo.leaves.map((lv) => (
+                <div key={lv.id} className="bg-green-50 rounded-2xl px-4 py-3 border border-green-100">
                   <div className="flex items-center gap-2.5">
                     <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                     <span className="text-sm text-green-800 font-medium flex-1">
-                      有給取得済み{dateInfo.leave.days_used === 0.5 ? '（半日）' : '（1日）'}
+                      有給取得済み（{usageLabel(lv)}）
                     </span>
-                    {!confirmLeaveCancel && (
+                    {confirmLeaveCancelId !== lv.id && (
                       <button
-                        onClick={() => { setConfirmLeaveCancel(true); setToast(null) }}
+                        onClick={() => { setConfirmLeaveCancelId(lv.id); setToast(null) }}
                         className="shrink-0 rounded-full border border-green-300 bg-white px-3 py-1.5 text-xs font-medium text-red-500 active:opacity-70"
                       >
                         取り消す
                       </button>
                     )}
                   </div>
-                  {confirmLeaveCancel && (
+                  {confirmLeaveCancelId === lv.id && (
                     <div className="mt-3">
                       <p className="text-xs text-gray-600 mb-2">
-                        この日の有給申請を削除します。元に戻せません。
+                        この有給申請を削除します。元に戻せません。
                       </p>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => setConfirmLeaveCancel(false)}
+                          onClick={() => setConfirmLeaveCancelId(null)}
                           disabled={cancellingLeave}
                           className="flex-1 rounded-xl py-2.5 text-sm text-gray-500 bg-white border border-gray-200 disabled:opacity-50"
                         >
                           やめる
                         </button>
                         <button
-                          onClick={cancelLeave}
+                          onClick={() => cancelLeave(lv.id)}
                           disabled={cancellingLeave}
                           className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white bg-red-500 disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm"
                         >
@@ -512,7 +542,7 @@ function StaffLiffContent() {
                     </div>
                   )}
                 </div>
-              )}
+              ))}
               {dateInfo.overtime && (
                 <div className={`flex items-center gap-2.5 rounded-2xl px-4 py-3 border ${
                   dateInfo.overtime.status === 'approved' ? 'bg-orange-50 border-orange-100' :
@@ -551,30 +581,69 @@ function StaffLiffContent() {
               {/* 申請フォーム群 */}
 
               {/* 有給申請 */}
-              {!dateInfo.leave && (
+              {!hasDayLeave && (
                 activeForm === 'leave' ? (
                   <div className="bg-green-50 rounded-2xl p-4 border border-green-100">
                     <p className="text-sm font-semibold text-green-800 mb-3">有給申請</p>
-                    <div className="grid grid-cols-2 gap-2 mb-4">
-                      {([1.0, 0.5] as const).map((v) => (
-                        <button
-                          key={v}
-                          onClick={() => setLeaveDays(v)}
-                          className={`rounded-xl py-3 text-sm font-medium transition-colors ${
-                            leaveDays === v ? 'bg-green-500 text-white shadow-sm' : 'bg-white text-gray-700 border border-gray-200'
-                          }`}
-                        >
-                          {v === 1.0 ? '1日' : '半日'}
-                        </button>
-                      ))}
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      {(['1.0', '0.5', 'hour'] as const).map((v) => {
+                        const disabled = v === 'hour' && maxLeaveHours < 1
+                        return (
+                          <button
+                            key={v}
+                            disabled={disabled}
+                            onClick={() => setLeaveUnit(v)}
+                            className={`rounded-xl py-3 text-sm font-medium transition-colors ${
+                              disabled
+                                ? 'bg-gray-100 text-gray-300 border border-gray-100'
+                                : leaveUnit === v
+                                  ? 'bg-green-500 text-white shadow-sm'
+                                  : 'bg-white text-gray-700 border border-gray-200'
+                            }`}
+                          >
+                            {v === '1.0' ? '1日' : v === '0.5' ? '半日' : '時間単位'}
+                          </button>
+                        )
+                      })}
                     </div>
+
+                    {leaveUnit === 'hour' && (
+                      <div className="mb-3">
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {Array.from({ length: maxLeaveHours }, (_, i) => i + 1).map((h) => (
+                            <button
+                              key={h}
+                              onClick={() => setLeaveHours(h)}
+                              className={`rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+                                leaveHours === h ? 'bg-green-500 text-white shadow-sm' : 'bg-white text-gray-700 border border-gray-200'
+                              }`}
+                            >
+                              {h}時間
+                            </button>
+                          ))}
+                        </div>
+                        {maxLeaveHours < 1 ? (
+                          <p className="text-[11px] text-red-500">
+                            今年度の時間単位の残枠がありません。1日または半日で申請してください。
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-gray-500 leading-relaxed">
+                            時間単位の有給は年5日分（{hourlyLimit}時間）までです。今年度の残り {hourlyRemaining}時間。
+                            時間単位で取得した分は「年5日の取得義務」には含まれません。
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex gap-2">
                       <button onClick={() => setActiveForm(null)} className="flex-1 rounded-xl py-3 text-sm text-gray-500 bg-white border border-gray-200">
                         キャンセル
                       </button>
                       <button
-                        onClick={() => submit('/api/liff/staff/leave', { date: selectedDate!, daysUsed: leaveDays })}
-                        disabled={submitting}
+                        onClick={() => submit('/api/liff/staff/leave', leaveUnit === 'hour'
+                          ? { date: selectedDate!, unit: 'hour', hours: leaveHours }
+                          : { date: selectedDate!, unit: 'day', daysUsed: parseFloat(leaveUnit) })}
+                        disabled={submitting || (leaveUnit === 'hour' && maxLeaveHours < 1)}
                         className="flex-1 rounded-xl py-3 text-sm font-semibold text-white bg-green-500 disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm"
                       >
                         {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

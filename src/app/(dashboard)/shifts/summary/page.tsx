@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/require-admin'
+import { sumDayUnitDays, sumHourUnitHours } from '@/lib/paid-leave'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -29,7 +30,13 @@ type StaffShift = {
 
 type TCRecord = { id: string; staff_member_id: string; type: string; recorded_at: string }
 type OvertimeRow = { staff_id: string; date: string; overtime_minutes: number | null }
-type PaidLeaveRow = { staff_member_id: string; date: string; days_used: number }
+type PaidLeaveRow = {
+  staff_id: string
+  date: string
+  unit: string | null
+  days_used: number
+  hours_used: number | null
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -98,8 +105,8 @@ export default async function ShiftSummaryPage({
     memberIds.length > 0
       ? supabase
           .from('paid_leave_usages')
-          .select('staff_member_id, date, days_used')
-          .in('staff_member_id', memberIds)
+          .select('staff_id, date, unit, days_used, hours_used')
+          .in('staff_id', memberIds)
           .gte('date', monthStart)
           .lte('date', monthEnd)
       : Promise.resolve({ data: [] }),
@@ -149,10 +156,17 @@ export default async function ShiftSummaryPage({
     )
     const overtimeByDate = new Map(myOvertimes.map((o) => [o.date, o.overtime_minutes]))
 
-    // 有給集計
-    const myLeaves = leaves.filter((l) => l.staff_member_id === member.id)
-    const paidLeaveDays = myLeaves.reduce((sum, l) => sum + l.days_used, 0)
-    const leaveByDate = new Map(myLeaves.map((l) => [l.date, l.days_used]))
+    // 有給集計（時間単位は日数に合算せず、別建てで集計する）
+    const myLeaves = leaves.filter((l) => l.staff_id === member.id)
+    const paidLeaveDays = sumDayUnitDays(myLeaves)
+    const paidLeaveHours = sumHourUnitHours(myLeaves)
+    const leaveByDate = new Map<string, { days: number; hours: number }>()
+    for (const l of myLeaves) {
+      const cur = leaveByDate.get(l.date) ?? { days: 0, hours: 0 }
+      if (l.unit === 'hour') cur.hours += Number(l.hours_used ?? 0)
+      else cur.days += Number(l.days_used)
+      leaveByDate.set(l.date, cur)
+    }
 
     // ── 日次詳細（編集可）の行を組み立てる ──
     const shiftByDate = new Map(myShifts.map((s) => [s.date, s]))
@@ -188,7 +202,8 @@ export default async function ShiftSummaryPage({
           lunchDeduction: tc?.lunchDeduction ?? 0,
           isConfirmed: shift?.is_attendance_confirmed ?? false,
           overtimeMinutes: overtimeByDate.get(date) ?? null,
-          leaveDays: leaveByDate.get(date) ?? null,
+          leaveDays: leaveByDate.get(date)?.days || null,
+          leaveHours: leaveByDate.get(date)?.hours || null,
         }
       })
 
@@ -212,6 +227,7 @@ export default async function ShiftSummaryPage({
       approvedOvertimeMinutes,
       overtimeByDate,
       paidLeaveDays,
+      paidLeaveHours,
       leaveByDate,
       // 日次詳細用
       myShifts: myShifts.sort((a, b) => a.date.localeCompare(b.date)),
@@ -306,7 +322,7 @@ export default async function ShiftSummaryPage({
                 </tr>
               </thead>
               <tbody>
-                {staffStats.map(({ member, hasShifts, shiftWorkDays, plannedMinutes, offDays, typeCounts, tcWorkDays, tcTotalHours, totalBreakMinutes, confirmedDays, unconfirmedCount, approvedOvertimeMinutes, paidLeaveDays }) => (
+                {staffStats.map(({ member, hasShifts, shiftWorkDays, plannedMinutes, offDays, typeCounts, tcWorkDays, tcTotalHours, totalBreakMinutes, confirmedDays, unconfirmedCount, approvedOvertimeMinutes, paidLeaveDays, paidLeaveHours }) => (
                   <tr key={member.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{member.name}</p>
@@ -339,8 +355,17 @@ export default async function ShiftSummaryPage({
                     </td>
                     {/* 有給 */}
                     <td className="px-3 py-3 text-center">
-                      {paidLeaveDays > 0 ? (
-                        <span className="font-semibold text-blue-600">{paidLeaveDays}<span className="font-normal text-gray-400 ml-0.5">日</span></span>
+                      {paidLeaveDays > 0 || paidLeaveHours > 0 ? (
+                        <span className="font-semibold text-blue-600">
+                          {paidLeaveDays > 0 && (
+                            <>{paidLeaveDays}<span className="font-normal text-gray-400 ml-0.5">日</span></>
+                          )}
+                          {paidLeaveHours > 0 && (
+                            <span className={paidLeaveDays > 0 ? 'ml-1' : ''}>
+                              {paidLeaveHours}<span className="font-normal text-gray-400 ml-0.5">時間</span>
+                            </span>
+                          )}
+                        </span>
                       ) : (
                         <span className="text-gray-300">—</span>
                       )}

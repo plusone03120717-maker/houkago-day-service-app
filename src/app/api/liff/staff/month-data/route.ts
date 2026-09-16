@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
+import { findStaffByLineUserId } from '@/lib/line/liff-staff'
+import { DEFAULT_HOURS_PER_DAY, fiscalYearOf, fiscalYearRange, hourlyLimitHours } from '@/lib/paid-leave'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,41 +31,9 @@ export async function POST(req: NextRequest) {
     const lineUserId = await verifyLineAccessToken(accessToken)
 
     // スタッフ特定
-    let staffMemberId: string | null = null
-    let userId: string | null = null
-
-    const { data: staffRows } = await adminClient
-      .from('staff_members')
-      .select('id, user_id')
-      .eq('line_user_id', lineUserId)
-      .limit(1)
-    const staffRow = staffRows && (staffRows as { id: string; user_id: string | null }[]).length > 0
-      ? (staffRows as { id: string; user_id: string | null }[])[0] : null
-
-    if (staffRow) {
-      staffMemberId = staffRow.id
-      userId = staffRow.user_id ?? null
-    } else {
-      const { data: userRows } = await adminClient
-        .from('users')
-        .select('id')
-        .eq('line_user_id', lineUserId)
-        .limit(1)
-      const linkedUser = userRows && (userRows as { id: string }[]).length > 0 ? (userRows as { id: string }[])[0] : null
-      if (linkedUser) {
-        const { data: memberRows } = await adminClient
-          .from('staff_members')
-          .select('id, user_id')
-          .eq('user_id', linkedUser.id)
-          .limit(1)
-        const member = memberRows && (memberRows as { id: string; user_id: string | null }[]).length > 0
-          ? (memberRows as { id: string; user_id: string | null }[])[0] : null
-        if (member) {
-          staffMemberId = member.id
-          userId = member.user_id ?? null
-        }
-      }
-    }
+    const staff = await findStaffByLineUserId(adminClient, lineUserId)
+    const staffMemberId = staff?.staffMemberId ?? null
+    const hoursPerDay = staff?.hoursPerDay ?? DEFAULT_HOURS_PER_DAY
 
     if (!staffMemberId) {
       return NextResponse.json({ error: 'スタッフが見つかりません' }, { status: 404 })
@@ -85,7 +55,7 @@ export async function POST(req: NextRequest) {
       // 有給使用（staff_members.id で検索）
       adminClient
         .from('paid_leave_usages')
-        .select('id, date, days_used')
+        .select('id, date, unit, days_used, hours_used')
         .eq('staff_id', staffMemberId)
         .gte('date', startDate)
         .lte('date', endDate),
@@ -128,10 +98,29 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 時間単位年休の年間残枠（労基法39条4項: 年5日分が上限）
+    const fiscalYear = fiscalYearOf(startDate)
+    const { start: fyStart, end: fyEnd } = fiscalYearRange(fiscalYear)
+    const { data: hourlyRaw } = await adminClient
+      .from('paid_leave_usages')
+      .select('hours_used')
+      .eq('staff_id', staffMemberId)
+      .eq('unit', 'hour')
+      .gte('date', fyStart)
+      .lte('date', fyEnd)
+    const hourlyUsedHours = ((hourlyRaw ?? []) as { hours_used: number | null }[])
+      .reduce((sum, r) => sum + Number(r.hours_used ?? 0), 0)
+
     return NextResponse.json({
       overtimeRequests: overtimeRes.data ?? [],
       leaveUsages: leaveRes.data ?? [],
       breakRecords,
+      leavePolicy: {
+        fiscalYear,
+        hoursPerDay,
+        hourlyLimitHours: hourlyLimitHours(hoursPerDay),
+        hourlyUsedHours,
+      },
     })
   } catch (err) {
     console.error('[liff/staff/month-data]', err)

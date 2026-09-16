@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Clock, Umbrella, Coffee, CheckCircle } from 'lucide-react'
+import { usageLabel } from '@/lib/paid-leave'
 
 export type OvertimeRequest = {
   id: string
@@ -18,7 +19,9 @@ export type OvertimeRequest = {
 export type LeaveUsage = {
   id: string
   date: string
+  unit: string | null
   days_used: number
+  hours_used: number | null
   staff_members: { name: string } | null
 }
 
@@ -169,7 +172,10 @@ export function StaffRequestsBoard({ overtimeRequests: init_ot, leaveUsages: ini
                 <div>
                   <p className="font-medium text-gray-900">{lv.staff_members?.name ?? '—'}</p>
                   <p className="text-sm text-gray-500">
-                    {formatDate(lv.date)}　{lv.days_used === 0.5 ? '半日' : '1日'}
+                    {formatDate(lv.date)}　{usageLabel(lv)}
+                    {lv.unit === 'hour' && (
+                      <span className="ml-2 text-xs text-indigo-600">時間単位</span>
+                    )}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
