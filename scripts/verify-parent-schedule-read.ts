@@ -234,6 +234,19 @@ async function main() {
       check('反映前は applied_at が空（＝確認中と表示される）', before?.applied_at === null, before?.applied_at)
       check('お休みは承認待ちのまま', before?.approval_status === 'pending', before?.approval_status)
 
+      // ヘッダーのベル（src/components/layout/pending-requests-badge.tsx）と同じ条件で数える。
+      // お休みの連絡がここから漏れると、スタッフが気付かないまま予定が残り続ける
+      const { data: belled } = await admin
+        .from('parent_attendance_contacts')
+        .select('id, date, status, service_type, children (name)')
+        .eq('is_new', true)
+        .eq('child_id', childId)
+      const onBell = ((belled ?? []) as { date: string; status: string }[]).find(
+        (r) => r.date === ABSENT_DATE
+      )
+      check('お知らせのベルに載る（未確認として数えられる）', !!onBell, belled)
+      check('お休みとして載る', onBell?.status === 'absent', onBell?.status)
+
       const beforeSchedule = await loadFacilitySchedule(parent, [childId], YEAR, MONTH)
       check(
         '反映前は施設の予定が「利用予定」のまま',
