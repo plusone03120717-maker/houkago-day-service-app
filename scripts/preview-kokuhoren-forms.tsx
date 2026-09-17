@@ -20,6 +20,10 @@ import {
   ServiceRecordDocument,
   type ServiceRecordDocumentData,
 } from '../src/components/documents/service-record-document'
+import {
+  UpperLimitDocument,
+  type UpperLimitDocumentData,
+} from '../src/components/documents/upper-limit-document'
 import type { ChildComputed } from '../src/lib/kokuhoren/build'
 
 const facility = {
@@ -120,10 +124,35 @@ const record: ServiceRecordDocumentData = {
   pageCount: 37,
 }
 
+// 実データ（HKD075008.pdf）と同じ内容で上限額管理結果票を確認する
+const upperLimit: UpperLimitDocumentData = {
+  yearMonth: '202607',
+  facility,
+  child: {
+    childName: '桑原 明日輝',
+    childNameKana: 'クワバラ アスキ',
+    certificateNumber: '1943006005',
+    municipalityCode: '194308',
+    copayLimit: 4600,
+    result: '1',
+    offices: [
+      {
+        lineNo: 1, officeNumber: '1951200672', officeName: 'ぷらすわん',
+        totalCost: 198550, copayAmount: 4600, managedCopayAmount: 4600,
+      },
+      {
+        lineNo: 2, officeNumber: '1951200649', officeName: 'ココロン',
+        totalCost: 81560, copayAmount: 4600, managedCopayAmount: 0,
+      },
+    ],
+  },
+}
+
 const pages = [
   renderToStaticMarkup(<KokuhorenInvoiceDocument data={invoice} />),
   renderToStaticMarkup(<KokuhorenDetailDocument data={detail} />),
   renderToStaticMarkup(<ServiceRecordDocument data={record} />),
+  renderToStaticMarkup(<UpperLimitDocument data={upperLimit} />),
 ]
 
 const html = `<!doctype html>

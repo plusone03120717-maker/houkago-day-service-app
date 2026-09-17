@@ -27,6 +27,8 @@ interface Props {
     contract_line_number?: number
     service_start_date?: string
     copay_exempt?: boolean
+    upper_limit_manager_number?: string
+    is_upper_limit_manager?: boolean
   }
 }
 
@@ -53,8 +55,10 @@ export function CertificateForm({ childId, initial }: Props) {
     contract_end_date: initial?.contract_end_date ?? '',
     contract_line_number: String(initial?.contract_line_number ?? 1),
     service_start_date: initial?.service_start_date ?? '',
+    upper_limit_manager_number: initial?.upper_limit_manager_number ?? '',
   })
   const [copayExempt, setCopayExempt] = useState(initial?.copay_exempt ?? false)
+  const [isUpperLimitManager, setIsUpperLimitManager] = useState(initial?.is_upper_limit_manager ?? false)
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
@@ -86,6 +90,8 @@ export function CertificateForm({ childId, initial }: Props) {
       contract_line_number: parseInt(form.contract_line_number) || 1,
       service_start_date: form.service_start_date || null,
       copay_exempt: copayExempt,
+      upper_limit_manager_number: form.upper_limit_manager_number || null,
+      is_upper_limit_manager: isUpperLimitManager,
     }
 
     if (initial?.id) {
@@ -211,14 +217,38 @@ export function CertificateForm({ childId, initial }: Props) {
         </div>
       </div>
 
-      <div>
-        <label className="text-xs font-medium text-gray-700 mb-1 block">上限管理事業所</label>
-        <Input
-          value={form.upper_limit_manager}
-          onChange={set('upper_limit_manager')}
-          placeholder="例: ○○放課後デイサービス"
-        />
-        <p className="text-xs text-gray-400 mt-1">上限管理を行う事業所名を入力してください（任意）</p>
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-medium text-gray-700 mb-1 block">上限管理事業所名</label>
+            <Input
+              value={form.upper_limit_manager}
+              onChange={set('upper_limit_manager')}
+              placeholder="例: ○○放課後デイサービス"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-700 mb-1 block">上限管理事業所番号（10桁）</label>
+            <Input
+              value={form.upper_limit_manager_number}
+              onChange={set('upper_limit_manager_number')}
+              placeholder="1951200672"
+              maxLength={10}
+            />
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={isUpperLimitManager}
+            onChange={(e) => setIsUpperLimitManager(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300"
+          />
+          当事業所が上限額管理事業所
+        </label>
+        <p className="text-xs text-gray-400">
+          国保連請求には事業所番号が必要です。金額は毎月「国保連請求 → 利用者負担上限額管理」で入力します
+        </p>
       </div>
 
       <div className="pt-4 border-t border-gray-100">

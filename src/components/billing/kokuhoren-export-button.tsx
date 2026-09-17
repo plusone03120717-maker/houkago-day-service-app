@@ -7,7 +7,7 @@ import { FileDown, AlertCircle, AlertTriangle } from 'lucide-react'
 interface Props {
   billingMonthlyId: string
   /** 出力するCSVの種類 */
-  kind?: 'billing' | 'service_record'
+  kind?: 'billing' | 'service_record' | 'upper_limit'
 }
 
 const KINDS = {
@@ -20,6 +20,11 @@ const KINDS = {
     endpoint: '/api/billing/export-service-record',
     label: 'サービス提供実績記録票CSV（仕様準拠）',
     fallbackFileName: 'K611.CSV',
+  },
+  upper_limit: {
+    endpoint: '/api/billing/export-upper-limit',
+    label: '上限額管理結果票CSV（仕様準拠）',
+    fallbackFileName: 'K411.CSV',
   },
 } as const
 

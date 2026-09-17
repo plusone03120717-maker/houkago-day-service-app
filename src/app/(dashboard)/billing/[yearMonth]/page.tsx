@@ -306,6 +306,20 @@ export default async function BillingDetailPage({
                 costs={billCosts}
               />
 
+              {/* 上限額管理 */}
+              <div className="pt-2 border-t border-gray-100">
+                <Link
+                  href={`/billing/${yearMonth}/upper-limit?billing=${billing.id}`}
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <Receipt className="h-4 w-4" />
+                  利用者負担上限額管理
+                </Link>
+                <p className="text-xs text-gray-400 mt-1.5">
+                  他事業所とFAXでやり取りした金額を入力すると、明細書の上限額管理欄と上限額管理結果票に反映されます。
+                </p>
+              </div>
+
               {/* CSV出力 */}
               <div className="space-y-3 pt-2 border-t border-gray-100">
                 <KokuhorenExportButton billingMonthlyId={billing.id} />
