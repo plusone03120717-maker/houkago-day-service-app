@@ -40,7 +40,7 @@ const TRANSPORT_TYPES: TransportType[] = ['none', 'pickup_only', 'dropoff_only',
 /** 連絡の一覧・カレンダー表示に必要な列 */
 export const USAGE_CONTACT_COLUMNS =
   'child_id, date, status, service_type, service_start_time, service_end_time, ' +
-  'transport_type, pickup_time, dropoff_time, note, approval_status'
+  'transport_type, pickup_time, dropoff_time, note, approval_status, applied_at'
 
 /**
  * 施設側で決まっているその日の状態。

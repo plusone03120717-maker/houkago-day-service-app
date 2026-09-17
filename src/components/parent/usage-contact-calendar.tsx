@@ -29,6 +29,8 @@ export type UsageContact = {
   dropoff_time: string | null
   note: string | null
   approval_status: 'pending' | 'approved' | 'rejected'
+  /** 施設が予定へ反映した時刻。null＝まだ反映されていない */
+  applied_at: string | null
 }
 
 /** 施設側で決まっているその日の状態 */
@@ -126,10 +128,26 @@ const SCHEDULE_META: Record<FacilityScheduleDay['kind'], { label: string; box: s
   absent: { label: '欠席', box: 'bg-red-300' },
 }
 
-const APPROVAL_MESSAGE: Record<UsageContact['approval_status'], string | null> = {
-  pending: '施設で確認中です',
-  approved: '施設が承認しました',
-  rejected: 'この日は受け入れができませんでした。施設にお問い合わせください',
+/**
+ * 送った連絡が施設でどう扱われているかを伝える文言。
+ *
+ * お休みの連絡は承認の対象外で approval_status が pending のまま変わらないため、
+ * 承認状態ではなく「予定へ反映されたか（applied_at）」で判断する。
+ * ここを承認状態だけで見ていると、反映済みでも「確認中」と出続けてしまう。
+ */
+function statusMessage(c: UsageContact): { text: string; tone: 'ok' | 'ng' | 'wait' } {
+  if (c.status === 'absent') {
+    return c.applied_at
+      ? { text: '施設がお休みとして登録しました', tone: 'ok' }
+      : { text: 'お休みの連絡を送信しました。施設で確認中です', tone: 'wait' }
+  }
+  if (c.approval_status === 'approved') {
+    return { text: '施設が承認しました', tone: 'ok' }
+  }
+  if (c.approval_status === 'rejected') {
+    return { text: 'この日は受け入れができませんでした。施設にお問い合わせください', tone: 'ng' }
+  }
+  return { text: '施設で確認中です', tone: 'wait' }
 }
 
 function toDateStr(y: number, m: number, d: number): string {
@@ -488,12 +506,18 @@ export function UsageContactCalendar({
                   <div key={child.id} className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
                     <p className="font-semibold text-gray-900 mb-3">{child.name}</p>
 
-                    {/* 施設側の状況。すでに予定がある日に重ねて連絡しなくて済むようにする */}
+                    {/* 施設側の状況。すでに予定がある日に重ねて連絡しなくて済むようにする。
+                        まだ反映されていない連絡を送っている日は「連絡は不要」と言わない
+                        （お休みを伝えた直後にそう出ると、伝わっていないように見えるため） */}
                     {sched && (
                       <div className="mb-3 flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2">
                         <span className={`mt-1 w-2 h-2 shrink-0 rounded-[2px] ${SCHEDULE_META[sched.kind].box}`} />
                         <p className="text-xs text-blue-800">
-                          {sched.kind === 'planned' && 'この日はすでに利用予定が入っています。変更がなければ連絡は不要です'}
+                          {sched.kind === 'planned' && (
+                            sent && !sent.applied_at
+                              ? '施設の予定では、この日は利用することになっています'
+                              : 'この日はすでに利用予定が入っています。変更がなければ連絡は不要です'
+                          )}
                           {sched.kind === 'attended' && 'この日はご利用済みです'}
                           {sched.kind === 'absent' && 'この日はお休みとして登録されています'}
                         </p>
@@ -501,17 +525,20 @@ export function UsageContactCalendar({
                     )}
 
                     {/* 送信済みの連絡が、施設でどう扱われているか */}
-                    {sent && APPROVAL_MESSAGE[sent.approval_status] && (
-                      <p
-                        className={`mb-3 text-xs ${
-                          sent.approval_status === 'approved' ? 'text-emerald-600'
-                          : sent.approval_status === 'rejected' ? 'text-red-600'
-                          : 'text-gray-500'
-                        }`}
-                      >
-                        {APPROVAL_MESSAGE[sent.approval_status]}
-                      </p>
-                    )}
+                    {sent && (() => {
+                      const { text, tone } = statusMessage(sent)
+                      return (
+                        <p
+                          className={`mb-3 text-xs ${
+                            tone === 'ok' ? 'text-emerald-600'
+                            : tone === 'ng' ? 'text-red-600'
+                            : 'text-gray-500'
+                          }`}
+                        >
+                          {text}
+                        </p>
+                      )
+                    })()}
 
                     <div className="grid grid-cols-3 gap-2 mb-3">
                       {(['regular', 'daytime_support', 'absent'] as Choice[]).map((choice) => (

@@ -11,7 +11,12 @@
  */
 import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
-import { loadFacilitySchedule } from '../src/lib/parent-usage-contact'
+import { loadFacilitySchedule, saveUsageContacts } from '../src/lib/parent-usage-contact'
+import {
+  applyParentContact,
+  PARENT_CONTACT_COLUMNS,
+  type ParentContact,
+} from '../src/lib/parent-contact-schedule'
 
 function loadEnv(path: string) {
   for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
@@ -53,6 +58,19 @@ function check(label: string, ok: boolean | undefined, detail?: unknown) {
   }
 }
 
+/** 連絡の現在値を読む（画面の文言は applied_at と approval_status で決まる） */
+type ContactRow = ParentContact & { approval_status: 'pending' | 'approved' | 'rejected' }
+
+async function readContact(childId: string, date: string): Promise<ContactRow | null> {
+  const { data } = await admin
+    .from('parent_attendance_contacts')
+    .select(PARENT_CONTACT_COLUMNS + ', approval_status')
+    .eq('child_id', childId)
+    .eq('date', date)
+    .maybeSingle()
+  return (data as unknown as ContactRow) ?? null
+}
+
 async function cleanup() {
   const { data: child } = await admin
     .from('children')
@@ -61,6 +79,7 @@ async function cleanup() {
     .maybeSingle()
   const childId = (child as { id: string } | null)?.id
   if (childId) {
+    await admin.from('parent_attendance_contacts').delete().eq('child_id', childId)
     await admin.from('daily_attendance').delete().eq('child_id', childId)
     await admin.from('usage_reservations').delete().eq('child_id', childId)
     await admin.from('usage_plans').delete().eq('child_id', childId)
@@ -189,6 +208,57 @@ async function main() {
       (after as { status: string } | null)?.status === 'confirmed',
       { writeError: writeError?.message, status: (after as { status: string } | null)?.status }
     )
+
+    // ── 予定がある日にお休みを連絡したとき、保護者に何が見えるか ──
+    // お休みの連絡は承認の対象外なので approval_status は pending のまま変わらない。
+    // 「反映されたか」は applied_at で判断しないと、受理済みでも
+    // 「確認中」と表示され続けてしまう（画面の文言はこの2つで決まる）
+    console.log('\n予定がある日にお休みを連絡する')
+    const ABSENT_DATE = '2027-05-18' // 火曜（利用計画のある日）
+    {
+      const saved = await saveUsageContacts(admin, ABSENT_DATE, [
+        {
+          childId,
+          status: 'absent',
+          serviceStartTime: null,
+          serviceEndTime: null,
+          transportType: 'none',
+          pickupTime: null,
+          dropoffTime: null,
+          note: '検証スクリプト',
+        },
+      ])
+      check('お休みの連絡を保存できる', !saved.error, saved.error)
+
+      const before = await readContact(childId, ABSENT_DATE)
+      check('反映前は applied_at が空（＝確認中と表示される）', before?.applied_at === null, before?.applied_at)
+      check('お休みは承認待ちのまま', before?.approval_status === 'pending', before?.approval_status)
+
+      const beforeSchedule = await loadFacilitySchedule(parent, [childId], YEAR, MONTH)
+      check(
+        '反映前は施設の予定が「利用予定」のまま',
+        beforeSchedule.find((s) => s.date === ABSENT_DATE)?.kind === 'planned',
+        beforeSchedule.find((s) => s.date === ABSENT_DATE)?.kind
+      )
+
+      // スタッフが「お休みとして反映」を押した状態
+      const applied = await applyParentContact(admin, before!, staffId)
+      check('欠席として反映できる', !applied.error, applied.error)
+
+      const after = await readContact(childId, ABSENT_DATE)
+      check(
+        '反映後は applied_at が入る（＝お休みとして登録しましたと表示される）',
+        after?.applied_at !== null,
+        after?.applied_at
+      )
+
+      const afterSchedule = await loadFacilitySchedule(parent, [childId], YEAR, MONTH)
+      check(
+        '保護者にも「欠席」として見える',
+        afterSchedule.find((s) => s.date === ABSENT_DATE)?.kind === 'absent',
+        afterSchedule.find((s) => s.date === ABSENT_DATE)?.kind
+      )
+    }
 
     await parent.auth.signOut()
   } finally {
