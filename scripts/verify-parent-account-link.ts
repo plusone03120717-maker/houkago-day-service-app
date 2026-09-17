@@ -14,6 +14,7 @@ import {
   linkGuardianToPortalAccount,
   linkPortalAccountToGuardians,
   linkChildrenToPortalAccount,
+  ensurePortalAccountForGuardian,
 } from '../src/lib/parent-account-link'
 
 function loadEnv(path: string) {
@@ -220,6 +221,38 @@ async function main() {
       const linked = await linkGuardianToPortalAccount(supabase, guardianId)
       check('null を返す', linked === null, linked)
       check('guardians.user_id は null のまま', (await guardianUserId(guardianId)) === null)
+    }
+
+    // ── 6. ポータルアカウントが無ければその場で作る ──
+    // これが無いと、この機能より前にLINE登録を済ませた保護者が
+    // どこからも入れなくなる（実際にその状態になった）
+    console.log('\n6. ポータルアカウントが無いLINE保護者に、その場で用意する')
+    {
+      const createdId = await ensurePortalAccountForGuardian(supabase, guardianId, 'LINE表示名')
+      check('アカウントが作られる', createdId !== null, createdId)
+      check('guardians.user_id が張られる', (await guardianUserId(guardianId)) === createdId)
+
+      const ids = await childIdsOf(createdId!)
+      check('LINEで見ている児童が全員紐付く', ids.length === 2, ids)
+
+      const { data: userRow } = await supabase
+        .from('users')
+        .select('name, email, role')
+        .eq('id', createdId!)
+        .maybeSingle()
+      const user = userRow as { name: string; email: string; role: string } | null
+      check('保護者ロールで作られる', user?.role === 'parent', user?.role)
+      check('LINEの表示名が名前になる', user?.name === 'LINE表示名', user?.name)
+      check('ログインコードのメールになる', user?.email?.endsWith('@parent.local'), user?.email)
+
+      // もう一度呼んでも増やさない
+      const again = await ensurePortalAccountForGuardian(supabase, guardianId, 'LINE表示名')
+      check('2回目は同じアカウントを返す', again === createdId, { createdId, again })
+
+      // 後片付け（この分は cleanupAll のメール条件に載らないのでここで消す）
+      await supabase.from('parent_children').delete().eq('user_id', createdId!)
+      await supabase.from('users').delete().eq('id', createdId!)
+      await supabase.auth.admin.deleteUser(createdId!).catch(() => {})
     }
   } finally {
     console.log('\n後片付け中...')

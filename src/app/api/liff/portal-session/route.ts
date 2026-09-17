@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
-import { linkGuardianToPortalAccount } from '@/lib/parent-account-link'
+import { ensurePortalAccountForGuardian } from '@/lib/parent-account-link'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,7 +22,10 @@ const adminClient = createClient(
  */
 export async function POST(req: NextRequest) {
   try {
-    const { accessToken } = await req.json() as { accessToken?: string }
+    const { accessToken, displayName } = await req.json() as {
+      accessToken?: string
+      displayName?: string
+    }
     if (!accessToken) {
       return NextResponse.json({ error: 'accessToken が必要です' }, { status: 400 })
     }
@@ -40,8 +43,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ available: false, reason: 'notRegistered' })
     }
 
-    // まだ結び付いていなければ、この場で探して結び付ける
-    const userId = guardian.user_id ?? (await linkGuardianToPortalAccount(adminClient, guardian.id))
+    // ポータルのアカウントをここでも必ず用意する。
+    // 登録コードを使うときだけ作る作りにしていたため、この機能より前に
+    // LINE登録を済ませていた保護者がどこからも入れなくなっていた。
+    const userId =
+      guardian.user_id ??
+      (await ensurePortalAccountForGuardian(adminClient, guardian.id, displayName))
     if (!userId) {
       return NextResponse.json({ available: false, reason: 'noPortalAccount' })
     }

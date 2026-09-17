@@ -13,7 +13,10 @@ type Outcome = { status: Status | 'done'; message?: string }
  * LINEのアクセストークンをポータルのセッションに換える。
  * 画面の状態は一切触らず、結果だけを返す。
  */
-async function resolveOutcome(accessToken: string | null): Promise<Outcome> {
+async function resolveOutcome(
+  accessToken: string | null,
+  displayName?: string
+): Promise<Outcome> {
   if (!accessToken) {
     return {
       status: 'error',
@@ -25,7 +28,8 @@ async function resolveOutcome(accessToken: string | null): Promise<Outcome> {
     const res = await fetch('/api/liff/portal-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accessToken }),
+      // 表示名は、ポータルのアカウントを自動で用意するときの名前に使う
+      body: JSON.stringify({ accessToken, displayName }),
     })
     const json = await res.json() as {
       available?: boolean
@@ -74,7 +78,7 @@ export default function LiffPortalPage() {
     if (liffState.status !== 'ready') return
     const accessToken = liffState.liff.getAccessToken()
 
-    resolveOutcome(accessToken).then((outcome) => {
+    resolveOutcome(accessToken, liffState.displayName).then((outcome) => {
       if (outcome.status === 'done') {
         window.location.replace('/parent')
         return
