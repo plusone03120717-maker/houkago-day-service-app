@@ -93,7 +93,7 @@ const children: ChildBillingInput[] = [
 ]
 
 const result = buildKokuhorenCsv(
-  { facilityNumber: '1310000001', regionCode: '23', unitPrice: 11.2 },
+  { facilityNumber: '1310000001', regionCode: '20', unitPrice: 11.2 },
   '202607',
   children,
 )
@@ -226,8 +226,8 @@ if (unquote(taroBasic[7]) !== 'ｹﾝｼｮｳﾀﾛｳ' || unquote(taroBasic[8]
 } else {
   pass.push('保護者カナ・障害児カナが半角カナ（空白詰め）')
 }
-if (taroBasic[9] !== '23') fail.push(`地域区分が ${taroBasic[9]}（期待値 23 = その他）`)
-else pass.push('地域区分 = 23（その他）')
+if (taroBasic[9] !== '20') fail.push(`地域区分が ${taroBasic[9]}（期待値 20 = その他）`)
+else pass.push('地域区分 = 20（その他）')
 
 // 開始年月日は当月1日ではなく初回利用日
 const days02 = rec('K122', '02')

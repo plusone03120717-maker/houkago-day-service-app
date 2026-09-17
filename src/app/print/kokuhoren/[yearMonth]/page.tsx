@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic'
 
 const REGION_LABEL: Record<string, string> = {
   '01': '一級地', '02': '二級地', '03': '三級地', '04': '四級地',
-  '05': '五級地', '06': '六級地', '07': '七級地', '23': 'その他',
+  '05': '五級地', '06': '六級地', '07': '七級地', '20': 'その他',
 }
 
 export default async function KokuhorenPrintPage({
