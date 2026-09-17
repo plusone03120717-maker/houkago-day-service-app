@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 /**
- * 保護者の利用連絡（LINE）を、実際の予定へ反映する。
+ * 保護者ポータルからの利用連絡を、実際の予定へ反映する。
  *
  * 利用連絡は parent_attendance_contacts に溜まるだけで、出席管理・利用状況・送迎・請求が
  * 見ているのは usage_reservations / usage_plans / daily_attendance の3つ（src/lib/usage-roster.ts）。

@@ -257,7 +257,7 @@ export default async function ChildSchedulePage({
       .from('transport_vehicles')
       .select('id, name')
       .order('name'),
-    // LINEの利用連絡（保護者からの申告）
+    // 保護者ポータルからの利用連絡（保護者の申告）
     supabase
       .from('parent_attendance_contacts')
       .select('date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, approval_status')

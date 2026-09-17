@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getSessionUserId } from '@/lib/auth'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { BookOpen, ChevronRight, ClipboardList, MessageSquare, Receipt } from 'lucide-react'
+import { BookOpen, CalendarCheck, ClipboardList, MessageSquare, Receipt } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 type Child = {
@@ -19,14 +19,6 @@ type Announcement = {
   published_at: string
 }
 
-type ContactNote = {
-  id: string
-  date: string
-  content: string
-  published_at: string
-  children: { name: string } | null
-}
-
 export default async function ParentHomePage() {
   const supabase = await createClient()
   const userId = await getSessionUserId()
@@ -39,14 +31,9 @@ export default async function ParentHomePage() {
     .eq('user_id', userId)
   const children = (parentChildrenRaw ?? []).map((pc) => pc.children as unknown as Child).filter(Boolean)
 
-  const childIds = children.map((c) => c.id)
-
-  // お知らせ・連絡帳・未読数は互いに独立しているため並列取得
-  const [
-    { data: announcementsRaw },
-    { data: contactNotesRaw },
-    { count: unreadCount },
-  ] = await Promise.all([
+  // お知らせと未読数は互いに独立しているため並列取得。
+  // 連絡帳は準備中のあいだ画面に出さないので取りにいかない。
+  const [{ data: announcementsRaw }, { count: unreadCount }] = await Promise.all([
     // 最新のお知らせ（3件）
     supabase
       .from('announcements')
@@ -55,16 +42,6 @@ export default async function ParentHomePage() {
       .lte('published_at', new Date().toISOString())
       .order('published_at', { ascending: false })
       .limit(3),
-    // 未読の連絡帳
-    childIds.length > 0
-      ? supabase
-          .from('contact_notes')
-          .select('id, date, content, published_at, children(name)')
-          .in('child_id', childIds)
-          .not('published_at', 'is', null)
-          .order('date', { ascending: false })
-          .limit(3)
-      : Promise.resolve({ data: [] }),
     // メッセージ未読数
     supabase
       .from('messages')
@@ -73,7 +50,6 @@ export default async function ParentHomePage() {
       .is('read_at', null),
   ])
   const announcements = (announcementsRaw ?? []) as unknown as Announcement[]
-  const contactNotes = (contactNotesRaw ?? []) as unknown as ContactNote[]
 
   return (
     <div className="space-y-5 pb-20 sm:pb-5">
@@ -107,14 +83,14 @@ export default async function ParentHomePage() {
 
       {/* クイックアクション */}
       <div className="grid grid-cols-2 gap-3">
-        <Link href="/parent/contact-notes">
+        <Link href="/parent/usage-contacts">
           <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
             <div className="p-2 bg-green-100 rounded-lg">
-              <BookOpen className="h-5 w-5 text-green-600" />
+              <CalendarCheck className="h-5 w-5 text-green-600" />
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-900">連絡帳</p>
-              <p className="text-xs text-gray-400">今日の様子を確認</p>
+              <p className="text-sm font-medium text-gray-900">利用連絡</p>
+              <p className="text-xs text-gray-400">利用・お休みの連絡</p>
             </div>
           </div>
         </Link>
@@ -145,50 +121,37 @@ export default async function ParentHomePage() {
             )}
           </div>
         </Link>
-        <Link href="/parent/invoices">
-          <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <Receipt className="h-5 w-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">請求書</p>
-              <p className="text-xs text-gray-400">月次請求の確認</p>
-            </div>
-          </div>
-        </Link>
       </div>
 
-      {/* 最新連絡帳 */}
-      {contactNotes.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-900">最新の連絡帳</h2>
-            <Link href="/parent/contact-notes" className="text-xs text-indigo-600">すべて見る</Link>
+      {/* 準備中の機能。隠さずに並べて、今後使えるようになることを伝える */}
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          { icon: BookOpen, label: '連絡帳', desc: '今日の様子を確認' },
+          { icon: Receipt, label: '明細', desc: '月次請求の確認' },
+        ].map(({ icon: Icon, label, desc }) => (
+          <div
+            key={label}
+            aria-disabled="true"
+            className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center gap-3"
+          >
+            <div className="p-2 bg-gray-100 rounded-lg">
+              <Icon className="h-5 w-5 text-gray-400" />
+            </div>
+            <div>
+              <p className="flex items-center gap-1.5 text-sm font-medium text-gray-400">
+                {label}
+                <span className="text-[10px] rounded-full bg-gray-200 px-1.5 py-0.5 text-gray-500">
+                  準備中
+                </span>
+              </p>
+              <p className="text-xs text-gray-300">{desc}</p>
+            </div>
           </div>
-          <div className="space-y-2">
-            {contactNotes.map((note) => (
-              <Link key={note.id} href={`/parent/contact-notes/${note.id}`}>
-                <Card className="hover:shadow-sm transition-shadow">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-indigo-600">
-                        {formatDate(note.date, 'MM月dd日')}
-                      </span>
-                      {note.children && (
-                        <span className="text-xs text-gray-400">{note.children.name}</span>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-700 line-clamp-2">{note.content}</p>
-                    <div className="flex justify-end mt-2">
-                      <ChevronRight className="h-4 w-4 text-gray-300" />
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
+        ))}
+      </div>
+
+      {/* 最新の連絡帳は、連絡帳が準備中のあいだは出さない。
+          画面ごとは残してあるので、公開するときはここを戻すだけでよい。 */}
 
       {/* お知らせ */}
       {announcements.length > 0 && (

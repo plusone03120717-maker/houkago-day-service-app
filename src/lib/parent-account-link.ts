@@ -100,6 +100,74 @@ export async function linkGuardianToPortalAccount(
   return userId
 }
 
+/** 読みやすい6文字の英数字コード（O/0, I/1/l は除外）。メールアドレス代わりに使う */
+function generateLoginCode(): string {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+  let code = ''
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)]
+  return code
+}
+
+/**
+ * LINE保護者に、必ず保護者ポータルのアカウントを用意する。
+ *
+ * 保護者の入口はポータルに一本化したので、LINEで登録した保護者にポータルの
+ * アカウントが無いと、どこからも利用連絡ができなくなってしまう。
+ * 既存のアカウントが見つかればそれを使い、無ければその場で作る。
+ *
+ * ここで作るアカウントのパスワードはランダムで、保護者には知らせない。
+ * 保護者はLINEから入るのでパスワードは要らず、必要になったらスタッフが
+ * 児童詳細の「保護者アカウント登録」で設定し直せる。
+ *
+ * @returns ポータルアカウントのID。作れなかったときは null
+ */
+export async function ensurePortalAccountForGuardian(
+  supabase: Client,
+  guardianId: string,
+  displayName?: string | null
+): Promise<string | null> {
+  const linked = await linkGuardianToPortalAccount(supabase, guardianId)
+  if (linked) return linked
+
+  const childIds = await guardianChildIds(supabase, guardianId)
+  if (childIds.length === 0) return null
+
+  // ログインコードが衝突したら作り直す
+  let email = ''
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const candidate = `${generateLoginCode()}@parent.local`
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', candidate)
+      .maybeSingle()
+    if (!existing) {
+      email = candidate
+      break
+    }
+  }
+  if (!email) return null
+
+  const name = displayName?.trim() || '保護者'
+  const { data, error } = await supabase.auth.admin.createUser({
+    email,
+    // 保護者には知らせない。ログインはLINE経由で行う
+    password: crypto.randomUUID() + crypto.randomUUID(),
+    email_confirm: true,
+    user_metadata: { name, role: 'parent' },
+  })
+  if (error || !data?.user) {
+    console.error('[parent-account-link] ポータルアカウントの自動作成に失敗', error)
+    return null
+  }
+
+  const userId = data.user.id
+  await supabase.from('users').upsert({ id: userId, name, email, role: 'parent' })
+  await supabase.from('guardians').update({ user_id: userId }).eq('id', guardianId)
+  await linkChildrenToPortalAccount(supabase, userId, childIds)
+  return userId
+}
+
 /**
  * ポータルアカウント側から、対応するLINE保護者を探して結び付ける。
  * 児童詳細ページで保護者アカウントを作ったとき、その児童がすでに

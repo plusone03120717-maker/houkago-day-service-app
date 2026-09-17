@@ -15,6 +15,7 @@ import {
   PARENT_CONTACT_COLUMNS,
   type ParentContact,
 } from '../src/lib/parent-contact-schedule'
+import { validateUsageContact, saveUsageContacts } from '../src/lib/parent-usage-contact'
 
 function loadEnv(path: string) {
   for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
@@ -385,6 +386,59 @@ async function main() {
       const result = await applyParentContact(supabase, contact, staff.id)
       check('理由つきで反映を見送る', !!result.error, result.error)
       check('欠席記録は作らない', (await getAttendance(child.id, d)) === null)
+    }
+    // ── 10. 保護者ポータルからの送信 → 承認まで通しで ──
+    console.log('\n10. 保護者ポータルから送信した連絡を承認する')
+    {
+      const d = dates[0]
+      await cleanupDate(child.id, d)
+
+      const entries = [
+        {
+          childId: child.id,
+          status: 'attending' as const,
+          serviceType: 'regular' as const,
+          serviceStartTime: '10:00',
+          serviceEndTime: '16:00',
+          transportType: 'pickup_only' as const,
+          pickupTime: '09:30',
+          dropoffTime: null,
+          note: '検証スクリプトが作成',
+        },
+      ]
+
+      check('入力チェックを通る', validateUsageContact(d, entries) === null, validateUsageContact(d, entries))
+      check(
+        '過去日は弾かれる',
+        validateUsageContact('2020-01-01', entries) !== null
+      )
+      check(
+        '開始より前の終了時刻は弾かれる',
+        validateUsageContact(d, [{ ...entries[0], serviceStartTime: '16:00', serviceEndTime: '10:00' }]) !== null
+      )
+
+      const saved = await saveUsageContacts(supabase, d, entries)
+      check('ポータルからの連絡を保存できる', !saved.error, saved.error)
+
+      const { data: stored } = await supabase
+        .from('parent_attendance_contacts')
+        .select(PARENT_CONTACT_COLUMNS + ', reported_via, is_new, approval_status')
+        .eq('child_id', child.id)
+        .eq('date', d)
+        .single()
+      const contact = stored as unknown as ParentContact & {
+        reported_via: string
+        is_new: boolean
+        approval_status: string
+      }
+      check('ポータル経由として記録される', contact.reported_via === 'portal', contact.reported_via)
+      check('未確認・未承認で入る', contact.is_new && contact.approval_status === 'pending')
+
+      const result = await applyParentContact(supabase, contact, staff.id)
+      check('承認して予定に反映できる', !result.error, result.error)
+      const res = await getReservation(child.id, d)
+      check('送迎希望が予定に入る', res?.transport_type === 'pickup_only', res?.transport_type)
+      check('迎え希望時刻が予定に入る', res?.pickup_time?.startsWith('09:30'), res?.pickup_time)
     }
   } finally {
     // ── 後片付け ──

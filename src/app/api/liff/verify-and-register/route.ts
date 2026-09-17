@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
-import { linkGuardianToPortalAccount } from '@/lib/parent-account-link'
+import { ensurePortalAccountForGuardian } from '@/lib/parent-account-link'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,7 +10,11 @@ const adminClient = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { accessToken, code } = await req.json() as { accessToken?: string; code?: string }
+    const { accessToken, code, displayName } = await req.json() as {
+      accessToken?: string
+      code?: string
+      displayName?: string
+    }
     if (!accessToken || !code) {
       return NextResponse.json({ error: 'accessToken と code が必要です' }, { status: 400 })
     }
@@ -60,11 +64,16 @@ export async function POST(req: NextRequest) {
       .update({ used: true })
       .eq('code', code.trim().toUpperCase())
 
-    // この児童にすでに保護者ポータルのアカウントがあれば、同じ保護者として結び付ける。
-    // LINEで登録するだけで連絡帳・お知らせも見られるようにするため。
-    const portalUserId = await linkGuardianToPortalAccount(adminClient, guardian.id)
+    // 保護者ポータルのアカウントを必ず用意する。
+    // 保護者の入口はポータルに一本化しているので、アカウントが無いと
+    // LINEから入っても利用連絡ができなくなってしまう。
+    const portalUserId = await ensurePortalAccountForGuardian(
+      adminClient,
+      guardian.id,
+      displayName
+    )
 
-    return NextResponse.json({ ok: true, portalLinked: portalUserId !== null })
+    return NextResponse.json({ ok: true, portalReady: portalUserId !== null })
   } catch (err) {
     console.error('[liff/verify-and-register]', err)
     return NextResponse.json({ error: 'サーバーエラーが発生しました' }, { status: 500 })

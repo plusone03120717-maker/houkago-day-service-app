@@ -52,7 +52,7 @@ interface Props {
 
 const STATUS_LABELS: Record<string, string> = {
   confirmed: '確定',
-  reserved: '予約',
+  reserved: '承認待ち',
   cancelled: 'キャンセル',
   cancel_waiting: 'キャンセル待ち',
   attended: '出席済み',
@@ -140,7 +140,7 @@ export function UsageCalendar({
   }
 
   const handleConfirmAll = async () => {
-    if (!confirm(`承認待ちの予約 ${pendingReservations.length}件をすべて確定しますか？`)) return
+    if (!confirm(`承認待ちの利用予定 ${pendingReservations.length}件をすべて確定しますか？`)) return
     setUpdating(true)
     await confirmAllReservations(pendingReservations.map((r) => r.reservationId!))
     setUpdating(false)
@@ -262,7 +262,7 @@ export function UsageCalendar({
     })
     if (error) {
       setAdding(false)
-      setAddError(error.code === '23505' ? 'この児童はすでにこの日に予約があります' : error.message)
+      setAddError(error.code === '23505' ? 'この児童はすでにこの日に利用予定があります' : error.message)
       return
     }
     // 一度削除・キャンセルした日を追加し直した場合、利用計画側のキャンセルを解除する
@@ -344,7 +344,7 @@ export function UsageCalendar({
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-yellow-600 shrink-0" />
               <span className="font-semibold text-yellow-800 text-sm">
-                承認待ち予約（{pendingReservations.length}件）
+                承認待ちの利用予定（{pendingReservations.length}件）
               </span>
             </div>
             <Button
@@ -531,7 +531,7 @@ export function UsageCalendar({
                         onClick={() => handleRestore(r.reservationId!)}
                         disabled={updating}
                         className="p-1 text-indigo-500 hover:bg-indigo-50 rounded"
-                        title="予約を復元"
+                        title="利用予定を復元"
                       >
                         <RotateCcw className="h-4 w-4" />
                       </button>
@@ -590,7 +590,7 @@ export function UsageCalendar({
             </Button>
           )}
 
-          {/* 施設側から予約追加 */}
+          {/* 施設側から利用予定を追加 */}
           {!showAddForm ? (
             <Button
               onClick={() => { setShowAddForm(true); setAddError(null) }}
@@ -599,11 +599,11 @@ export function UsageCalendar({
               className="border-indigo-300 text-indigo-700 hover:bg-indigo-50"
             >
               <Plus className="h-4 w-4" />
-              予約を追加
+              利用予定を追加
             </Button>
           ) : (
             <div className="border border-indigo-200 rounded-lg p-3 space-y-3 bg-indigo-50">
-              <p className="text-xs font-semibold text-indigo-700">施設側で予約を追加</p>
+              <p className="text-xs font-semibold text-indigo-700">施設側で利用予定を追加</p>
               {/* 「すべて」表示ではどのユニットに追加するかを選ぶ */}
               {isAllUnits && (
                 <div>
@@ -642,7 +642,7 @@ export function UsageCalendar({
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                 >
                   <option value="confirmed">確定</option>
-                  <option value="reserved">予約（承認待ち）</option>
+                  <option value="reserved">承認待ちにする</option>
                 </select>
               </div>
               {addError && (
@@ -701,7 +701,7 @@ export function UsageCalendar({
               </div>
 
               <ul className="mt-3 space-y-1 text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
-                <li>・この日の利用予定（予約）を削除します</li>
+                <li>・この日の利用予定を削除します</li>
                 <li>・出席／欠席の記録と、支援記録・活動記録も削除します</li>
                 <li>・毎週の利用計画がある場合も、この日だけ利用なしにします</li>
                 <li>・出席管理の「利用予定児童一覧」にも表示されなくなります</li>

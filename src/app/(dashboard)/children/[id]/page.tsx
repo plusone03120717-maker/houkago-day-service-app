@@ -107,7 +107,7 @@ export default async function ChildDetailPage({
       .select('id, start_date, facility_name')
       .eq('child_id', id)
       .order('start_date', { ascending: false }),
-    // LINEの利用連絡（今日以降の予定を新しい順に）
+    // 保護者ポータルからの利用連絡（今日以降の予定を新しい順に）
     supabase
       .from('parent_attendance_contacts')
       .select('id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, approval_status')
@@ -391,13 +391,13 @@ export default async function ChildDetailPage({
           </CardContent>
         </Card>
 
-        {/* 保護者からのLINE利用連絡 */}
+        {/* 保護者ポータルからの利用連絡 */}
         <Card className="md:col-span-2">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
                 <CalendarDays className="h-4 w-4 text-green-600" />
-                保護者からの利用連絡（LINE）
+                保護者からの利用連絡
               </CardTitle>
               <Link href={`/children/${id}/schedule`}>
                 <Button variant="outline" size="sm">

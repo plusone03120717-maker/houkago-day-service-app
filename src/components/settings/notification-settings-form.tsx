@@ -116,8 +116,8 @@ export function NotificationSettingsForm({ facilityId, initial }: Props) {
       {[
         {
           key: 'notify_reservation' as const,
-          label: '予約確認通知',
-          desc: '予約が承認・キャンセルされたとき保護者に通知',
+          label: '利用予定の確認通知',
+          desc: '利用予定が承認・キャンセルされたとき保護者に通知',
         },
         {
           key: 'notify_billing' as const,

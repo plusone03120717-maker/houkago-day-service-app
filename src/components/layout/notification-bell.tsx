@@ -80,7 +80,7 @@ export function NotificationBell({
             <p className="px-4 py-6 text-center text-sm text-gray-400">未確認のお知らせはありません</p>
           ) : (
             <div className="divide-y divide-gray-100">
-              {/* 保護者からの利用連絡 */}
+              {/* 保護者からの利用連絡（保護者ポータル） */}
               {parentCount > 0 && (
                 <Link
                   href="/parent-contacts"

@@ -10,7 +10,7 @@ function formatJapaneseDate(dateStr: string): string {
   return `${y}年${m}月${d}日（${days[dow]}）`
 }
 
-/** 予約を確定し、保護者ポータルのメッセージへ通知する */
+/** 利用予定を確定し、保護者ポータルのメッセージへ通知する */
 export async function confirmReservation(reservationId: string): Promise<{ error?: string }> {
   const supabase = await createClient()
 
@@ -52,7 +52,7 @@ export async function confirmReservation(reservationId: string): Promise<{ error
   const unitName = (reservation.units as unknown as { name: string } | null)?.name ?? ''
   const dateStr = formatJapaneseDate(reservation.date)
 
-  const content = `【予約確定のお知らせ】\n\n${childName}さんの利用予約が確定しました。\n\n📅 日付：${dateStr}\n🏫 ユニット：${unitName}\n\nご不明な点はメッセージにてお気軽にお問い合わせください。`
+  const content = `【利用予定確定のお知らせ】\n\n${childName}さんの利用予定が確定しました。\n\n📅 日付：${dateStr}\n🏫 ユニット：${unitName}\n\nご不明な点はメッセージにてお気軽にお問い合わせください。`
 
   // 各保護者へメッセージを送信
   await Promise.all(
@@ -70,7 +70,7 @@ export async function confirmReservation(reservationId: string): Promise<{ error
   return {}
 }
 
-/** 複数予約を一括確定し、各保護者へ通知する */
+/** 複数の利用予定を一括確定し、各保護者へ通知する */
 export async function confirmAllReservations(reservationIds: string[]): Promise<{ error?: string }> {
   if (reservationIds.length === 0) return {}
 
@@ -110,7 +110,7 @@ export async function confirmAllReservations(reservationIds: string[]): Promise<
       const childName = (reservation.children as unknown as { name: string } | null)?.name ?? ''
       const unitName = (reservation.units as unknown as { name: string } | null)?.name ?? ''
       const dateStr = formatJapaneseDate(reservation.date)
-      const content = `【予約確定のお知らせ】\n\n${childName}さんの利用予約が確定しました。\n\n📅 日付：${dateStr}\n🏫 ユニット：${unitName}\n\nご不明な点はメッセージにてお気軽にお問い合わせください。`
+      const content = `【利用予定確定のお知らせ】\n\n${childName}さんの利用予定が確定しました。\n\n📅 日付：${dateStr}\n🏫 ユニット：${unitName}\n\nご不明な点はメッセージにてお気軽にお問い合わせください。`
 
       await Promise.all(
         parentLinks.map((link) =>

@@ -57,7 +57,7 @@ function hasTransport(c: Contact) {
   return c.status === 'attending' && c.transport_type !== 'none'
 }
 
-/** 承認の対象は「利用（予約）」の連絡のみ。お休みは確認済み操作だけ行う */
+/** 承認の対象は「利用」の連絡のみ。お休みは確認済み操作だけ行う */
 function needsApproval(c: Contact) {
   return c.status === 'attending'
 }
@@ -137,7 +137,7 @@ function ContactCard({
               {TRANSPORT_LABELS[c.transport_type]}
             </span>
           )}
-          {/* 承認状態（利用予約のみ） */}
+          {/* 承認状態（利用の連絡のみ） */}
           {needsApproval(c) && approval !== 'pending' && (
             <span
               className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-bold ${
@@ -194,7 +194,7 @@ function ContactCard({
           })}{' '}
           受信
         </p>
-        {/* 利用予約：承認する / 承認しない。お休み：確認するのみ */}
+        {/* 利用の連絡：承認する / 承認しない。お休み：確認するのみ */}
         {needsApproval(c) ? (
           approval === 'pending' ? (
             <div className="flex items-center gap-1.5">
@@ -222,6 +222,9 @@ function ContactCard({
               取り消す
             </button>
           )
+        ) : applied ? (
+          // お休みは反映済みになったら押し直せないようにする（二重に記録しない）
+          <span className="text-xs text-gray-400">反映済み</span>
         ) : (
           <button
             onClick={() => onReviewed(c.id)}
@@ -248,17 +251,36 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
   const [warnings, setWarnings] = useState<string[]>([])
   const [reviewing, setReviewing] = useState(false)
 
+  // この画面で処理した連絡。サーバー側では未確認から外れるが、
+  // 「取り消す」を押せるようこの画面を開いているあいだは残しておく。
+  // （残さないと承認した瞬間にカードが消え、押し間違いを戻せなくなる）
+  const [handledContacts, setHandledContacts] = useState<Contact[]>([])
+
   const today = getTodayJST()
   const approvalOf = (c: Contact): ApprovalStatus => approvalOverrides[c.id] ?? c.approval_status
   const appliedOf = (c: Contact): boolean => appliedOverrides[c.id] ?? c.applied_at !== null
   // 承認待ちに戻した行は再び未処理として扱う
   const isPending = (c: Contact) =>
     approvalOverrides[c.id] === 'pending' || !handledIds.has(c.id)
-  const pending = unconfirmedContacts.filter(isPending)
 
-  // 未確認連絡を日付ごとにまとめる（元データが日付昇順なのでキー順も昇順になる）
+  const remember = (ids: string[]) => {
+    const targets = unconfirmedContacts.filter((c) => ids.includes(c.id))
+    setHandledContacts((prev) => [
+      ...prev,
+      ...targets.filter((t) => !prev.some((p) => p.id === t.id)),
+    ])
+  }
+
+  // 未確認の連絡＋この画面で処理したもの。日付順に並べ直す
+  const visible = [
+    ...unconfirmedContacts,
+    ...handledContacts.filter((h) => !unconfirmedContacts.some((u) => u.id === h.id)),
+  ].sort((a, b) => a.date.localeCompare(b.date))
+  const pending = visible.filter(isPending)
+
+  // 日付ごとにまとめる
   const pendingByDate = new Map<string, Contact[]>()
-  for (const c of pending) {
+  for (const c of visible) {
     const arr = pendingByDate.get(c.date) ?? []
     arr.push(c)
     pendingByDate.set(c.date, arr)
@@ -286,6 +308,7 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
       for (const r of json.results ?? []) next[r.id] = r.applied
       return next
     })
+    remember(ids)
     setHandledIds((prev) => new Set([...prev, ...ids]))
     setReviewing(false)
     startTransition(() => router.refresh())
@@ -304,6 +327,7 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
       ...prev,
       [id]: next === 'approved' && !json.warning,
     }))
+    remember([id])
     setApprovalOverrides((prev) => ({ ...prev, [id]: next }))
     setHandledIds((prev) => {
       const nextSet = new Set(prev)
@@ -315,7 +339,7 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
     startTransition(() => router.refresh())
   }
 
-  /** 「すべて承認・確認する」: お休みは確認済み、利用予約は承認としてまとめて処理する */
+  /** 「すべて承認・確認する」: お休みは確認済み、利用の連絡は承認としてまとめて処理する */
   async function reviewAll(list: Contact[]) {
     const absents = list.filter((c) => !needsApproval(c))
     const reservations = list.filter(needsApproval)
@@ -326,9 +350,9 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
   return (
     <div className="max-w-3xl mx-auto space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">保護者連絡一覧</h1>
+        <h1 className="text-xl font-bold text-gray-900">保護者からの利用連絡</h1>
         <p className="text-xs text-gray-500 mt-1">
-          承認した利用連絡はそのまま利用状況・出席管理の予定になります。
+          承認した利用連絡はそのまま利用状況・出席管理の利用予定になります。
           お休みの連絡は「お休みとして反映」でその日の欠席として記録されます。
         </p>
       </div>
@@ -371,6 +395,10 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
                 </span>
               )}
             </p>
+            {/* 処理した連絡もこの画面を閉じるまでは残す（取り消せるように） */}
+            {pending.length === 0 && visible.length > 0 && (
+              <span className="text-xs text-gray-400">すべて処理しました</span>
+            )}
           </div>
           {pending.length > 0 && (
             <button
@@ -383,7 +411,7 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
           )}
         </div>
 
-        {pending.length === 0 ? (
+        {visible.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-gray-400">
             未確認の連絡はありません
           </p>

@@ -295,7 +295,7 @@ export default async function DashboardPage() {
       href: '/attendance',
     },
     {
-      label: '承認待ち予約',
+      label: '承認待ちの利用予定',
       value: pendingCount,
       unit: '件',
       icon: Calendar,
@@ -400,8 +400,8 @@ export default async function DashboardPage() {
                 <div className="flex items-center gap-3">
                   <Calendar className="h-5 w-5 text-yellow-600" />
                   <div>
-                    <p className="font-medium text-yellow-800">承認待ちの予約があります</p>
-                    <p className="text-sm text-yellow-700">{pendingCount}件の予約が承認待ちです。利用予約管理から確認・承認してください。</p>
+                    <p className="font-medium text-yellow-800">承認待ちの利用予定があります</p>
+                    <p className="text-sm text-yellow-700">{pendingCount}件の利用予定が承認待ちです。利用状況から確認・承認してください。</p>
                   </div>
                 </div>
                 <ArrowRight className="h-4 w-4 text-yellow-600 flex-shrink-0" />
@@ -499,7 +499,7 @@ export default async function DashboardPage() {
                           ? '確定'
                           : res.status === 'plan'
                           ? '定期'
-                          : '予約済'}
+                          : '承認待ち'}
                       </Badge>
                     </div>
                   </div>
@@ -516,11 +516,11 @@ export default async function DashboardPage() {
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2 text-base text-yellow-700">
                   <Calendar className="h-4 w-4" />
-                  承認待ちの予約
+                  承認待ちの利用予定
                   <Badge variant="warning" className="ml-1">{pendingCount}件</Badge>
                 </CardTitle>
                 <Link href="/usage" className="text-xs text-indigo-600 hover:underline flex items-center gap-1">
-                  利用予約管理 <ArrowRight className="h-3 w-3" />
+                  利用状況 <ArrowRight className="h-3 w-3" />
                 </Link>
               </div>
             </CardHeader>

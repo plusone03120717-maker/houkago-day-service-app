@@ -54,7 +54,7 @@ export default async function NotificationsSettingsPage() {
       <Card>
         <CardContent className="p-4 text-sm text-gray-600">
           <p>
-            各通知は保護者のマイページアプリに表示されます。プッシュ通知は今後のアップデートで対応予定です。
+            各通知は保護者ポータルに表示されます。プッシュ通知は今後のアップデートで対応予定です。
           </p>
         </CardContent>
       </Card>

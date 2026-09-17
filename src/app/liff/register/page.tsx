@@ -13,7 +13,7 @@ export default function LiffRegisterPage() {
   // 登録済み判定が終わるまでフォームを出さない（登録済みなら利用連絡ページへ転送する）
   const [checking, setChecking] = useState(true)
 
-  // 登録済みかを確認し、済んでいれば利用連絡ページへ転送する。
+  // 登録済みかを確認し、済んでいれば保護者ポータルへ転送する。
   // ?add=1 が付いている場合は兄弟の追加登録なので転送しない。
   const checkRegistered = useCallback(async () => {
     if (liffState.status !== 'ready') return
@@ -31,7 +31,7 @@ export default function LiffRegisterPage() {
       })
       const json = await res.json() as { registered?: boolean }
       if (res.ok && json.registered) {
-        window.location.replace('/liff/attendance')
+        window.location.replace('/liff/portal')
         return
       }
     } catch {
@@ -58,7 +58,12 @@ export default function LiffRegisterPage() {
       const res = await fetch('/api/liff/verify-and-register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken, code: code.trim().toUpperCase() }),
+        // LINEの表示名は、ポータルアカウントを自動で用意するときの名前に使う
+        body: JSON.stringify({
+          accessToken,
+          code: code.trim().toUpperCase(),
+          displayName: liffState.displayName,
+        }),
       })
       const json = await res.json() as { error?: string }
       if (!res.ok) {
@@ -156,10 +161,10 @@ export default function LiffRegisterPage() {
       {result === 'success' && (
         <div className="mt-6 text-center">
           <a
-            href="/liff/attendance"
+            href="/liff/portal"
             className="text-sm text-indigo-600 font-medium underline"
           >
-            利用連絡ページへ進む →
+            保護者ポータルへ進む →
           </a>
         </div>
       )}

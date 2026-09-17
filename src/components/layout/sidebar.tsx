@@ -72,9 +72,9 @@ const adminNav = [
     ],
   },
   {
-    group: 'LINE連携',
+    group: '保護者ポータル',
     items: [
-      { href: '/parent-contacts', label: '保護者連絡一覧', icon: SmartphoneNfc },
+      { href: '/parent-contacts', label: '利用連絡', icon: SmartphoneNfc },
       { href: '/settings/registration-codes', label: '登録コード発行', icon: KeyRound },
     ],
   },
@@ -122,9 +122,9 @@ const staffNav = [
     ],
   },
   {
-    group: 'LINE連携',
+    group: '保護者ポータル',
     items: [
-      { href: '/parent-contacts', label: '保護者連絡一覧', icon: SmartphoneNfc },
+      { href: '/parent-contacts', label: '利用連絡', icon: SmartphoneNfc },
     ],
   },
   {

@@ -38,7 +38,7 @@ export type AttendanceRecord = {
   units: { name: string } | null
 }
 
-/** LINEの利用連絡（保護者からの申告）。読み取り専用で出席カレンダーに重ねて表示する。 */
+/** 保護者ポータルからの利用連絡（保護者の申告）。読み取り専用で出席カレンダーに重ねて表示する。 */
 export type ParentContact = {
   date: string
   status: 'attending' | 'absent'
@@ -585,7 +585,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
                 )}
               >
-                {/* 保護者からのLINE利用連絡（右上の四角マーカー） */}
+                {/* 保護者からの利用連絡（右上の四角マーカー） */}
                 {contact && (
                   <span
                     className={cn('absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-sm', parentContactMeta(contact).color)}
@@ -639,7 +639,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
         </div>
       </div>
 
-      {/* 保護者連絡（LINE）の凡例：マス目右上の四角マーカー */}
+      {/* 保護者からの利用連絡の凡例：マス目右上の四角マーカー */}
       <div className="flex gap-4 text-xs text-gray-500 flex-wrap items-center">
         <span className="text-gray-400">保護者連絡（右上の■）:</span>
         <div className="flex items-center gap-1.5">
@@ -831,7 +831,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
             )}
           </div>
 
-          {/* 保護者からのLINE利用連絡 */}
+          {/* 保護者からの利用連絡 */}
           {(() => {
             const contact = parentContactMap[selectedDate]
             if (!contact) return null
@@ -841,7 +841,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <span className={cn('w-2 h-2 rounded-sm shrink-0', meta.color)} />
-                    <span className="text-xs font-semibold text-gray-600">保護者からの連絡（LINE）</span>
+                    <span className="text-xs font-semibold text-gray-600">保護者からの利用連絡</span>
                   </div>
                   <span className="text-[10px] text-gray-400">
                     {new Date(contact.reported_at).toLocaleString('ja-JP', {
