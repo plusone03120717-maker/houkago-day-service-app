@@ -14,6 +14,7 @@ export type ServiceTriggerField =
   | 'daytime_dropoff'
   | 'absent'
   | 'extension'
+  | 'specialized_support'
   | 'manual'
 
 export type ServiceItemLike = {

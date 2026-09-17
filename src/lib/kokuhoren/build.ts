@@ -1,10 +1,14 @@
 // 国保連 障害児通所給付費 請求CSV（K112 請求書 / K122 明細書）のレコード生成。
 // レイアウトはインタフェース仕様書 サービス事業所編（令和7年4月版）2.1.3.1 / 2.1.3.2 に基づく。
 
-import { buildFile, num, dateCode, unitPriceCode, contractAmountCode, toShiftJis } from './format'
+import {
+  buildFile, num, dateCode, unitPriceCode, contractAmountCode, halfWidthKana, toShiftJis,
+} from './format'
 
 export type ChildBillingInput = {
   childName: string
+  /** 氏名カナ。明細書の保護者カナ・障害児カナに半角カナで出力する */
+  childNameKana: string | null
   certificateNumber: string
   /** 受給者証記載の市町村番号（チェックデジット含む6桁） */
   municipalityCode: string
@@ -26,8 +30,14 @@ export type ChildBillingInput = {
   contractStartDate: string | null
   contractEndDate: string | null
   contractLineNumber: number
-  /** 月内最初のサービス提供日 */
-  firstServiceDate: string | null
+  /**
+   * 当事業所を初めて利用した日（受給者証の service_start_date）。
+   * 未設定のときのフォールバック用に、出席実績の最古日も受け取る。
+   */
+  serviceStartDate: string | null
+  firstEverServiceDate: string | null
+  /** 無償化・軽減等で利用者負担が生じない児童。上限月額調整・決定利用者負担額を0にする */
+  copayExempt: boolean
   /** アプリ側で保存されている決定利用者負担額（円）。仕様計算値との差異検出用 */
   storedCopayAmount: number
   upperLimit: { officeNumber: string; result: string; resultAmount: number | null } | null
@@ -55,7 +65,7 @@ type ChildComputed = ChildBillingInput & {
   managedCopay: number | null
   decidedCopay: number
   benefitAmount: number
-  serviceStartDate: string
+  startDate: string
 }
 
 export function buildKokuhorenCsv(
@@ -107,30 +117,44 @@ export function buildKokuhorenCsv(
       errors.push(`${label}: 契約支給量（日数）が未設定です（受給者証編集画面で入力）`)
     }
 
-    // 開始年月日: 契約が当月より前から継続している場合は当月1日、
-    // 当月開始の場合は当月最初のサービス提供日（事業所編 2.1.3.2 (4)）
-    let serviceStartDate: string
-    if (c.contractStartDate && c.contractStartDate < monthFirstDay) {
-      serviceStartDate = monthFirstDay
-    } else if (c.firstServiceDate) {
-      serviceStartDate = c.firstServiceDate
+    // 開始年月日: 当事業所を初めて利用した日をそのまま出す。
+    // 当月1日でも受給者証の契約開始日でもない（取込成功済みの実データで確認）。
+    let startDate: string
+    if (c.serviceStartDate) {
+      startDate = c.serviceStartDate
+    } else if (c.firstEverServiceDate) {
+      startDate = c.firstEverServiceDate
+      warnings.push(
+        `${label}: サービス開始年月日が未設定のため、出席実績の最も古い日（${startDate}）を使いました（受給者証編集画面で入力してください）`,
+      )
     } else if (c.contractStartDate) {
-      serviceStartDate = c.contractStartDate
+      startDate = c.contractStartDate
+      warnings.push(
+        `${label}: サービス開始年月日が未設定のため、契約開始日（${startDate}）を使いました（受給者証編集画面で入力してください）`,
+      )
     } else {
-      serviceStartDate = monthFirstDay
-      warnings.push(`${label}: 契約開始日・提供日が特定できないため開始年月日を${monthFirstDay}としました`)
+      startDate = monthFirstDay
+      warnings.push(`${label}: サービス開始年月日が特定できないため開始年月日を${monthFirstDay}としました`)
     }
     if (!c.contractStartDate) {
-      warnings.push(`${label}: 契約開始日が未設定のため、契約情報レコードには開始年月日（${serviceStartDate}）を設定しました`)
+      warnings.push(`${label}: 契約開始日が未設定のため、契約情報レコードには開始年月日（${startDate}）を設定しました`)
     }
 
     // 仕様に基づく利用者負担額の算定（円未満切り捨て）
     const totalCost = Math.floor(c.totalUnits * facility.unitPrice)
     const tenPercent = Math.floor(totalCost / 10)
-    const capAdjusted = Math.min(c.copayLimit, tenPercent)
-    const managedCopay = c.upperLimit?.result === '3' && c.upperLimit.resultAmount != null
+    // 無償化・軽減対象は上限月額調整も0になる（実データで確認）
+    const capAdjusted = c.copayExempt ? 0 : Math.min(c.copayLimit, tenPercent)
+    // 上限額管理がある場合、決定利用者負担額は管理結果額そのもの。
+    // 管理結果1（管理事業所が充当）・2（上限以下）・3（超過調整）のいずれでも同じ扱い。
+    const managedCopay = c.upperLimit && c.upperLimit.resultAmount != null
       ? c.upperLimit.resultAmount
       : null
+    if (c.upperLimit && c.upperLimit.resultAmount == null) {
+      errors.push(
+        `${label}: 上限額管理事業所が設定されていますが、管理結果額が未入力です（請求明細画面で入力してください）`,
+      )
+    }
     const decidedCopay = managedCopay ?? capAdjusted
     const benefitAmount = totalCost - decidedCopay
 
@@ -161,7 +185,7 @@ export function buildKokuhorenCsv(
       }
     }
 
-    return { ...c, totalCost, tenPercent, capAdjusted, managedCopay, decidedCopay, benefitAmount, serviceStartDate }
+    return { ...c, totalCost, tenPercent, capAdjusted, managedCopay, decidedCopay, benefitAmount, startDate }
   })
 
   const fileName = `K112${serviceYearMonth.slice(2, 6)}.CSV`
@@ -196,24 +220,38 @@ export function buildKokuhorenCsv(
       num(count), num(sumUnits), num(sumCost), num(sumBenefit), // 小計（障害児給付費）
       '',                                               // 特別対策費請求額
       num(sumCopay),                                    // 小計 利用者負担額
-      '',                                               // 自治体助成額
-      '', '', '',                                       // 特定入所障害児食費等・高額
+      '0',                                              // 自治体助成額
+      '0', '0', '0',                                    // 特定入所障害児食費等・高額
       num(count), num(sumUnits), num(sumCost), num(sumBenefit), // 合計
-      '',                                               // 合計 特別対策費請求額
+      '0',                                              // 合計 特別対策費請求額
       num(sumCopay),                                    // 合計 利用者負担額
-      '',                                               // 合計 自治体助成額
+      '0',                                              // 合計 自治体助成額
     ])
 
-    // K112 請求書 明細情報レコード（レコード種別02）: 給付種別1・サービス種類63
-    rows.push([
-      'K112', '02', ym, muni, fac,
-      '1',
-      group[0].serviceCode.slice(0, 2),
-      num(count), num(sumUnits), num(sumCost), num(sumBenefit),
-      '',
-      num(sumCopay),
-      '',
-    ])
+    // K112 請求書 明細情報レコード（レコード種別02）: 給付種別1・サービス種類ごと。
+    // 同じ事業所番号で児童発達支援(61)と放課後等デイサービス(63)の両方を行う場合、
+    // 請求書は1枚のまま明細情報レコードだけサービス種類ごとに分かれる。
+    const byServiceKind = new Map<string, ChildComputed[]>()
+    for (const c of group) {
+      const kind = c.serviceCode.slice(0, 2)
+      const list = byServiceKind.get(kind) ?? []
+      list.push(c)
+      byServiceKind.set(kind, list)
+    }
+    for (const [kind, kindGroup] of [...byServiceKind].sort((a, b) => a[0].localeCompare(b[0]))) {
+      rows.push([
+        'K112', '02', ym, muni, fac,
+        '1',
+        kind,
+        num(kindGroup.length),
+        num(kindGroup.reduce((s, c) => s + c.totalUnits, 0)),
+        num(kindGroup.reduce((s, c) => s + c.totalCost, 0)),
+        num(kindGroup.reduce((s, c) => s + c.benefitAmount, 0)),
+        '0',                                            // 特別対策費請求額
+        num(kindGroup.reduce((s, c) => s + c.decidedCopay, 0)),
+        '0',                                            // 自治体助成額
+      ])
+    }
 
     for (const c of group) {
       const serviceKind = c.serviceCode.slice(0, 2)
@@ -222,7 +260,8 @@ export function buildKokuhorenCsv(
       rows.push([
         'K122', '01', ym, muni, fac, c.certificateNumber,
         '',                                             // 助成自治体番号
-        '', '',                                         // 保護者カナ・障害児カナ（任意）
+        halfWidthKana(c.childNameKana),                 // 給付決定保護者カナ
+        halfWidthKana(c.childNameKana),                 // 障害児カナ
         facility.regionCode,
         '',                                             // 就労継続支援A型減免（設定しない）
         num(c.copayLimit),                              // 利用者負担上限月額①
@@ -239,15 +278,16 @@ export function buildKokuhorenCsv(
         c.managedCopay != null ? num(c.managedCopay) : '', // 上限額管理後利用者負担額
         num(c.decidedCopay),                            // 決定利用者負担額
         num(c.benefitAmount),                           // 請求額 給付費
-        '', '', '',                                     // 高額・特別対策費・自治体助成分
-        '', '', '', '',                                 // 特定入所障害児食費等・実費算定額
+        '0', '0',                                       // 高額障害児通所給付費・特別対策費
+        '',                                             // 自治体助成分請求額
+        '0', '0', '0', '0',                             // 特定入所障害児食費等・実費算定額
       ])
 
       // K122 明細書 日数情報レコード（02）
       rows.push([
         'K122', '02', ym, muni, fac, c.certificateNumber,
         serviceKind,
-        dateCode(c.serviceStartDate),
+        dateCode(c.startDate),                          // 開始年月日（当事業所の初回利用日）
         '',                                             // 終了年月日（月末在籍中は省略）
         num(c.totalDays),
         '', '',                                         // 入院日数・外泊日数
@@ -291,8 +331,9 @@ export function buildKokuhorenCsv(
         c.managedCopay != null ? num(c.managedCopay) : '', // 上限額管理後利用者負担額
         num(c.decidedCopay),                            // 決定利用者負担額
         num(c.benefitAmount),                           // 請求額 給付費
-        '', '', '',                                     // 高額・特別対策費・自治体助成分
-        '', '', '', '',                                 // 特定入所障害児食費等・実費算定額
+        '0',                                            // 高額障害児通所給付費
+        '', '',                                         // 特別対策費・自治体助成分請求額
+        '0', '0', '0', '0',                             // 特定入所障害児食費等・実費算定額
         '', '', '', '',                                 // 利用日数管理票（設定しない）
       ])
 
@@ -301,7 +342,7 @@ export function buildKokuhorenCsv(
         'K122', '05', ym, muni, fac, c.certificateNumber,
         c.decisionServiceCode,
         contractAmountCode(c.contractDays),
-        dateCode(c.contractStartDate ?? c.serviceStartDate),
+        dateCode(c.contractStartDate ?? c.startDate),
         c.contractEndDate ? dateCode(c.contractEndDate) : '',
         num(c.contractLineNumber),
       ])

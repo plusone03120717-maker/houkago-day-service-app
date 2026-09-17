@@ -63,17 +63,73 @@ export function num(value: number): string {
   return String(Math.trunc(value))
 }
 
+/**
+ * 小数付き数値項目。整数部・小数部の桁数が決まっている項目は左側をゼロ埋めする。
+ * 前システムが取込成功した実データも同じ形（契約支給量 23日 → "02300"）。
+ */
+export function decimalCode(value: number, intDigits: number, decDigits: number): string {
+  const scaled = Math.round(value * 10 ** decDigits)
+  return String(scaled).padStart(intDigits + decDigits, '0')
+}
+
 /** YYYY-MM-DD → YYYYMMDD */
 export function dateCode(isoDate: string): string {
   return isoDate.replaceAll('-', '')
 }
 
-/** 単位数単価（円）→ 整数部2桁+小数部3桁の5桁表現（例: 10 → "10000", 11.2 → "11200"） */
-export function unitPriceCode(yen: number): string {
-  return String(Math.round(yen * 1000))
+/** 日（1〜31）→ 2桁ゼロ埋め（例: 1日 → "01"） */
+export function dayCode(isoDate: string): string {
+  return isoDate.slice(8, 10)
 }
 
-/** 契約支給量（日数）→ 整数部3桁+小数部2桁の5桁表現（例: 23日 → "2300"） */
+/** 単位数単価（円）→ 整数部2桁+小数部3桁の5桁表現（例: 10 → "10000", 11.2 → "11200"） */
+export function unitPriceCode(yen: number): string {
+  return decimalCode(yen, 2, 3)
+}
+
+/** 契約支給量（日数）→ 整数部3桁+小数部2桁の5桁表現（例: 23日 → "02300"） */
 export function contractAmountCode(days: number): string {
-  return String(Math.round(days * 100))
+  return decimalCode(days, 3, 2)
+}
+
+// 全角カナ → 半角カナ。濁点・半濁点は2文字に分解する。
+const KANA_PAIRS: Array<[string, string]> = [
+  ['ガ', 'ｶﾞ'], ['ギ', 'ｷﾞ'], ['グ', 'ｸﾞ'], ['ゲ', 'ｹﾞ'], ['ゴ', 'ｺﾞ'],
+  ['ザ', 'ｻﾞ'], ['ジ', 'ｼﾞ'], ['ズ', 'ｽﾞ'], ['ゼ', 'ｾﾞ'], ['ゾ', 'ｿﾞ'],
+  ['ダ', 'ﾀﾞ'], ['ヂ', 'ﾁﾞ'], ['ヅ', 'ﾂﾞ'], ['デ', 'ﾃﾞ'], ['ド', 'ﾄﾞ'],
+  ['バ', 'ﾊﾞ'], ['ビ', 'ﾋﾞ'], ['ブ', 'ﾌﾞ'], ['ベ', 'ﾍﾞ'], ['ボ', 'ﾎﾞ'],
+  ['パ', 'ﾊﾟ'], ['ピ', 'ﾋﾟ'], ['プ', 'ﾌﾟ'], ['ペ', 'ﾍﾟ'], ['ポ', 'ﾎﾟ'],
+  ['ヴ', 'ｳﾞ'],
+  ['ア', 'ｱ'], ['イ', 'ｲ'], ['ウ', 'ｳ'], ['エ', 'ｴ'], ['オ', 'ｵ'],
+  ['カ', 'ｶ'], ['キ', 'ｷ'], ['ク', 'ｸ'], ['ケ', 'ｹ'], ['コ', 'ｺ'],
+  ['サ', 'ｻ'], ['シ', 'ｼ'], ['ス', 'ｽ'], ['セ', 'ｾ'], ['ソ', 'ｿ'],
+  ['タ', 'ﾀ'], ['チ', 'ﾁ'], ['ツ', 'ﾂ'], ['テ', 'ﾃ'], ['ト', 'ﾄ'],
+  ['ナ', 'ﾅ'], ['ニ', 'ﾆ'], ['ヌ', 'ﾇ'], ['ネ', 'ﾈ'], ['ノ', 'ﾉ'],
+  ['ハ', 'ﾊ'], ['ヒ', 'ﾋ'], ['フ', 'ﾌ'], ['ヘ', 'ﾍ'], ['ホ', 'ﾎ'],
+  ['マ', 'ﾏ'], ['ミ', 'ﾐ'], ['ム', 'ﾑ'], ['メ', 'ﾒ'], ['モ', 'ﾓ'],
+  ['ヤ', 'ﾔ'], ['ユ', 'ﾕ'], ['ヨ', 'ﾖ'],
+  ['ラ', 'ﾗ'], ['リ', 'ﾘ'], ['ル', 'ﾙ'], ['レ', 'ﾚ'], ['ロ', 'ﾛ'],
+  ['ワ', 'ﾜ'], ['ヲ', 'ｦ'], ['ン', 'ﾝ'],
+  ['ァ', 'ｧ'], ['ィ', 'ｨ'], ['ゥ', 'ｩ'], ['ェ', 'ｪ'], ['ォ', 'ｫ'],
+  ['ャ', 'ｬ'], ['ュ', 'ｭ'], ['ョ', 'ｮ'], ['ッ', 'ｯ'],
+  ['ー', 'ｰ'], ['・', '･'], ['。', '｡'], ['、', '､'], ['「', '｢'], ['」', '｣'],
+]
+
+/**
+ * 氏名カナ項目用。ひらがな・全角カナを半角カナに直し、空白を詰める。
+ * 実データ（取込成功分）も姓名を続けて書いた半角カナだった。
+ */
+export function halfWidthKana(value: string | null | undefined): string {
+  if (!value) return ''
+  // ひらがな → 全角カタカナ
+  const katakana = value.replace(/[ぁ-ゖ]/g, (c) =>
+    String.fromCharCode(c.charCodeAt(0) + 0x60),
+  )
+  let out = ''
+  for (const ch of katakana) {
+    if (/\s|[　]/.test(ch)) continue
+    const hit = KANA_PAIRS.find(([full]) => full === ch)
+    out += hit ? hit[1] : ch
+  }
+  return out
 }

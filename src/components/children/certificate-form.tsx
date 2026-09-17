@@ -25,6 +25,8 @@ interface Props {
     contract_start_date?: string
     contract_end_date?: string
     contract_line_number?: number
+    service_start_date?: string
+    copay_exempt?: boolean
   }
 }
 
@@ -50,7 +52,9 @@ export function CertificateForm({ childId, initial }: Props) {
     contract_start_date: initial?.contract_start_date ?? '',
     contract_end_date: initial?.contract_end_date ?? '',
     contract_line_number: String(initial?.contract_line_number ?? 1),
+    service_start_date: initial?.service_start_date ?? '',
   })
+  const [copayExempt, setCopayExempt] = useState(initial?.copay_exempt ?? false)
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
@@ -80,6 +84,8 @@ export function CertificateForm({ childId, initial }: Props) {
       contract_start_date: form.contract_start_date || null,
       contract_end_date: form.contract_end_date || null,
       contract_line_number: parseInt(form.contract_line_number) || 1,
+      service_start_date: form.service_start_date || null,
+      copay_exempt: copayExempt,
     }
 
     if (initial?.id) {
@@ -170,6 +176,22 @@ export function CertificateForm({ childId, initial }: Props) {
         </div>
       </div>
 
+      <div>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={copayExempt}
+            onChange={(e) => setCopayExempt(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300"
+          />
+          無償化・軽減等で利用者負担が生じない
+        </label>
+        <p className="text-xs text-gray-400 mt-1">
+          チェックすると、国保連請求の上限月額調整と決定利用者負担額を0円で出力します
+          （負担上限月額は受給者証どおりのまま）
+        </p>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="text-xs font-medium text-gray-700 mb-1 block">負担上限月額の区分</label>
@@ -204,6 +226,19 @@ export function CertificateForm({ childId, initial }: Props) {
         <p className="text-xs text-gray-400 mb-3">
           受給者証の事業者記入欄の内容を入力してください。国保連請求CSVの契約情報レコードに使用されます。
         </p>
+        <div className="mb-4">
+          <label className="text-xs font-medium text-gray-700 mb-1 block">サービス開始年月日（当事業所の初回利用日）</label>
+          <input
+            type="date"
+            value={form.service_start_date}
+            onChange={set('service_start_date')}
+            className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm"
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            この事業所を初めて利用した日。明細書の「開始年月日」に毎月そのまま出力します。
+            契約開始日とは別の日付になることがあります。未入力の場合は出席実績の最も古い日を使います
+          </p>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="text-xs font-medium text-gray-700 mb-1 block">決定サービスコード</label>

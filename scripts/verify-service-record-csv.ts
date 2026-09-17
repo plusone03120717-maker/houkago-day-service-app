@@ -13,31 +13,37 @@ const children: ServiceRecordChild[] = [
     childName: '検証 太郎',
     certificateNumber: '1942330391',
     municipalityCode: '194233',
+    formTypeCode: '0501',
     days: [
       // 平日・4時間（延長1時間）・送迎往復あり
       {
         date: '2026-07-02', serviceFormType: 1, startTime: '13:00', endTime: '17:00',
         hours: 4, transportPickup: true, transportDropoff: true, absent: false, extensionLevel: 2,
+        specializedSupport: true,
       },
       // 休業日・6時間（延長1時間）・送迎往のみ
       {
         date: '2026-07-04', serviceFormType: 2, startTime: '10:00', endTime: '16:00',
         hours: 6, transportPickup: true, transportDropoff: false, absent: false, extensionLevel: 2,
+        specializedSupport: true,
       },
       // 平日・2時間・延長なし・送迎なし
       {
         date: '2026-07-07', serviceFormType: 1, startTime: '15:00', endTime: '17:00',
         hours: 2, transportPickup: false, transportDropoff: false, absent: false, extensionLevel: 0,
+        specializedSupport: false,
       },
       // 欠席（欠席時対応加算）
       {
         date: '2026-07-09', serviceFormType: 1, startTime: null, endTime: null,
         hours: 0, transportPickup: false, transportDropoff: false, absent: true, extensionLevel: 0,
+        specializedSupport: false,
       },
       // 平日・2.5時間（30分単位）
       {
         date: '2026-07-14', serviceFormType: 1, startTime: '14:00', endTime: '16:30',
         hours: 2.5, transportPickup: false, transportDropoff: true, absent: false, extensionLevel: 0,
+        specializedSupport: false,
       },
     ],
   },
@@ -45,17 +51,19 @@ const children: ServiceRecordChild[] = [
     childName: '検証 花子',
     certificateNumber: '1310160001',
     municipalityCode: '131016',
+    formTypeCode: '0501',
     days: [
       {
         date: '2026-07-03', serviceFormType: 1, startTime: '13:30', endTime: '17:30',
         hours: 4, transportPickup: true, transportDropoff: true, absent: false, extensionLevel: 2,
+        specializedSupport: true,
       },
     ],
   },
 ]
 
 const result = buildServiceRecordCsv(
-  { facilityNumber: '1310000001', formTypeCode: '0501' },
+  { facilityNumber: '1310000001' },
   '202607',
   children,
 )
@@ -129,10 +137,11 @@ else pass.push('様式種別番号 = 0501（放課後等デイサービス）')
 // 基本情報: 合計算定時間数計 = 各日の算定時間数の合計
 const taro = basics.find((f) => f[5] === '1942330391')!
 const taroHoursSum = 4 + 6 + 2 + 0 + 2.5 // = 14.5時間 → 1450
-if (taro[18] !== String(taroHoursSum * 100)) {
-  fail.push(`合計 算定時間数計が ${taro[18]}（期待値 ${taroHoursSum * 100}）`)
+const taroHoursCode = String(taroHoursSum * 100).padStart(5, '0') // 14.5時間 → 01450
+if (taro[18] !== taroHoursCode) {
+  fail.push(`合計 算定時間数計が ${taro[18]}（期待値 ${taroHoursCode}）`)
 } else {
-  pass.push(`合計 算定時間数計 = ${taro[18]}（${taroHoursSum}時間の整数部3桁＋小数部2桁表現）`)
+  pass.push(`合計 算定時間数計 = ${taro[18]}（${taroHoursSum}時間の整数部3桁＋小数部2桁ゼロ埋め）`)
 }
 // 送迎加算（回）は片道単位: 往2 + 復2 = 4
 if (taro[33] !== '4') fail.push(`実績 送迎加算（回）が ${taro[33]}（期待値 4・片道単位）`)
@@ -140,30 +149,45 @@ else pass.push('実績 送迎加算（回）= 4（片道単位の合計）')
 // 延長支援加算（回）: 2日
 if (taro[169] !== '2') fail.push(`延長支援加算（回）が ${taro[169]}（期待値 2）`)
 else pass.push('延長支援加算（回）= 2')
+// 専門的支援実施加算（回）: 太郎は2日に付与
+if (taro[160] !== '2') fail.push(`専門的支援実施加算（回）が ${taro[160]}（期待値 2）`)
+else pass.push('専門的支援実施加算（回）= 2')
+// 算定していない加算欄は空欄ではなく 0
+const zeroFields = [34, 35, 116, 120, 158, 161, 162, 166, 171]
+const notZero = zeroFields.filter((i) => taro[i] !== '0')
+if (notZero.length > 0) fail.push(`0を送るべき加算回数欄が空欄: 項目${notZero.map((i) => i + 1).join(', ')}`)
+else pass.push('算定していない加算回数欄は 0（空欄ではない）')
+// 45は児発のみ。放デイでは空欄
+if (taro[44] !== '') fail.push(`放課後等デイサービスで項目45が空欄でない: ${taro[44]}`)
+else pass.push('項目45は放課後等デイサービスでは空欄')
 
 // 明細情報: 提供形態・欠席・時刻・延長区分
 const taroDetails = details.filter((f) => f[5] === '1942330391')
-const d0702 = taroDetails.find((f) => f[8] === '2')!
+const d0702 = taroDetails.find((f) => f[8] === '02')!
 if (d0702[13] !== '1300' || d0702[14] !== '1700') fail.push('開始/終了時間が HHMM 形式で出力されていない')
 else pass.push('開始・終了時間が HHMM 形式（1300 / 1700）')
-if (d0702[15] !== '400') fail.push(`算定時間数が ${d0702[15]}（期待値 400 = 4.00時間）`)
-else pass.push('算定時間数 = 400（整数部2桁＋小数部2桁表現）')
+if (d0702[15] !== '0400') fail.push(`算定時間数が ${d0702[15]}（期待値 0400 = 4.00時間）`)
+else pass.push('算定時間数 = 0400（整数部2桁＋小数部2桁ゼロ埋め）')
 if (d0702[33] !== '1') fail.push(`平日の提供形態が ${d0702[33]}（期待値 1）`)
 else pass.push('提供形態 = 1（授業の終了後）')
 if (d0702[110] !== '2') fail.push(`延長支援加算の区分が ${d0702[110]}（期待値 2）`)
 else pass.push('延長支援加算 = 2（1時間以上2時間未満）')
 if (d0702[20] !== '1' || d0702[21] !== '1') fail.push('送迎加算 往/復 が設定されていない')
 else pass.push('送迎加算 往 = 1 / 復 = 1')
+if (d0702[100] !== '1') fail.push(`専門的支援加算（支援実施時）が ${d0702[100]}（期待値 1）`)
+else pass.push('専門的支援加算（支援実施時）= 1')
 
-const d0704 = taroDetails.find((f) => f[8] === '4')!
+const d0704 = taroDetails.find((f) => f[8] === '04')!
 if (d0704[33] !== '2') fail.push(`休業日の提供形態が ${d0704[33]}（期待値 2）`)
 else pass.push('休業日の提供形態 = 2')
 if (d0704[21] !== '') fail.push('送迎（復）がない日に復が設定されている')
 else pass.push('送迎がない日は空欄')
 
-const d0709 = taroDetails.find((f) => f[8] === '9')!
+const d0709 = taroDetails.find((f) => f[8] === '09')!
 if (d0709[35] !== '8') fail.push(`欠席日のサービス提供の状況が ${d0709[35]}（期待値 8）`)
 else pass.push('欠席日のサービス提供の状況 = 8（欠席時対応加算）')
+if (d0709[100] !== '') fail.push('欠席日に専門的支援加算が設定されている')
+else pass.push('欠席日には専門的支援加算を付けない')
 if (d0709[13] !== '' || d0709[14] !== '' || d0709[15] !== '' || d0709[33] !== '') {
   fail.push('欠席日に時刻・算定時間数・提供形態が設定されている')
 } else {
@@ -171,8 +195,8 @@ if (d0709[13] !== '' || d0709[14] !== '' || d0709[15] !== '' || d0709[33] !== ''
 }
 
 const d0714 = taroDetails.find((f) => f[8] === '14')!
-if (d0714[15] !== '250') fail.push(`2.5時間の算定時間数が ${d0714[15]}（期待値 250）`)
-else pass.push('2.5時間 → 250（30分単位の小数表現）')
+if (d0714[15] !== '0250') fail.push(`2.5時間の算定時間数が ${d0714[15]}（期待値 0250）`)
+else pass.push('2.5時間 → 0250（30分単位の小数表現）')
 
 console.log('=== 検証結果 ===')
 pass.forEach((p) => console.log('  ✓', p))

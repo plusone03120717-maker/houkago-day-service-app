@@ -43,6 +43,25 @@ export type ServiceDayRecord = {
   absent: boolean
   /** 延長支援加算の区分（0=なし 1=30分以上1時間未満 2=1時間以上2時間未満 3=2時間以上） */
   extensionLevel: 0 | 1 | 2 | 3
+  /** 専門的支援実施加算を算定する日 */
+  specializedSupport: boolean
+}
+
+/**
+ * 専門的支援実施加算の月あたり回数。日々の記録ではなく実利用日数から決まる。
+ * 児発  : 12日未満 → 4回 / 12日以上 → 6回
+ * 放デイ: 6日未満 → 2回 / 6〜11日 → 4回 / 12日以上 → 6回
+ * いずれも1日1回までなので、実利用日数を超えることはない。
+ */
+export function specializedSupportCount(
+  serviceType: string,
+  usedDays: number,
+): number {
+  if (usedDays <= 0) return 0
+  const base = serviceType === 'development_support'
+    ? (usedDays < 12 ? 4 : 6)
+    : (usedDays < 6 ? 2 : usedDays < 12 ? 4 : 6)
+  return Math.min(base, usedDays)
 }
 
 export type ChildAggregate = {
@@ -154,12 +173,17 @@ export async function aggregateUnitMonth(
   // ── 施設（単位数単価） ────────────────────────────────────
   const { data: unitRow } = await supabase
     .from('units')
-    .select('id, facility_id, facilities (id, unit_price)')
+    .select('id, facility_id, service_type, facilities (id, unit_price)')
     .eq('id', unitId)
     .maybeSingle()
   if (!unitRow) return empty('ユニットが見つかりません')
 
-  const facility = (unitRow as unknown as { facilities: { id: string; unit_price: number } | null }).facilities
+  const unitInfo = unitRow as unknown as {
+    service_type: string
+    facilities: { id: string; unit_price: number } | null
+  }
+  const serviceType = unitInfo.service_type
+  const facility = unitInfo.facilities
   const facilityId = facility?.id ?? null
   const unitPrice = Number(facility?.unit_price ?? 10)
   if (!facility) {
@@ -363,6 +387,8 @@ export async function aggregateUnitMonth(
       for (const item of serviceItems) {
         // 保険外は給付費の対象外（実費管理で扱う）
         if (item.category === '保険外') continue
+        // 専門的支援実施加算は月の実利用日数から回数が決まるので日ごとには扱わない
+        if (item.trigger_field === 'specialized_support') continue
 
         const manual = dailyRecords.find((r) => r.date === date && r.service_item_id === item.id)
         if (!isItemChecked(item, day, manual)) continue
@@ -438,7 +464,28 @@ export async function aggregateUnitMonth(
           transportDropoff: checked.dropoff,
           absent: !checked.basic && checked.absent,
           extensionLevel,
+          specializedSupport: false,
         })
+      }
+    }
+
+    // 専門的支援実施加算: 実利用日数から回数を決め、利用日の早い順に割り当てる
+    const specializedItem = serviceItems.find(
+      (i) => i.trigger_field === 'specialized_support' && i.category !== '保険外',
+    )
+    if (specializedItem) {
+      const count = specializedSupportCount(serviceType, totalDays)
+      if (count > 0) {
+        if (specializedItem.unit_count <= 0) {
+          missingItemUnits.add(specializedItem.name)
+        } else {
+          addLine(specializedItem.billing_code, specializedItem.name, specializedItem.unit_count, count)
+        }
+        const targets = dayRecords
+          .filter((d) => !d.absent)
+          .sort((a, b) => a.date.localeCompare(b.date))
+          .slice(0, count)
+        for (const d of targets) d.specializedSupport = true
       }
     }
 
