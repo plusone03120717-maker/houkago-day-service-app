@@ -40,15 +40,17 @@ export async function POST(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     // お休みの連絡だけ欠席として記録する。
-    // 反映できなかったもの（もともと予定が無い日など）は理由を返して画面で知らせる
-    const warnings: string[] = []
+    // 反映できなかったもの（もともと予定が無い日など）は理由を返して画面で知らせる。
+    // まとめて確認したときに「どの連絡が反映されたか」が分かるよう、件ごとに結果を返す。
+    const results: { id: string; applied: boolean; error?: string }[] = []
     for (const contact of contacts) {
       if (contact.status !== 'absent') continue
       const result = await applyParentContact(supabase, contact, userId)
-      if (result.error) warnings.push(result.error)
+      results.push({ id: contact.id, applied: !result.error, error: result.error })
     }
 
-    return NextResponse.json({ ok: true, warnings })
+    const warnings = [...new Set(results.map((r) => r.error).filter((e): e is string => !!e))]
+    return NextResponse.json({ ok: true, results, warnings })
   } catch (err) {
     console.error('[parent-contacts/reviewed]', err)
     return NextResponse.json({ error: 'サーバーエラー' }, { status: 500 })

@@ -221,12 +221,19 @@ async function applyAttending(
   let createdReservationId: string | null = null
 
   if (existingReservation) {
+    const existingId = (existingReservation as { id: string }).id
     // キャンセル済みだった日を承認した場合もここで確定に戻る
     const { error } = await supabase
       .from('usage_reservations')
       .update({ status: 'confirmed', ...transportFields })
-      .eq('id', (existingReservation as { id: string }).id)
+      .eq('id', existingId)
     if (error) return { error: `利用予定の更新に失敗しました: ${error.message}` }
+    // 保護者が同じ日を再送信すると承認待ちに戻り、もう一度承認されることがある。
+    // そのとき「すでにある予約」は前回この連絡で作った予約なので、控えを引き継ぐ。
+    // 引き継がないと取り消しても予約が残り、消せない予定になってしまう。
+    if (contact.applied_reservation_id === existingId) {
+      createdReservationId = existingId
+    }
   } else {
     // requested_by を必ず入れる。利用計画のない日の予約は requested_by が null だと
     // 「実態に合わない自動生成予約」として出席管理から除外される（src/lib/usage-roster.ts）
@@ -350,10 +357,14 @@ async function applyAbsent(
     .eq('unit_id', unitId)
     .eq('date', contact.date)
     .maybeSingle()
-  const reservation = reservationRaw as { id: string; status: string } | null
+  const reservationRow = reservationRaw as { id: string; status: string } | null
+  // キャンセル済みの予約は「その日は来ない」と決まっている状態なので、予定として数えない。
+  // ここで数えてしまうと、取り消し済みの日にまで欠席記録ができ、
+  // 欠席時対応加算の対象になってしまう。
+  const reservation = reservationRow && reservationRow.status !== 'cancelled' ? reservationRow : null
 
   let hasPlan = false
-  if (!reservation || reservation.status === 'cancelled') {
+  if (!reservation) {
     const dow = new Date(contact.date + 'T00:00:00').getDay()
     const { data: plans } = await supabase
       .from('usage_plans')

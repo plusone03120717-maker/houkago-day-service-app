@@ -272,13 +272,18 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
     })
-    const json = (await res.json().catch(() => ({}))) as { warnings?: string[] }
+    const json = (await res.json().catch(() => ({}))) as {
+      warnings?: string[]
+      results?: { id: string; applied: boolean }[]
+    }
     // お休みの連絡は欠席として記録される。記録できなかった分だけ理由を出す
     const failed = json.warnings ?? []
     if (failed.length > 0) setWarnings((prev) => [...new Set([...prev, ...failed])])
+    // 反映できたかは連絡ごとに違う。まとめて確認したときに
+    // 1件失敗しただけで全件が未反映に見えないよう、件ごとの結果で更新する
     setAppliedOverrides((prev) => {
       const next = { ...prev }
-      for (const id of ids) next[id] = failed.length === 0
+      for (const r of json.results ?? []) next[r.id] = r.applied
       return next
     })
     setHandledIds((prev) => new Set([...prev, ...ids]))
