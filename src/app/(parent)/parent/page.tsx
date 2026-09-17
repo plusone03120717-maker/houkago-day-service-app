@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getSessionUserId } from '@/lib/auth'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { BookOpen, CalendarCheck, ClipboardList, MessageSquare, Receipt } from 'lucide-react'
+import { BookOpen, CalendarCheck, ClipboardList, Receipt } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 type Child = {
@@ -31,24 +31,14 @@ export default async function ParentHomePage() {
     .eq('user_id', userId)
   const children = (parentChildrenRaw ?? []).map((pc) => pc.children as unknown as Child).filter(Boolean)
 
-  // お知らせと未読数は互いに独立しているため並列取得。
-  // 連絡帳は準備中のあいだ画面に出さないので取りにいかない。
-  const [{ data: announcementsRaw }, { count: unreadCount }] = await Promise.all([
-    // 最新のお知らせ（3件）
-    supabase
-      .from('announcements')
-      .select('id, title, content, published_at')
-      .not('published_at', 'is', null)
-      .lte('published_at', new Date().toISOString())
-      .order('published_at', { ascending: false })
-      .limit(3),
-    // メッセージ未読数
-    supabase
-      .from('messages')
-      .select('*', { count: 'exact', head: true })
-      .eq('receiver_id', userId)
-      .is('read_at', null),
-  ])
+  // 最新のお知らせ（3件）。連絡帳は準備中のあいだ画面に出さないので取りにいかない
+  const { data: announcementsRaw } = await supabase
+    .from('announcements')
+    .select('id, title, content, published_at')
+    .not('published_at', 'is', null)
+    .lte('published_at', new Date().toISOString())
+    .order('published_at', { ascending: false })
+    .limit(3)
   const announcements = (announcementsRaw ?? []) as unknown as Announcement[]
 
   return (
@@ -103,22 +93,6 @@ export default async function ParentHomePage() {
               <p className="text-sm font-medium text-gray-900">出席確認</p>
               <p className="text-xs text-gray-400">出席記録・給付日数</p>
             </div>
-          </div>
-        </Link>
-        <Link href="/parent/messages">
-          <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow relative">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <MessageSquare className="h-5 w-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">メッセージ</p>
-              <p className="text-xs text-gray-400">施設との連絡</p>
-            </div>
-            {(unreadCount ?? 0) > 0 && (
-              <span className="absolute top-2 right-2 h-5 w-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                {unreadCount}
-              </span>
-            )}
           </div>
         </Link>
       </div>

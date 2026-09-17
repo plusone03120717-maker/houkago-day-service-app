@@ -9,7 +9,6 @@ import {
   Users,
   Car,
   FileText,
-  MessageSquare,
   Bell,
   Settings,
   BookOpen,
@@ -66,7 +65,6 @@ const adminNav = [
     group: 'コミュニケーション',
     items: [
       { href: '/contact-notes', label: '連絡帳', icon: FileText },
-      { href: '/messages', label: 'メッセージ', icon: MessageSquare },
       { href: '/announcements', label: 'お知らせ', icon: Bell },
       { href: '/usage', label: '利用状況', icon: CalendarDays },
     ],
@@ -116,7 +114,6 @@ const staffNav = [
     group: 'コミュニケーション',
     items: [
       { href: '/contact-notes', label: '連絡帳', icon: FileText },
-      { href: '/messages', label: 'メッセージ', icon: MessageSquare },
       { href: '/announcements', label: 'お知らせ', icon: Bell },
       { href: '/usage', label: '利用状況', icon: CalendarDays },
     ],

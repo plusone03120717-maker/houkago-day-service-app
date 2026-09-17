@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
-  Users, AlertTriangle, ClipboardList, MessageSquare,
+  Users, AlertTriangle, ClipboardList,
   Calendar, BookOpen, ArrowRight, TrendingUp, Pill, TriangleAlert, FileText,
 } from 'lucide-react'
 import { formatDate, getTodayJST } from '@/lib/utils'
@@ -61,7 +61,6 @@ export default async function DashboardPage() {
     todayPlansResult,
     expiringCertsResult,
     notableRecordsResult,
-    unreadMessagesResult,
     pendingReservationsResult,
     unwrittenRecordsResult,
     thisMonthAttendanceResult,
@@ -104,13 +103,6 @@ export default async function DashboardPage() {
       .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
       .order('created_at', { ascending: false })
       .limit(5),
-
-    // 自分宛の未読メッセージ数
-    userId ? supabase
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('receiver_id', userId)
-      .is('read_at', null) : Promise.resolve({ count: 0 }),
 
     // 承認待ち予約（詳細付き）
     supabase
@@ -259,7 +251,6 @@ export default async function DashboardPage() {
 
   const expiringCerts = (expiringCertsResult.data ?? []) as unknown as ExpiringCert[]
   const notableRecords = (notableRecordsResult.data ?? []) as unknown as NotableRecord[]
-  const unreadCount = unreadMessagesResult.count ?? 0
   const pendingReservations = (pendingReservationsResult.data ?? []) as unknown as Reservation[]
   const pendingCount = pendingReservations.length
   const todayAttendedIds = (unwrittenRecordsResult.data ?? []).map((a: { id: string }) => a.id)
@@ -302,15 +293,6 @@ export default async function DashboardPage() {
       color: pendingCount > 0 ? 'bg-yellow-100' : 'bg-gray-100',
       iconColor: pendingCount > 0 ? 'text-yellow-600' : 'text-gray-400',
       href: '/usage',
-    },
-    {
-      label: '未読メッセージ',
-      value: unreadCount,
-      unit: '件',
-      icon: MessageSquare,
-      color: unreadCount > 0 ? 'bg-rose-100' : 'bg-gray-100',
-      iconColor: unreadCount > 0 ? 'text-rose-600' : 'text-gray-400',
-      href: '/messages',
     },
     {
       label: '受給者証 期限切れ間近',
