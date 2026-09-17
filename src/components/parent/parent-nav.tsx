@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Home, BookOpen, ClipboardList, Bell, LogOut, Building2, CalendarCheck } from 'lucide-react'
+import { Home, BookOpen, Bell, LogOut, Building2, CalendarCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -14,8 +14,9 @@ import { cn } from '@/lib/utils'
  */
 const navItems = [
   { href: '/parent', label: 'ホーム', icon: Home, ready: true },
+  // 利用の連絡も、利用済みの実績も1つのカレンダーで見せる。
+  // 以前は「出席確認」を別に置いていたが、同じ月の同じ日を2か所で見ることになっていた
   { href: '/parent/usage-contacts', label: '利用連絡', icon: CalendarCheck, ready: true },
-  { href: '/parent/attendance', label: '出席確認', icon: ClipboardList, ready: true },
   { href: '/parent/announcements', label: 'お知らせ', icon: Bell, ready: true },
   { href: '/parent/contact-notes', label: '連絡帳', icon: BookOpen, ready: false },
 ]

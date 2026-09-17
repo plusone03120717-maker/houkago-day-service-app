@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getSessionUserId } from '@/lib/auth'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { BookOpen, CalendarCheck, ClipboardList, Receipt } from 'lucide-react'
+import { BookOpen, CalendarCheck, Receipt } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 type Child = {
@@ -71,31 +71,18 @@ export default async function ParentHomePage() {
         ))}
       </div>
 
-      {/* クイックアクション */}
-      <div className="grid grid-cols-2 gap-3">
-        <Link href="/parent/usage-contacts">
-          <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CalendarCheck className="h-5 w-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">利用連絡</p>
-              <p className="text-xs text-gray-400">利用・お休みの連絡</p>
-            </div>
+      {/* クイックアクション。利用の連絡も利用済みの実績も利用連絡の画面にまとめてある */}
+      <Link href="/parent/usage-contacts">
+        <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
+          <div className="p-2 bg-green-100 rounded-lg">
+            <CalendarCheck className="h-5 w-5 text-green-600" />
           </div>
-        </Link>
-        <Link href="/parent/attendance">
-          <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
-            <div className="p-2 bg-indigo-100 rounded-lg">
-              <ClipboardList className="h-5 w-5 text-indigo-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">出席確認</p>
-              <p className="text-xs text-gray-400">出席記録・給付日数</p>
-            </div>
+          <div>
+            <p className="text-sm font-medium text-gray-900">利用連絡</p>
+            <p className="text-xs text-gray-400">利用の連絡・利用予定・給付日数</p>
           </div>
-        </Link>
-      </div>
+        </div>
+      </Link>
 
       {/* 準備中の機能。隠さずに並べて、今後使えるようになることを伝える */}
       <div className="grid grid-cols-2 gap-3">

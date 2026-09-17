@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 import {
   loadFacilitySchedule,
+  loadBenefitLimits,
   saveUsageContacts,
   validateUsageContact,
   loadFacilityClosures,
@@ -85,6 +86,7 @@ async function cleanup() {
   const childId = (child as { id: string } | null)?.id
   if (childId) {
     await admin.from('parent_attendance_contacts').delete().eq('child_id', childId)
+    await admin.from('benefit_certificates').delete().eq('child_id', childId)
     await admin.from('daily_attendance').delete().eq('child_id', childId)
     await admin.from('usage_reservations').delete().eq('child_id', childId)
     await admin.from('usage_plans').delete().eq('child_id', childId)
@@ -161,7 +163,10 @@ async function main() {
       is_active: true,
     })
     await admin.from('daily_attendance').insert([
-      { child_id: childId, unit_id: unitId, date: '2027-05-04', status: 'attended', pickup_type: 'none' },
+      {
+        child_id: childId, unit_id: unitId, date: '2027-05-04', status: 'attended',
+        pickup_type: 'none', check_in_time: '14:30', check_out_time: '17:45',
+      },
       { child_id: childId, unit_id: unitId, date: '2027-05-11', status: 'absent', pickup_type: 'none' },
     ])
 
@@ -187,6 +192,33 @@ async function main() {
     check('出席した日が見える（5/4）', byDate['2027-05-04'] === 'attended', byDate['2027-05-04'])
     check('欠席の日が見える（5/11）', byDate['2027-05-11'] === 'absent', byDate['2027-05-11'])
     check('計画の無い曜日は出ない（5/6 木）', byDate['2027-05-06'] === undefined, byDate['2027-05-06'])
+
+    // 出席確認の別ページを廃止して利用連絡にまとめたので、
+    // 利用済みの日の実績（登園・降園・教室）もここから読めること
+    console.log('\n利用済みの日の実績も一緒に返る')
+    const attended = schedule.find((s) => s.date === '2027-05-04')
+    check('登園時刻が返る', attended?.check_in_time?.startsWith('14:30'), attended?.check_in_time)
+    check('降園時刻が返る', attended?.check_out_time?.startsWith('17:45'), attended?.check_out_time)
+    check('教室名が返る', !!attended?.unit_name, attended?.unit_name)
+    const plannedDay = schedule.find((s) => s.date === '2027-05-20')
+    check('予定の日には実績が付かない', plannedDay?.check_in_time === null, plannedDay?.check_in_time)
+
+    console.log('\n給付日数の上限')
+    // 受給者証は保護者のセッションでは読めないため、
+    // 保護者ポータルは service role 経由で読む（月次APIと同じ経路）
+    await admin.from('benefit_certificates').insert({
+      child_id: childId,
+      certificate_number: 'VERIFY-0001',
+      service_type: 'afterschool',
+      start_date: '2027-04-01',
+      end_date: '2028-03-31',
+      max_days_per_month: 23,
+    })
+    const limits = await loadBenefitLimits(admin, [childId], YEAR, MONTH)
+    check('給付日数の上限が取れる', limits[0]?.max_days_per_month === 23, limits)
+    check('児童ごとに返る', limits[0]?.child_id === childId, limits[0]?.child_id)
+    const otherMonth = await loadBenefitLimits(admin, [childId], 2026, 1)
+    check('期間外の月では返らない', otherMonth.length === 0, otherMonth)
 
     console.log('\n他人の子の予定は読めない')
     const { data: others } = await parent

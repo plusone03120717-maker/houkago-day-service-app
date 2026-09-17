@@ -69,6 +69,56 @@ export type FacilityScheduleDay = {
   date: string
   /** planned=利用予定 / absent=欠席として記録済み / attended=利用済み */
   kind: 'planned' | 'absent' | 'attended'
+  /** 利用済みの日の実績。保護者が「その日どうだったか」を見るために返す */
+  check_in_time?: string | null
+  check_out_time?: string | null
+  unit_name?: string | null
+}
+
+/** 受給者証の給付日数上限（児童ごと） */
+export type BenefitLimit = {
+  child_id: string
+  max_days_per_month: number
+}
+
+/**
+ * その月に有効な受給者証の給付日数上限を取り出す。
+ *
+ * 上限は児童ごと（受給者証ごと）に決まる。きょうだいをまとめて数えると
+ * 実際より消化が進んで見えるので、必ず児童単位で返す。
+ * 同じ月に複数の受給者証がかかる場合は多い方を採る。
+ */
+export async function loadBenefitLimits(
+  supabase: Client,
+  childIds: string[],
+  year: number,
+  month: number
+): Promise<BenefitLimit[]> {
+  if (childIds.length === 0) return []
+
+  const mm = String(month).padStart(2, '0')
+  const monthStart = `${year}-${mm}-01`
+  const monthEnd = `${year}-${mm}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
+
+  const { data } = await supabase
+    .from('benefit_certificates')
+    .select('child_id, max_days_per_month')
+    .in('child_id', childIds)
+    .lte('start_date', monthEnd)
+    .gte('end_date', monthStart)
+
+  const byChild = new Map<string, number>()
+  for (const row of (data ?? []) as { child_id: string; max_days_per_month: number | null }[]) {
+    if (row.max_days_per_month == null) continue
+    const current = byChild.get(row.child_id)
+    if (current == null || row.max_days_per_month > current) {
+      byChild.set(row.child_id, row.max_days_per_month)
+    }
+  }
+  return [...byChild.entries()].map(([child_id, max_days_per_month]) => ({
+    child_id,
+    max_days_per_month,
+  }))
 }
 
 /** "HH:MM" 形式を検証し、空文字は null に正規化する */
@@ -366,7 +416,7 @@ export async function loadFacilitySchedule(
       .or(`end_date.is.null,end_date.gte.${startDate}`),
     supabase
       .from('daily_attendance')
-      .select('child_id, date, status')
+      .select('child_id, date, status, check_in_time, check_out_time, units (name)')
       .in('child_id', childIds)
       .gte('date', startDate)
       .lte('date', endDate),
@@ -390,17 +440,36 @@ export async function loadFacilitySchedule(
     attendances: (attendances ?? []) as RosterAttendance[],
   })
 
+  // 利用済みの日は、その日の実績（登園・降園と教室）も一緒に返す。
+  // 以前は出席確認の別ページで見せていたが、利用連絡の画面にまとめた
+  type AttendanceDetail = {
+    child_id: string
+    date: string
+    check_in_time: string | null
+    check_out_time: string | null
+    units: { name: string } | null
+  }
+  const detailByKey = new Map<string, AttendanceDetail>()
+  for (const row of (attendances ?? []) as unknown as AttendanceDetail[]) {
+    detailByKey.set(`${row.child_id}|${row.date}`, row)
+  }
+
   const out: FacilityScheduleDay[] = []
   for (const entries of roster.values()) {
     for (const e of entries) {
       if (!e.planned) continue
+      const kind =
+        e.attendanceStatus === 'attended' ? 'attended'
+        : e.absent ? 'absent'
+        : 'planned'
+      const detail = kind === 'attended' ? detailByKey.get(`${e.childId}|${e.date}`) : undefined
       out.push({
         child_id: e.childId,
         date: e.date,
-        kind:
-          e.attendanceStatus === 'attended' ? 'attended'
-          : e.absent ? 'absent'
-          : 'planned',
+        kind,
+        check_in_time: detail?.check_in_time ?? null,
+        check_out_time: detail?.check_out_time ?? null,
+        unit_name: detail?.units?.name ?? null,
       })
     }
   }

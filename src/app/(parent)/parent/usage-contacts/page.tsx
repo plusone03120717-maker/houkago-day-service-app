@@ -9,6 +9,7 @@ import {
   type UsageContactEntry,
   type FacilityScheduleDay,
   type FacilityClosure,
+  type BenefitLimit,
 } from '@/components/parent/usage-contact-calendar'
 import type { ChildTransportPlaces } from '@/lib/transport-place'
 
@@ -29,6 +30,7 @@ export default function ParentUsageContactsPage() {
   const [schedule, setSchedule] = useState<FacilityScheduleDay[]>([])
   const [closures, setClosures] = useState<FacilityClosure[]>([])
   const [places, setPlaces] = useState<ChildTransportPlaces[]>([])
+  const [benefits, setBenefits] = useState<BenefitLimit[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -47,6 +49,7 @@ export default function ParentUsageContactsPage() {
           schedule?: FacilityScheduleDay[]
           closures?: FacilityClosure[]
           places?: ChildTransportPlaces[]
+          benefits?: BenefitLimit[]
           error?: string
         }
         if (!res.ok) {
@@ -58,6 +61,7 @@ export default function ParentUsageContactsPage() {
         setSchedule(json.schedule ?? [])
         setClosures(json.closures ?? [])
         setPlaces(json.places ?? [])
+        setBenefits(json.benefits ?? [])
         setError(null)
       })
       .catch(() => setError('通信エラーが発生しました'))
@@ -113,7 +117,8 @@ export default function ParentUsageContactsPage() {
       <div>
         <h1 className="text-lg font-bold text-gray-900">利用連絡</h1>
         <p className="text-xs text-gray-500 mt-0.5">
-          利用する日を、当日以降の日付から連絡できます。施設で決まっている予定も一緒に表示されます。
+          利用する日を、当日以降の日付から連絡できます。施設で決まっている予定と、
+          ご利用済みの日もこの画面で確認できます。
           送迎の時刻は施設で決めますので、行き先・帰り先だけお選びください。
           お休み・キャンセルは施設へお電話ください
         </p>
@@ -125,6 +130,7 @@ export default function ParentUsageContactsPage() {
         schedule={schedule}
         closures={closures}
         places={places}
+        benefits={benefits}
         year={year}
         month={month}
         loading={loading}

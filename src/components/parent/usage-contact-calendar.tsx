@@ -27,6 +27,10 @@ import {
  * お休み・キャンセルはこの画面からは送れない（施設が電話で受ける）。
  * 施設が登録した欠席を「表示」することはある。
  *
+ * 利用済みの実績（登園・降園と教室、給付日数の消化）もこの画面に出す。
+ * 以前は「出席確認」という別のカレンダーがあったが、同じ月の同じ日を
+ * 2つのカレンダーで見ることになり、どちらを見ればよいか分かりにくかった。
+ *
  * サービス区分（放デイ / 日中一時）も保護者には選ばせない。使えるかどうかは
  * 受給者証と支給量の残りで決まり、保護者は判断材料を持っていないため、
  * 施設が承認するときに割り振る（@/lib/parent-contact-service）。
@@ -78,6 +82,16 @@ export type FacilityScheduleDay = {
   child_id: string
   date: string
   kind: 'planned' | 'absent' | 'attended'
+  /** 利用済みの日の実績。以前は出席確認の別ページで見せていたもの */
+  check_in_time?: string | null
+  check_out_time?: string | null
+  unit_name?: string | null
+}
+
+/** 受給者証の給付日数上限（児童ごと） */
+export type BenefitLimit = {
+  child_id: string
+  max_days_per_month: number
 }
 
 export type UsageContactEntry = {
@@ -261,6 +275,8 @@ type Props = {
   closures: FacilityClosure[]
   /** 児童ごとの送迎の行き先・帰り先の選択肢 */
   places: ChildTransportPlaces[]
+  /** 児童ごとの給付日数上限 */
+  benefits: BenefitLimit[]
   year: number
   month: number
   loading: boolean
@@ -276,6 +292,7 @@ export function UsageContactCalendar({
   schedule,
   closures,
   places,
+  benefits,
   year,
   month,
   loading,
@@ -425,11 +442,58 @@ export function UsageContactCalendar({
 
   const cells = buildCells()
   const today = todayStr()
+  // 過ぎた日は連絡できないが、利用済みの実績を見るために開けるようにしてある
+  const readOnly = selectedDate !== null && selectedDate < today
   const selectedDateObj = selectedDate ? new Date(selectedDate + 'T00:00:00') : null
   const selectedHolidayName = selectedDate ? getJapaneseHolidayName(selectedDate) : null
 
   return (
     <div>
+      {/* 給付日数の消化。利用済みの日数は施設側の予定（schedule）から数える */}
+      {benefits.length > 0 && (
+        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm px-4 py-3 mb-3 space-y-3">
+          <p className="text-xs font-semibold text-gray-600">今月の利用状況</p>
+          {childrenList.map((child) => {
+            const limit = benefits.find((b) => b.child_id === child.id)
+            if (!limit) return null
+            const used = new Set(
+              schedule.filter((s) => s.child_id === child.id && s.kind === 'attended').map((s) => s.date)
+            ).size
+            const remaining = limit.max_days_per_month - used
+            const percent = Math.min(100, Math.round((used / limit.max_days_per_month) * 100))
+            return (
+              <div key={child.id}>
+                {childrenList.length > 1 && (
+                  <p className="text-xs text-gray-500 mb-1">{child.name}</p>
+                )}
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold text-indigo-600">{used}</span>
+                  <span className="text-xs text-gray-400">/ {limit.max_days_per_month}日</span>
+                  <span
+                    className={`ml-auto text-xs font-semibold ${
+                      remaining <= 3 ? 'text-orange-500' : 'text-green-600'
+                    }`}
+                  >
+                    残り {remaining}日
+                  </span>
+                </div>
+                <div className="mt-1.5 h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${
+                      remaining <= 0 ? 'bg-red-400' : remaining <= 3 ? 'bg-orange-400' : 'bg-indigo-400'
+                    }`}
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              </div>
+            )
+          })}
+          <p className="text-[10px] text-gray-400">
+            利用済みの日だけを数えています。予定・お休みは含みません
+          </p>
+        </div>
+      )}
+
       {/* 月ナビゲーション */}
       <div className="bg-white border border-gray-100 rounded-2xl flex items-center justify-between px-4 py-2.5 shadow-sm">
         <button
@@ -485,7 +549,6 @@ export function UsageContactCalendar({
                 <button
                   key={idx}
                   onClick={() => openDate(dateStr)}
-                  disabled={isPast}
                   title={closure ?? holidayName ?? undefined}
                   className={`relative flex flex-col items-center justify-start pt-1.5 h-12 rounded-xl mx-0.5 mb-0.5 transition-colors ${
                     isSelected ? 'bg-indigo-100' :
@@ -606,11 +669,15 @@ export function UsageContactCalendar({
                 </div>
               )}
 
-              {contactsOn(selectedDate).length > 0 && !toast && !closureOn(selectedDate) && (
+              {readOnly ? (
+                <p className="text-xs text-gray-400 text-center">
+                  過ぎた日です。内容の確認のみできます
+                </p>
+              ) : contactsOn(selectedDate).length > 0 && !toast && !closureOn(selectedDate) ? (
                 <p className="text-xs text-gray-400 text-center">
                   送信済みの連絡です。変更して再送信できます
                 </p>
-              )}
+              ) : null}
 
               {/* 施設がお休みの日は入力欄そのものを出さない。
                   選ばせてから断るより、開いた時点で伝えるほうが分かりやすい */}
@@ -646,7 +713,20 @@ export function UsageContactCalendar({
                               ? '施設の予定では、この日は利用することになっています'
                               : 'この日はすでに利用予定が入っています。変更がなければ連絡は不要です'
                           )}
-                          {sched.kind === 'attended' && 'この日はご利用済みです'}
+                          {sched.kind === 'attended' && (
+                            <>
+                              この日はご利用済みです
+                              {(sched.check_in_time || sched.check_out_time) && (
+                                <>
+                                  {'　'}
+                                  {toTimeInput(sched.check_in_time ?? null) || '—'}
+                                  〜
+                                  {toTimeInput(sched.check_out_time ?? null) || '—'}
+                                </>
+                              )}
+                              {sched.unit_name && `（${sched.unit_name}）`}
+                            </>
+                          )}
                           {sched.kind === 'absent' && 'この日はお休みとして登録されています'}
                         </p>
                       </div>
@@ -679,6 +759,7 @@ export function UsageContactCalendar({
 
                     {/* 選ぶのは「利用するかどうか」だけ。
                         放デイか日中一時かは施設が承認するときに割り振る */}
+                    {!readOnly && (
                     <button
                       onClick={() => updateEntry(child.id, { attending: !entry.attending })}
                       className={`w-full rounded-xl py-3 text-sm font-semibold transition-colors mb-3 ${
@@ -689,8 +770,9 @@ export function UsageContactCalendar({
                     >
                       {entry.attending ? 'この日は利用します' : '利用する日として連絡する'}
                     </button>
+                    )}
 
-                    {entry.attending && (
+                    {!readOnly && entry.attending && (
                       <>
                         {/* 利用時間 */}
                         <div className="bg-white rounded-xl px-4 py-3 mb-3 border border-gray-200">
@@ -795,6 +877,7 @@ export function UsageContactCalendar({
                       </>
                     )}
 
+                    {!readOnly && (
                     <AutoTextarea
                       value={entry.note}
                       onChange={(e) => updateEntry(child.id, { note: e.target.value })}
@@ -803,10 +886,18 @@ export function UsageContactCalendar({
                       maxRows={10}
                       className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm leading-relaxed text-gray-700 placeholder-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
                     />
+                    )}
+
+                    {/* 過去日は備考も読むだけ */}
+                    {readOnly && sent?.note && (
+                      <p className="text-xs text-gray-500 whitespace-pre-wrap">{sent.note}</p>
+                    )}
                   </div>
                 )
               })}
 
+              {!readOnly && (
+              <>
               {/* 保護者に区分を選ばせない代わりに、誰が決めるのかは伝えておく */}
               <div className="rounded-2xl bg-blue-50 border border-blue-100 px-4 py-3">
                 <p className="text-xs text-blue-800">
@@ -838,6 +929,8 @@ export function UsageContactCalendar({
                 {submitting && <Loader2 className="h-5 w-5 animate-spin" />}
                 連絡を送信する
               </button>
+              </>
+              )}
                 </>
               )}
             </div>
