@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
+import {
+  PARENT_CONTACT_COLUMNS,
+  applyParentContact,
+  type ParentContact,
+} from '@/lib/parent-contact-schedule'
 
 // 保護者の利用連絡を確認済みにする。
 // id を渡すと1件、ids を渡すと複数件をまとめて確認済みにする。
+//
+// お休みの連絡は、確認と同時にその日を欠席として記録する。
+// 予約・利用計画は残るので出席管理には欠席として出続け、
+// 国保連請求の欠席時対応加算も算定できる。
+// （利用の連絡は承認が必要なので /api/parent-contacts/approval 側で反映する）
 export async function POST(req: NextRequest) {
   try {
     const { id, ids } = await req.json() as { id?: string; ids?: string[] }
@@ -12,13 +23,32 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = await createClient()
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+
+    const { data: contactsRaw } = await supabase
+      .from('parent_attendance_contacts')
+      .select(PARENT_CONTACT_COLUMNS)
+      .in('id', targetIds)
+    const contacts = (contactsRaw ?? []) as unknown as ParentContact[]
+
     const { error } = await supabase
       .from('parent_attendance_contacts')
       .update({ is_new: false })
       .in('id', targetIds)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ ok: true })
+
+    // お休みの連絡だけ欠席として記録する。
+    // 反映できなかったもの（もともと予定が無い日など）は理由を返して画面で知らせる
+    const warnings: string[] = []
+    for (const contact of contacts) {
+      if (contact.status !== 'absent') continue
+      const result = await applyParentContact(supabase, contact, userId)
+      if (result.error) warnings.push(result.error)
+    }
+
+    return NextResponse.json({ ok: true, warnings })
   } catch (err) {
     console.error('[parent-contacts/reviewed]', err)
     return NextResponse.json({ error: 'サーバーエラー' }, { status: 500 })

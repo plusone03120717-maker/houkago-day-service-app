@@ -12,6 +12,8 @@ import {
   CalendarDays,
   ThumbsUp,
   ThumbsDown,
+  CalendarCheck,
+  AlertTriangle,
 } from 'lucide-react'
 
 type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
@@ -32,6 +34,8 @@ type Contact = {
   reported_at: string
   is_new: boolean
   approval_status: ApprovalStatus
+  /** 予定（利用予定・出欠記録）へ反映した時刻。null＝未反映 */
+  applied_at: string | null
   children: { id: string; name: string } | null
 }
 
@@ -87,12 +91,15 @@ type Props = {
 function ContactCard({
   contact: c,
   approval,
+  applied,
   reviewing,
   onReviewed,
   onApproval,
 }: {
   contact: Contact
   approval: ApprovalStatus
+  /** 予定へ反映済みか */
+  applied: boolean
   reviewing: boolean
   onReviewed: (id: string) => void
   onApproval: (id: string, next: ApprovalStatus) => void
@@ -144,6 +151,13 @@ function ContactCard({
               ) : (
                 <><ThumbsDown className="h-3 w-3" />非承認</>
               )}
+            </span>
+          )}
+          {/* 承認・確認によって実際の予定へ入ったことを示す */}
+          {applied && (
+            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">
+              <CalendarCheck className="h-3 w-3" />
+              予定に反映済み
             </span>
           )}
         </div>
@@ -214,7 +228,7 @@ function ContactCard({
             disabled={reviewing}
             className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
           >
-            確認する
+            お休みとして反映
           </button>
         )}
       </div>
@@ -228,10 +242,15 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
   // 処理した行をその場で反映する（再取得を待たずベルバッジと揃える）
   const [handledIds, setHandledIds] = useState<Set<string>>(new Set())
   const [approvalOverrides, setApprovalOverrides] = useState<Record<string, ApprovalStatus>>({})
+  // 予定へ反映できたかをその場で反映する（再取得を待たずバッジを出す）
+  const [appliedOverrides, setAppliedOverrides] = useState<Record<string, boolean>>({})
+  // 反映できなかった連絡の理由（ユニット未設定・予定が無い日のお休みなど）
+  const [warnings, setWarnings] = useState<string[]>([])
   const [reviewing, setReviewing] = useState(false)
 
   const today = getTodayJST()
   const approvalOf = (c: Contact): ApprovalStatus => approvalOverrides[c.id] ?? c.approval_status
+  const appliedOf = (c: Contact): boolean => appliedOverrides[c.id] ?? c.applied_at !== null
   // 承認待ちに戻した行は再び未処理として扱う
   const isPending = (c: Contact) =>
     approvalOverrides[c.id] === 'pending' || !handledIds.has(c.id)
@@ -248,10 +267,19 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
   async function markReviewed(ids: string[]) {
     if (ids.length === 0) return
     setReviewing(true)
-    await fetch('/api/parent-contacts/reviewed', {
+    const res = await fetch('/api/parent-contacts/reviewed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
+    })
+    const json = (await res.json().catch(() => ({}))) as { warnings?: string[] }
+    // お休みの連絡は欠席として記録される。記録できなかった分だけ理由を出す
+    const failed = json.warnings ?? []
+    if (failed.length > 0) setWarnings((prev) => [...new Set([...prev, ...failed])])
+    setAppliedOverrides((prev) => {
+      const next = { ...prev }
+      for (const id of ids) next[id] = failed.length === 0
+      return next
     })
     setHandledIds((prev) => new Set([...prev, ...ids]))
     setReviewing(false)
@@ -260,11 +288,17 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
 
   async function setApproval(id: string, next: ApprovalStatus) {
     setReviewing(true)
-    await fetch('/api/parent-contacts/approval', {
+    const res = await fetch('/api/parent-contacts/approval', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, approvalStatus: next }),
     })
+    const json = (await res.json().catch(() => ({}))) as { warning?: string }
+    if (json.warning) setWarnings((prev) => [...new Set([...prev, json.warning!])])
+    setAppliedOverrides((prev) => ({
+      ...prev,
+      [id]: next === 'approved' && !json.warning,
+    }))
     setApprovalOverrides((prev) => ({ ...prev, [id]: next }))
     setHandledIds((prev) => {
       const nextSet = new Set(prev)
@@ -286,7 +320,39 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
-      <h1 className="text-xl font-bold text-gray-900">保護者連絡一覧</h1>
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">保護者連絡一覧</h1>
+        <p className="text-xs text-gray-500 mt-1">
+          承認した利用連絡はそのまま利用状況・出席管理の予定になります。
+          お休みの連絡は「お休みとして反映」でその日の欠席として記録されます。
+        </p>
+      </div>
+
+      {/* 予定へ反映できなかったものだけ理由を出す（承認の記録そのものは残っている） */}
+      {warnings.length > 0 && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="flex items-center gap-1.5 text-sm font-bold text-amber-800">
+              <AlertTriangle className="h-4 w-4" />
+              予定に反映できなかった連絡があります
+            </p>
+            <button
+              onClick={() => setWarnings([])}
+              className="text-xs text-amber-700 underline hover:text-amber-900"
+            >
+              閉じる
+            </button>
+          </div>
+          <ul className="mt-1.5 space-y-0.5 list-disc list-inside">
+            {warnings.map((w) => (
+              <li key={w} className="text-xs text-amber-700">{w}</li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-xs text-amber-600">
+            該当分は利用状況ページから手動で予定を追加してください。承認の記録は残っています。
+          </p>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-b border-gray-100 bg-amber-50/60">
@@ -349,6 +415,7 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
                         key={c.id}
                         contact={c}
                         approval={approvalOf(c)}
+                        applied={appliedOf(c)}
                         reviewing={reviewing}
                         onReviewed={(id) => markReviewed([id])}
                         onApproval={setApproval}
@@ -363,7 +430,8 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
       </div>
 
       <p className="text-xs text-gray-400 text-center">
-        処理済みの連絡は、児童ごとの詳細ページと利用スケジュールで確認できます
+        処理済みの連絡は、児童ごとの詳細ページと利用スケジュールで確認できます。
+        承認を「取り消す」と、この連絡で追加された予定も一緒に取り消されます
       </p>
     </div>
   )

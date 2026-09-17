@@ -8,7 +8,7 @@ export default async function ParentContactsPage() {
   const { data: unconfirmedRaw } = await supabase
     .from('parent_attendance_contacts')
     .select(
-      'id, child_id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, is_new, approval_status, children (id, name)'
+      'id, child_id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, is_new, approval_status, applied_at, children (id, name)'
     )
     .eq('is_new', true)
     .order('date', { ascending: true })
@@ -29,6 +29,7 @@ export default async function ParentContactsPage() {
     reported_at: string
     is_new: boolean
     approval_status: 'pending' | 'approved' | 'rejected'
+    applied_at: string | null
     children: { id: string; name: string } | null
   }
   const unconfirmedContacts = (unconfirmedRaw ?? []) as unknown as ContactRow[]
