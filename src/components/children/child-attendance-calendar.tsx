@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils' 
 import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { resolveAssignment, type ServiceAssignmentType } from '@/lib/parent-contact-service'
+import { placeLabel, toPlaceValue, type TransportPlace, type LocationType } from '@/lib/transport-place'
 
 export type AttendanceRecord = {
   id: string
@@ -53,8 +54,11 @@ export type ParentContact = {
   assigned_daytime_start_time: string | null
   assigned_daytime_end_time: string | null
   transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
-  pickup_time: string | null
-  dropoff_time: string | null
+  /** 保護者が指定した迎えに行く場所・送り届ける場所 */
+  pickup_location_type: LocationType
+  pickup_address_id: string | null
+  dropoff_location_type: LocationType
+  dropoff_address_id: string | null
   note: string | null
   reported_at: string
   approval_status: 'pending' | 'approved' | 'rejected'
@@ -86,6 +90,8 @@ interface Props {
   childId: string
   attendances: AttendanceRecord[]
   parentContacts?: ParentContact[]
+  /** 保護者が指定した送迎の場所を名前で出すための選択肢 */
+  transportPlaces?: TransportPlace[]
   units?: Array<{ id: string; name: string }>
   plannedDates?: string[]
   plannedDateUnitId?: Record<string, string>
@@ -128,7 +134,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, parentContacts = [], units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [] }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, parentContacts = [], transportPlaces = [], units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [] }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -892,11 +898,16 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                         利用希望 {fmt(contact.service_start_time) || '—'}〜{fmt(contact.service_end_time) || '—'}
                       </span>
                     )}
-                    {fmt(contact.pickup_time) && (
-                      <span className="text-xs text-gray-600">迎え希望 {fmt(contact.pickup_time)}</span>
+                    {/* 保護者が指定した行き先・帰り先。送迎の時刻は聞いていない */}
+                    {(contact.transport_type === 'pickup_only' || contact.transport_type === 'both') && (
+                      <span className="text-xs text-gray-600">
+                        迎え {placeLabel(transportPlaces, toPlaceValue(contact.pickup_location_type, contact.pickup_address_id))}
+                      </span>
                     )}
-                    {fmt(contact.dropoff_time) && (
-                      <span className="text-xs text-gray-600">送り希望 {fmt(contact.dropoff_time)}</span>
+                    {(contact.transport_type === 'dropoff_only' || contact.transport_type === 'both') && (
+                      <span className="text-xs text-gray-600">
+                        送り {placeLabel(transportPlaces, toPlaceValue(contact.dropoff_location_type, contact.dropoff_address_id))}
+                      </span>
                     )}
                   </div>
                 )}

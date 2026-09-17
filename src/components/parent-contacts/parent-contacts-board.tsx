@@ -26,6 +26,7 @@ import {
   type ServiceAssignment,
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
+import { placeLabel, type ChildTransportPlaces, type LocationType, toPlaceValue } from '@/lib/transport-place'
 
 type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
@@ -45,8 +46,11 @@ type Contact = {
   assigned_daytime_start_time: string | null
   assigned_daytime_end_time: string | null
   transport_type: TransportType
-  pickup_time: string | null
-  dropoff_time: string | null
+  /** 保護者が指定した迎えに行く場所・送り届ける場所 */
+  pickup_location_type: LocationType
+  pickup_address_id: string | null
+  dropoff_location_type: LocationType
+  dropoff_address_id: string | null
   note: string | null
   reported_at: string
   is_new: boolean
@@ -58,6 +62,8 @@ type Contact = {
 
 // 保護者の画面では「行き」「帰り」で聞いている。
 // スタッフ側は送迎管理・出席管理と同じ「迎え」「送り」で表示する。
+// 送迎の時刻は保護者に聞いていない（承認した利用時間から決まる）ので、
+// ここに出るのは行き先・帰り先だけ。
 const TRANSPORT_LABELS: Record<TransportType, string> = {
   none: '送迎なし',
   both: '送り迎え',
@@ -106,6 +112,8 @@ type Props = {
   unconfirmedContacts: Contact[]
   /** その日の出席記録にすでに入っている予定。連絡IDごとの初期値になる */
   initialAssignments: Record<string, ServiceAssignment>
+  /** 児童ごとの送迎の場所の選択肢。行き先・帰り先を名前で出すために使う */
+  transportPlaces: ChildTransportPlaces[]
 }
 
 /** 割り振りの時刻欄。空欄は「指定なし」として扱う */
@@ -218,7 +226,7 @@ function AssignmentEditor({
         <p className="mt-1.5 text-[11px] text-red-600">{invalid}</p>
       ) : (
         <p className="mt-1.5 text-[11px] text-gray-400">
-          送迎は行き・帰りの時刻から、どちらのサービスの送迎かを自動で判定します
+          送迎の時刻はこの利用時間から決まります（迎え＝いちばん早い開始、送り＝いちばん遅い終了）
         </p>
       )}
     </div>
@@ -232,6 +240,7 @@ function ContactCard({
   applied,
   reviewing,
   assignment,
+  places,
   onAssignmentChange,
   onReviewed,
   onApproval,
@@ -243,6 +252,8 @@ function ContactCard({
   reviewing: boolean
   /** 施設が決めるサービス区分と時間 */
   assignment: ServiceAssignment
+  /** 送迎の場所を名前で出すための選択肢 */
+  places: ChildTransportPlaces | undefined
   onAssignmentChange: (next: ServiceAssignment) => void
   onReviewed: (id: string) => void
   onApproval: (id: string, next: ApprovalStatus) => void
@@ -319,11 +330,16 @@ function ContactCard({
                 希望 {fmtTime(c.service_start_time) ?? '—'}〜{fmtTime(c.service_end_time) ?? '—'}
               </span>
             )}
-            {fmtTime(c.pickup_time) && (
-              <span className="text-xs text-gray-500">迎え {fmtTime(c.pickup_time)}</span>
+            {/* 保護者が指定した迎えに行く場所・送り届ける場所 */}
+            {(c.transport_type === 'pickup_only' || c.transport_type === 'both') && (
+              <span className="text-xs text-gray-500">
+                迎え {placeLabel(places?.places ?? [], toPlaceValue(c.pickup_location_type, c.pickup_address_id))}
+              </span>
             )}
-            {fmtTime(c.dropoff_time) && (
-              <span className="text-xs text-gray-500">送り {fmtTime(c.dropoff_time)}</span>
+            {(c.transport_type === 'dropoff_only' || c.transport_type === 'both') && (
+              <span className="text-xs text-gray-500">
+                送り {placeLabel(places?.places ?? [], toPlaceValue(c.dropoff_location_type, c.dropoff_address_id))}
+              </span>
             )}
           </div>
         )}
@@ -398,7 +414,11 @@ function ContactCard({
   )
 }
 
-export function ParentContactsBoard({ unconfirmedContacts, initialAssignments }: Props) {
+export function ParentContactsBoard({
+  unconfirmedContacts,
+  initialAssignments,
+  transportPlaces,
+}: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   // 処理した行をその場で反映する（再取得を待たずベルバッジと揃える）
@@ -408,6 +428,10 @@ export function ParentContactsBoard({ unconfirmedContacts, initialAssignments }:
   const [assignments, setAssignments] = useState<Record<string, ServiceAssignment>>({})
   // 予定へ反映できたかをその場で反映する（再取得を待たずバッジを出す）
   const [appliedOverrides, setAppliedOverrides] = useState<Record<string, boolean>>({})
+  // 処理した連絡の送迎の場所。承認するとサーバーの未確認一覧から消えるため、
+  // 選択肢も一緒に消えてしまう。控えておかないと「祖父母宅」が
+  // ただの「登録住所」に見えてしまい、送り先を読み違える
+  const [placeCache, setPlaceCache] = useState<Record<string, ChildTransportPlaces>>({})
   // 反映できなかった連絡の理由（ユニット未設定・予定が無い日のお休みなど）
   const [warnings, setWarnings] = useState<string[]>([])
   const [reviewing, setReviewing] = useState(false)
@@ -428,12 +452,23 @@ export function ParentContactsBoard({ unconfirmedContacts, initialAssignments }:
   const isPending = (c: Contact) =>
     approvalOverrides[c.id] === 'pending' || !handledIds.has(c.id)
 
+  const placesFor = (childId: string): ChildTransportPlaces | undefined =>
+    transportPlaces.find((p) => p.childId === childId) ?? placeCache[childId]
+
   const remember = (ids: string[]) => {
     const targets = unconfirmedContacts.filter((c) => ids.includes(c.id))
     setHandledContacts((prev) => [
       ...prev,
       ...targets.filter((t) => !prev.some((p) => p.id === t.id)),
     ])
+    setPlaceCache((prev) => {
+      const next = { ...prev }
+      for (const t of targets) {
+        const own = transportPlaces.find((p) => p.childId === t.child_id)
+        if (own) next[t.child_id] = own
+      }
+      return next
+    })
   }
 
   // 未確認の連絡＋この画面で処理したもの。日付順に並べ直す
@@ -543,6 +578,7 @@ export function ParentContactsBoard({ unconfirmedContacts, initialAssignments }:
         <p className="text-xs text-gray-500 mt-1">
           保護者が送るのは「利用したい時間」と「送迎の希望」だけです。
           放デイ・日中一時のどちらでお預かりするかは、承認するときにここで決めてください。
+          送迎の時刻は聞いていません（承認した利用時間から決まります）。行き先・帰り先だけ保護者が選びます。
           承認した利用連絡はそのまま利用状況・出席管理の利用予定になります。
           お休み・キャンセルの連絡はここには来ません（施設が電話で受け、利用状況ページで記録します）。
         </p>
@@ -642,6 +678,7 @@ export function ParentContactsBoard({ unconfirmedContacts, initialAssignments }:
                         applied={appliedOf(c)}
                         reviewing={reviewing}
                         assignment={assignmentOf(c)}
+                        places={placesFor(c.child_id)}
                         onAssignmentChange={(next) =>
                           setAssignments((prev) => ({ ...prev, [c.id]: next }))
                         }

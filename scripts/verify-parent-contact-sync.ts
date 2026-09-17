@@ -15,7 +15,12 @@ import {
   PARENT_CONTACT_COLUMNS,
   type ParentContact,
 } from '../src/lib/parent-contact-schedule'
-import { validateUsageContact, saveUsageContacts } from '../src/lib/parent-usage-contact'
+import {
+  validateUsageContact,
+  saveUsageContacts,
+  loadTransportPlaces,
+  validateTransportPlaces,
+} from '../src/lib/parent-usage-contact'
 import {
   resolveAssignment,
   defaultAssignment,
@@ -23,6 +28,7 @@ import {
   type ServiceAssignment,
   type ServiceAssignmentType,
 } from '../src/lib/parent-contact-service'
+import { buildRouteGroups } from '../src/lib/transport-route'
 
 function loadEnv(path: string) {
   for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
@@ -74,8 +80,8 @@ type ContactSeed = {
   service_start_time?: string | null
   service_end_time?: string | null
   transport_type?: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
-  pickup_time?: string | null
-  dropoff_time?: string | null
+  pickup_location_type?: 'home' | 'school'
+  dropoff_location_type?: 'home' | 'school'
 }
 
 async function seedContact(childId: string, seed: ContactSeed): Promise<ParentContact> {
@@ -90,8 +96,10 @@ async function seedContact(childId: string, seed: ContactSeed): Promise<ParentCo
         service_start_time: seed.service_start_time ?? null,
         service_end_time: seed.service_end_time ?? null,
         transport_type: seed.transport_type ?? 'none',
-        pickup_time: seed.pickup_time ?? null,
-        dropoff_time: seed.dropoff_time ?? null,
+        pickup_time: null,
+        dropoff_time: null,
+        pickup_location_type: seed.pickup_location_type ?? 'home',
+        dropoff_location_type: seed.dropoff_location_type ?? 'home',
         note: '検証スクリプトが作成',
         reported_via: 'line',
         reported_at: new Date().toISOString(),
@@ -109,6 +117,17 @@ async function seedContact(childId: string, seed: ContactSeed): Promise<ParentCo
   return data as unknown as ParentContact
 }
 
+/** 児童・日付から連絡を読み直す */
+async function reloadContact2(childId: string, date: string): Promise<ParentContact> {
+  const { data } = await supabase
+    .from('parent_attendance_contacts')
+    .select(PARENT_CONTACT_COLUMNS)
+    .eq('child_id', childId)
+    .eq('date', date)
+    .single()
+  return data as unknown as ParentContact
+}
+
 /** 反映後の控えを読み直す（applied_* は apply の中で更新されるため） */
 async function reloadContact(id: string): Promise<ParentContact> {
   const { data } = await supabase
@@ -122,7 +141,7 @@ async function reloadContact(id: string): Promise<ParentContact> {
 async function getReservation(childId: string, date: string) {
   const { data } = await supabase
     .from('usage_reservations')
-    .select('id, unit_id, status, requested_by, transport_type, pickup_time, dropoff_time')
+    .select('id, unit_id, status, requested_by, transport_type, pickup_time, dropoff_time, pickup_location_type, dropoff_location_type')
     .eq('child_id', childId)
     .eq('date', date)
     .maybeSingle()
@@ -134,6 +153,8 @@ async function getReservation(childId: string, date: string) {
     transport_type: string | null
     pickup_time: string | null
     dropoff_time: string | null
+    pickup_location_type: string | null
+    dropoff_location_type: string | null
   } | null
 }
 
@@ -219,8 +240,7 @@ async function main() {
         service_start_time: '10:00',
         service_end_time: '16:00',
         transport_type: 'both',
-        pickup_time: '09:30',
-        dropoff_time: '16:30',
+        pickup_location_type: 'school',
       })
       const result = await applyParentContact(supabase, contact, staff.id)
       check('反映が成功する', !result.error, result.error)
@@ -230,8 +250,11 @@ async function main() {
       check('ステータスが confirmed', res?.status === 'confirmed', res?.status)
       check('requested_by が入る（出席管理から漏れない）', res?.requested_by === staff.id, res?.requested_by)
       check('送迎区分が反映される', res?.transport_type === 'both', res?.transport_type)
-      check('迎え希望時刻が反映される', res?.pickup_time?.startsWith('09:30'), res?.pickup_time)
-      check('送り希望時刻が反映される', res?.dropoff_time?.startsWith('16:30'), res?.dropoff_time)
+      // 送迎の時刻は保護者に聞いていない。割り振った利用時間から施設側で決まる
+      check('迎えの時刻が利用開始から決まる', res?.pickup_time?.startsWith('10:00'), res?.pickup_time)
+      check('送りの時刻が利用終了から決まる', res?.dropoff_time?.startsWith('16:00'), res?.dropoff_time)
+      check('迎えに行く場所が反映される', res?.pickup_location_type === 'school', res?.pickup_location_type)
+      check('送り届ける場所が反映される', res?.dropoff_location_type === 'home', res?.dropoff_location_type)
 
       const att = await getAttendance(child.id, d)
       check('出席記録が予定として下書きされる', att?.status === 'scheduled', att?.status)
@@ -427,8 +450,7 @@ async function main() {
           serviceStartTime: '10:00',
           serviceEndTime: '16:00',
           transportType: 'pickup_only' as const,
-          pickupTime: '09:30',
-          dropoffTime: null,
+          pickupPlace: 'school',
           note: '検証スクリプトが作成',
         },
       ]
@@ -464,7 +486,9 @@ async function main() {
       check('承認して予定に反映できる', !result.error, result.error)
       const res = await getReservation(child.id, d)
       check('送迎希望が予定に入る', res?.transport_type === 'pickup_only', res?.transport_type)
-      check('迎え希望時刻が予定に入る', res?.pickup_time?.startsWith('09:30'), res?.pickup_time)
+      check('迎えに行く場所が予定に入る', res?.pickup_location_type === 'school', res?.pickup_location_type)
+      check('迎えの時刻は利用開始から決まる', res?.pickup_time?.startsWith('10:00'), res?.pickup_time)
+      check('送りの時刻は入らない（帰りは保護者）', res?.dropoff_time === null, res?.dropoff_time)
     }
 
     // ── 11. 同じ日に放デイと日中一時の両方 ──
@@ -480,8 +504,6 @@ async function main() {
         service_start_time: '09:00',
         service_end_time: '18:00',
         transport_type: 'both',
-        pickup_time: '08:45',
-        dropoff_time: '18:15',
       })
 
       const blank = defaultAssignment(contact, 'both')
@@ -527,8 +549,9 @@ async function main() {
       // 送迎は1日2本のまま。行き・帰りの希望はそのまま予定に載る
       const res = await getReservation(child.id, d)
       check('送迎は行き帰りの1組だけ', res?.transport_type === 'both', res?.transport_type)
-      check('行きの希望時刻が入る', res?.pickup_time?.startsWith('08:45'), res?.pickup_time)
-      check('帰りの希望時刻が入る', res?.dropoff_time?.startsWith('18:15'), res?.dropoff_time)
+      // 通しで使う日は、行き＝いちばん早い開始・帰り＝いちばん遅い終了になる
+      check('行きは日中一時の開始から決まる', res?.pickup_time?.startsWith('09:00'), res?.pickup_time)
+      check('帰りは放デイの終了から決まる', res?.dropoff_time?.startsWith('18:00'), res?.dropoff_time)
 
       const stored = await reloadContact(contact.id)
       check('両方として控えられる', stored.service_type === 'both', stored.service_type)
@@ -547,8 +570,8 @@ async function main() {
           serviceStartTime: '10:00',
           serviceEndTime: '17:00',
           transportType: 'both',
-          pickupTime: '09:45',
-          dropoffTime: '17:15',
+          pickupPlace: 'home',
+          dropoffPlace: 'home',
           note: '検証スクリプトが作成',
         },
       ])
@@ -559,6 +582,115 @@ async function main() {
         validateAssignment(resolveAssignment(resent)) !== null,
         resolveAssignment(resent)
       )
+    }
+    // ── 12. 送迎の行き先・帰り先 ──
+    console.log('\n12. 送迎の行き先・帰り先を保護者が指定する')
+    {
+      const d = dates[7]
+      await cleanupDate(child.id, d)
+
+      // 祖父母宅を1件だけ足して、選択肢に出るか・指定が予定まで届くかを見る
+      const { data: addrRow } = await supabase
+        .from('child_addresses')
+        .insert({
+          child_id: child.id,
+          label: '検証用 祖父母宅',
+          address: '東京都新宿区西新宿2-8-1',
+          is_default: false,
+          sort_order: 99,
+        })
+        .select('id')
+        .single()
+      const addressId = (addrRow as { id: string }).id
+
+      try {
+        const places = await loadTransportPlaces(supabase, [child.id])
+        const own = places[0]
+        check('選択肢が取れる', !!own && own.places.length > 0, own?.places)
+        check(
+          '登録した住所が選択肢に出る',
+          own?.places.some((pl) => pl.value === `addr:${addressId}`),
+          own?.places.map((pl) => pl.label)
+        )
+
+        const entry = {
+          childId: child.id,
+          status: 'attending' as const,
+          serviceStartTime: '10:00',
+          serviceEndTime: '16:00',
+          transportType: 'both' as const,
+          pickupPlace: own!.places[0].value,
+          dropoffPlace: `addr:${addressId}`,
+          note: '検証スクリプトが作成',
+        }
+        check('選択肢の場所は通る', validateTransportPlaces(places, [entry]) === null)
+        check(
+          '他人の住所IDは弾かれる',
+          validateTransportPlaces(places, [
+            { ...entry, dropoffPlace: 'addr:00000000-0000-0000-0000-000000000000' },
+          ]) !== null
+        )
+        check(
+          '形の違う値は入力チェックで弾かれる',
+          validateUsageContact(d, [{ ...entry, pickupPlace: 'どこか' }]) !== null
+        )
+
+        const saved = await saveUsageContacts(supabase, d, [entry])
+        check('場所つきで保存できる', !saved.error, saved.error)
+
+        const stored = await reloadContact2(child.id, d)
+        const { data: rawRow } = await supabase
+          .from('parent_attendance_contacts')
+          .select('pickup_time, dropoff_time')
+          .eq('child_id', child.id)
+          .eq('date', d)
+          .single()
+        const raw = rawRow as { pickup_time: string | null; dropoff_time: string | null }
+        check('送迎の時刻は保存しない', raw.pickup_time === null && raw.dropoff_time === null, raw)
+        check(
+          '帰り先の住所が控えられる',
+          stored.dropoff_address_id === addressId,
+          stored.dropoff_address_id
+        )
+
+        await applyParentContact(supabase, stored, staff.id)
+        const res = await getReservation(child.id, d)
+        check('帰り先が予定にも入る', res?.dropoff_location_type === 'home', res?.dropoff_location_type)
+        const { data: resRow } = await supabase
+          .from('usage_reservations')
+          .select('dropoff_address_id')
+          .eq('child_id', child.id)
+          .eq('date', d)
+          .maybeSingle()
+        check(
+          '予定にも住所IDが入る',
+          (resRow as { dropoff_address_id: string | null } | null)?.dropoff_address_id === addressId,
+          resRow
+        )
+
+        // 送迎の便も、指定された住所のエリアでまとめる
+        const routeChild = {
+          child_id: child.id,
+          children: {
+            id: child.id,
+            name: child.name,
+            postal_code: null,
+            address: '東京都千代田区丸の内1-1-1',
+            school_id: null,
+            schools: null,
+          },
+          pickup_location_type: 'home' as const,
+          dropoff_location_type: 'home' as const,
+          pickup_address: null,
+          dropoff_address: '東京都新宿区西新宿2-8-1',
+        }
+        const pickupGroups = buildRouteGroups([routeChild], 'pickup')
+        const dropoffGroups = buildRouteGroups([routeChild], 'dropoff')
+        check('迎えは基本住所のエリアのまま', pickupGroups[0]?.label.includes('丸の内'), pickupGroups[0]?.label)
+        check('送りは指定した住所のエリアになる', dropoffGroups[0]?.label.includes('西新宿'), dropoffGroups[0]?.label)
+      } finally {
+        await supabase.from('child_addresses').delete().eq('id', addressId)
+      }
     }
   } finally {
     // ── 後片付け ──

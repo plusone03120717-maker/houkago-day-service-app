@@ -10,6 +10,12 @@ import {
   SERVICE_ASSIGNMENT_LABELS,
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
+import {
+  toPlaceValue,
+  type ChildTransportPlaces,
+  type TransportPlace,
+  type LocationType,
+} from '@/lib/transport-place'
 
 /**
  * 保護者が利用する日を連絡するカレンダー。
@@ -25,6 +31,10 @@ import {
  * 受給者証と支給量の残りで決まり、保護者は判断材料を持っていないため、
  * 施設が承認するときに割り振る（@/lib/parent-contact-service）。
  * 保護者が送るのは「利用したい時間」と「送迎の希望」だけ。
+ *
+ * 送迎の「時刻」も聞かない。承認したサービス区分の利用時間から施設側で決まるため、
+ * 保護者に入れてもらっても引き直しになっていた。代わりに、これまで聞けていなかった
+ * 「どこへ迎えに行くか・どこへ送るか」を選べるようにしている（@/lib/transport-place）。
  */
 
 export type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
@@ -46,8 +56,11 @@ export type UsageContact = {
   assigned_daytime_start_time: string | null
   assigned_daytime_end_time: string | null
   transport_type: TransportType
-  pickup_time: string | null
-  dropoff_time: string | null
+  /** 保護者が指定した迎えに行く場所・送り届ける場所 */
+  pickup_location_type: LocationType
+  pickup_address_id: string | null
+  dropoff_location_type: LocationType
+  dropoff_address_id: string | null
   note: string | null
   approval_status: 'pending' | 'approved' | 'rejected'
   /** 施設が予定へ反映した時刻。null＝まだ反映されていない */
@@ -73,8 +86,8 @@ export type UsageContactEntry = {
   serviceStartTime: string | null
   serviceEndTime: string | null
   transportType: TransportType
-  pickupTime: string | null
-  dropoffTime: string | null
+  pickupPlace: string
+  dropoffPlace: string
   note: string
 }
 
@@ -86,8 +99,9 @@ type EntryState = {
   /** 送迎はその日に「行き」「帰り」の2本しかない。サービスごとには聞かない */
   goPickup: boolean
   goDropoff: boolean
-  pickupTime: string
-  dropoffTime: string
+  /** 迎えに行く場所・送り届ける場所（@/lib/transport-place の値） */
+  pickupPlace: string
+  dropoffPlace: string
   note: string
 }
 
@@ -143,6 +157,39 @@ function TimeSelect({
       <option value="">指定なし</option>
       {options.map((t) => (
         <option key={t} value={t}>{t}</option>
+      ))}
+    </select>
+  )
+}
+
+/** 送迎の行き先・帰り先を選ぶプルダウン */
+function PlaceSelect({
+  places,
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  places: TransportPlace[]
+  value: string
+  onChange: (v: string) => void
+  ariaLabel: string
+}) {
+  if (places.length === 0) {
+    return (
+      <p className="text-xs text-gray-400">
+        住所が登録されていません。施設にお問い合わせください
+      </p>
+    )
+  }
+  return (
+    <select
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+    >
+      {places.map((p) => (
+        <option key={p.value} value={p.value}>{p.label}</option>
       ))}
     </select>
   )
@@ -212,6 +259,8 @@ type Props = {
   schedule: FacilityScheduleDay[]
   /** 施設がお休みの日 */
   closures: FacilityClosure[]
+  /** 児童ごとの送迎の行き先・帰り先の選択肢 */
+  places: ChildTransportPlaces[]
   year: number
   month: number
   loading: boolean
@@ -226,6 +275,7 @@ export function UsageContactCalendar({
   contacts,
   schedule,
   closures,
+  places,
   year,
   month,
   loading,
@@ -249,6 +299,10 @@ export function UsageContactCalendar({
 
   function contactsOn(dateStr: string): UsageContact[] {
     return contacts.filter((c) => c.date === dateStr)
+  }
+
+  function placesFor(childId: string): ChildTransportPlaces | undefined {
+    return places.find((p) => p.childId === childId)
   }
 
   /** その日が施設のお休みなら、その予定名を返す */
@@ -287,6 +341,7 @@ export function UsageContactCalendar({
     for (const child of childrenList) {
       const existing = dayContacts.find((c) => c.child_id === child.id)
       const transport = existing?.transport_type ?? 'none'
+      const own = placesFor(child.id)
       init[child.id] = existing
         ? {
             attending: existing.status === 'attending',
@@ -294,8 +349,8 @@ export function UsageContactCalendar({
             serviceEnd: toTimeInput(existing.service_end_time),
             goPickup: transport === 'pickup_only' || transport === 'both',
             goDropoff: transport === 'dropoff_only' || transport === 'both',
-            pickupTime: toTimeInput(existing.pickup_time),
-            dropoffTime: toTimeInput(existing.dropoff_time),
+            pickupPlace: toPlaceValue(existing.pickup_location_type, existing.pickup_address_id),
+            dropoffPlace: toPlaceValue(existing.dropoff_location_type, existing.dropoff_address_id),
             note: existing.note ?? '',
           }
         : {
@@ -304,8 +359,8 @@ export function UsageContactCalendar({
             serviceEnd: '',
             goPickup: false,
             goDropoff: false,
-            pickupTime: '',
-            dropoffTime: '',
+            pickupPlace: own?.defaultPickup ?? 'home',
+            dropoffPlace: own?.defaultDropoff ?? 'home',
             note: '',
           }
     }
@@ -349,8 +404,8 @@ export function UsageContactCalendar({
         serviceStartTime: e.serviceStart,
         serviceEndTime: e.serviceEnd,
         transportType: toTransportType(e.goPickup, e.goDropoff),
-        pickupTime: e.goPickup ? e.pickupTime : null,
-        dropoffTime: e.goDropoff ? e.dropoffTime : null,
+        pickupPlace: e.pickupPlace,
+        dropoffPlace: e.dropoffPlace,
         note: e.note.trim(),
       }
     })
@@ -574,6 +629,7 @@ export function UsageContactCalendar({
                 if (!entry) return null
                 const sched = scheduleOn(selectedDate).find((s) => s.child_id === child.id)
                 const sent = contactsOn(selectedDate).find((c) => c.child_id === child.id)
+                const childPlaces = placesFor(child.id)?.places ?? []
                 return (
                   <div key={child.id} className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
                     <p className="font-semibold text-gray-900 mb-3">{child.name}</p>
@@ -700,15 +756,18 @@ export function UsageContactCalendar({
                             </p>
                           )}
 
+                          {/* 時刻は聞かない。施設が利用時間から決める。
+                              代わりに「どこへ」を選んでもらう */}
                           {entry.goPickup && (
                             <div className="mt-3">
                               <label className="text-[10px] text-gray-400 mb-1 block">
-                                行きの希望時刻（自宅・学校へ迎えに行く時間）
+                                行き：どこへ迎えに行きますか
                               </label>
-                              <TimeSelect
-                                ariaLabel={`${child.name}の行きの希望時刻`}
-                                value={entry.pickupTime}
-                                onChange={(v) => updateEntry(child.id, { pickupTime: v })}
+                              <PlaceSelect
+                                ariaLabel={`${child.name}の迎えに行く場所`}
+                                places={childPlaces}
+                                value={entry.pickupPlace}
+                                onChange={(v) => updateEntry(child.id, { pickupPlace: v })}
                               />
                             </div>
                           )}
@@ -716,14 +775,21 @@ export function UsageContactCalendar({
                           {entry.goDropoff && (
                             <div className="mt-3">
                               <label className="text-[10px] text-gray-400 mb-1 block">
-                                帰りの希望時刻（自宅へ送り届ける時間）
+                                帰り：どこへ送り届けますか
                               </label>
-                              <TimeSelect
-                                ariaLabel={`${child.name}の帰りの希望時刻`}
-                                value={entry.dropoffTime}
-                                onChange={(v) => updateEntry(child.id, { dropoffTime: v })}
+                              <PlaceSelect
+                                ariaLabel={`${child.name}の送り届ける場所`}
+                                places={childPlaces}
+                                value={entry.dropoffPlace}
+                                onChange={(v) => updateEntry(child.id, { dropoffPlace: v })}
                               />
                             </div>
+                          )}
+
+                          {(entry.goPickup || entry.goDropoff) && (
+                            <p className="mt-2 text-[10px] text-gray-400">
+                              送迎の時刻は利用時間をもとに施設で決めてご連絡します
+                            </p>
                           )}
                         </div>
                       </>

@@ -5,6 +5,7 @@ import {
   loadUsageContacts,
   loadFacilitySchedule,
   loadFacilityClosures,
+  loadTransportPlaces,
 } from '@/lib/parent-usage-contact'
 
 const adminClient = createAdminClient(
@@ -36,20 +37,22 @@ export async function POST(req: NextRequest) {
       .filter((c): c is { id: string; name: string } => c !== null)
 
     if (children.length === 0) {
-      return NextResponse.json({ children: [], contacts: [], schedule: [], closures: [] })
+      return NextResponse.json({ children: [], contacts: [], schedule: [], closures: [], places: [] })
     }
 
     const childIds = children.map((c) => c.id)
     // 保護者自身が送った連絡と、施設側ですでに決まっている予定の両方を返す。
     // 施設の予定が見えないと、毎週の利用スケジュールがある日にも
     // 重ねて連絡を送ってしまい、確認の手間が増える
-    const [contacts, schedule, closures] = await Promise.all([
+    const [contacts, schedule, closures, places] = await Promise.all([
       loadUsageContacts(adminClient, childIds, year, month),
       loadFacilitySchedule(adminClient, childIds, year, month),
       loadFacilityClosures(adminClient, childIds, year, month),
+      // 送迎の行き先・帰り先の選択肢（学校・登録住所）
+      loadTransportPlaces(adminClient, childIds),
     ])
 
-    return NextResponse.json({ children, contacts, schedule, closures })
+    return NextResponse.json({ children, contacts, schedule, closures, places })
   } catch (err) {
     console.error('[parent/usage-contacts/month]', err)
     return NextResponse.json({ error: 'サーバーエラーが発生しました' }, { status: 500 })

@@ -38,8 +38,11 @@ export type ParentContact = {
   assigned_daytime_start_time: string | null
   assigned_daytime_end_time: string | null
   transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
-  pickup_time: string | null
-  dropoff_time: string | null
+  /** 保護者が指定した迎えに行く場所・送り届ける場所（@/lib/transport-place） */
+  pickup_location_type: 'home' | 'school'
+  pickup_address_id: string | null
+  dropoff_location_type: 'home' | 'school'
+  dropoff_address_id: string | null
   applied_at: string | null
   applied_unit_id: string | null
   applied_reservation_id: string | null
@@ -50,7 +53,9 @@ export const PARENT_CONTACT_COLUMNS =
   'id, child_id, date, status, service_type, service_start_time, service_end_time, ' +
   'assigned_service_start_time, assigned_service_end_time, ' +
   'assigned_daytime_start_time, assigned_daytime_end_time, ' +
-  'transport_type, pickup_time, dropoff_time, applied_at, applied_unit_id, applied_reservation_id'
+  'transport_type, pickup_location_type, pickup_address_id, ' +
+  'dropoff_location_type, dropoff_address_id, ' +
+  'applied_at, applied_unit_id, applied_reservation_id'
 
 export type ApplyResult = {
   /** 反映できなかった理由。反映できたときは undefined */
@@ -228,12 +233,32 @@ async function applyAttending(
     .eq('date', contact.date)
     .maybeSingle()
 
-  // 保護者が希望した送迎はそのまま予定に載せる
-  const transportFields = {
+  // 保護者が指定した送迎の場所はそのまま予定に載せる。
+  // 時刻は聞いていないので、割り振った利用時間から決める
+  // （行き＝その日いちばん早い開始、帰り＝いちばん遅い終了）。
+  const usesPickup =
+    contact.transport_type === 'pickup_only' || contact.transport_type === 'both'
+  const usesDropoff =
+    contact.transport_type === 'dropoff_only' || contact.transport_type === 'both'
+  const starts = [assignment.serviceStartTime, assignment.daytimeStartTime]
+    .filter((t): t is string => !!t)
+    .sort()
+  const ends = [assignment.serviceEndTime, assignment.daytimeEndTime]
+    .filter((t): t is string => !!t)
+    .sort()
+
+  const transportFields: Record<string, unknown> = {
     transport_type: contact.transport_type,
-    pickup_time: contact.pickup_time,
-    dropoff_time: contact.dropoff_time,
+    pickup_location_type: usesPickup ? contact.pickup_location_type : null,
+    pickup_address_id: usesPickup ? contact.pickup_address_id : null,
+    dropoff_location_type: usesDropoff ? contact.dropoff_location_type : null,
+    dropoff_address_id: usesDropoff ? contact.dropoff_address_id : null,
   }
+  // 利用時間が決まっていない日は、すでに入っている送迎時刻を消さない
+  if (usesPickup && starts.length > 0) transportFields.pickup_time = starts[0]
+  if (usesDropoff && ends.length > 0) transportFields.dropoff_time = ends[ends.length - 1]
+  if (!usesPickup) transportFields.pickup_time = null
+  if (!usesDropoff) transportFields.dropoff_time = null
 
   let createdReservationId: string | null = null
 

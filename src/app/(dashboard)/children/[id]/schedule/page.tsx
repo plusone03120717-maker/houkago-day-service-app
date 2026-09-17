@@ -7,6 +7,7 @@ import { ChildSchedulePlanner } from '@/components/children/child-schedule-plann
 import { ChildAttendanceCalendar, type AttendanceRecord, type ParentContact } from '@/components/children/child-attendance-calendar'
 import { getSessionClaims } from '@/lib/auth'
 import { canEditUsagePlans } from '@/lib/roles'
+import { loadTransportPlaces } from '@/lib/parent-usage-contact'
 
 export default async function ChildSchedulePage({
   params,
@@ -260,7 +261,7 @@ export default async function ChildSchedulePage({
     // 保護者ポータルからの利用連絡（保護者の申告）
     supabase
       .from('parent_attendance_contacts')
-      .select('date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, approval_status')
+      .select('date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_location_type, pickup_address_id, dropoff_location_type, dropoff_address_id, note, reported_at, approval_status')
       .eq('child_id', childId)
       .gte('date', startDate)
       .lte('date', endDate)
@@ -270,6 +271,8 @@ export default async function ChildSchedulePage({
   const staffMembers = (staffMembersRaw ?? []) as { id: string; name: string }[]
   const vehicles = (vehiclesRaw ?? []) as { id: string; name: string }[]
   const parentContacts = (parentContactsRaw ?? []) as unknown as ParentContact[]
+  // 保護者が指定した行き先・帰り先を名前で出すための選択肢
+  const transportPlaces = (await loadTransportPlaces(supabase, [childId]))[0]?.places ?? []
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -316,6 +319,7 @@ export default async function ChildSchedulePage({
             childId={childId}
             attendances={attendances}
             parentContacts={parentContacts}
+            transportPlaces={transportPlaces}
             units={units.map((u) => ({ id: u.id, name: u.name }))}
             plannedDates={Array.from(plannedDates)}
             plannedDateUnitId={plannedDateUnitId}

@@ -6,6 +6,8 @@ import {
   type ServiceAssignment,
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
+import { loadTransportPlaces } from '@/lib/parent-usage-contact'
+import type { LocationType } from '@/lib/transport-place'
 
 export default async function ParentContactsPage() {
   const supabase = await createClient()
@@ -14,7 +16,7 @@ export default async function ParentContactsPage() {
   const { data: unconfirmedRaw } = await supabase
     .from('parent_attendance_contacts')
     .select(
-      'id, child_id, date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, is_new, approval_status, applied_at, children (id, name)'
+      'id, child_id, date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_location_type, pickup_address_id, dropoff_location_type, dropoff_address_id, note, reported_at, is_new, approval_status, applied_at, children (id, name)'
     )
     .eq('is_new', true)
     .order('date', { ascending: true })
@@ -33,8 +35,10 @@ export default async function ParentContactsPage() {
     assigned_daytime_start_time: string | null
     assigned_daytime_end_time: string | null
     transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
-    pickup_time: string | null
-    dropoff_time: string | null
+    pickup_location_type: LocationType
+    pickup_address_id: string | null
+    dropoff_location_type: LocationType
+    dropoff_address_id: string | null
     note: string | null
     reported_at: string
     is_new: boolean
@@ -71,10 +75,14 @@ export default async function ParentContactsPage() {
     if (fromPlan) initialAssignments[c.id] = fromPlan
   }
 
+  // 保護者が指定した行き先・帰り先を名前で出すための選択肢
+  const transportPlaces = await loadTransportPlaces(supabase, childIds)
+
   return (
     <ParentContactsBoard
       unconfirmedContacts={unconfirmedContacts}
       initialAssignments={initialAssignments}
+      transportPlaces={transportPlaces}
     />
   )
 }

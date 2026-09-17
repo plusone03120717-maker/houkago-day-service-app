@@ -37,6 +37,17 @@ export type RouteChildData = {
     schools: { id: string; name: string; latitude: number | null; longitude: number | null } | null
   } | null
   pickup_location_type: 'home' | 'school'
+  /**
+   * 保護者がその日だけ指定した送り届ける場所。
+   * 未指定（null）なら従来どおり自宅として扱う。
+   */
+  dropoff_location_type?: 'home' | 'school' | null
+  /**
+   * 児童の基本住所ではなく、登録住所（祖父母宅など）へ行く日の住所。
+   * 未指定（null）なら children.address を使う。
+   */
+  pickup_address?: string | null
+  dropoff_address?: string | null
 }
 
 export type RouteGroup = {
@@ -77,7 +88,13 @@ export function buildRouteGroups(children: RouteChildData[], direction: 'pickup'
   const map = new Map<string, RouteGroup>()
 
   for (const c of children) {
-    const isSchool = direction === 'pickup' && c.pickup_location_type === 'school'
+    // 送りの学校指定は、保護者がその日だけ指定した場合にだけ効く。
+    // 利用計画の dropoff_location_type はこれまで送迎の便に反映していなかったため、
+    // ここで拾い始めると既存の便の並びが変わってしまう。
+    const isSchool =
+      direction === 'pickup'
+        ? c.pickup_location_type === 'school'
+        : c.dropoff_location_type === 'school'
     let key: string, label: string, type: 'school' | 'area'
     let lat: number | null = null, lng: number | null = null
 
@@ -89,7 +106,9 @@ export function buildRouteGroups(children: RouteChildData[], direction: 'pickup'
       lat = school.latitude ?? null
       lng = school.longitude ?? null
     } else {
-      const addr = c.children?.address
+      // 祖父母宅など、その日だけ別の住所が指定されていればそちらでまとめる
+      const chosen = direction === 'pickup' ? c.pickup_address : c.dropoff_address
+      const addr = chosen ?? c.children?.address
       const area = addr ? extractArea(addr) : '住所未登録'
       key = `area_${area}`
       label = `${area}（自宅）`

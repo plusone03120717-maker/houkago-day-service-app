@@ -229,8 +229,6 @@ async function main() {
           serviceStartTime: null,
           serviceEndTime: null,
           transportType: 'none',
-          pickupTime: null,
-          dropoffTime: null,
           note: '',
         },
       ])
@@ -248,8 +246,6 @@ async function main() {
           serviceStartTime: '10:00',
           serviceEndTime: '16:00',
           transportType: 'none',
-          pickupTime: null,
-          dropoffTime: null,
           note: '',
         },
       ])
@@ -266,8 +262,6 @@ async function main() {
           serviceStartTime: '10:00',
           serviceEndTime: '16:00',
           transportType: 'none',
-          pickupTime: null,
-          dropoffTime: null,
           note: '検証スクリプト',
         },
       ])

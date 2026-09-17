@@ -2,6 +2,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { getTodayJST } from '@/lib/utils'
 import { SERVICE_ASSIGNMENT_COLUMNS } from '@/lib/parent-contact-service'
 import {
+  buildPlaces,
+  defaultPlaceValue,
+  fromPlaceValue,
+  isKnownPlace,
+  type ChildTransportPlaces,
+  type LocationType,
+} from '@/lib/transport-place'
+import {
   buildUsageRoster,
   eachDate,
   type RosterReservation,
@@ -30,18 +38,27 @@ export type UsageContactEntry = {
   serviceStartTime?: string | null
   serviceEndTime?: string | null
   transportType?: TransportType
-  pickupTime?: string | null
-  dropoffTime?: string | null
+  /**
+   * 迎えに行く場所・送り届ける場所（@/lib/transport-place の値）。
+   * 送迎の時刻は聞かない。承認したサービス区分の利用時間から施設側で決まるため。
+   */
+  pickupPlace?: string
+  dropoffPlace?: string
   note: string
 }
 
 const TRANSPORT_TYPES: TransportType[] = ['none', 'pickup_only', 'dropoff_only', 'both']
 
+/** 'school' / 'home' / 'addr:<uuid>' */
+const PLACE_RE = /^(school|home|addr:[0-9a-f-]{36})$/
+
 /** 連絡の一覧・カレンダー表示に必要な列 */
 export const USAGE_CONTACT_COLUMNS =
   'child_id, date, status, service_type, service_start_time, service_end_time, ' +
   SERVICE_ASSIGNMENT_COLUMNS + ', ' +
-  'transport_type, pickup_time, dropoff_time, note, approval_status, applied_at'
+  'transport_type, pickup_location_type, pickup_address_id, ' +
+  'dropoff_location_type, dropoff_address_id, ' +
+  'note, approval_status, applied_at'
 
 /**
  * 施設側で決まっているその日の状態。
@@ -87,7 +104,15 @@ export function validateUsageContact(
     if (entry.transportType !== undefined && !TRANSPORT_TYPES.includes(entry.transportType)) {
       return '送迎区分が正しくありません'
     }
-    for (const t of [entry.serviceStartTime, entry.serviceEndTime, entry.pickupTime, entry.dropoffTime]) {
+    // 場所の値そのものが選択肢にあるかは、児童ごとの選択肢と突き合わせないと
+    // 判断できない（他人の住所IDを送られても困る）ので API 側で確かめる。
+    // ここでは形だけ見る。
+    for (const place of [entry.pickupPlace, entry.dropoffPlace]) {
+      if (place !== undefined && !PLACE_RE.test(place)) {
+        return '送迎の場所が正しくありません'
+      }
+    }
+    for (const t of [entry.serviceStartTime, entry.serviceEndTime]) {
       if (normalizeTime(t) === undefined) return '時刻の形式が正しくありません'
     }
     // 利用時間は開始 < 終了 であること（両方入力されている場合のみ）
@@ -123,6 +148,8 @@ export async function saveUsageContacts(
     const transport: TransportType = attending ? (e.transportType ?? 'none') : 'none'
     const usesPickup = transport === 'pickup_only' || transport === 'both'
     const usesDropoff = transport === 'dropoff_only' || transport === 'both'
+    const pickup = fromPlaceValue(usesPickup ? e.pickupPlace ?? 'home' : 'home')
+    const dropoff = fromPlaceValue(usesDropoff ? e.dropoffPlace ?? 'home' : 'home')
     return {
       child_id: e.childId,
       date,
@@ -130,8 +157,13 @@ export async function saveUsageContacts(
       service_start_time: attending ? normalizeTime(e.serviceStartTime) ?? null : null,
       service_end_time: attending ? normalizeTime(e.serviceEndTime) ?? null : null,
       transport_type: transport,
-      pickup_time: usesPickup ? normalizeTime(e.pickupTime) ?? null : null,
-      dropoff_time: usesDropoff ? normalizeTime(e.dropoffTime) ?? null : null,
+      // 送迎の時刻は保護者に聞かない。承認時の利用時間から施設側で決まる
+      pickup_time: null,
+      dropoff_time: null,
+      pickup_location_type: pickup.locationType,
+      pickup_address_id: pickup.addressId,
+      dropoff_location_type: dropoff.locationType,
+      dropoff_address_id: dropoff.addressId,
       assigned_service_start_time: null,
       assigned_service_end_time: null,
       assigned_daytime_start_time: null,
@@ -153,6 +185,92 @@ export async function saveUsageContacts(
     return { error: '保存に失敗しました' }
   }
   return {}
+}
+
+/**
+ * 児童ごとの送迎の場所の選択肢を組み立てる。
+ *
+ * 学校・児童の登録住所（child_addresses）から作る。登録住所が1件も無い児童は
+ * 児童の基本住所（children.address）を「自宅」として1件だけ出す。
+ * 既定値は施設に登録されている送迎設定（child_transport_settings）に合わせる。
+ */
+export async function loadTransportPlaces(
+  supabase: Client,
+  childIds: string[]
+): Promise<ChildTransportPlaces[]> {
+  if (childIds.length === 0) return []
+
+  const [{ data: childRows }, { data: addressRows }, { data: settingRows }] = await Promise.all([
+    supabase.from('children').select('id, address, schools (name)').in('id', childIds),
+    supabase
+      .from('child_addresses')
+      .select('id, child_id, label, address, is_default, sort_order')
+      .in('child_id', childIds)
+      .order('sort_order'),
+    supabase
+      .from('child_transport_settings')
+      .select('child_id, pickup_location_type, dropoff_location_type')
+      .in('child_id', childIds),
+  ])
+
+  type AddressRow = { id: string; child_id: string; label: string; address: string; is_default: boolean }
+  const addressesByChild = new Map<string, AddressRow[]>()
+  for (const row of (addressRows ?? []) as unknown as AddressRow[]) {
+    const list = addressesByChild.get(row.child_id) ?? []
+    list.push(row)
+    addressesByChild.set(row.child_id, list)
+  }
+
+  type SettingRow = {
+    child_id: string
+    pickup_location_type: LocationType | null
+    dropoff_location_type: LocationType | null
+  }
+  const settingByChild = new Map<string, SettingRow>()
+  for (const row of (settingRows ?? []) as unknown as SettingRow[]) {
+    settingByChild.set(row.child_id, row)
+  }
+
+  type ChildRow = { id: string; address: string | null; schools: { name: string } | null }
+  return ((childRows ?? []) as unknown as ChildRow[]).map((child) => {
+    const addresses = addressesByChild.get(child.id) ?? []
+    const places = buildPlaces({
+      schoolName: child.schools?.name ?? null,
+      baseAddress: child.address,
+      addresses,
+    })
+    const setting = settingByChild.get(child.id)
+    return {
+      childId: child.id,
+      places,
+      defaultPickup: defaultPlaceValue(places, setting?.pickup_location_type, addresses),
+      defaultDropoff: defaultPlaceValue(places, setting?.dropoff_location_type, addresses),
+    }
+  })
+}
+
+/**
+ * 送られてきた場所が、その児童の選択肢に含まれているかを確かめる。
+ * 他人の住所IDや、削除済みの住所を指定されても通さないため。
+ */
+export function validateTransportPlaces(
+  placesByChild: ChildTransportPlaces[],
+  entries: UsageContactEntry[]
+): string | null {
+  const byChild = new Map(placesByChild.map((p) => [p.childId, p.places]))
+  for (const entry of entries) {
+    const places = byChild.get(entry.childId) ?? []
+    const transport = entry.transportType ?? 'none'
+    const usesPickup = transport === 'pickup_only' || transport === 'both'
+    const usesDropoff = transport === 'dropoff_only' || transport === 'both'
+    if (usesPickup && entry.pickupPlace && !isKnownPlace(places, entry.pickupPlace)) {
+      return '迎えに行く場所が正しくありません'
+    }
+    if (usesDropoff && entry.dropoffPlace && !isKnownPlace(places, entry.dropoffPlace)) {
+      return '送り届ける場所が正しくありません'
+    }
+  }
+  return null
 }
 
 /** 施設がお休みの日（保護者は利用連絡を送れない） */

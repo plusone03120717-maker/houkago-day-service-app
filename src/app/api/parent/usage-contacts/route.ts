@@ -3,8 +3,10 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getSessionUserId } from '@/lib/auth'
 import {
   validateUsageContact,
+  validateTransportPlaces,
   saveUsageContacts,
   loadFacilityClosures,
+  loadTransportPlaces,
   type UsageContactEntry,
 } from '@/lib/parent-usage-contact'
 
@@ -62,6 +64,13 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    // 送迎の場所は、その児童の選択肢（学校・登録住所）に無いものを受け付けない。
+    // 他人の住所IDや削除済みの住所を指定されると送迎先が実在しなくなるため
+    const childIds = entries!.map((e) => e.childId)
+    const places = await loadTransportPlaces(adminClient, childIds)
+    const badPlace = validateTransportPlaces(places, entries!)
+    if (badPlace) return NextResponse.json({ error: badPlace }, { status: 400 })
 
     const result = await saveUsageContacts(adminClient, date!, entries!)
     if (result.error) return NextResponse.json({ error: result.error }, { status: 500 })

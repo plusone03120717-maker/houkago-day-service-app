@@ -12,6 +12,8 @@ import {
   SERVICE_ASSIGNMENT_BADGE,
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
+import { loadTransportPlaces } from '@/lib/parent-usage-contact'
+import { placeLabel, toPlaceValue, type LocationType } from '@/lib/transport-place'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 import { ParentInviteButton } from '@/components/children/parent-invite-button'
 
@@ -116,7 +118,7 @@ export default async function ChildDetailPage({
     // 保護者ポータルからの利用連絡（今日以降の予定を新しい順に）
     supabase
       .from('parent_attendance_contacts')
-      .select('id, date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, approval_status')
+      .select('id, date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_location_type, pickup_address_id, dropoff_location_type, dropoff_address_id, note, reported_at, approval_status')
       .eq('child_id', id)
       .gte('date', getTodayJST())
       .order('date')
@@ -150,13 +152,17 @@ export default async function ChildDetailPage({
     assigned_daytime_start_time: string | null
     assigned_daytime_end_time: string | null
     transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
-    pickup_time: string | null
-    dropoff_time: string | null
+    pickup_location_type: LocationType
+    pickup_address_id: string | null
+    dropoff_location_type: LocationType
+    dropoff_address_id: string | null
     note: string | null
     reported_at: string
     approval_status: 'pending' | 'approved' | 'rejected'
   }
   const parentContacts = (parentContactsRaw ?? []) as unknown as ParentContactRow[]
+  // 保護者が指定した行き先・帰り先を名前で出すための選択肢
+  const contactPlaces = (await loadTransportPlaces(supabase, [id]))[0]?.places ?? []
   const transportLabels: Record<ParentContactRow['transport_type'], string> = {
     none: '送迎なし', both: '送り迎え', pickup_only: '迎えのみ', dropoff_only: '送りのみ',
   }
@@ -467,11 +473,16 @@ export default async function ChildDetailPage({
                                 利用 {hhmm(pc.service_start_time) ?? '—'}〜{hhmm(pc.service_end_time) ?? '—'}
                               </span>
                             )}
-                            {hhmm(pc.pickup_time) && (
-                              <span className="text-xs text-gray-500">迎え {hhmm(pc.pickup_time)}</span>
+                            {/* 保護者が指定した行き先・帰り先。送迎の時刻は聞いていない */}
+                            {(pc.transport_type === 'pickup_only' || pc.transport_type === 'both') && (
+                              <span className="text-xs text-gray-500">
+                                迎え {placeLabel(contactPlaces, toPlaceValue(pc.pickup_location_type, pc.pickup_address_id))}
+                              </span>
                             )}
-                            {hhmm(pc.dropoff_time) && (
-                              <span className="text-xs text-gray-500">送り {hhmm(pc.dropoff_time)}</span>
+                            {(pc.transport_type === 'dropoff_only' || pc.transport_type === 'both') && (
+                              <span className="text-xs text-gray-500">
+                                送り {placeLabel(contactPlaces, toPlaceValue(pc.dropoff_location_type, pc.dropoff_address_id))}
+                              </span>
                             )}
                           </div>
                         )}

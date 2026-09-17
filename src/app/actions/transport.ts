@@ -23,10 +23,16 @@ type ChildRow = {
 }
 
 function getPickupLocation(c: RouteChildData, direction: 'pickup' | 'dropoff'): string | null {
-  if (direction === 'pickup' && c.pickup_location_type === 'school') {
+  const isSchool =
+    direction === 'pickup'
+      ? c.pickup_location_type === 'school'
+      : c.dropoff_location_type === 'school'
+  if (isSchool) {
     return c.children?.schools?.name ?? null
   }
-  return c.children?.address ?? null
+  // 保護者がその日だけ別の住所（祖父母宅など）を指定していればそちらへ
+  const chosen = direction === 'pickup' ? c.pickup_address : c.dropoff_address
+  return chosen ?? c.children?.address ?? null
 }
 
 /** 'HH:MM:SS' または 'HH:MM' を1時間単位のスロット文字列に丸める（例: '15:30' → '15:00:00'） */
@@ -71,7 +77,7 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     // 個別予約からも取得（重複は後でマージ）
     supabase
       .from('usage_reservations')
-      .select('child_id, pickup_time, dropoff_time, transport_type, pickup_location_type, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
+      .select('child_id, pickup_time, dropoff_time, transport_type, pickup_location_type, dropoff_location_type, pickup_address_id, dropoff_address_id, children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))')
       .eq('unit_id', unitId)
       .eq('date', date)
       .in('status', ['confirmed', 'reserved']),
@@ -166,6 +172,11 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   const dropoffTimeMap = new Map<string, string | null>()
   const transportTypeMap = new Map<string, string>()
   const pickupLocationTypeMap = new Map<string, string>()
+  // 保護者がその日だけ指定した送迎の場所（@/lib/transport-place）。
+  // 予約にだけ入るので、指定が無い児童は今までどおりの扱いになる。
+  const dropoffLocationTypeMap = new Map<string, 'home' | 'school'>()
+  const pickupAddressIdMap = new Map<string, string>()
+  const dropoffAddressIdMap = new Map<string, string>()
 
   // 同じ児童に期間・曜日の重なる計画が2本あるとき、どちらの送迎設定を採るかが
   // 取得順まかせだと「送迎あり／なし」が日によって入れ替わる。
@@ -192,6 +203,12 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     if (!r.child_id) continue
     const rPickupTime = r.pickup_time as string | null
     const rDropoffTime = r.dropoff_time as string | null
+    // 場所の指定はプラン有無に関わらずその日の予約が優先する
+    if (r.dropoff_location_type) {
+      dropoffLocationTypeMap.set(r.child_id, r.dropoff_location_type as 'home' | 'school')
+    }
+    if (r.pickup_address_id) pickupAddressIdMap.set(r.child_id, r.pickup_address_id as string)
+    if (r.dropoff_address_id) dropoffAddressIdMap.set(r.child_id, r.dropoff_address_id as string)
     if (!childrenMap.has(r.child_id)) {
       // 予約のみの児童（プランに存在しない）
       childrenMap.set(r.child_id, r.children as unknown as ChildRow)
@@ -297,6 +314,19 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   }
 
   if (childrenMap.size === 0) return
+
+  // 指定された登録住所（祖父母宅など）の住所文字列を引く
+  const addressIds = [...new Set([...pickupAddressIdMap.values(), ...dropoffAddressIdMap.values()])]
+  const addressById = new Map<string, string>()
+  if (addressIds.length > 0) {
+    const { data: addressRows } = await supabase
+      .from('child_addresses')
+      .select('id, address')
+      .in('id', addressIds)
+    for (const row of (addressRows ?? []) as { id: string; address: string }[]) {
+      addressById.set(row.id, row.address)
+    }
+  }
 
   // 時間がまだnullの児童に対して、同ユニット内の曜日不問の計画から時間を補完
   // （transport_type='none'の児童は送迎不要のためスキップ）
@@ -404,6 +434,9 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
         schools: childData?.schools ?? null,
       },
       pickup_location_type: (pickupLocationTypeMap.get(childId) ?? 'home') as 'home' | 'school',
+      dropoff_location_type: dropoffLocationTypeMap.get(childId) ?? null,
+      pickup_address: addressById.get(pickupAddressIdMap.get(childId) ?? '') ?? null,
+      dropoff_address: addressById.get(dropoffAddressIdMap.get(childId) ?? '') ?? null,
     }
 
     if (transportType === 'both' || transportType === 'pickup_only') {
