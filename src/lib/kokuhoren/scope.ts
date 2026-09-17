@@ -19,7 +19,7 @@ export type BillingScope = {
 }
 
 const EMPTY: Omit<BillingScope, 'error'> = {
-  yearMonth: '', facilityNumber: '', regionCode: '20', unitPrice: 10, unitIds: [], billingMonthlyIds: [],
+  yearMonth: '', facilityNumber: '', regionCode: '23', unitPrice: 10, unitIds: [], billingMonthlyIds: [],
 }
 
 /**
@@ -79,7 +79,7 @@ export async function resolveBillingScope(
   return {
     yearMonth,
     facilityNumber: facility.facility_number,
-    regionCode: facility.region_code ?? '20',
+    regionCode: facility.region_code ?? '23',
     unitPrice: Number(facility.unit_price ?? 10),
     unitIds: rows.map((r) => r.unit_id),
     billingMonthlyIds: rows.map((r) => r.id),

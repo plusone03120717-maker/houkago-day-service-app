@@ -8,6 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Save } from 'lucide-react'
 
 // 地域区分コードは明細書 基本情報レコードにそのまま出力される。
+// 「その他」= 23 は、前システムが国保連の取込に成功したCSVの実値にもとづく暫定値。
+// 電子請求受付システム（簡易入力）の画面は地域区分をラベルでしか表示しないため、
+// 同システムが書き出すCSVで確定させること。01〜07は未検証。
 const REGION_OPTIONS = [
   { code: '01', label: '一級地（11.20円）', price: 11.2 },
   { code: '02', label: '二級地（10.96円）', price: 10.96 },
@@ -16,7 +19,7 @@ const REGION_OPTIONS = [
   { code: '05', label: '五級地（10.60円）', price: 10.6 },
   { code: '06', label: '六級地（10.36円）', price: 10.36 },
   { code: '07', label: '七級地（10.18円）', price: 10.18 },
-  { code: '20', label: 'その他（10.00円）', price: 10 },
+  { code: '23', label: 'その他（10.00円）', price: 10 },
 ]
 
 interface Props {
