@@ -1,4 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  resolveAssignment,
+  assignmentToColumns,
+  type ServiceAssignment,
+  type ServiceAssignmentType,
+} from '@/lib/parent-contact-service'
 
 /**
  * 保護者ポータルからの利用連絡を、実際の予定へ反映する。
@@ -22,9 +28,15 @@ export type ParentContact = {
   child_id: string
   date: string
   status: 'attending' | 'absent'
-  service_type: 'regular' | 'daytime_support'
+  /** 施設が承認時に割り振った区分。保護者は選ばない（@/lib/parent-contact-service） */
+  service_type: ServiceAssignmentType
+  /** 保護者が希望した利用時間。施設の割り振りは assigned_* 側 */
   service_start_time: string | null
   service_end_time: string | null
+  assigned_service_start_time: string | null
+  assigned_service_end_time: string | null
+  assigned_daytime_start_time: string | null
+  assigned_daytime_end_time: string | null
   transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
   pickup_time: string | null
   dropoff_time: string | null
@@ -36,6 +48,8 @@ export type ParentContact = {
 /** 反映に必要な列。API 側の select はこれを使う */
 export const PARENT_CONTACT_COLUMNS =
   'id, child_id, date, status, service_type, service_start_time, service_end_time, ' +
+  'assigned_service_start_time, assigned_service_end_time, ' +
+  'assigned_daytime_start_time, assigned_daytime_end_time, ' +
   'transport_type, pickup_time, dropoff_time, applied_at, applied_unit_id, applied_reservation_id'
 
 export type ApplyResult = {
@@ -193,14 +207,17 @@ async function clearPlanCancellation(supabase: Client, childId: string, date: st
  * - usage_reservations … その日の利用予定そのもの。無ければ作り、あれば確定に戻して送迎希望を反映する
  * - daily_attendance   … 利用時間・日中一時の希望を先に入れておく（status='scheduled'＝まだ来ていない）
  *
- * すでにスタッフが入力済みの時刻は上書きしない。保護者の希望はあくまで下書きで、
- * 最終的な記録はスタッフが出席管理で確定させるため。
+ * サービス区分（放デイ / 日中一時 / 両方）と、それぞれの時間は承認画面で施設が決める。
+ * 保護者は区分を選ばないため、ここに渡ってくる assignment が唯一の正解になる。
  */
 async function applyAttending(
   supabase: Client,
   contact: ParentContact,
   unitId: string,
-  staffUserId: string
+  staffUserId: string,
+  assignment: ServiceAssignment,
+  /** 承認画面でスタッフが今まさに決めた割り振りか。false なら控えからの再現 */
+  assigned: boolean
 ): Promise<ApplyResult> {
   // ── 1. 利用予定（usage_reservations） ──
   const { data: existingReservation } = await supabase
@@ -257,12 +274,27 @@ async function applyAttending(
   // ── 2. 利用計画側のその日のキャンセルを解除 ──
   await clearPlanCancellation(supabase, contact.child_id, contact.date)
 
-  // ── 3. 出欠記録（daily_attendance）に希望時間を下書きする ──
-  const isDaytime = contact.service_type === 'daytime_support'
+  // ── 3. 出欠記録（daily_attendance）に施設の割り振りを下書きする ──
+  //
+  // 区分そのもの（basic_service / daytime_support）は施設が決めたとおりに必ず書く。
+  // 出席管理の表示も、送迎をどちらの欄に記録するかの判定（@/lib/schedule-defaults）も、
+  // 国保連請求の送迎加算もこの2つのフラグで動いている。ここがずれると
+  // 放デイと日中一時の送迎加算が二重に立つ。
+  //
+  // 時間は、承認画面でスタッフが決めた割り振り（assigned）なら上書きする。
+  // 承認画面には出席管理に入っている予定時刻を初期値として出しているので、
+  // スタッフはいま何が入っているかを見たうえで承認している。
+  // 一方、控えから再現しただけの割り振りでは空欄を埋めるだけにする。
+  // スタッフが出席管理で入れた時刻を、保護者の希望で黙って書き換えないため。
+  // 使わない側の時間はどちらの場合も必ず消す。放デイから日中一時へ切り替えた日に
+  // 古い時間が残っていると、両方使った日と区別できなくなる。
+  const useBasic = assignment.serviceType !== 'daytime_support'
+  const useDaytime = assignment.serviceType !== 'regular'
+
   const { data: existingAttendance } = await supabase
     .from('daily_attendance')
     .select(
-      'id, status, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time'
+      'id, status, basic_service, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time'
     )
     .eq('child_id', contact.child_id)
     .eq('unit_id', unitId)
@@ -273,49 +305,69 @@ async function applyAttending(
     const row = existingAttendance as {
       id: string
       status: string
+      basic_service: boolean
       service_start_time: string | null
       service_end_time: string | null
       daytime_support: boolean
       daytime_support_start_time: string | null
       daytime_support_end_time: string | null
     }
-    // スタッフが入力済みの時刻は触らない。空欄だけ保護者の希望で埋める
     const patch: Record<string, unknown> = {}
-    if (isDaytime) {
-      if (!row.daytime_support) patch.daytime_support = true
-      if (!row.daytime_support_start_time && contact.service_start_time) {
-        patch.daytime_support_start_time = contact.service_start_time
+    if (row.basic_service !== useBasic) patch.basic_service = useBasic
+    if (row.daytime_support !== useDaytime) patch.daytime_support = useDaytime
+
+    /** 上書きしてよい場面か、まだ空欄のときだけ埋める場面か */
+    const fill = (current: string | null, next: string | null) =>
+      next !== null && (assigned || !current)
+
+    if (useBasic) {
+      if (fill(row.service_start_time, assignment.serviceStartTime)) {
+        patch.service_start_time = assignment.serviceStartTime
       }
-      if (!row.daytime_support_end_time && contact.service_end_time) {
-        patch.daytime_support_end_time = contact.service_end_time
+      if (fill(row.service_end_time, assignment.serviceEndTime)) {
+        patch.service_end_time = assignment.serviceEndTime
       }
-    } else {
-      if (!row.service_start_time && contact.service_start_time) {
-        patch.service_start_time = contact.service_start_time
-      }
-      if (!row.service_end_time && contact.service_end_time) {
-        patch.service_end_time = contact.service_end_time
-      }
+    } else if (row.service_start_time || row.service_end_time) {
+      patch.service_start_time = null
+      patch.service_end_time = null
     }
+
+    if (useDaytime) {
+      if (fill(row.daytime_support_start_time, assignment.daytimeStartTime)) {
+        patch.daytime_support_start_time = assignment.daytimeStartTime
+      }
+      if (fill(row.daytime_support_end_time, assignment.daytimeEndTime)) {
+        patch.daytime_support_end_time = assignment.daytimeEndTime
+      }
+    } else if (row.daytime_support_start_time || row.daytime_support_end_time) {
+      patch.daytime_support_start_time = null
+      patch.daytime_support_end_time = null
+    }
+
     // お休みとして記録済みの日を「やっぱり利用します」に変えた場合は予定に戻す
     if (row.status === 'absent') patch.status = 'scheduled'
     if (Object.keys(patch).length > 0) {
       await supabase.from('daily_attendance').update(patch).eq('id', row.id)
     }
-  } else if (contact.service_start_time || contact.service_end_time || isDaytime) {
-    // 希望時間がある連絡だけ記録を先に作る。
-    // 「利用します」だけの連絡で空の記録を作ると、出席管理が入力済みに見えてしまう
+  } else if (
+    useDaytime ||
+    assignment.serviceStartTime ||
+    assignment.serviceEndTime
+  ) {
+    // 時間の希望も日中一時の指定も無い連絡で空の記録を作ると、
+    // 出席管理が入力済みに見えてしまうので作らない
     await supabase.from('daily_attendance').insert({
       child_id: contact.child_id,
       unit_id: unitId,
       date: contact.date,
       status: 'scheduled',
       pickup_type: contact.transport_type,
-      service_start_time: isDaytime ? null : contact.service_start_time,
-      service_end_time: isDaytime ? null : contact.service_end_time,
-      daytime_support: isDaytime,
-      daytime_support_start_time: isDaytime ? contact.service_start_time : null,
-      daytime_support_end_time: isDaytime ? contact.service_end_time : null,
+      basic_service: useBasic,
+      service_start_time: useBasic ? assignment.serviceStartTime : null,
+      service_end_time: useBasic ? assignment.serviceEndTime : null,
+      daytime_support: useDaytime,
+      daytime_support_start_time: useDaytime ? assignment.daytimeStartTime : null,
+      daytime_support_end_time: useDaytime ? assignment.daytimeEndTime : null,
       created_by: staffUserId,
     })
   }
@@ -434,11 +486,17 @@ async function applyAbsent(
 /**
  * 保護者の連絡を予定へ反映する。承認（利用）・確認（お休み）の両方から呼ぶ。
  * すでに反映済みの連絡をもう一度渡しても、同じ結果になる（再送信への対応）。
+ *
+ * assignment は承認画面でスタッフが決めたサービス区分と時間。渡された場合は
+ * 連絡にも書き戻すので、取り消して承認し直しても同じ割り振りが復元される。
+ * 渡されなかった場合は連絡に保存済みの割り振り（無ければ保護者の希望時間を
+ * そのまま放デイとして扱う）を使う。
  */
 export async function applyParentContact(
   supabase: Client,
   contact: ParentContact,
-  staffUserId: string
+  staffUserId: string,
+  assignment?: ServiceAssignment
 ): Promise<ApplyResult> {
   const unitId =
     contact.applied_unit_id ?? (await resolveUnitId(supabase, contact.child_id, contact.date))
@@ -446,9 +504,21 @@ export async function applyParentContact(
     return { error: 'この児童にユニットが設定されていないため、予定に反映できませんでした' }
   }
 
-  return contact.status === 'attending'
-    ? applyAttending(supabase, contact, unitId, staffUserId)
-    : applyAbsent(supabase, contact, unitId, staffUserId)
+  if (contact.status !== 'attending') {
+    return applyAbsent(supabase, contact, unitId, staffUserId)
+  }
+
+  let resolved = resolveAssignment(contact)
+  if (assignment) {
+    const { error } = await supabase
+      .from('parent_attendance_contacts')
+      .update(assignmentToColumns(assignment))
+      .eq('id', contact.id)
+    if (error) return { error: `サービス区分の保存に失敗しました: ${error.message}` }
+    resolved = assignment
+  }
+
+  return applyAttending(supabase, contact, unitId, staffUserId, resolved, assignment !== undefined)
 }
 
 /**

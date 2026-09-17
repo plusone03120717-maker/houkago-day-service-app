@@ -245,7 +245,6 @@ async function main() {
         {
           childId,
           status: 'attending',
-          serviceType: 'regular',
           serviceStartTime: '10:00',
           serviceEndTime: '16:00',
           transportType: 'none',
@@ -264,7 +263,6 @@ async function main() {
         {
           childId,
           status: 'attending',
-          serviceType: 'regular',
           serviceStartTime: '10:00',
           serviceEndTime: '16:00',
           transportType: 'none',
@@ -277,7 +275,7 @@ async function main() {
       // ヘッダーのベル（src/components/layout/pending-requests-badge.tsx）と同じ条件で数える
       const { data: belled } = await admin
         .from('parent_attendance_contacts')
-        .select('id, date, status, service_type, children (name)')
+        .select('id, date, status, children (name)')
         .eq('is_new', true)
         .eq('child_id', childId)
       const onBell = ((belled ?? []) as { date: string; status: string }[]).find(

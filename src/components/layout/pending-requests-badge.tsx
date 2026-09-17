@@ -19,7 +19,7 @@ export async function PendingRequestsBadge({ role }: { role: string }) {
     supabase.from('parent_attendance_contacts').select('id', { count: 'exact', head: true }).eq('is_new', true),
     supabase
       .from('parent_attendance_contacts')
-      .select('id, date, status, service_type, children (name)')
+      .select('id, date, status, children (name)')
       .eq('is_new', true)
       .order('reported_at', { ascending: false })
       .limit(5),
@@ -42,17 +42,15 @@ export async function PendingRequestsBadge({ role }: { role: string }) {
     id: string
     date: string
     status: 'attending' | 'absent'
-    service_type: 'regular' | 'daytime_support'
     children: { name: string } | null
   }
+  // 放デイか日中一時かは施設が承認するときに決めるので、
+  // 未確認の連絡の時点ではまだ区分が無い（@/lib/parent-contact-service）
   const recentContacts = ((recentContactsRaw ?? []) as unknown as RecentRow[]).map((r) => ({
     id: r.id,
     date: r.date,
     childName: r.children?.name ?? '不明',
-    label:
-      r.status === 'absent' ? 'お休み'
-      : r.service_type === 'daytime_support' ? '日中一時'
-      : '放デイ',
+    label: r.status === 'absent' ? 'お休み' : '利用',
   }))
 
   return (

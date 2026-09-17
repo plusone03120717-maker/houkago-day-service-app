@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils' 
 import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanese-holidays'
+import { resolveAssignment, type ServiceAssignmentType } from '@/lib/parent-contact-service'
 
 export type AttendanceRecord = {
   id: string
@@ -42,9 +43,15 @@ export type AttendanceRecord = {
 export type ParentContact = {
   date: string
   status: 'attending' | 'absent'
-  service_type: 'regular' | 'daytime_support'
+  /** 施設が承認時に割り振った区分。保護者は選ばない */
+  service_type: ServiceAssignmentType
+  /** 保護者が希望した利用時間 */
   service_start_time: string | null
   service_end_time: string | null
+  assigned_service_start_time: string | null
+  assigned_service_end_time: string | null
+  assigned_daytime_start_time: string | null
+  assigned_daytime_end_time: string | null
   transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
   pickup_time: string | null
   dropoff_time: string | null
@@ -60,10 +67,16 @@ const PARENT_TRANSPORT_LABELS: Record<ParentContact['transport_type'], string> =
   dropoff_only: '送りのみ',
 }
 
-/** 保護者連絡の区分ごとの色・ラベル */
+/**
+ * 保護者連絡の区分ごとの色・ラベル。
+ * 承認前はまだ区分が決まっていないので「利用」とだけ出す。
+ */
 function parentContactMeta(c: ParentContact) {
   if (c.status === 'absent') return { color: 'bg-red-400', label: 'お休み', text: 'text-red-700', bg: 'bg-red-50', border: 'border-red-100' }
-  if (c.service_type === 'daytime_support') return { color: 'bg-orange-400', label: '日中一時', text: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-100' }
+  if (c.approval_status !== 'approved') return { color: 'bg-indigo-400', label: '利用', text: 'text-indigo-700', bg: 'bg-indigo-50', border: 'border-indigo-100' }
+  const type = resolveAssignment(c).serviceType
+  if (type === 'daytime_support') return { color: 'bg-orange-400', label: '日中一時', text: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-100' }
+  if (type === 'both') return { color: 'bg-purple-400', label: '放デイ＋日中一時', text: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-100' }
   return { color: 'bg-green-500', label: '放デイ', text: 'text-green-700', bg: 'bg-green-50', border: 'border-green-100' }
 }
 

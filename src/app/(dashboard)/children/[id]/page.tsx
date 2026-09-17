@@ -6,6 +6,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, AlertTriangle, FileText, Edit, Phone, BookOpen, ClipboardList, Pill, BarChart2, ShieldAlert, CalendarDays, Building2, Users } from 'lucide-react'
 import { formatDate, getAge, formatWareki, getTodayJST } from '@/lib/utils'
+import {
+  resolveAssignment,
+  SERVICE_ASSIGNMENT_LABELS,
+  SERVICE_ASSIGNMENT_BADGE,
+  type ServiceAssignmentType,
+} from '@/lib/parent-contact-service'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 import { ParentInviteButton } from '@/components/children/parent-invite-button'
 
@@ -110,7 +116,7 @@ export default async function ChildDetailPage({
     // 保護者ポータルからの利用連絡（今日以降の予定を新しい順に）
     supabase
       .from('parent_attendance_contacts')
-      .select('id, date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, approval_status')
+      .select('id, date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, approval_status')
       .eq('child_id', id)
       .gte('date', getTodayJST())
       .order('date')
@@ -136,9 +142,13 @@ export default async function ChildDetailPage({
     id: string
     date: string
     status: 'attending' | 'absent'
-    service_type: 'regular' | 'daytime_support'
+    service_type: ServiceAssignmentType
     service_start_time: string | null
     service_end_time: string | null
+    assigned_service_start_time: string | null
+    assigned_service_end_time: string | null
+    assigned_daytime_start_time: string | null
+    assigned_daytime_end_time: string | null
     transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
     pickup_time: string | null
     dropoff_time: string | null
@@ -414,7 +424,9 @@ export default async function ChildDetailPage({
               <div className="divide-y divide-gray-100">
                 {parentContacts.map((pc) => {
                   const isAbsent = pc.status === 'absent'
-                  const isDaytime = !isAbsent && pc.service_type === 'daytime_support'
+                  // 区分は施設が承認時に決める。承認前はまだ決まっていない
+                  const decided = !isAbsent && pc.approval_status === 'approved'
+                  const assignment = resolveAssignment(pc)
                   return (
                     <div key={pc.id} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                       <div className="min-w-0">
@@ -424,10 +436,12 @@ export default async function ChildDetailPage({
                           </span>
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                             isAbsent ? 'bg-red-100 text-red-600'
-                            : isDaytime ? 'bg-orange-100 text-orange-600'
-                            : 'bg-green-100 text-green-700'
+                            : decided ? SERVICE_ASSIGNMENT_BADGE[assignment.serviceType]
+                            : 'bg-gray-100 text-gray-500'
                           }`}>
-                            {isAbsent ? 'お休み' : isDaytime ? '日中一時' : '放デイ'}
+                            {isAbsent ? 'お休み'
+                              : decided ? SERVICE_ASSIGNMENT_LABELS[assignment.serviceType]
+                              : '区分未定'}
                           </span>
                           {!isAbsent && pc.transport_type !== 'none' && (
                             <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">

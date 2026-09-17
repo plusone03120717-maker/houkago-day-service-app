@@ -260,7 +260,7 @@ export default async function ChildSchedulePage({
     // 保護者ポータルからの利用連絡（保護者の申告）
     supabase
       .from('parent_attendance_contacts')
-      .select('date, status, service_type, service_start_time, service_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, approval_status')
+      .select('date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_time, dropoff_time, note, reported_at, approval_status')
       .eq('child_id', childId)
       .gte('date', startDate)
       .lte('date', endDate)

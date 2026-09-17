@@ -16,6 +16,13 @@ import {
   type ParentContact,
 } from '../src/lib/parent-contact-schedule'
 import { validateUsageContact, saveUsageContacts } from '../src/lib/parent-usage-contact'
+import {
+  resolveAssignment,
+  defaultAssignment,
+  validateAssignment,
+  type ServiceAssignment,
+  type ServiceAssignmentType,
+} from '../src/lib/parent-contact-service'
 
 function loadEnv(path: string) {
   for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
@@ -63,7 +70,7 @@ function dateFor(offset: number): string {
 type ContactSeed = {
   date: string
   status: 'attending' | 'absent'
-  service_type?: 'regular' | 'daytime_support'
+  service_type?: ServiceAssignmentType
   service_start_time?: string | null
   service_end_time?: string | null
   transport_type?: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
@@ -134,7 +141,7 @@ async function getAttendance(childId: string, date: string) {
   const { data } = await supabase
     .from('daily_attendance')
     .select(
-      'id, unit_id, status, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time, pickup_type'
+      'id, unit_id, status, basic_service, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time, pickup_type'
     )
     .eq('child_id', childId)
     .eq('date', date)
@@ -145,6 +152,7 @@ async function getAttendance(childId: string, date: string) {
     status: string
     service_start_time: string | null
     service_end_time: string | null
+    basic_service: boolean
     daytime_support: boolean
     daytime_support_start_time: string | null
     daytime_support_end_time: string | null
@@ -197,7 +205,7 @@ async function main() {
 
   console.log(`児童: ${child.name} / 承認者: ${staff.name} / ユニット: ${childUnitId}\n`)
 
-  const dates = Array.from({ length: 8 }, (_, i) => dateFor(i))
+  const dates = Array.from({ length: 9 }, (_, i) => dateFor(i))
   for (const d of dates) await cleanupDate(child.id, d)
 
   try {
@@ -244,23 +252,42 @@ async function main() {
       check('控えがクリアされる', reverted.applied_at === null && reverted.applied_reservation_id === null)
     }
 
-    // ── 3. 日中一時 ──
-    console.log('\n3. 日中一時の利用連絡を承認する')
+    // ── 3. 日中一時（区分は承認時に施設が割り振る） ──
+    console.log('\n3. 日中一時として割り振って承認する')
     {
       const d = dates[1]
+      // 保護者は区分を送ってこない。希望時間だけの連絡を施設が日中一時に割り振る
       const contact = await seedContact(child.id, {
         date: d,
         status: 'attending',
-        service_type: 'daytime_support',
         service_start_time: '09:00',
         service_end_time: '15:00',
       })
-      await applyParentContact(supabase, contact, staff.id)
+      check(
+        '区分未指定の連絡は放デイとして読める',
+        resolveAssignment(contact).serviceType === 'regular',
+        resolveAssignment(contact).serviceType
+      )
+
+      const assignment = defaultAssignment(contact, 'daytime_support')
+      check('日中一時に切り替えると希望時間が引き継がれる', assignment.daytimeStartTime === '09:00', assignment)
+      check('放デイ側は空になる', assignment.serviceStartTime === null, assignment.serviceStartTime)
+
+      await applyParentContact(supabase, contact, staff.id, assignment)
       const att = await getAttendance(child.id, d)
       check('日中一時フラグが立つ', att?.daytime_support === true, att?.daytime_support)
       check('日中一時の開始時刻に入る', att?.daytime_support_start_time?.startsWith('09:00'), att?.daytime_support_start_time)
       check('日中一時の終了時刻に入る', att?.daytime_support_end_time?.startsWith('15:00'), att?.daytime_support_end_time)
+      check('放デイの提供は立てない', att?.basic_service === false, att?.basic_service)
       check('通常の利用時間は空のまま', att?.service_start_time === null, att?.service_start_time)
+
+      const stored = await reloadContact(contact.id)
+      check('割り振りが連絡にも残る', stored.service_type === 'daytime_support', stored.service_type)
+      check(
+        '取り消して承認し直しても同じ割り振りになる',
+        resolveAssignment(stored).daytimeStartTime === '09:00',
+        resolveAssignment(stored)
+      )
     }
 
     // ── 4. 予定が無い日のお休み連絡 ──
@@ -397,7 +424,6 @@ async function main() {
         {
           childId: child.id,
           status: 'attending' as const,
-          serviceType: 'regular' as const,
           serviceStartTime: '10:00',
           serviceEndTime: '16:00',
           transportType: 'pickup_only' as const,
@@ -439,6 +465,100 @@ async function main() {
       const res = await getReservation(child.id, d)
       check('送迎希望が予定に入る', res?.transport_type === 'pickup_only', res?.transport_type)
       check('迎え希望時刻が予定に入る', res?.pickup_time?.startsWith('09:30'), res?.pickup_time)
+    }
+
+    // ── 11. 同じ日に放デイと日中一時の両方 ──
+    console.log('\n11. 同じ日に放デイと日中一時の両方を割り振る')
+    {
+      const d = dates[8]
+      await cleanupDate(child.id, d)
+
+      // 学校休業日の想定。保護者は朝から夕方までの1件しか送らない
+      const contact = await seedContact(child.id, {
+        date: d,
+        status: 'attending',
+        service_start_time: '09:00',
+        service_end_time: '18:00',
+        transport_type: 'both',
+        pickup_time: '08:45',
+        dropoff_time: '18:15',
+      })
+
+      const blank = defaultAssignment(contact, 'both')
+      check(
+        '切り替え時刻が無いと承認できない',
+        validateAssignment(blank) !== null,
+        validateAssignment(blank)
+      )
+
+      const overlapping: ServiceAssignment = {
+        serviceType: 'both',
+        daytimeStartTime: '09:00',
+        daytimeEndTime: '15:00',
+        serviceStartTime: '14:00',
+        serviceEndTime: '18:00',
+      }
+      check(
+        '時間が重なっていると承認できない',
+        validateAssignment(overlapping)?.includes('重なって'),
+        validateAssignment(overlapping)
+      )
+
+      const split: ServiceAssignment = {
+        serviceType: 'both',
+        daytimeStartTime: '09:00',
+        daytimeEndTime: '14:00',
+        serviceStartTime: '14:00',
+        serviceEndTime: '18:00',
+      }
+      check('分けて入力すれば承認できる', validateAssignment(split) === null, validateAssignment(split))
+
+      const applied = await applyParentContact(supabase, contact, staff.id, split)
+      check('予定に反映できる', !applied.error, applied.error)
+
+      const att = await getAttendance(child.id, d)
+      check('放デイの提供が立つ', att?.basic_service === true, att?.basic_service)
+      check('日中一時フラグも立つ', att?.daytime_support === true, att?.daytime_support)
+      check('日中一時は午前に入る', att?.daytime_support_start_time?.startsWith('09:00'), att?.daytime_support_start_time)
+      check('日中一時は14時で終わる', att?.daytime_support_end_time?.startsWith('14:00'), att?.daytime_support_end_time)
+      check('放デイは14時から始まる', att?.service_start_time?.startsWith('14:00'), att?.service_start_time)
+      check('放デイは18時で終わる', att?.service_end_time?.startsWith('18:00'), att?.service_end_time)
+
+      // 送迎は1日2本のまま。行き・帰りの希望はそのまま予定に載る
+      const res = await getReservation(child.id, d)
+      check('送迎は行き帰りの1組だけ', res?.transport_type === 'both', res?.transport_type)
+      check('行きの希望時刻が入る', res?.pickup_time?.startsWith('08:45'), res?.pickup_time)
+      check('帰りの希望時刻が入る', res?.dropoff_time?.startsWith('18:15'), res?.dropoff_time)
+
+      const stored = await reloadContact(contact.id)
+      check('両方として控えられる', stored.service_type === 'both', stored.service_type)
+      check(
+        '割り振った時間も控えられる',
+        resolveAssignment(stored).daytimeEndTime === '14:00' &&
+          resolveAssignment(stored).serviceStartTime === '14:00',
+        resolveAssignment(stored)
+      )
+
+      // ── 保護者が送り直すと、割り振りは白紙に戻る ──
+      await saveUsageContacts(supabase, d, [
+        {
+          childId: child.id,
+          status: 'attending',
+          serviceStartTime: '10:00',
+          serviceEndTime: '17:00',
+          transportType: 'both',
+          pickupTime: '09:45',
+          dropoffTime: '17:15',
+          note: '検証スクリプトが作成',
+        },
+      ])
+      const resent = await reloadContact(contact.id)
+      check('再送信しても区分は残る', resent.service_type === 'both', resent.service_type)
+      check(
+        '割り振った時間は消えて決め直しになる',
+        validateAssignment(resolveAssignment(resent)) !== null,
+        resolveAssignment(resent)
+      )
     }
   } finally {
     // ── 後片付け ──

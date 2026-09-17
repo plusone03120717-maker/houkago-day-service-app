@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getTodayJST } from '@/lib/utils'
+import { SERVICE_ASSIGNMENT_COLUMNS } from '@/lib/parent-contact-service'
 import {
   buildUsageRoster,
   eachDate,
@@ -26,7 +27,6 @@ export type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
 export type UsageContactEntry = {
   childId: string
   status: 'attending' | 'absent'
-  serviceType?: 'regular' | 'daytime_support'
   serviceStartTime?: string | null
   serviceEndTime?: string | null
   transportType?: TransportType
@@ -40,6 +40,7 @@ const TRANSPORT_TYPES: TransportType[] = ['none', 'pickup_only', 'dropoff_only',
 /** 連絡の一覧・カレンダー表示に必要な列 */
 export const USAGE_CONTACT_COLUMNS =
   'child_id, date, status, service_type, service_start_time, service_end_time, ' +
+  SERVICE_ASSIGNMENT_COLUMNS + ', ' +
   'transport_type, pickup_time, dropoff_time, note, approval_status, applied_at'
 
 /**
@@ -83,13 +84,6 @@ export function validateUsageContact(
     if (entry.status !== 'attending') {
       return '連絡内容が正しくありません'
     }
-    if (
-      entry.serviceType !== undefined &&
-      entry.serviceType !== 'regular' &&
-      entry.serviceType !== 'daytime_support'
-    ) {
-      return 'サービス区分が正しくありません'
-    }
     if (entry.transportType !== undefined && !TRANSPORT_TYPES.includes(entry.transportType)) {
       return '送迎区分が正しくありません'
     }
@@ -117,7 +111,13 @@ export async function saveUsageContacts(
   date: string,
   entries: UsageContactEntry[]
 ): Promise<{ error?: string }> {
-  // お休みの場合は利用時間・送迎の指定を無視してクリアする
+  // お休みの場合は利用時間・送迎の指定を無視してクリアする。
+  //
+  // service_type（施設が割り振ったサービス区分）は書き換えない。保護者は区分を
+  // 選ばないので、ここで送られてくる値は存在しない。upsert の payload に載せなければ
+  // ON CONFLICT でも触られないため、施設の決めた区分はそのまま残る。
+  // ただし割り振った時間（assigned_*）は消す。希望時間が変わっているかもしれず、
+  // 古い割り振りのまま承認されると実際の利用と食い違うため、施設に決め直してもらう。
   const records = entries.map((e) => {
     const attending = e.status === 'attending'
     const transport: TransportType = attending ? (e.transportType ?? 'none') : 'none'
@@ -127,12 +127,15 @@ export async function saveUsageContacts(
       child_id: e.childId,
       date,
       status: e.status,
-      service_type: attending ? (e.serviceType ?? 'regular') : 'regular',
       service_start_time: attending ? normalizeTime(e.serviceStartTime) ?? null : null,
       service_end_time: attending ? normalizeTime(e.serviceEndTime) ?? null : null,
       transport_type: transport,
       pickup_time: usesPickup ? normalizeTime(e.pickupTime) ?? null : null,
       dropoff_time: usesDropoff ? normalizeTime(e.dropoffTime) ?? null : null,
+      assigned_service_start_time: null,
+      assigned_service_end_time: null,
+      assigned_daytime_start_time: null,
+      assigned_daytime_end_time: null,
       note: e.note ?? null,
       reported_via: 'portal',
       reported_at: new Date().toISOString(),

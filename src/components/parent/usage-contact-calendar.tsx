@@ -4,6 +4,12 @@ import { useState } from 'react'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { Loader2, ChevronLeft, ChevronRight, X, Car, Clock } from 'lucide-react'
 import { AutoTextarea } from '@/components/ui/auto-textarea'
+import {
+  resolveAssignment,
+  describeAssignment,
+  SERVICE_ASSIGNMENT_LABELS,
+  type ServiceAssignmentType,
+} from '@/lib/parent-contact-service'
 
 /**
  * 保護者が利用する日を連絡するカレンダー。
@@ -12,8 +18,13 @@ import { AutoTextarea } from '@/components/ui/auto-textarea'
  * データの出し入れは呼び出し側に任せてあるので、ログインの仕組みが変わっても
  * このコンポーネントは触らなくてよい。
  *
- * お休み・キャンセルはこの画面からは送れない（SELECTABLE_CHOICES 参照）。
+ * お休み・キャンセルはこの画面からは送れない（施設が電話で受ける）。
  * 施設が登録した欠席を「表示」することはある。
+ *
+ * サービス区分（放デイ / 日中一時）も保護者には選ばせない。使えるかどうかは
+ * 受給者証と支給量の残りで決まり、保護者は判断材料を持っていないため、
+ * 施設が承認するときに割り振る（@/lib/parent-contact-service）。
+ * 保護者が送るのは「利用したい時間」と「送迎の希望」だけ。
  */
 
 export type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
@@ -24,9 +35,16 @@ export type UsageContact = {
   child_id: string
   date: string
   status: 'attending' | 'absent'
-  service_type: 'regular' | 'daytime_support'
+  /** 施設が承認時に割り振ったサービス区分。保護者は選ばない */
+  service_type: ServiceAssignmentType
+  /** 保護者が希望した利用時間 */
   service_start_time: string | null
   service_end_time: string | null
+  /** 施設が割り振った放デイ・日中一時の時間 */
+  assigned_service_start_time: string | null
+  assigned_service_end_time: string | null
+  assigned_daytime_start_time: string | null
+  assigned_daytime_end_time: string | null
   transport_type: TransportType
   pickup_time: string | null
   dropoff_time: string | null
@@ -52,7 +70,6 @@ export type FacilityScheduleDay = {
 export type UsageContactEntry = {
   childId: string
   status: 'attending' | 'absent'
-  serviceType?: 'regular' | 'daytime_support'
   serviceStartTime: string | null
   serviceEndTime: string | null
   transportType: TransportType
@@ -61,24 +78,33 @@ export type UsageContactEntry = {
   note: string
 }
 
-type Choice = 'regular' | 'daytime_support' | 'absent'
-
 type EntryState = {
-  choice: Choice | null
+  /** この日は利用する、と選んだか。false の子は送信対象から外れる */
+  attending: boolean
   serviceStart: string
   serviceEnd: string
-  transport: TransportType
+  /** 送迎はその日に「行き」「帰り」の2本しかない。サービスごとには聞かない */
+  goPickup: boolean
+  goDropoff: boolean
   pickupTime: string
   dropoffTime: string
   note: string
 }
 
-const TRANSPORT_OPTIONS: { value: TransportType; label: string }[] = [
-  { value: 'none', label: '送迎なし' },
-  { value: 'both', label: '送り迎え' },
-  { value: 'pickup_only', label: '迎えのみ' },
-  { value: 'dropoff_only', label: '送りのみ' },
-]
+/**
+ * 送迎の希望を transport_type に組み立てる。
+ *
+ * 子どもが家を出るのは1日1回、帰るのも1回。放デイと日中一時を続けて使う日でも
+ * 送迎は2本のままなので、サービスごとに聞かず「行き」「帰り」で受け取る。
+ * どちらのサービスの送迎として記録するかは、時間から施設側が判定する
+ * （@/lib/schedule-defaults の resolveTransportSlot）。
+ */
+function toTransportType(goPickup: boolean, goDropoff: boolean): TransportType {
+  if (goPickup && goDropoff) return 'both'
+  if (goPickup) return 'pickup_only'
+  if (goDropoff) return 'dropoff_only'
+  return 'none'
+}
 
 /** DBの time 型（HH:MM:SS）を HH:MM に切り詰める */
 function toTimeInput(v: string | null): string {
@@ -124,12 +150,6 @@ function TimeSelect({
 
 const DOW = ['日', '月', '火', '水', '木', '金', '土']
 
-const CHOICE_META: Record<Choice, { label: string; dot: string; active: string }> = {
-  regular: { label: '放デイ', dot: 'bg-green-500', active: 'bg-green-500 text-white shadow-sm' },
-  daytime_support: { label: '日中一時', dot: 'bg-orange-400', active: 'bg-orange-400 text-white shadow-sm' },
-  absent: { label: 'お休み', dot: 'bg-red-400', active: 'bg-red-400 text-white shadow-sm' },
-}
-
 /**
  * 保護者が選べるのは「利用する」だけ。
  *
@@ -138,9 +158,9 @@ const CHOICE_META: Record<Choice, { label: string; dot: string; active: string }
  * お休みの連絡は施設で直接受け、スタッフが利用状況ページで
  * 「欠席」か「削除」かを判断して記録する。
  *
- * absent は施設が登録した欠席を表示するために型としては残してある。
+ * サービス区分も選ばせないので、カレンダーの丸は「連絡済み」の1種類だけでよい。
  */
-const SELECTABLE_CHOICES: Choice[] = ['regular', 'daytime_support']
+const CONTACT_DOT = 'bg-indigo-500'
 
 /** 施設側の予定。自分の連絡（下の丸）と区別できるよう、マス目の右上に四角で出す */
 const SCHEDULE_META: Record<FacilityScheduleDay['kind'], { label: string; box: string }> = {
@@ -163,7 +183,12 @@ function statusMessage(c: UsageContact): { text: string; tone: 'ok' | 'ng' | 'wa
       : { text: 'お休みの連絡を送信しました。施設で確認中です', tone: 'wait' }
   }
   if (c.approval_status === 'approved') {
-    return { text: '施設が承認しました', tone: 'ok' }
+    // どのサービスとして受けてもらえたかは保護者にも関わる（利用者負担が別枠になる）
+    const a = resolveAssignment(c)
+    return {
+      text: `施設が承認しました（${SERVICE_ASSIGNMENT_LABELS[a.serviceType]}）`,
+      tone: 'ok',
+    }
   }
   if (c.approval_status === 'rejected') {
     return { text: 'この日は受け入れができませんでした。施設にお問い合わせください', tone: 'ng' }
@@ -178,14 +203,6 @@ function toDateStr(y: number, m: number, d: number): string {
 function todayStr(): string {
   const n = new Date()
   return toDateStr(n.getFullYear(), n.getMonth() + 1, n.getDate())
-}
-
-function contactToChoice(c: UsageContact): Choice {
-  return c.status === 'absent'
-    ? 'absent'
-    : c.service_type === 'daytime_support'
-      ? 'daytime_support'
-      : 'regular'
 }
 
 type Props = {
@@ -269,21 +286,24 @@ export function UsageContactCalendar({
     const init: Record<string, EntryState> = {}
     for (const child of childrenList) {
       const existing = dayContacts.find((c) => c.child_id === child.id)
+      const transport = existing?.transport_type ?? 'none'
       init[child.id] = existing
         ? {
-            choice: contactToChoice(existing),
+            attending: existing.status === 'attending',
             serviceStart: toTimeInput(existing.service_start_time),
             serviceEnd: toTimeInput(existing.service_end_time),
-            transport: existing.transport_type ?? 'none',
+            goPickup: transport === 'pickup_only' || transport === 'both',
+            goDropoff: transport === 'dropoff_only' || transport === 'both',
             pickupTime: toTimeInput(existing.pickup_time),
             dropoffTime: toTimeInput(existing.dropoff_time),
             note: existing.note ?? '',
           }
         : {
-            choice: null,
+            attending: false,
             serviceStart: '',
             serviceEnd: '',
-            transport: 'none',
+            goPickup: false,
+            goDropoff: false,
             pickupTime: '',
             dropoffTime: '',
             note: '',
@@ -306,16 +326,16 @@ export function UsageContactCalendar({
   function handleSubmit() {
     if (!selectedDate) return
 
-    const targets = childrenList.filter((c) => entries[c.id]?.choice != null)
+    const targets = childrenList.filter((c) => entries[c.id]?.attending)
     if (targets.length === 0) {
-      setToast({ ok: false, message: '少なくとも1人の連絡内容を選択してください' })
+      setToast({ ok: false, message: '利用するお子さまを選択してください' })
       return
     }
 
     // 利用時間の前後関係を送信前に確認する
     for (const c of targets) {
       const e = entries[c.id]
-      if (e.choice !== 'absent' && e.serviceStart && e.serviceEnd && e.serviceStart >= e.serviceEnd) {
+      if (e.serviceStart && e.serviceEnd && e.serviceStart >= e.serviceEnd) {
         setToast({ ok: false, message: `${c.name}さんの利用時間は終了を開始より後にしてください` })
         return
       }
@@ -323,16 +343,14 @@ export function UsageContactCalendar({
 
     const payload: UsageContactEntry[] = targets.map((c) => {
       const e = entries[c.id]
-      const attending = e.choice !== 'absent'
       return {
         childId: c.id,
-        status: attending ? 'attending' : 'absent',
-        serviceType: attending ? (e.choice as 'regular' | 'daytime_support') : undefined,
-        serviceStartTime: attending ? e.serviceStart : null,
-        serviceEndTime: attending ? e.serviceEnd : null,
-        transportType: attending ? e.transport : 'none',
-        pickupTime: attending ? e.pickupTime : null,
-        dropoffTime: attending ? e.dropoffTime : null,
+        status: 'attending',
+        serviceStartTime: e.serviceStart,
+        serviceEndTime: e.serviceEnd,
+        transportType: toTransportType(e.goPickup, e.goDropoff),
+        pickupTime: e.goPickup ? e.pickupTime : null,
+        dropoffTime: e.goDropoff ? e.dropoffTime : null,
         note: e.note.trim(),
       }
     })
@@ -443,7 +461,8 @@ export function UsageContactCalendar({
                     {dayContacts.slice(0, 3).map((c, i) => (
                       <span
                         key={i}
-                        className={`w-1.5 h-1.5 rounded-full ${CHOICE_META[contactToChoice(c)].dot} ${isPast ? 'opacity-40' : ''}`}
+                        aria-label="連絡済み"
+                        className={`w-1.5 h-1.5 rounded-full ${CONTACT_DOT} ${isPast ? 'opacity-40' : ''}`}
                       />
                     ))}
                   </div>
@@ -464,12 +483,10 @@ export function UsageContactCalendar({
         <div className="border-t border-gray-100 px-3 py-3 space-y-1.5">
           <div className="flex gap-3 justify-center flex-wrap">
             <span className="text-xs text-gray-400">自分の連絡</span>
-            {SELECTABLE_CHOICES.map((k) => (
-              <div key={k} className="flex items-center gap-1">
-                <span className={`w-2 h-2 rounded-full ${CHOICE_META[k].dot}`} />
-                <span className="text-xs text-gray-400">{CHOICE_META[k].label}</span>
-              </div>
-            ))}
+            <div className="flex items-center gap-1">
+              <span className={`w-2 h-2 rounded-full ${CONTACT_DOT}`} />
+              <span className="text-xs text-gray-400">連絡済み</span>
+            </div>
           </div>
           <div className="flex gap-3 justify-center flex-wrap">
             <span className="text-xs text-gray-400">施設の予定</span>
@@ -583,35 +600,41 @@ export function UsageContactCalendar({
                     {sent && (() => {
                       const { text, tone } = statusMessage(sent)
                       return (
-                        <p
-                          className={`mb-3 text-xs ${
-                            tone === 'ok' ? 'text-emerald-600'
-                            : tone === 'ng' ? 'text-red-600'
-                            : 'text-gray-500'
-                          }`}
-                        >
-                          {text}
-                        </p>
+                        <div className="mb-3">
+                          <p
+                            className={`text-xs ${
+                              tone === 'ok' ? 'text-emerald-600'
+                              : tone === 'ng' ? 'text-red-600'
+                              : 'text-gray-500'
+                            }`}
+                          >
+                            {text}
+                          </p>
+                          {/* どのサービスとして何時から何時までになったか。
+                              日中一時は利用者負担が放デイと別枠なので保護者にも関わる */}
+                          {sent.status === 'attending' && sent.applied_at && (
+                            <p className="mt-0.5 text-[11px] text-gray-500">
+                              {describeAssignment(resolveAssignment(sent))}
+                            </p>
+                          )}
+                        </div>
                       )
                     })()}
 
-                    <div className="grid grid-cols-2 gap-2 mb-3">
-                      {SELECTABLE_CHOICES.map((choice) => (
-                        <button
-                          key={choice}
-                          onClick={() => updateEntry(child.id, { choice })}
-                          className={`rounded-xl py-3 text-xs font-semibold transition-colors ${
-                            entry.choice === choice
-                              ? CHOICE_META[choice].active
-                              : 'bg-white text-gray-600 border border-gray-200'
-                          }`}
-                        >
-                          {CHOICE_META[choice].label}
-                        </button>
-                      ))}
-                    </div>
+                    {/* 選ぶのは「利用するかどうか」だけ。
+                        放デイか日中一時かは施設が承認するときに割り振る */}
+                    <button
+                      onClick={() => updateEntry(child.id, { attending: !entry.attending })}
+                      className={`w-full rounded-xl py-3 text-sm font-semibold transition-colors mb-3 ${
+                        entry.attending
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'bg-white text-gray-600 border border-gray-200'
+                      }`}
+                    >
+                      {entry.attending ? 'この日は利用します' : '利用する日として連絡する'}
+                    </button>
 
-                    {(entry.choice === 'regular' || entry.choice === 'daytime_support') && (
+                    {entry.attending && (
                       <>
                         {/* 利用時間 */}
                         <div className="bg-white rounded-xl px-4 py-3 mb-3 border border-gray-200">
@@ -640,48 +663,63 @@ export function UsageContactCalendar({
                           </div>
                         </div>
 
-                        {/* 送迎 */}
+                        {/* 送迎。その日の「行き」「帰り」を1回ずつ聞く。
+                            通しで使う日でも家を出るのは1回・帰るのも1回なので、
+                            サービスごとには分けない */}
                         <div className="bg-white rounded-xl px-4 py-3 mb-3 border border-gray-200">
                           <div className="flex items-center gap-1.5 mb-2">
                             <Car className="h-3.5 w-3.5 text-indigo-500" />
                             <span className="text-xs font-semibold text-gray-600">送迎</span>
+                            <span className="text-[10px] text-gray-400">（必要なものを選ぶ）</span>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
-                            {TRANSPORT_OPTIONS.map((opt) => (
-                              <button
-                                key={opt.value}
-                                onClick={() => updateEntry(child.id, { transport: opt.value })}
-                                className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${
-                                  entry.transport === opt.value
-                                    ? 'bg-indigo-500 text-white shadow-sm'
-                                    : 'bg-gray-50 text-gray-600 border border-gray-200'
-                                }`}
-                              >
-                                {opt.label}
-                              </button>
-                            ))}
+                            <button
+                              onClick={() => updateEntry(child.id, { goPickup: !entry.goPickup })}
+                              className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${
+                                entry.goPickup
+                                  ? 'bg-indigo-500 text-white shadow-sm'
+                                  : 'bg-gray-50 text-gray-600 border border-gray-200'
+                              }`}
+                            >
+                              行き
+                            </button>
+                            <button
+                              onClick={() => updateEntry(child.id, { goDropoff: !entry.goDropoff })}
+                              className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${
+                                entry.goDropoff
+                                  ? 'bg-indigo-500 text-white shadow-sm'
+                                  : 'bg-gray-50 text-gray-600 border border-gray-200'
+                              }`}
+                            >
+                              帰り
+                            </button>
                           </div>
+                          {!entry.goPickup && !entry.goDropoff && (
+                            <p className="mt-2 text-[10px] text-gray-400">
+                              どちらも選ばない場合は「送迎なし」として連絡します
+                            </p>
+                          )}
 
-                          {(entry.transport === 'pickup_only' || entry.transport === 'both') && (
+                          {entry.goPickup && (
                             <div className="mt-3">
                               <label className="text-[10px] text-gray-400 mb-1 block">
-                                お迎え希望時刻（自宅・学校へ迎えに行く時間）
+                                行きの希望時刻（自宅・学校へ迎えに行く時間）
                               </label>
                               <TimeSelect
-                                ariaLabel={`${child.name}のお迎え希望時刻`}
+                                ariaLabel={`${child.name}の行きの希望時刻`}
                                 value={entry.pickupTime}
                                 onChange={(v) => updateEntry(child.id, { pickupTime: v })}
                               />
                             </div>
                           )}
 
-                          {(entry.transport === 'dropoff_only' || entry.transport === 'both') && (
+                          {entry.goDropoff && (
                             <div className="mt-3">
                               <label className="text-[10px] text-gray-400 mb-1 block">
-                                お送り希望時刻（自宅へ送り届ける時間）
+                                帰りの希望時刻（自宅へ送り届ける時間）
                               </label>
                               <TimeSelect
-                                ariaLabel={`${child.name}のお送り希望時刻`}
+                                ariaLabel={`${child.name}の帰りの希望時刻`}
                                 value={entry.dropoffTime}
                                 onChange={(v) => updateEntry(child.id, { dropoffTime: v })}
                               />
@@ -702,6 +740,18 @@ export function UsageContactCalendar({
                   </div>
                 )
               })}
+
+              {/* 保護者に区分を選ばせない代わりに、誰が決めるのかは伝えておく */}
+              <div className="rounded-2xl bg-blue-50 border border-blue-100 px-4 py-3">
+                <p className="text-xs text-blue-800">
+                  <strong>サービスの種類について</strong>
+                </p>
+                <p className="mt-1 text-xs text-blue-700">
+                  放課後等デイサービスと日中一時支援のどちらでお預かりするかは、
+                  受給者証の内容をもとに施設で決めてご連絡します。
+                  ご希望の時間と送迎だけお知らせください。
+                </p>
+              </div>
 
               {/* お休みはこの画面から送れない。どうすればよいかを必ず示す */}
               <div className="rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3">

@@ -7,6 +7,10 @@ import {
   revertParentContact,
   type ParentContact,
 } from '@/lib/parent-contact-schedule'
+import {
+  validateAssignment,
+  type ServiceAssignment,
+} from '@/lib/parent-contact-service'
 
 const STATUSES = ['pending', 'approved', 'rejected'] as const
 type ApprovalStatus = (typeof STATUSES)[number]
@@ -17,15 +21,25 @@ type ApprovalStatus = (typeof STATUSES)[number]
 //
 // 承認したときは、その連絡を実際の利用予定（usage_reservations）へ反映する。
 // 非承認・未承認に戻したときは、その反映を取り消す。
+//
+// サービス区分（放デイ / 日中一時 / 両方）は保護者ではなく施設が決めるので、
+// 承認と同時に assignment として受け取る（@/lib/parent-contact-service）。
 export async function POST(req: NextRequest) {
   try {
-    const { id, approvalStatus } = await req.json() as {
+    const { id, approvalStatus, assignment } = await req.json() as {
       id?: string
       approvalStatus?: ApprovalStatus
+      assignment?: ServiceAssignment
     }
     if (!id) return NextResponse.json({ error: 'id が必要です' }, { status: 400 })
     if (!approvalStatus || !STATUSES.includes(approvalStatus)) {
       return NextResponse.json({ error: 'approvalStatus が正しくありません' }, { status: 400 })
+    }
+    // 区分の不備は承認そのものを止める。中途半端な割り振りのまま予定に入れると
+    // 出席管理・請求がどちらのサービスか判断できなくなるため
+    if (approvalStatus === 'approved' && assignment) {
+      const invalid = validateAssignment(assignment)
+      if (invalid) return NextResponse.json({ error: invalid }, { status: 400 })
     }
 
     const supabase = await createClient()
@@ -56,7 +70,7 @@ export async function POST(req: NextRequest) {
     // 利用状況画面で手当てできるよう、理由だけ warning として返す）
     const result =
       approvalStatus === 'approved'
-        ? await applyParentContact(supabase, contact, userId)
+        ? await applyParentContact(supabase, contact, userId, assignment)
         : await revertParentContact(supabase, contact)
 
     return NextResponse.json({ ok: true, warning: result.error })

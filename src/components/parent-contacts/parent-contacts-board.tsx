@@ -15,6 +15,17 @@ import {
   CalendarCheck,
   AlertTriangle,
 } from 'lucide-react'
+import {
+  resolveAssignment,
+  defaultAssignment,
+  validateAssignment,
+  describeAssignment,
+  SERVICE_ASSIGNMENT_TYPES,
+  SERVICE_ASSIGNMENT_LABELS,
+  SERVICE_ASSIGNMENT_BADGE,
+  type ServiceAssignment,
+  type ServiceAssignmentType,
+} from '@/lib/parent-contact-service'
 
 type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
@@ -24,9 +35,15 @@ type Contact = {
   child_id: string
   date: string
   status: 'attending' | 'absent'
-  service_type: 'regular' | 'daytime_support'
+  /** 施設が承認時に割り振った区分。保護者は選ばない */
+  service_type: ServiceAssignmentType
+  /** 保護者が希望した利用時間 */
   service_start_time: string | null
   service_end_time: string | null
+  assigned_service_start_time: string | null
+  assigned_service_end_time: string | null
+  assigned_daytime_start_time: string | null
+  assigned_daytime_end_time: string | null
   transport_type: TransportType
   pickup_time: string | null
   dropoff_time: string | null
@@ -39,6 +56,8 @@ type Contact = {
   children: { id: string; name: string } | null
 }
 
+// 保護者の画面では「行き」「帰り」で聞いている。
+// スタッフ側は送迎管理・出席管理と同じ「迎え」「送り」で表示する。
 const TRANSPORT_LABELS: Record<TransportType, string> = {
   none: '送迎なし',
   both: '送り迎え',
@@ -85,6 +104,125 @@ function relativeLabel(dateStr: string, today: string): string | null {
 type Props = {
   /** 全日付の未確認連絡（日付昇順） */
   unconfirmedContacts: Contact[]
+  /** その日の出席記録にすでに入っている予定。連絡IDごとの初期値になる */
+  initialAssignments: Record<string, ServiceAssignment>
+}
+
+/** 割り振りの時刻欄。空欄は「指定なし」として扱う */
+function TimeRange({
+  label,
+  start,
+  end,
+  onStart,
+  onEnd,
+}: {
+  label: string
+  start: string | null
+  end: string | null
+  onStart: (v: string) => void
+  onEnd: (v: string) => void
+}) {
+  return (
+    <div className="flex items-center gap-1.5 mt-1.5">
+      <span className="w-14 shrink-0 text-[11px] font-medium text-gray-600">{label}</span>
+      <input
+        type="time"
+        aria-label={`${label}の開始時刻`}
+        value={start ?? ''}
+        onChange={(e) => onStart(e.target.value)}
+        className="rounded border border-gray-300 px-1.5 py-1 text-xs text-gray-700"
+      />
+      <span className="text-[11px] text-gray-400">〜</span>
+      <input
+        type="time"
+        aria-label={`${label}の終了時刻`}
+        value={end ?? ''}
+        onChange={(e) => onEnd(e.target.value)}
+        className="rounded border border-gray-300 px-1.5 py-1 text-xs text-gray-700"
+      />
+    </div>
+  )
+}
+
+/**
+ * サービス区分の割り振り欄。
+ *
+ * 保護者は「利用したい時間」と「送迎」しか送ってこない。放デイか日中一時か、
+ * 同じ日に両方使うのかは受給者証と支給量の残りを見て施設が決めるので、
+ * 承認する前にここで割り振る（@/lib/parent-contact-service）。
+ */
+function AssignmentEditor({
+  contact,
+  value,
+  onChange,
+}: {
+  contact: Contact
+  value: ServiceAssignment
+  onChange: (next: ServiceAssignment) => void
+}) {
+  const showBasic = value.serviceType !== 'daytime_support'
+  const showDaytime = value.serviceType !== 'regular'
+  const invalid = validateAssignment(value)
+
+  function setTime(key: keyof Omit<ServiceAssignment, 'serviceType'>, v: string) {
+    const next: ServiceAssignment = { ...value, [key]: v || null }
+    // 両方使う日の切り替え時刻は、日中一時の終わり＝放デイの始まりになるのが通常。
+    // 片方だけ入れたときに、もう片方が空ならそろえる（重なりのまま承認するのを防ぐ）
+    if (value.serviceType === 'both') {
+      if (key === 'daytimeEndTime' && !value.serviceStartTime) next.serviceStartTime = v || null
+      if (key === 'serviceStartTime' && !value.daytimeEndTime) next.daytimeEndTime = v || null
+    }
+    onChange(next)
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
+      <p className="text-[11px] font-semibold text-gray-600">サービス区分を決める</p>
+      <div className="flex flex-wrap gap-1.5 mt-1.5">
+        {SERVICE_ASSIGNMENT_TYPES.map((t) => (
+          <button
+            key={t}
+            onClick={() => onChange(defaultAssignment(contact, t))}
+            className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+              value.serviceType === t
+                ? 'bg-indigo-600 text-white'
+                : 'border border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {SERVICE_ASSIGNMENT_LABELS[t]}
+          </button>
+        ))}
+      </div>
+
+      {/* 通しで使う日は日中一時が先に来ることが多いので、その順で並べる */}
+      {showDaytime && (
+        <TimeRange
+          label="日中一時"
+          start={value.daytimeStartTime}
+          end={value.daytimeEndTime}
+          onStart={(v) => setTime('daytimeStartTime', v)}
+          onEnd={(v) => setTime('daytimeEndTime', v)}
+        />
+      )}
+      {showBasic && (
+        <TimeRange
+          label="放デイ"
+          start={value.serviceStartTime}
+          end={value.serviceEndTime}
+          onStart={(v) => setTime('serviceStartTime', v)}
+          onEnd={(v) => setTime('serviceEndTime', v)}
+        />
+      )}
+
+      {invalid ? (
+        <p className="mt-1.5 text-[11px] text-red-600">{invalid}</p>
+      ) : (
+        <p className="mt-1.5 text-[11px] text-gray-400">
+          送迎は行き・帰りの時刻から、どちらのサービスの送迎かを自動で判定します
+        </p>
+      )}
+    </div>
+  )
 }
 
 /** 連絡1件分のカード */
@@ -93,6 +231,8 @@ function ContactCard({
   approval,
   applied,
   reviewing,
+  assignment,
+  onAssignmentChange,
   onReviewed,
   onApproval,
 }: {
@@ -101,9 +241,14 @@ function ContactCard({
   /** 予定へ反映済みか */
   applied: boolean
   reviewing: boolean
+  /** 施設が決めるサービス区分と時間 */
+  assignment: ServiceAssignment
+  onAssignmentChange: (next: ServiceAssignment) => void
   onReviewed: (id: string) => void
   onApproval: (id: string, next: ApprovalStatus) => void
 }) {
+  const editable = needsApproval(c) && approval === 'pending'
+  const assignmentError = validateAssignment(assignment)
   return (
     <div className="rounded-xl px-4 py-3 shadow-sm border bg-amber-50 border-amber-200 flex items-start gap-3">
       <div className="mt-0.5">
@@ -118,18 +263,21 @@ function ContactCard({
           <span className="font-semibold text-gray-900 text-sm">
             {c.children?.name ?? '不明'}
           </span>
+          {/* 区分は施設が決めたもの。まだ決めていない連絡は「区分未定」と出す */}
           <span
             className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-              c.status === 'attending'
-                ? c.service_type === 'daytime_support'
-                  ? 'bg-orange-100 text-orange-600'
-                  : 'bg-green-100 text-green-700'
-                : 'bg-red-100 text-red-600'
+              c.status !== 'attending'
+                ? 'bg-red-100 text-red-600'
+                : editable
+                  ? 'bg-gray-100 text-gray-500'
+                  : SERVICE_ASSIGNMENT_BADGE[assignment.serviceType]
             }`}
           >
-            {c.status === 'attending'
-              ? c.service_type === 'daytime_support' ? '日中一時' : '放デイ'
-              : 'お休み'}
+            {c.status !== 'attending'
+              ? 'お休み'
+              : editable
+                ? '区分未定'
+                : SERVICE_ASSIGNMENT_LABELS[assignment.serviceType]}
           </span>
           {hasTransport(c) && (
             <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
@@ -162,13 +310,13 @@ function ContactCard({
           )}
         </div>
 
-        {/* 利用時間・送迎時間 */}
+        {/* 保護者が希望した利用時間・送迎時間 */}
         {c.status === 'attending' && (
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
             {(fmtTime(c.service_start_time) || fmtTime(c.service_end_time)) && (
               <span className="flex items-center gap-1 text-xs text-gray-500">
                 <Clock className="h-3 w-3 text-indigo-400" />
-                利用 {fmtTime(c.service_start_time) ?? '—'}〜{fmtTime(c.service_end_time) ?? '—'}
+                希望 {fmtTime(c.service_start_time) ?? '—'}〜{fmtTime(c.service_end_time) ?? '—'}
               </span>
             )}
             {fmtTime(c.pickup_time) && (
@@ -182,6 +330,16 @@ function ContactCard({
 
         {c.note && (
           <p className="text-xs text-gray-500 mt-1 line-clamp-2">{c.note}</p>
+        )}
+
+        {/* 承認前は区分を決める欄、承認後は決まった内容を出す */}
+        {editable ? (
+          <AssignmentEditor contact={c} value={assignment} onChange={onAssignmentChange} />
+        ) : (
+          needsApproval(c) &&
+          approval === 'approved' && (
+            <p className="mt-1 text-xs text-gray-500">{describeAssignment(assignment)}</p>
+          )
         )}
       </div>
       <div className="shrink-0 flex flex-col items-end gap-1.5">
@@ -200,7 +358,8 @@ function ContactCard({
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => onApproval(c.id, 'approved')}
-                disabled={reviewing}
+                disabled={reviewing || assignmentError !== null}
+                title={assignmentError ?? undefined}
                 className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 承認する
@@ -239,12 +398,14 @@ function ContactCard({
   )
 }
 
-export function ParentContactsBoard({ unconfirmedContacts }: Props) {
+export function ParentContactsBoard({ unconfirmedContacts, initialAssignments }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   // 処理した行をその場で反映する（再取得を待たずベルバッジと揃える）
   const [handledIds, setHandledIds] = useState<Set<string>>(new Set())
   const [approvalOverrides, setApprovalOverrides] = useState<Record<string, ApprovalStatus>>({})
+  // 施設が決めたサービス区分と時間。承認するまでは画面の中だけに持つ
+  const [assignments, setAssignments] = useState<Record<string, ServiceAssignment>>({})
   // 予定へ反映できたかをその場で反映する（再取得を待たずバッジを出す）
   const [appliedOverrides, setAppliedOverrides] = useState<Record<string, boolean>>({})
   // 反映できなかった連絡の理由（ユニット未設定・予定が無い日のお休みなど）
@@ -259,6 +420,10 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
   const today = getTodayJST()
   const approvalOf = (c: Contact): ApprovalStatus => approvalOverrides[c.id] ?? c.approval_status
   const appliedOf = (c: Contact): boolean => appliedOverrides[c.id] ?? c.applied_at !== null
+  // 初期値は「その日の出席記録に入っている予定」→「保存済みの割り振り」→
+  // 「保護者の希望時間をそのまま放デイとして」の順に決める
+  const assignmentOf = (c: Contact): ServiceAssignment =>
+    assignments[c.id] ?? initialAssignments[c.id] ?? resolveAssignment(c)
   // 承認待ちに戻した行は再び未処理として扱う
   const isPending = (c: Contact) =>
     approvalOverrides[c.id] === 'pending' || !handledIds.has(c.id)
@@ -315,18 +480,42 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
   }
 
   async function setApproval(id: string, next: ApprovalStatus) {
+    const target = visible.find((c) => c.id === id)
+
+    // 承認する利用連絡には、施設が決めた区分と時間を必ず添える。
+    // 中途半端な割り振り（両方使う日なのに片方の時間しか無いなど）のまま
+    // 予定に入れると、出席管理も請求もどちらのサービスか判断できなくなる
+    let assignment: ServiceAssignment | undefined
+    if (next === 'approved' && target && needsApproval(target)) {
+      assignment = assignmentOf(target)
+      const invalid = validateAssignment(assignment)
+      if (invalid) {
+        const name = target.children?.name ?? '不明'
+        setWarnings((prev) => [
+          ...new Set([...prev, `${name}さん ${formatDateLabel(target.date)}：${invalid}`]),
+        ])
+        return
+      }
+    }
+
     setReviewing(true)
     const res = await fetch('/api/parent-contacts/approval', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, approvalStatus: next }),
+      body: JSON.stringify({ id, approvalStatus: next, assignment }),
     })
-    const json = (await res.json().catch(() => ({}))) as { warning?: string }
-    if (json.warning) setWarnings((prev) => [...new Set([...prev, json.warning!])])
+    const json = (await res.json().catch(() => ({}))) as { warning?: string; error?: string }
+    const problem = json.warning ?? json.error
+    if (problem) setWarnings((prev) => [...new Set([...prev, problem])])
+    if (json.error) {
+      setReviewing(false)
+      return
+    }
     setAppliedOverrides((prev) => ({
       ...prev,
       [id]: next === 'approved' && !json.warning,
     }))
+    if (assignment) setAssignments((prev) => ({ ...prev, [id]: assignment! }))
     remember([id])
     setApprovalOverrides((prev) => ({ ...prev, [id]: next }))
     setHandledIds((prev) => {
@@ -352,6 +541,8 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
       <div>
         <h1 className="text-xl font-bold text-gray-900">保護者からの利用連絡</h1>
         <p className="text-xs text-gray-500 mt-1">
+          保護者が送るのは「利用したい時間」と「送迎の希望」だけです。
+          放デイ・日中一時のどちらでお預かりするかは、承認するときにここで決めてください。
           承認した利用連絡はそのまま利用状況・出席管理の利用予定になります。
           お休み・キャンセルの連絡はここには来ません（施設が電話で受け、利用状況ページで記録します）。
         </p>
@@ -450,6 +641,10 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
                         approval={approvalOf(c)}
                         applied={appliedOf(c)}
                         reviewing={reviewing}
+                        assignment={assignmentOf(c)}
+                        onAssignmentChange={(next) =>
+                          setAssignments((prev) => ({ ...prev, [c.id]: next }))
+                        }
                         onReviewed={(id) => markReviewed([id])}
                         onApproval={setApproval}
                       />
