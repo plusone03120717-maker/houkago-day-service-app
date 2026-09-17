@@ -152,6 +152,64 @@ export async function saveUsageContacts(
   return {}
 }
 
+/** 施設がお休みの日（保護者は利用連絡を送れない） */
+export type FacilityClosure = {
+  date: string
+  /** 「年末年始休業」など。保護者にそのまま見せる */
+  title: string
+}
+
+/**
+ * その月の休業日を取り出す。
+ *
+ * 施設カレンダー（設定 → 施設カレンダー）の予定のうち、
+ * 「保護者予約を停止する」が立っているものを休業日として扱う。
+ * 休業日（event_type='closed'）はこのフラグが自動で立つが、
+ * 研修日などにスタッフが手で立てることもできる。
+ *
+ * 児童が所属するユニットの施設だけを見る。所属ユニットが無い児童は
+ * どの施設の休業日か決められないため、何も返さない。
+ */
+export async function loadFacilityClosures(
+  supabase: Client,
+  childIds: string[],
+  year: number,
+  month: number
+): Promise<FacilityClosure[]> {
+  if (childIds.length === 0) return []
+
+  const { data: unitRows } = await supabase
+    .from('children_units')
+    .select('units (facility_id)')
+    .in('child_id', childIds)
+  const facilityIds = [
+    ...new Set(
+      ((unitRows ?? []) as unknown as { units: { facility_id: string } | null }[])
+        .map((r) => r.units?.facility_id)
+        .filter((id): id is string => !!id)
+    ),
+  ]
+  if (facilityIds.length === 0) return []
+
+  const mm = String(month).padStart(2, '0')
+  const lastDay = new Date(year, month, 0).getDate()
+  const { data } = await supabase
+    .from('facility_events')
+    .select('event_date, title')
+    .in('facility_id', facilityIds)
+    .eq('affects_reservation', true)
+    .gte('event_date', `${year}-${mm}-01`)
+    .lte('event_date', `${year}-${mm}-${String(lastDay).padStart(2, '0')}`)
+    .order('event_date')
+
+  // 同じ日に複数の施設・予定があっても、保護者には1日1件だけ見せる
+  const byDate = new Map<string, string>()
+  for (const row of (data ?? []) as { event_date: string; title: string }[]) {
+    if (!byDate.has(row.event_date)) byDate.set(row.event_date, row.title)
+  }
+  return [...byDate.entries()].map(([date, title]) => ({ date, title }))
+}
+
 /**
  * 施設側で決まっているその月の利用日を取り出す。
  *

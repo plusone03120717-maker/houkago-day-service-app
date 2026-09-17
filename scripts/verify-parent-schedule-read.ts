@@ -15,6 +15,7 @@ import {
   loadFacilitySchedule,
   saveUsageContacts,
   validateUsageContact,
+  loadFacilityClosures,
 } from '../src/lib/parent-usage-contact'
 import {
   applyParentContact,
@@ -89,6 +90,7 @@ async function cleanup() {
     await admin.from('usage_plans').delete().eq('child_id', childId)
     await admin.from('children').delete().eq('id', childId)
   }
+  await admin.from('facility_events').delete().like('title', '検証用%')
   const { data: user } = await admin.from('users').select('id').eq('email', EMAIL).maybeSingle()
   const userId = (user as { id: string } | null)?.id
   if (userId) {
@@ -294,6 +296,53 @@ async function main() {
         afterSchedule.find((s) => s.date === USE_DATE)?.kind === 'planned',
         afterSchedule.find((s) => s.date === USE_DATE)?.kind
       )
+    }
+
+    // ── 施設の休業日 ──
+    // 休業日が保護者に見えないと、営業していない日に利用連絡が届いてしまう
+    console.log('\n施設の休業日')
+    const CLOSED_DATE = '2027-05-11' // 火曜（利用計画のある日にあえて休業日を重ねる）
+    {
+      const { data: facilityRow } = await admin
+        .from('units')
+        .select('facility_id')
+        .eq('id', unitId)
+        .maybeSingle()
+      const facilityId = (facilityRow as { facility_id: string }).facility_id
+
+      const { error: evError } = await admin.from('facility_events').insert({
+        facility_id: facilityId,
+        event_date: CLOSED_DATE,
+        event_type: 'closed',
+        title: '検証用 臨時休業',
+        affects_reservation: true,
+      })
+      check('休業日を登録できる', !evError, evError?.message)
+
+      const closures = await loadFacilityClosures(parent, [childId], YEAR, MONTH)
+      check('保護者のセッションで休業日が読める', closures.length > 0, closures)
+      check(
+        '休業日の名前が伝わる',
+        closures.find((c) => c.date === CLOSED_DATE)?.title === '検証用 臨時休業',
+        closures
+      )
+
+      // 保護者予約を止めないイベント（行事など）は休業日として出さない
+      await admin.from('facility_events').insert({
+        facility_id: facilityId,
+        event_date: '2027-05-13',
+        event_type: 'event',
+        title: '検証用 行事',
+        affects_reservation: false,
+      })
+      const closures2 = await loadFacilityClosures(parent, [childId], YEAR, MONTH)
+      check(
+        '予約を止めない予定は休業日にしない',
+        !closures2.some((c) => c.date === '2027-05-13'),
+        closures2
+      )
+
+      await admin.from('facility_events').delete().like('title', '検証用%')
     }
 
     await parent.auth.signOut()

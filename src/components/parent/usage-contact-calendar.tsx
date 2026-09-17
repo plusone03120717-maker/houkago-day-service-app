@@ -36,6 +36,12 @@ export type UsageContact = {
   applied_at: string | null
 }
 
+/** 施設がお休みの日。この日は利用連絡を送れない */
+export type FacilityClosure = {
+  date: string
+  title: string
+}
+
 /** 施設側で決まっているその日の状態 */
 export type FacilityScheduleDay = {
   child_id: string
@@ -187,6 +193,8 @@ type Props = {
   contacts: UsageContact[]
   /** 施設側ですでに決まっている利用日 */
   schedule: FacilityScheduleDay[]
+  /** 施設がお休みの日 */
+  closures: FacilityClosure[]
   year: number
   month: number
   loading: boolean
@@ -200,6 +208,7 @@ export function UsageContactCalendar({
   childrenList,
   contacts,
   schedule,
+  closures,
   year,
   month,
   loading,
@@ -223,6 +232,11 @@ export function UsageContactCalendar({
 
   function contactsOn(dateStr: string): UsageContact[] {
     return contacts.filter((c) => c.date === dateStr)
+  }
+
+  /** その日が施設のお休みなら、その予定名を返す */
+  function closureOn(dateStr: string): string | null {
+    return closures.find((c) => c.date === dateStr)?.title ?? null
   }
 
   function scheduleOn(dateStr: string): FacilityScheduleDay[] {
@@ -393,14 +407,16 @@ export function UsageContactCalendar({
               const dow = idx % 7
               const holidayName = getJapaneseHolidayName(dateStr)
               const scheduleMark = scheduleMarkOn(dateStr)
+              const closure = closureOn(dateStr)
               return (
                 <button
                   key={idx}
                   onClick={() => openDate(dateStr)}
                   disabled={isPast}
-                  title={holidayName ?? undefined}
+                  title={closure ?? holidayName ?? undefined}
                   className={`relative flex flex-col items-center justify-start pt-1.5 h-12 rounded-xl mx-0.5 mb-0.5 transition-colors ${
                     isSelected ? 'bg-indigo-100' :
+                    closure ? 'bg-gray-100' :
                     isToday ? 'bg-indigo-50' :
                     isPast ? '' :
                     holidayName ? 'bg-red-50/60 hover:bg-gray-50 active:bg-gray-100' : 'hover:bg-gray-50 active:bg-gray-100'
@@ -408,6 +424,7 @@ export function UsageContactCalendar({
                 >
                   <span className={`text-sm font-medium leading-none ${
                     isSelected ? 'text-indigo-700' :
+                    closure ? 'text-gray-400 line-through' :
                     isToday ? 'text-indigo-600' :
                     isPast ? 'text-gray-300' :
                     dow === 0 || holidayName ? 'text-red-500' :
@@ -418,6 +435,10 @@ export function UsageContactCalendar({
                       <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-xs">{day}</span>
                     ) : day}
                   </span>
+                  {/* 施設がお休みの日は連絡を送れないことがひと目で分かるようにする */}
+                  {closure && (
+                    <span className="mt-0.5 text-[9px] leading-none font-medium text-gray-400">休</span>
+                  )}
                   <div className="flex gap-0.5 mt-1">
                     {dayContacts.slice(0, 3).map((c, i) => (
                       <span
@@ -452,6 +473,10 @@ export function UsageContactCalendar({
           </div>
           <div className="flex gap-3 justify-center flex-wrap">
             <span className="text-xs text-gray-400">施設の予定</span>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] leading-none text-gray-400">休</span>
+              <span className="text-xs text-gray-400">休業日</span>
+            </div>
             {(Object.keys(SCHEDULE_META) as FacilityScheduleDay['kind'][]).map((k) => (
               <div key={k} className="flex items-center gap-1">
                 <span className={`w-2 h-2 rounded-[2px] ${SCHEDULE_META[k].box}`} />
@@ -509,12 +534,24 @@ export function UsageContactCalendar({
                 </div>
               )}
 
-              {contactsOn(selectedDate).length > 0 && !toast && (
+              {contactsOn(selectedDate).length > 0 && !toast && !closureOn(selectedDate) && (
                 <p className="text-xs text-gray-400 text-center">
                   送信済みの連絡です。変更して再送信できます
                 </p>
               )}
 
+              {/* 施設がお休みの日は入力欄そのものを出さない。
+                  選ばせてから断るより、開いた時点で伝えるほうが分かりやすい */}
+              {closureOn(selectedDate) ? (
+                <div className="rounded-2xl bg-gray-100 border border-gray-200 px-4 py-5 text-center">
+                  <p className="text-sm font-bold text-gray-700">この日は施設がお休みです</p>
+                  <p className="mt-1 text-sm text-gray-600">{closureOn(selectedDate)}</p>
+                  <p className="mt-2 text-xs text-gray-500">
+                    ご利用いただけないため、利用連絡は送れません
+                  </p>
+                </div>
+              ) : (
+                <>
               {childrenList.map((child) => {
                 const entry = entries[child.id]
                 if (!entry) return null
@@ -685,6 +722,8 @@ export function UsageContactCalendar({
                 {submitting && <Loader2 className="h-5 w-5 animate-spin" />}
                 連絡を送信する
               </button>
+                </>
+              )}
             </div>
           </div>
         </div>

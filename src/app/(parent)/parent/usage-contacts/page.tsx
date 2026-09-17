@@ -8,6 +8,7 @@ import {
   type UsageContactChild,
   type UsageContactEntry,
   type FacilityScheduleDay,
+  type FacilityClosure,
 } from '@/components/parent/usage-contact-calendar'
 
 /**
@@ -25,6 +26,7 @@ export default function ParentUsageContactsPage() {
   const [childrenList, setChildrenList] = useState<UsageContactChild[]>([])
   const [contacts, setContacts] = useState<UsageContact[]>([])
   const [schedule, setSchedule] = useState<FacilityScheduleDay[]>([])
+  const [closures, setClosures] = useState<FacilityClosure[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -41,6 +43,7 @@ export default function ParentUsageContactsPage() {
           children?: UsageContactChild[]
           contacts?: UsageContact[]
           schedule?: FacilityScheduleDay[]
+          closures?: FacilityClosure[]
           error?: string
         }
         if (!res.ok) {
@@ -50,6 +53,7 @@ export default function ParentUsageContactsPage() {
         setChildrenList(json.children ?? [])
         setContacts(json.contacts ?? [])
         setSchedule(json.schedule ?? [])
+        setClosures(json.closures ?? [])
         setError(null)
       })
       .catch(() => setError('通信エラーが発生しました'))
@@ -114,6 +118,7 @@ export default function ParentUsageContactsPage() {
         childrenList={childrenList}
         contacts={contacts}
         schedule={schedule}
+        closures={closures}
         year={year}
         month={month}
         loading={loading}

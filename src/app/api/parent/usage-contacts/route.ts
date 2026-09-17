@@ -4,6 +4,7 @@ import { getSessionUserId } from '@/lib/auth'
 import {
   validateUsageContact,
   saveUsageContacts,
+  loadFacilityClosures,
   type UsageContactEntry,
 } from '@/lib/parent-usage-contact'
 
@@ -43,6 +44,23 @@ export async function POST(req: NextRequest) {
           { status: 403 }
         )
       }
+    }
+
+    // 施設がお休みの日は受け付けない。画面では入力欄を出していないが、
+    // 休業日が後から登録されることもあるので保存の直前にも確かめる
+    const [year, month] = date!.split('-').map(Number)
+    const closures = await loadFacilityClosures(
+      adminClient,
+      entries!.map((e) => e.childId),
+      year,
+      month
+    )
+    const closure = closures.find((c) => c.date === date)
+    if (closure) {
+      return NextResponse.json(
+        { error: `この日は施設がお休みです（${closure.title}）` },
+        { status: 400 }
+      )
     }
 
     const result = await saveUsageContacts(adminClient, date!, entries!)
