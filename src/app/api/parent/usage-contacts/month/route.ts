@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getSessionUserId } from '@/lib/auth'
-import { loadUsageContacts } from '@/lib/parent-usage-contact'
+import { loadUsageContacts, loadFacilitySchedule } from '@/lib/parent-usage-contact'
 
 const adminClient = createAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,17 +32,19 @@ export async function POST(req: NextRequest) {
       .filter((c): c is { id: string; name: string } => c !== null)
 
     if (children.length === 0) {
-      return NextResponse.json({ children: [], contacts: [] })
+      return NextResponse.json({ children: [], contacts: [], schedule: [] })
     }
 
-    const contacts = await loadUsageContacts(
-      adminClient,
-      children.map((c) => c.id),
-      year,
-      month
-    )
+    const childIds = children.map((c) => c.id)
+    // 保護者自身が送った連絡と、施設側ですでに決まっている予定の両方を返す。
+    // 施設の予定が見えないと、毎週の利用スケジュールがある日にも
+    // 重ねて連絡を送ってしまい、確認の手間が増える
+    const [contacts, schedule] = await Promise.all([
+      loadUsageContacts(adminClient, childIds, year, month),
+      loadFacilitySchedule(adminClient, childIds, year, month),
+    ])
 
-    return NextResponse.json({ children, contacts })
+    return NextResponse.json({ children, contacts, schedule })
   } catch (err) {
     console.error('[parent/usage-contacts/month]', err)
     return NextResponse.json({ error: 'サーバーエラーが発生しました' }, { status: 500 })

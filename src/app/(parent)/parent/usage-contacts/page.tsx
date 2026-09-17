@@ -7,6 +7,7 @@ import {
   type UsageContact,
   type UsageContactChild,
   type UsageContactEntry,
+  type FacilityScheduleDay,
 } from '@/components/parent/usage-contact-calendar'
 
 /**
@@ -22,6 +23,7 @@ export default function ParentUsageContactsPage() {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [childrenList, setChildrenList] = useState<UsageContactChild[]>([])
   const [contacts, setContacts] = useState<UsageContact[]>([])
+  const [schedule, setSchedule] = useState<FacilityScheduleDay[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -37,6 +39,7 @@ export default function ParentUsageContactsPage() {
         const json = await res.json() as {
           children?: UsageContactChild[]
           contacts?: UsageContact[]
+          schedule?: FacilityScheduleDay[]
           error?: string
         }
         if (!res.ok) {
@@ -45,6 +48,7 @@ export default function ParentUsageContactsPage() {
         }
         setChildrenList(json.children ?? [])
         setContacts(json.contacts ?? [])
+        setSchedule(json.schedule ?? [])
         setError(null)
       })
       .catch(() => setError('通信エラーが発生しました'))
@@ -100,13 +104,15 @@ export default function ParentUsageContactsPage() {
       <div>
         <h1 className="text-lg font-bold text-gray-900">利用連絡</h1>
         <p className="text-xs text-gray-500 mt-0.5">
-          利用する日・お休みする日を、当日以降の日付から連絡できます
+          利用する日・お休みする日を、当日以降の日付から連絡できます。
+          施設で決まっている予定も一緒に表示されます
         </p>
       </div>
 
       <UsageContactCalendar
         childrenList={childrenList}
         contacts={contacts}
+        schedule={schedule}
         year={year}
         month={month}
         loading={loading}

@@ -28,6 +28,14 @@ export type UsageContact = {
   pickup_time: string | null
   dropoff_time: string | null
   note: string | null
+  approval_status: 'pending' | 'approved' | 'rejected'
+}
+
+/** 施設側で決まっているその日の状態 */
+export type FacilityScheduleDay = {
+  child_id: string
+  date: string
+  kind: 'planned' | 'absent' | 'attended'
 }
 
 export type UsageContactEntry = {
@@ -111,6 +119,19 @@ const CHOICE_META: Record<Choice, { label: string; dot: string; active: string }
   absent: { label: 'お休み', dot: 'bg-red-400', active: 'bg-red-400 text-white shadow-sm' },
 }
 
+/** 施設側の予定。自分の連絡（下の丸）と区別できるよう、マス目の右上に四角で出す */
+const SCHEDULE_META: Record<FacilityScheduleDay['kind'], { label: string; box: string }> = {
+  planned: { label: '利用予定', box: 'bg-blue-500' },
+  attended: { label: '利用済み', box: 'bg-gray-400' },
+  absent: { label: '欠席', box: 'bg-red-300' },
+}
+
+const APPROVAL_MESSAGE: Record<UsageContact['approval_status'], string | null> = {
+  pending: '施設で確認中です',
+  approved: '施設が承認しました',
+  rejected: 'この日は受け入れができませんでした。施設にお問い合わせください',
+}
+
 function toDateStr(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
@@ -131,6 +152,8 @@ function contactToChoice(c: UsageContact): Choice {
 type Props = {
   childrenList: UsageContactChild[]
   contacts: UsageContact[]
+  /** 施設側ですでに決まっている利用日 */
+  schedule: FacilityScheduleDay[]
   year: number
   month: number
   loading: boolean
@@ -143,6 +166,7 @@ type Props = {
 export function UsageContactCalendar({
   childrenList,
   contacts,
+  schedule,
   year,
   month,
   loading,
@@ -166,6 +190,19 @@ export function UsageContactCalendar({
 
   function contactsOn(dateStr: string): UsageContact[] {
     return contacts.filter((c) => c.date === dateStr)
+  }
+
+  function scheduleOn(dateStr: string): FacilityScheduleDay[] {
+    return schedule.filter((s) => s.date === dateStr)
+  }
+
+  /** マス目の右上に出す印。同じ日に複数いる場合は「利用予定」を優先して1つだけ出す */
+  function scheduleMarkOn(dateStr: string): FacilityScheduleDay['kind'] | null {
+    const kinds = scheduleOn(dateStr).map((s) => s.kind)
+    if (kinds.includes('planned')) return 'planned'
+    if (kinds.includes('attended')) return 'attended'
+    if (kinds.includes('absent')) return 'absent'
+    return null
   }
 
   function prevMonth() {
@@ -322,6 +359,7 @@ export function UsageContactCalendar({
               const isSelected = dateStr === selectedDate
               const dow = idx % 7
               const holidayName = getJapaneseHolidayName(dateStr)
+              const scheduleMark = scheduleMarkOn(dateStr)
               return (
                 <button
                   key={idx}
@@ -355,20 +393,39 @@ export function UsageContactCalendar({
                       />
                     ))}
                   </div>
+                  {/* 施設側の予定。自分の連絡（下の丸）と見分けられるよう右上に四角で出す */}
+                  {scheduleMark && (
+                    <span
+                      aria-label={SCHEDULE_META[scheduleMark].label}
+                      className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-[2px] ${SCHEDULE_META[scheduleMark].box} ${isPast ? 'opacity-40' : ''}`}
+                    />
+                  )}
                 </button>
               )
             })}
           </div>
         )}
 
-        {/* 凡例 */}
-        <div className="flex gap-4 justify-center py-3 border-t border-gray-100">
-          {(Object.keys(CHOICE_META) as Choice[]).map((k) => (
-            <div key={k} className="flex items-center gap-1">
-              <span className={`w-2 h-2 rounded-full ${CHOICE_META[k].dot}`} />
-              <span className="text-xs text-gray-400">{CHOICE_META[k].label}</span>
-            </div>
-          ))}
+        {/* 凡例。自分が送った連絡（下の丸）と、施設の予定（右上の四角）を分けて示す */}
+        <div className="border-t border-gray-100 px-3 py-3 space-y-1.5">
+          <div className="flex gap-3 justify-center flex-wrap">
+            <span className="text-xs text-gray-400">自分の連絡</span>
+            {(Object.keys(CHOICE_META) as Choice[]).map((k) => (
+              <div key={k} className="flex items-center gap-1">
+                <span className={`w-2 h-2 rounded-full ${CHOICE_META[k].dot}`} />
+                <span className="text-xs text-gray-400">{CHOICE_META[k].label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-3 justify-center flex-wrap">
+            <span className="text-xs text-gray-400">施設の予定</span>
+            {(Object.keys(SCHEDULE_META) as FacilityScheduleDay['kind'][]).map((k) => (
+              <div key={k} className="flex items-center gap-1">
+                <span className={`w-2 h-2 rounded-[2px] ${SCHEDULE_META[k].box}`} />
+                <span className="text-xs text-gray-400">{SCHEDULE_META[k].label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -425,9 +482,36 @@ export function UsageContactCalendar({
               {childrenList.map((child) => {
                 const entry = entries[child.id]
                 if (!entry) return null
+                const sched = scheduleOn(selectedDate).find((s) => s.child_id === child.id)
+                const sent = contactsOn(selectedDate).find((c) => c.child_id === child.id)
                 return (
                   <div key={child.id} className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
                     <p className="font-semibold text-gray-900 mb-3">{child.name}</p>
+
+                    {/* 施設側の状況。すでに予定がある日に重ねて連絡しなくて済むようにする */}
+                    {sched && (
+                      <div className="mb-3 flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2">
+                        <span className={`mt-1 w-2 h-2 shrink-0 rounded-[2px] ${SCHEDULE_META[sched.kind].box}`} />
+                        <p className="text-xs text-blue-800">
+                          {sched.kind === 'planned' && 'この日はすでに利用予定が入っています。変更がなければ連絡は不要です'}
+                          {sched.kind === 'attended' && 'この日はご利用済みです'}
+                          {sched.kind === 'absent' && 'この日はお休みとして登録されています'}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* 送信済みの連絡が、施設でどう扱われているか */}
+                    {sent && APPROVAL_MESSAGE[sent.approval_status] && (
+                      <p
+                        className={`mb-3 text-xs ${
+                          sent.approval_status === 'approved' ? 'text-emerald-600'
+                          : sent.approval_status === 'rejected' ? 'text-red-600'
+                          : 'text-gray-500'
+                        }`}
+                      >
+                        {APPROVAL_MESSAGE[sent.approval_status]}
+                      </p>
+                    )}
 
                     <div className="grid grid-cols-3 gap-2 mb-3">
                       {(['regular', 'daytime_support', 'absent'] as Choice[]).map((choice) => (

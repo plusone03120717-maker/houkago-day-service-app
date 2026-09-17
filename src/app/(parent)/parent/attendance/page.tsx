@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
+import { loadFacilitySchedule } from '@/lib/parent-usage-contact'
 
 type AttendanceRecord = {
   id: string
@@ -61,8 +62,9 @@ export default async function ParentAttendancePage({
     )
   }
 
-  // 出席記録と受給者証は独立しているため並列取得
-  const [{ data: attendanceRaw }, { data: certsRaw }] = await Promise.all([
+  // 出席記録・受給者証・施設の予定は独立しているため並列取得。
+  // 予定まで出さないと、これから利用する日が保護者から見えない
+  const [{ data: attendanceRaw }, { data: certsRaw }, schedule] = await Promise.all([
     supabase
       .from('daily_attendance')
       .select('id, date, status, check_in_time, check_out_time, units(name), children(name)')
@@ -77,6 +79,7 @@ export default async function ParentAttendancePage({
       .in('child_id', childIds)
       .lte('start_date', monthEnd)
       .gte('end_date', monthStart),
+    loadFacilitySchedule(supabase, childIds, year, month),
   ])
   const attendances = (attendanceRaw ?? []) as unknown as AttendanceRecord[]
   const certs = (certsRaw ?? []) as unknown as BenefitCert[]
@@ -84,6 +87,11 @@ export default async function ParentAttendancePage({
 
   const attendedDates = new Set(attendances.map((a) => a.date))
   const attendedCount = attendedDates.size
+  // 給付日数は「実際に利用した日」だけで数える。予定・欠席は含めない
+  const absentDates = new Set(schedule.filter((s) => s.kind === 'absent').map((s) => s.date))
+  const plannedDates = new Set(
+    schedule.filter((s) => s.kind === 'planned' && !attendedDates.has(s.date)).map((s) => s.date)
+  )
   const remaining = maxDays != null ? maxDays - attendedCount : null
 
   // カレンダー用
@@ -99,7 +107,7 @@ export default async function ParentAttendancePage({
   return (
     <div className="pb-20 sm:pb-5 space-y-4 px-1">
       <div className="flex items-center justify-between px-3 pt-2">
-        <h1 className="text-lg font-bold text-gray-900">出席記録</h1>
+        <h1 className="text-lg font-bold text-gray-900">出席確認</h1>
         <div className="flex items-center gap-2">
           <Link
             href={`/parent/attendance?year=${prevDate.getFullYear()}&month=${prevDate.getMonth() + 1}`}
@@ -182,24 +190,36 @@ export default async function ParentAttendancePage({
               const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
               const dow = new Date(dateStr).getDay()
               const isAttended = attendedDates.has(dateStr)
+              const isAbsent = absentDates.has(dateStr)
+              const isPlanned = plannedDates.has(dateStr)
               const isToday = dateStr === today
               const isFuture = dateStr > today
 
               return (
                 <div
                   key={d}
+                  title={
+                    isAttended ? '利用しました'
+                    : isAbsent ? 'お休み'
+                    : isPlanned ? '利用予定'
+                    : undefined
+                  }
                   className={`aspect-square flex items-center justify-center rounded-full text-xs font-medium ${
                     isAttended
                       ? 'bg-indigo-500 text-white'
-                      : isToday
-                        ? 'ring-2 ring-indigo-400 text-indigo-600'
-                        : isFuture
-                          ? 'text-gray-300'
-                          : (dow === 0 || isJapaneseNationalHoliday(dateStr))
-                            ? 'text-red-400'
-                            : dow === 6
-                              ? 'text-blue-400'
-                              : 'text-gray-500'
+                      : isAbsent
+                        ? 'bg-red-100 text-red-500'
+                        : isPlanned
+                          ? 'border border-blue-300 text-blue-600'
+                          : isToday
+                            ? 'ring-2 ring-indigo-400 text-indigo-600'
+                            : isFuture
+                              ? 'text-gray-300'
+                              : (dow === 0 || isJapaneseNationalHoliday(dateStr))
+                                ? 'text-red-400'
+                                : dow === 6
+                                  ? 'text-blue-400'
+                                  : 'text-gray-500'
                   }`}
                 >
                   {d}
@@ -207,10 +227,18 @@ export default async function ParentAttendancePage({
               )
             })}
           </div>
-          <div className="flex gap-4 mt-3 text-xs text-gray-500 justify-center">
+          <div className="flex gap-3 mt-3 text-xs text-gray-500 justify-center flex-wrap">
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-3 rounded-full bg-indigo-500" />
-              出席
+              利用しました
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full border border-blue-300" />
+              利用予定
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-red-100" />
+              お休み
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-3 rounded-full ring-2 ring-indigo-400" />

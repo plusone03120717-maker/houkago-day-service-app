@@ -1,5 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getTodayJST } from '@/lib/utils'
+import {
+  buildUsageRoster,
+  eachDate,
+  type RosterReservation,
+  type RosterPlan,
+  type RosterOverride,
+  type RosterAttendance,
+} from '@/lib/usage-roster'
 
 /**
  * 保護者からの利用連絡（利用する・お休みする）の検証と保存。
@@ -32,7 +40,18 @@ const TRANSPORT_TYPES: TransportType[] = ['none', 'pickup_only', 'dropoff_only',
 /** 連絡の一覧・カレンダー表示に必要な列 */
 export const USAGE_CONTACT_COLUMNS =
   'child_id, date, status, service_type, service_start_time, service_end_time, ' +
-  'transport_type, pickup_time, dropoff_time, note'
+  'transport_type, pickup_time, dropoff_time, note, approval_status'
+
+/**
+ * 施設側で決まっているその日の状態。
+ * 保護者が「もう予定が入っている日」を見分けられるようにするために返す。
+ */
+export type FacilityScheduleDay = {
+  child_id: string
+  date: string
+  /** planned=利用予定 / absent=欠席として記録済み / attended=利用済み */
+  kind: 'planned' | 'absent' | 'attended'
+}
 
 /** "HH:MM" 形式を検証し、空文字は null に正規化する */
 function normalizeTime(v: string | null | undefined): string | null | undefined {
@@ -124,6 +143,82 @@ export async function saveUsageContacts(
     return { error: '保存に失敗しました' }
   }
   return {}
+}
+
+/**
+ * 施設側で決まっているその月の利用日を取り出す。
+ *
+ * 「その日、誰が利用するのか」は予約・毎週の利用計画・出欠記録の3つに散らばっているので、
+ * スタッフ画面と同じ共通ロジック（src/lib/usage-roster.ts）を通して数え方を揃える。
+ * ここがズレると、保護者とスタッフで見えている予定が食い違ってしまう。
+ */
+export async function loadFacilitySchedule(
+  supabase: Client,
+  childIds: string[],
+  year: number,
+  month: number
+): Promise<FacilityScheduleDay[]> {
+  if (childIds.length === 0) return []
+
+  const mm = String(month).padStart(2, '0')
+  const startDate = `${year}-${mm}-01`
+  const endDate = `${year}-${mm}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
+
+  const [{ data: reservations }, { data: plans }, { data: attendances }] = await Promise.all([
+    supabase
+      .from('usage_reservations')
+      .select('id, child_id, date, status, requested_by')
+      .in('child_id', childIds)
+      .gte('date', startDate)
+      .lte('date', endDate),
+    supabase
+      .from('usage_plans')
+      .select('id, child_id, start_date, end_date, day_of_week')
+      .in('child_id', childIds)
+      .eq('is_active', true)
+      .lte('start_date', endDate)
+      .or(`end_date.is.null,end_date.gte.${startDate}`),
+    supabase
+      .from('daily_attendance')
+      .select('child_id, date, status')
+      .in('child_id', childIds)
+      .gte('date', startDate)
+      .lte('date', endDate),
+  ])
+
+  const planIds = ((plans ?? []) as { id: string }[]).map((p) => p.id)
+  const { data: overrides } = planIds.length > 0
+    ? await supabase
+        .from('usage_plan_date_overrides')
+        .select('plan_id, date, is_cancelled')
+        .in('plan_id', planIds)
+        .gte('date', startDate)
+        .lte('date', endDate)
+    : { data: [] }
+
+  const roster = buildUsageRoster({
+    dates: eachDate(startDate, endDate),
+    reservations: (reservations ?? []) as RosterReservation[],
+    plans: (plans ?? []) as RosterPlan[],
+    overrides: (overrides ?? []) as RosterOverride[],
+    attendances: (attendances ?? []) as RosterAttendance[],
+  })
+
+  const out: FacilityScheduleDay[] = []
+  for (const entries of roster.values()) {
+    for (const e of entries) {
+      if (!e.planned) continue
+      out.push({
+        child_id: e.childId,
+        date: e.date,
+        kind:
+          e.attendanceStatus === 'attended' ? 'attended'
+          : e.absent ? 'absent'
+          : 'planned',
+      })
+    }
+  }
+  return out
 }
 
 /** その月の連絡を取り出す */
