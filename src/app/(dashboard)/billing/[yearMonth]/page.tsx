@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, AlertCircle, Receipt } from 'lucide-react'
+import { ArrowLeft, AlertCircle, Receipt, Printer } from 'lucide-react'
 import { BillingExportButton } from '@/components/billing/billing-export-button'
 import { KokuhorenExportButton } from '@/components/billing/kokuhoren-export-button'
 import { AiCheckButton } from '@/components/billing/ai-check-button'
@@ -325,6 +325,32 @@ export default async function BillingDetailPage({
                 <p className="text-xs text-gray-400">
                   国保連取込用CSVはインタフェース仕様書（K112請求書・K122明細書）、サービス提供実績記録票CSVは同仕様書（K611）に準拠。
                   2つとも取込送信ソフトへ取り込んで伝送してください。参考CSVは事業所内確認用です。
+                </p>
+              </div>
+
+              {/* 帳票の印刷（PDF保存） */}
+              <div className="space-y-3 pt-2 border-t border-gray-100">
+                <div className="flex gap-2 flex-wrap">
+                  <Link
+                    href={`/print/kokuhoren/${yearMonth}?billing=${billing.id}`}
+                    target="_blank"
+                    className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <Printer className="h-4 w-4" />
+                    請求書・明細書を印刷
+                  </Link>
+                  <Link
+                    href={`/print/service-record/${yearMonth}?billing=${billing.id}`}
+                    target="_blank"
+                    className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <Printer className="h-4 w-4" />
+                    実績記録票を印刷
+                  </Link>
+                </div>
+                <p className="text-xs text-gray-400">
+                  様式第一（請求書・市町村ごと）・様式第二（明細書・児童ごと）・様式5（実績記録票・児童ごと）を
+                  A4縦で印刷できます。ブラウザの印刷画面から「PDFに保存」を選べばPDFになります。
                 </p>
               </div>
             </CardContent>

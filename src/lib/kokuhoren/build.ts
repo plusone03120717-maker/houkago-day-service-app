@@ -22,7 +22,7 @@ export type ChildBillingInput = {
    * サービスコード別の内訳（出席実績から再集計したもの）。
    * 空・未指定の場合は 1日あたり単位数×日数 の概算で1行だけ出力する。
    */
-  breakdown?: Array<{ code: string; unitCount: number; count: number; units: number }>
+  breakdown?: Array<{ code: string; name?: string; unitCount: number; count: number; units: number }>
   /** 契約情報レコード用 決定サービスコード（6桁） */
   decisionServiceCode: string
   /** 契約支給量（日数） */
@@ -58,7 +58,7 @@ export type BuildResult = {
   bytes: Uint8Array | null
 }
 
-type ChildComputed = ChildBillingInput & {
+export type ChildComputed = ChildBillingInput & {
   totalCost: number
   tenPercent: number
   capAdjusted: number
@@ -68,11 +68,21 @@ type ChildComputed = ChildBillingInput & {
   startDate: string
 }
 
-export function buildKokuhorenCsv(
+export type ComputeResult = {
+  errors: string[]
+  warnings: string[]
+  children: ChildComputed[]
+}
+
+/**
+ * 請求CSVと請求書・明細書PDFの共通計算。
+ * どちらも同じ数字になるよう、金額の算定はここに1本化する。
+ */
+export function computeKokuhorenBilling(
   facility: FacilityInput,
   serviceYearMonth: string,
   childrenInput: ChildBillingInput[],
-): BuildResult {
+): ComputeResult {
   const errors: string[] = []
   const warnings: string[] = []
 
@@ -188,19 +198,48 @@ export function buildKokuhorenCsv(
     return { ...c, totalCost, tenPercent, capAdjusted, managedCopay, decidedCopay, benefitAmount, startDate }
   })
 
-  const fileName = `K112${serviceYearMonth.slice(2, 6)}.CSV`
+  return { errors, warnings, children }
+}
 
-  if (errors.length > 0) {
-    return { errors, warnings, fileName, bytes: null }
-  }
-
-  // 市町村（請求先）ごとに請求書1枚＋明細書n枚
+/** 市町村（請求先）ごとに束ねる。請求書は1市町村につき1枚 */
+export function groupByMunicipality(children: ChildComputed[]): Map<string, ChildComputed[]> {
   const byMunicipality = new Map<string, ChildComputed[]>()
   for (const c of children) {
     const list = byMunicipality.get(c.municipalityCode) ?? []
     list.push(c)
     byMunicipality.set(c.municipalityCode, list)
   }
+  return byMunicipality
+}
+
+/** サービス種類（61=児発 / 63=放デイ）ごとに束ねる。請求書の明細情報レコード用 */
+export function groupByServiceKind(children: ChildComputed[]): Map<string, ChildComputed[]> {
+  const byKind = new Map<string, ChildComputed[]>()
+  for (const c of children) {
+    const kind = c.serviceCode.slice(0, 2)
+    const list = byKind.get(kind) ?? []
+    list.push(c)
+    byKind.set(kind, list)
+  }
+  return new Map([...byKind].sort((a, b) => a[0].localeCompare(b[0])))
+}
+
+export function buildKokuhorenCsv(
+  facility: FacilityInput,
+  serviceYearMonth: string,
+  childrenInput: ChildBillingInput[],
+): BuildResult {
+  const { errors, warnings, children } = computeKokuhorenBilling(
+    facility, serviceYearMonth, childrenInput,
+  )
+
+  const fileName = `K112${serviceYearMonth.slice(2, 6)}.CSV`
+
+  if (errors.length > 0) {
+    return { errors, warnings, fileName, bytes: null }
+  }
+
+  const byMunicipality = groupByMunicipality(children)
 
   const rows: string[][] = []
   const ym = serviceYearMonth
@@ -231,14 +270,7 @@ export function buildKokuhorenCsv(
     // K112 請求書 明細情報レコード（レコード種別02）: 給付種別1・サービス種類ごと。
     // 同じ事業所番号で児童発達支援(61)と放課後等デイサービス(63)の両方を行う場合、
     // 請求書は1枚のまま明細情報レコードだけサービス種類ごとに分かれる。
-    const byServiceKind = new Map<string, ChildComputed[]>()
-    for (const c of group) {
-      const kind = c.serviceCode.slice(0, 2)
-      const list = byServiceKind.get(kind) ?? []
-      list.push(c)
-      byServiceKind.set(kind, list)
-    }
-    for (const [kind, kindGroup] of [...byServiceKind].sort((a, b) => a[0].localeCompare(b[0]))) {
+    for (const [kind, kindGroup] of groupByServiceKind(group)) {
       rows.push([
         'K112', '02', ym, muni, fac,
         '1',
