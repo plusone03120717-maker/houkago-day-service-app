@@ -6,11 +6,14 @@ import { Loader2, ChevronLeft, ChevronRight, X, Car, Clock } from 'lucide-react'
 import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 /**
- * 保護者が利用・お休みを連絡するカレンダー。
+ * 保護者が利用する日を連絡するカレンダー。
  *
  * 保護者向けの入口は保護者ポータルに一本化しているため、この画面が唯一の実装。
  * データの出し入れは呼び出し側に任せてあるので、ログインの仕組みが変わっても
  * このコンポーネントは触らなくてよい。
+ *
+ * お休み・キャンセルはこの画面からは送れない（SELECTABLE_CHOICES 参照）。
+ * 施設が登録した欠席を「表示」することはある。
  */
 
 export type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
@@ -120,6 +123,18 @@ const CHOICE_META: Record<Choice, { label: string; dot: string; active: string }
   daytime_support: { label: '日中一時', dot: 'bg-orange-400', active: 'bg-orange-400 text-white shadow-sm' },
   absent: { label: 'お休み', dot: 'bg-red-400', active: 'bg-red-400 text-white shadow-sm' },
 }
+
+/**
+ * 保護者が選べるのは「利用する」だけ。
+ *
+ * お休みは、いつ連絡があったかで欠席時対応加算の算定可否が変わり、
+ * 事前のキャンセルなのか当日の欠席なのかを保護者に選ばせると手続きが煩雑になる。
+ * お休みの連絡は施設で直接受け、スタッフが利用状況ページで
+ * 「欠席」か「削除」かを判断して記録する。
+ *
+ * absent は施設が登録した欠席を表示するために型としては残してある。
+ */
+const SELECTABLE_CHOICES: Choice[] = ['regular', 'daytime_support']
 
 /** 施設側の予定。自分の連絡（下の丸）と区別できるよう、マス目の右上に四角で出す */
 const SCHEDULE_META: Record<FacilityScheduleDay['kind'], { label: string; box: string }> = {
@@ -428,7 +443,7 @@ export function UsageContactCalendar({
         <div className="border-t border-gray-100 px-3 py-3 space-y-1.5">
           <div className="flex gap-3 justify-center flex-wrap">
             <span className="text-xs text-gray-400">自分の連絡</span>
-            {(Object.keys(CHOICE_META) as Choice[]).map((k) => (
+            {SELECTABLE_CHOICES.map((k) => (
               <div key={k} className="flex items-center gap-1">
                 <span className={`w-2 h-2 rounded-full ${CHOICE_META[k].dot}`} />
                 <span className="text-xs text-gray-400">{CHOICE_META[k].label}</span>
@@ -448,6 +463,9 @@ export function UsageContactCalendar({
       </div>
 
       <p className="text-center text-xs text-gray-400 mt-3">日付をタップして利用連絡</p>
+      <p className="text-center text-xs text-gray-400 mt-1">
+        お休み・キャンセルのご連絡は施設へお電話ください
+      </p>
 
       {addChildHref && (
         <div className="text-center mt-4">
@@ -540,8 +558,8 @@ export function UsageContactCalendar({
                       )
                     })()}
 
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                      {(['regular', 'daytime_support', 'absent'] as Choice[]).map((choice) => (
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      {SELECTABLE_CHOICES.map((choice) => (
                         <button
                           key={choice}
                           onClick={() => updateEntry(child.id, { choice })}
@@ -647,6 +665,17 @@ export function UsageContactCalendar({
                   </div>
                 )
               })}
+
+              {/* お休みはこの画面から送れない。どうすればよいかを必ず示す */}
+              <div className="rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3">
+                <p className="text-xs text-amber-800">
+                  <strong>お休みのご連絡について</strong>
+                </p>
+                <p className="mt-1 text-xs text-amber-700">
+                  お休み・キャンセルはこの画面からは送れません。
+                  お手数ですが、施設へ直接お電話でご連絡ください。
+                </p>
+              </div>
 
               <button
                 onClick={handleSubmit}

@@ -353,7 +353,7 @@ export function ParentContactsBoard({ unconfirmedContacts }: Props) {
         <h1 className="text-xl font-bold text-gray-900">保護者からの利用連絡</h1>
         <p className="text-xs text-gray-500 mt-1">
           承認した利用連絡はそのまま利用状況・出席管理の利用予定になります。
-          お休みの連絡は「お休みとして反映」でその日の欠席として記録されます。
+          お休み・キャンセルの連絡はここには来ません（施設が電話で受け、利用状況ページで記録します）。
         </p>
       </div>
 

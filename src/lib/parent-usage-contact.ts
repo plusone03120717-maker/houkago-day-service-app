@@ -73,7 +73,14 @@ export function validateUsageContact(
   if (date < getTodayJST()) return '過去の日付には連絡できません'
 
   for (const entry of entries) {
-    if (entry.status !== 'attending' && entry.status !== 'absent') {
+    // お休み・キャンセルは保護者ポータルからは受け付けない。
+    // いつ連絡があったかで欠席時対応加算の算定可否が変わるため、施設が電話で受けて
+    // スタッフが「欠席」か「予定の削除」かを判断して記録する。
+    // 画面にも選択肢を出していないが、直接APIを叩かれても通さないようここで弾く。
+    if (entry.status === 'absent') {
+      return 'お休み・キャンセルのご連絡は、施設へお電話でお願いします'
+    }
+    if (entry.status !== 'attending') {
       return '連絡内容が正しくありません'
     }
     if (
