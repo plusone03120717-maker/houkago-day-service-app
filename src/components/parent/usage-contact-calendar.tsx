@@ -489,7 +489,7 @@ export function UsageContactCalendar({
             )
           })}
           <p className="text-[10px] text-gray-400">
-            利用済みの日だけを数えています。予定・お休みは含みません
+            前日までにご利用いただいた日を数えています。当日分は翌日に反映されます
           </p>
         </div>
       )}

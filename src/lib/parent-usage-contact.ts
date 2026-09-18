@@ -387,6 +387,12 @@ export async function loadFacilityClosures(
  * 「その日、誰が利用するのか」は予約・毎週の利用計画・出欠記録の3つに散らばっているので、
  * スタッフ画面と同じ共通ロジック（src/lib/usage-roster.ts）を通して数え方を揃える。
  * ここがズレると、保護者とスタッフで見えている予定が食い違ってしまう。
+ *
+ * ただし「利用済み」として保護者に見せるのは**前日まで**にする。
+ * スタッフは児童が来る前にまとめて出席を付けることがあり、その日のうちは
+ * 出席記録が実績とは限らない。そのまま見せると、まだ来ていない子が
+ * 「利用済み」と表示され、給付日数の残りも実際より少なく見えてしまう。
+ * 当日・先の日付の出席は「利用予定」として扱う。
  */
 export async function loadFacilitySchedule(
   supabase: Client,
@@ -454,12 +460,15 @@ export async function loadFacilitySchedule(
     detailByKey.set(`${row.child_id}|${row.date}`, row)
   }
 
+  // 実績として確定したとみなすのは前日まで（関数の説明を参照）
+  const today = getTodayJST()
+
   const out: FacilityScheduleDay[] = []
   for (const entries of roster.values()) {
     for (const e of entries) {
       if (!e.planned) continue
       const kind =
-        e.attendanceStatus === 'attended' ? 'attended'
+        e.attendanceStatus === 'attended' && e.date < today ? 'attended'
         : e.absent ? 'absent'
         : 'planned'
       const detail = kind === 'attended' ? detailByKey.get(`${e.childId}|${e.date}`) : undefined

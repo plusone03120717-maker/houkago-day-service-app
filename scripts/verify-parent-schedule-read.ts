@@ -11,6 +11,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
+import { getTodayJST } from '../src/lib/utils'
 import {
   loadFacilitySchedule,
   loadBenefitLimits,
@@ -189,17 +190,67 @@ async function main() {
     check('予定が読める（空でない）', schedule.length > 0, schedule.length)
     check('事務所が入れた予定が見える', byDate['2027-05-20'] === 'planned', byDate['2027-05-20'])
     check('毎週の利用計画の日が見える（5/18 火）', byDate['2027-05-18'] === 'planned', byDate['2027-05-18'])
-    check('出席した日が見える（5/4）', byDate['2027-05-04'] === 'attended', byDate['2027-05-04'])
+    // スタッフが前倒しで付けた出席は保護者に「利用済み」と見せない。
+    // 5/4 は先の日付なので、出席が付いていても利用予定として返る
+    check('先の日付の出席は利用予定として見える（5/4）', byDate['2027-05-04'] === 'planned', byDate['2027-05-04'])
     check('欠席の日が見える（5/11）', byDate['2027-05-11'] === 'absent', byDate['2027-05-11'])
     check('計画の無い曜日は出ない（5/6 木）', byDate['2027-05-06'] === undefined, byDate['2027-05-06'])
+
+    // ── 前倒しで付けた出席は保護者に見せない ──
+    // スタッフは児童が来る前にまとめて出席を付けることがある。そのまま見せると
+    // まだ来ていない子が「利用済み」になり、給付日数の残りも実際より少なく見える
+    console.log('\n利用済みとして見えるのは前日まで')
+    // 本番と同じ「日本時間の今日」を使う（@/lib/utils）
+    const todayStr = getTodayJST()
+    const shift = (days: number) => {
+      const d = new Date(todayStr + 'T00:00:00Z')
+      d.setUTCDate(d.getUTCDate() + days)
+      return d.toISOString().slice(0, 10)
+    }
+    const yesterday = shift(-1)
+    const tomorrow = shift(1)
+
+    await admin.from('usage_reservations').insert(
+      [yesterday, todayStr, tomorrow].map((date) => ({
+        child_id: childId,
+        unit_id: unitId,
+        date,
+        status: 'confirmed',
+        requested_by: staffId,
+        requested_at: new Date().toISOString(),
+      }))
+    )
+    await admin.from('daily_attendance').insert([
+      {
+        child_id: childId, unit_id: unitId, date: yesterday, status: 'attended',
+        pickup_type: 'none', check_in_time: '14:30', check_out_time: '17:45',
+      },
+      { child_id: childId, unit_id: unitId, date: todayStr, status: 'attended', pickup_type: 'none' },
+      { child_id: childId, unit_id: unitId, date: tomorrow, status: 'attended', pickup_type: 'none' },
+    ])
+
+    /** その日が保護者にどう見えるか（月をまたいでも読めるように毎回引き直す） */
+    async function dayFor(date: string) {
+      const d = new Date(date + 'T00:00:00')
+      const rows = await loadFacilitySchedule(parent, [childId], d.getFullYear(), d.getMonth() + 1)
+      return rows.find((r) => r.date === date)
+    }
+
+    const yesterdayDay = await dayFor(yesterday)
+    const todayDay = await dayFor(todayStr)
+    const tomorrowDay = await dayFor(tomorrow)
+
+    check('前日の出席は利用済みになる', yesterdayDay?.kind === 'attended', yesterdayDay?.kind)
+    check('当日の出席は利用予定のまま', todayDay?.kind === 'planned', todayDay?.kind)
+    check('翌日の出席は利用予定のまま', tomorrowDay?.kind === 'planned', tomorrowDay?.kind)
 
     // 出席確認の別ページを廃止して利用連絡にまとめたので、
     // 利用済みの日の実績（登園・降園・教室）もここから読めること
     console.log('\n利用済みの日の実績も一緒に返る')
-    const attended = schedule.find((s) => s.date === '2027-05-04')
-    check('登園時刻が返る', attended?.check_in_time?.startsWith('14:30'), attended?.check_in_time)
-    check('降園時刻が返る', attended?.check_out_time?.startsWith('17:45'), attended?.check_out_time)
-    check('教室名が返る', !!attended?.unit_name, attended?.unit_name)
+    check('登園時刻が返る', yesterdayDay?.check_in_time?.startsWith('14:30'), yesterdayDay?.check_in_time)
+    check('降園時刻が返る', yesterdayDay?.check_out_time?.startsWith('17:45'), yesterdayDay?.check_out_time)
+    check('教室名が返る', !!yesterdayDay?.unit_name, yesterdayDay?.unit_name)
+    check('前倒しの出席には実績を付けない', todayDay?.check_in_time === null, todayDay?.check_in_time)
     const plannedDay = schedule.find((s) => s.date === '2027-05-20')
     check('予定の日には実績が付かない', plannedDay?.check_in_time === null, plannedDay?.check_in_time)
 
