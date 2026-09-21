@@ -103,6 +103,31 @@ function buildUnitBoard(data: AttendanceBoardData, unitId: string, today: string
     overrideRows as unknown as ScheduleOverrideRow[]
   )
 
+  // 毎週の利用計画が無い日（保護者の利用連絡を承認した日など）は、
+  // その日の利用予定に入っている送迎時刻を初期値にする。
+  // ここを見ていなかったため、計画の無い児童は名前だけ出て送迎欄が空欄だった。
+  // 計画がある児童は今までどおり計画側の値を使う（上書きしない）。
+  type ReservationTimes = {
+    child_id: string
+    transport_type: string | null
+    pickup_time: string | null
+    dropoff_time: string | null
+  }
+  for (const r of data.reservations as unknown as ReservationTimes[]) {
+    if (scheduleDefaults[r.child_id]) continue
+    if (!r.pickup_time && !r.dropoff_time) continue
+    scheduleDefaults[r.child_id] = {
+      transportType: r.transport_type ?? 'both',
+      pickupTime: r.pickup_time,
+      dropoffTime: r.dropoff_time,
+      serviceStartTime: null,
+      serviceEndTime: null,
+      daytimeSupport: false,
+      daytimeSupportStartTime: null,
+      daytimeSupportEndTime: null,
+    }
+  }
+
   // 予約フィルタリング:
   // - 有効な計画あり → 常に表示
   // - 計画あるが当日がキャンセルoverride → 手動予約（requested_by!=null）のみ表示

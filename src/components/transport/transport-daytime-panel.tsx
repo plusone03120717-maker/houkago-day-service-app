@@ -141,6 +141,39 @@ export function applyScheduleDefaults(f: TransportFields, s: ScheduleDefaults, d
   }
 }
 
+/** 送迎の欄（お迎え・お送り）がまだ何も入っていないか */
+export function hasBlankTransport(f: TransportFields): boolean {
+  const pickupBlank =
+    !f.pickupDepartureTime && !f.pickupArrivalTime && !f.pickupDriverId && !f.pickupVehicleId
+  const dropoffBlank =
+    !f.dropoffDepartureTime && !f.dropoffArrivalTime && !f.dropoffDriverId && !f.dropoffVehicleId
+  return pickupBlank || dropoffBlank
+}
+
+/**
+ * 送迎の欄だけを予定値で埋める（空いている方向のみ）。
+ *
+ * 保護者の利用連絡を承認した日は、利用時間が先に出席記録へ入る。
+ * すると isBlankFields が false になり applyScheduleDefaults が働かないため、
+ * 送迎の欄だけが空のまま残っていた。利用時間・日中一時には触れず、
+ * まだ何も入っていない送迎の欄だけを埋める。
+ */
+export function applyTransportDefaults(f: TransportFields, s: ScheduleDefaults): TransportFields {
+  const showPickup = s.transportType === 'pickup_only' || s.transportType === 'both'
+  const showDropoff = s.transportType === 'dropoff_only' || s.transportType === 'both'
+  const pickupBlank =
+    !f.pickupDepartureTime && !f.pickupArrivalTime && !f.pickupDriverId && !f.pickupVehicleId
+  const dropoffBlank =
+    !f.dropoffDepartureTime && !f.dropoffArrivalTime && !f.dropoffDriverId && !f.dropoffVehicleId
+  return {
+    ...f,
+    pickupArrivalTime:
+      showPickup && pickupBlank ? fmtTime(s.pickupTime) : f.pickupArrivalTime,
+    dropoffDepartureTime:
+      showDropoff && dropoffBlank ? fmtTime(s.dropoffTime) : f.dropoffDepartureTime,
+  }
+}
+
 /** daily_attendance へ保存する形に変換 */
 export function buildTransportUpdate(f: TransportFields) {
   const n = (v: string) => (v && v !== '00:00' ? v : null)

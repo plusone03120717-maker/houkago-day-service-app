@@ -171,7 +171,11 @@ async function loadViaQueries(
     await Promise.all([
       supabase
         .from('usage_reservations')
-        .select(`id, child_id, date, status, requested_by, children (${CHILD_COLUMNS})`)
+        // 送迎の時刻は、毎週の利用計画が無い日（保護者の利用連絡を承認した日など）に
+        // 出席管理の送迎欄の初期値として使う
+        .select(
+          `id, child_id, date, status, requested_by, transport_type, pickup_time, dropoff_time, children (${CHILD_COLUMNS})`
+        )
         .eq('unit_id', selectedUnitId)
         .eq('date', date)
         .in('status', RESERVATION_STATUSES),

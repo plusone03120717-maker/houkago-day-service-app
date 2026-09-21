@@ -30,6 +30,8 @@ import {
   initFields,
   isBlankFields,
   applyScheduleDefaults,
+  applyTransportDefaults,
+  hasBlankTransport,
   buildTransportUpdate,
   type TransportRow,
   type TransportFields,
@@ -221,16 +223,22 @@ export function AttendanceBoard({
   const buildInitialFields = (a: Attendance): TransportFields => {
     const base = initFields(a, defaultServiceEndTime)
     const sched = scheduleDefaultsByKey[unitChildKey(a.unit_id, a.child_id)]
-    if (sched && isBlankFields(base)) {
+    if (!sched) return base
+    if (isBlankFields(base)) {
       return applyScheduleDefaults(base, sched, defaultServiceEndTime)
     }
-    return base
+    // 保護者の利用連絡を承認した日は利用時間だけが先に入るため、
+    // 上の条件に当てはまらない。空いている送迎の欄だけを埋める
+    return applyTransportDefaults(base, sched)
   }
 
   // スケジュール初期値が表示中（未保存）かどうか
   const isSchedulePreset = (a: Attendance): boolean => {
     const sched = scheduleDefaultsByKey[unitChildKey(a.unit_id, a.child_id)]
-    return !!sched && !savedOnce.has(a.id) && isBlankFields(initFields(a, defaultServiceEndTime))
+    if (!sched || savedOnce.has(a.id)) return false
+    const base = initFields(a, defaultServiceEndTime)
+    // 送迎の欄だけを埋めた場合も「予定値を表示中」であることに変わりはない
+    return isBlankFields(base) || hasBlankTransport(base)
   }
 
   const getFields = (a: Attendance): TransportFields =>
