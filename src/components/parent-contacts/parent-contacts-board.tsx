@@ -27,6 +27,7 @@ import {
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
 import { placeLabel, type ChildTransportPlaces, type LocationType, toPlaceValue } from '@/lib/transport-place'
+import type { AbsentHandling } from '@/lib/parent-contact-schedule'
 
 type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
@@ -57,7 +58,26 @@ type Contact = {
   approval_status: ApprovalStatus
   /** 予定（利用予定・出欠記録）へ反映した時刻。null＝未反映 */
   applied_at: string | null
+  /** キャンセル連絡をどう処理したか。null＝未処理 */
+  absent_handling: AbsentHandling | null
   children: { id: string; name: string } | null
+}
+
+/**
+ * キャンセル連絡の処理方法。施設が1件ずつ選ぶ。
+ *
+ * どちらを選ぶかで国保連請求が変わるので、まとめ処理では決め打ちにしない。
+ * 前日・当日の急なお休みは欠席（欠席時対応加算の対象になり得る）、
+ * ずっと前からのキャンセルは予定から削除するのが原則。
+ */
+const HANDLING_LABELS: Record<AbsentHandling, string> = {
+  absent: '欠席として記録',
+  delete: '予定から削除',
+}
+
+const HANDLING_DONE_LABELS: Record<AbsentHandling, string> = {
+  absent: '欠席として反映済み',
+  delete: '予定から削除済み',
 }
 
 // 保護者の画面では「行き」「帰り」で聞いている。
@@ -97,6 +117,17 @@ function addDays(dateStr: string, days: number) {
 function formatDateLabel(dateStr: string) {
   const d = new Date(dateStr + 'T00:00:00')
   return `${d.getMonth() + 1}月${d.getDate()}日（${DOW[d.getDay()]}）`
+}
+
+/**
+ * その日のキャンセルをどちらで処理するのがよさそうか。
+ *
+ * 前日・当日の急なお休みは欠席時対応加算の対象になり得るので「欠席として記録」、
+ * それより前のキャンセルは予定そのものを外すのが正しい扱いなので「予定から削除」。
+ * あくまで目安で、決めるのはスタッフ。
+ */
+function recommendedHandling(dateStr: string, today: string): AbsentHandling {
+  return dateStr <= addDays(today, 1) ? 'absent' : 'delete'
 }
 
 /** 今日/明日/過去日の相対ラベル（該当しない日は null） */
@@ -238,6 +269,8 @@ function ContactCard({
   contact: c,
   approval,
   applied,
+  handling,
+  today,
   reviewing,
   assignment,
   places,
@@ -249,13 +282,16 @@ function ContactCard({
   approval: ApprovalStatus
   /** 予定へ反映済みか */
   applied: boolean
+  /** キャンセル連絡をどう処理したか。null＝未処理 */
+  handling: AbsentHandling | null
+  today: string
   reviewing: boolean
   /** 施設が決めるサービス区分と時間 */
   assignment: ServiceAssignment
   /** 送迎の場所を名前で出すための選択肢 */
   places: ChildTransportPlaces | undefined
   onAssignmentChange: (next: ServiceAssignment) => void
-  onReviewed: (id: string) => void
+  onReviewed: (id: string, handling: AbsentHandling) => void
   onApproval: (id: string, next: ApprovalStatus) => void
 }) {
   const editable = needsApproval(c) && approval === 'pending'
@@ -285,7 +321,7 @@ function ContactCard({
             }`}
           >
             {c.status !== 'attending'
-              ? 'お休み'
+              ? 'キャンセル'
               : editable
                 ? '区分未定'
                 : SERVICE_ASSIGNMENT_LABELS[assignment.serviceType]}
@@ -316,7 +352,9 @@ function ContactCard({
           {applied && (
             <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">
               <CalendarCheck className="h-3 w-3" />
-              予定に反映済み
+              {c.status === 'attending'
+                ? '予定に反映済み'
+                : HANDLING_DONE_LABELS[handling ?? 'absent']}
             </span>
           )}
         </div>
@@ -346,6 +384,14 @@ function ContactCard({
 
         {c.note && (
           <p className="text-xs text-gray-500 mt-1 line-clamp-2">{c.note}</p>
+        )}
+
+        {/* キャンセルの処理はどちらを選ぶかで請求が変わる。判断の材料をその場に出す */}
+        {c.status !== 'attending' && !applied && (
+          <p className="mt-1.5 text-[11px] text-gray-500">
+            前日・当日の急なお休みは<strong>欠席として記録</strong>（欠席時対応加算の対象になり得ます）、
+            それより前のキャンセルは<strong>予定から削除</strong>が原則です。
+          </p>
         )}
 
         {/* 承認前は区分を決める欄、承認後は決まった内容を出す */}
@@ -398,16 +444,33 @@ function ContactCard({
             </button>
           )
         ) : applied ? (
-          // お休みは反映済みになったら押し直せないようにする（二重に記録しない）
+          // キャンセルは反映済みになったら押し直せないようにする（二重に処理しない）
           <span className="text-xs text-gray-400">反映済み</span>
         ) : (
-          <button
-            onClick={() => onReviewed(c.id)}
-            disabled={reviewing}
-            className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-          >
-            お休みとして反映
-          </button>
+          // 欠席として残すか、予定ごと消すかを1件ずつ選ぶ。
+          // おすすめは日付から決まるが、決めるのはスタッフなので両方押せるままにする
+          <div className="flex flex-col items-end gap-1">
+            {(['absent', 'delete'] as AbsentHandling[]).map((h) => {
+              const recommended = recommendedHandling(c.date, today) === h
+              return (
+                <button
+                  key={h}
+                  onClick={() => onReviewed(c.id, h)}
+                  disabled={reviewing}
+                  className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium disabled:opacity-50 ${
+                    recommended
+                      ? 'bg-gray-700 text-white hover:bg-gray-800'
+                      : 'border border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {HANDLING_LABELS[h]}
+                  {recommended && (
+                    <span className="rounded bg-white/20 px-1 text-[10px] font-bold">おすすめ</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         )}
       </div>
     </div>
@@ -428,6 +491,8 @@ export function ParentContactsBoard({
   const [assignments, setAssignments] = useState<Record<string, ServiceAssignment>>({})
   // 予定へ反映できたかをその場で反映する（再取得を待たずバッジを出す）
   const [appliedOverrides, setAppliedOverrides] = useState<Record<string, boolean>>({})
+  // キャンセルをどちらで処理したか。押した直後からバッジに出す
+  const [handlingOverrides, setHandlingOverrides] = useState<Record<string, AbsentHandling>>({})
   // 処理した連絡の送迎の場所。承認するとサーバーの未確認一覧から消えるため、
   // 選択肢も一緒に消えてしまう。控えておかないと「祖父母宅」が
   // ただの「登録住所」に見えてしまい、送り先を読み違える
@@ -444,6 +509,8 @@ export function ParentContactsBoard({
   const today = getTodayJST()
   const approvalOf = (c: Contact): ApprovalStatus => approvalOverrides[c.id] ?? c.approval_status
   const appliedOf = (c: Contact): boolean => appliedOverrides[c.id] ?? c.applied_at !== null
+  const handlingOf = (c: Contact): AbsentHandling | null =>
+    handlingOverrides[c.id] ?? c.absent_handling
   // 初期値は「その日の出席記録に入っている予定」→「保存済みの割り振り」→
   // 「保護者の希望時間をそのまま放デイとして」の順に決める
   const assignmentOf = (c: Contact): ServiceAssignment =>
@@ -486,19 +553,23 @@ export function ParentContactsBoard({
     pendingByDate.set(c.date, arr)
   }
 
-  async function markReviewed(ids: string[]) {
+  /**
+   * キャンセルの連絡を処理する。
+   * handling で「欠席として記録」か「予定から削除」かを選ぶ。
+   */
+  async function markReviewed(ids: string[], handling: AbsentHandling) {
     if (ids.length === 0) return
     setReviewing(true)
     const res = await fetch('/api/parent-contacts/reviewed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
+      body: JSON.stringify({ ids, handling }),
     })
     const json = (await res.json().catch(() => ({}))) as {
       warnings?: string[]
-      results?: { id: string; applied: boolean }[]
+      results?: { id: string; applied: boolean; handling?: AbsentHandling }[]
     }
-    // お休みの連絡は欠席として記録される。記録できなかった分だけ理由を出す
+    // 反映できなかった分（もともと予定が無い日など）だけ理由を出す
     const failed = json.warnings ?? []
     if (failed.length > 0) setWarnings((prev) => [...new Set([...prev, ...failed])])
     // 反映できたかは連絡ごとに違う。まとめて確認したときに
@@ -506,6 +577,13 @@ export function ParentContactsBoard({
     setAppliedOverrides((prev) => {
       const next = { ...prev }
       for (const r of json.results ?? []) next[r.id] = r.applied
+      return next
+    })
+    setHandlingOverrides((prev) => {
+      const next = { ...prev }
+      for (const r of json.results ?? []) {
+        if (r.applied) next[r.id] = r.handling ?? handling
+      }
       return next
     })
     remember(ids)
@@ -563,12 +641,14 @@ export function ParentContactsBoard({
     startTransition(() => router.refresh())
   }
 
-  /** 「すべて承認・確認する」: お休みは確認済み、利用の連絡は承認としてまとめて処理する */
+  /**
+   * 「利用の連絡をすべて承認する」。
+   *
+   * キャンセルの連絡は含めない。欠席として残すか予定ごと消すかで国保連請求が
+   * 変わるため、まとめ処理で決め打ちにせず1件ずつ選んでもらう。
+   */
   async function reviewAll(list: Contact[]) {
-    const absents = list.filter((c) => !needsApproval(c))
-    const reservations = list.filter(needsApproval)
-    if (absents.length > 0) await markReviewed(absents.map((c) => c.id))
-    for (const c of reservations) await setApproval(c.id, 'approved')
+    for (const c of list.filter(needsApproval)) await setApproval(c.id, 'approved')
   }
 
   return (
@@ -580,7 +660,9 @@ export function ParentContactsBoard({
           放デイ・日中一時のどちらでお預かりするかは、承認するときにここで決めてください。
           送迎の時刻は聞いていません（承認した利用時間から決まります）。行き先・帰り先だけ保護者が選びます。
           承認した利用連絡はそのまま利用状況・出席管理の利用予定になります。
-          お休み・キャンセルの連絡はここには来ません（施設が電話で受け、利用状況ページで記録します）。
+          保護者は前日までなら予定をキャンセルできます。届いたキャンセルは
+          「欠席として記録」するか「予定から削除」するかをここで選んでください
+          （当日のお休みは従来どおり施設が電話で受けます）。
         </p>
       </div>
 
@@ -627,14 +709,21 @@ export function ParentContactsBoard({
               <span className="text-xs text-gray-400">すべて処理しました</span>
             )}
           </div>
-          {pending.length > 0 && (
-            <button
-              onClick={() => reviewAll(pending)}
-              disabled={reviewing}
-              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-            >
-              {reviewing ? '処理中...' : 'すべて承認・確認する'}
-            </button>
+          {pending.some(needsApproval) && (
+            <div className="flex items-center gap-2">
+              {pending.some((c) => !needsApproval(c)) && (
+                <span className="text-[11px] text-gray-500">
+                  キャンセルは1件ずつお選びください
+                </span>
+              )}
+              <button
+                onClick={() => reviewAll(pending)}
+                disabled={reviewing}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+              >
+                {reviewing ? '処理中...' : '利用の連絡をすべて承認する'}
+              </button>
+            </div>
           )}
         </div>
 
@@ -676,13 +765,15 @@ export function ParentContactsBoard({
                         contact={c}
                         approval={approvalOf(c)}
                         applied={appliedOf(c)}
+                        handling={handlingOf(c)}
+                        today={today}
                         reviewing={reviewing}
                         assignment={assignmentOf(c)}
                         places={placesFor(c.child_id)}
                         onAssignmentChange={(next) =>
                           setAssignments((prev) => ({ ...prev, [c.id]: next }))
                         }
-                        onReviewed={(id) => markReviewed([id])}
+                        onReviewed={(id, handling) => markReviewed([id], handling)}
                         onApproval={setApproval}
                       />
                     ))}

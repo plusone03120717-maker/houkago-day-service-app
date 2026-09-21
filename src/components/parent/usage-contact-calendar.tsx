@@ -25,8 +25,9 @@ import {
  * データの出し入れは呼び出し側に任せてあるので、ログインの仕組みが変わっても
  * このコンポーネントは触らなくてよい。
  *
- * お休み・キャンセルはこの画面からは送れない（施設が電話で受ける）。
- * 施設が登録した欠席を「表示」することはある。
+ * キャンセルは**前日まで**この画面から送れる。当日のお休みは施設が電話で受ける
+ * （連絡が届いたことをその場で確かめる必要があり、欠席時対応加算の扱いにも関わるため）。
+ * 送られたキャンセルを「欠席として記録する」か「予定から削除する」かは施設が選ぶ。
  *
  * 利用済みの実績（登園・降園と教室、給付日数の消化）もこの画面に出す。
  * 以前は「出席確認」という別のカレンダーがあったが、同じ月の同じ日を
@@ -240,6 +241,9 @@ const DOW = ['日', '月', '火', '水', '木', '金', '土']
  */
 const CONTACT_DOT = 'bg-indigo-500'
 
+/** キャンセルの連絡。利用の連絡と見分けられるよう色を分ける */
+const CANCEL_DOT = 'bg-red-400'
+
 /** 施設側の予定。自分の連絡（下の丸）と区別できるよう、マス目の右上に四角で出す */
 const SCHEDULE_META: Record<FacilityScheduleDay['kind'], { label: string; box: string }> = {
   planned: { label: '利用予定', box: 'bg-blue-500' },
@@ -257,8 +261,8 @@ const SCHEDULE_META: Record<FacilityScheduleDay['kind'], { label: string; box: s
 function statusMessage(c: UsageContact): { text: string; tone: 'ok' | 'ng' | 'wait' } {
   if (c.status === 'absent') {
     return c.applied_at
-      ? { text: '施設がお休みとして登録しました', tone: 'ok' }
-      : { text: 'お休みの連絡を送信しました。施設で確認中です', tone: 'wait' }
+      ? { text: '施設がキャンセルを受け付けました', tone: 'ok' }
+      : { text: 'キャンセルのご連絡を送信しました。施設で確認中です', tone: 'wait' }
   }
   if (c.approval_status === 'approved') {
     // どのサービスとして受けてもらえたかは保護者にも関わる（利用者負担が別枠になる）
@@ -323,6 +327,8 @@ export function UsageContactCalendar({
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [entries, setEntries] = useState<Record<string, EntryState>>({})
   const [submitting, setSubmitting] = useState(false)
+  // キャンセルの確認中のお子さま。押し間違いで予定が消えないよう2段階にする
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null)
   const [toast, setToast] = useState<{ ok: boolean; message: string } | null>(null)
 
   function buildCells(): (number | null)[] {
@@ -368,7 +374,26 @@ export function UsageContactCalendar({
    */
   function canContact(childId: string, dateStr: string): boolean {
     if (!deadline?.closed) return true
-    if (contactsOn(dateStr).some((c) => c.child_id === childId)) return true
+    // キャンセル済みの日は含めない。一度キャンセルした日を締切後に入れ直せると
+    // 締切の意味が無くなるため（入れ直したいときは施設へ電話）
+    if (contactsOn(dateStr).some((c) => c.child_id === childId && c.status === 'attending')) {
+      return true
+    }
+    return scheduleOn(dateStr).some((s) => s.child_id === childId && s.kind === 'planned')
+  }
+
+  /**
+   * その日・そのお子さまの予定を、保護者がキャンセルできるか。
+   *
+   * キャンセルできるのは**前日まで**で、もともと予定が入っている日だけ。
+   * 当日のお休みは施設が電話で受ける（@/lib/parent-usage-contact）。
+   */
+  function canCancel(childId: string, dateStr: string): boolean {
+    if (dateStr <= today) return false
+    const sent = contactsOn(dateStr).find((c) => c.child_id === childId)
+    // すでにキャンセルを送っている日は二重に送らせない
+    if (sent?.status === 'absent') return false
+    if (sent?.status === 'attending') return true
     return scheduleOn(dateStr).some((s) => s.child_id === childId && s.kind === 'planned')
   }
 
@@ -421,15 +446,51 @@ export function UsageContactCalendar({
     setEntries(init)
     setSelectedDate(dateStr)
     setToast(null)
+    setCancelTarget(null)
   }
 
   function closeSheet() {
     setSelectedDate(null)
     setToast(null)
+    setCancelTarget(null)
   }
 
   function updateEntry(childId: string, patch: Partial<EntryState>) {
     setEntries((prev) => ({ ...prev, [childId]: { ...prev[childId], ...patch } }))
+  }
+
+  /**
+   * その日のご利用をキャンセルする。
+   *
+   * 連絡の送り先は「利用します」と同じで、status だけが違う。
+   * 受け取った施設が「欠席として記録する」か「予定から削除する」かを選ぶ。
+   */
+  function handleCancel(childId: string) {
+    if (!selectedDate) return
+    const e = entries[childId]
+    setSubmitting(true)
+    setToast(null)
+    onSubmit(selectedDate, [
+      {
+        childId,
+        status: 'absent',
+        serviceStartTime: null,
+        serviceEndTime: null,
+        transportType: 'none',
+        pickupPlace: e?.pickupPlace ?? 'home',
+        dropoffPlace: e?.dropoffPlace ?? 'home',
+        note: e?.note.trim() ?? '',
+      },
+    ])
+      .then((result) => {
+        setToast(
+          result.error
+            ? { ok: false, message: result.error }
+            : { ok: true, message: 'キャンセルのご連絡を送信しました' }
+        )
+        setCancelTarget(null)
+      })
+      .finally(() => setSubmitting(false))
   }
 
   function handleSubmit() {
@@ -646,8 +707,10 @@ export function UsageContactCalendar({
                     {dayContacts.slice(0, 3).map((c, i) => (
                       <span
                         key={i}
-                        aria-label="連絡済み"
-                        className={`w-1.5 h-1.5 rounded-full ${CONTACT_DOT} ${isPast ? 'opacity-40' : ''}`}
+                        aria-label={c.status === 'absent' ? 'キャンセル連絡済み' : '連絡済み'}
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          c.status === 'absent' ? CANCEL_DOT : CONTACT_DOT
+                        } ${isPast ? 'opacity-40' : ''}`}
                       />
                     ))}
                   </div>
@@ -672,6 +735,10 @@ export function UsageContactCalendar({
               <span className={`w-2 h-2 rounded-full ${CONTACT_DOT}`} />
               <span className="text-xs text-gray-400">連絡済み</span>
             </div>
+            <div className="flex items-center gap-1">
+              <span className={`w-2 h-2 rounded-full ${CANCEL_DOT}`} />
+              <span className="text-xs text-gray-400">キャンセル連絡済み</span>
+            </div>
           </div>
           <div className="flex gap-3 justify-center flex-wrap">
             <span className="text-xs text-gray-400">施設の予定</span>
@@ -691,7 +758,7 @@ export function UsageContactCalendar({
 
       <p className="text-center text-xs text-gray-400 mt-3">日付をタップして利用連絡</p>
       <p className="text-center text-xs text-gray-400 mt-1">
-        お休み・キャンセルのご連絡は施設へお電話ください
+        キャンセルは前日までこの画面から。当日のお休みは施設へお電話ください
       </p>
 
       {addChildHref && (
@@ -982,6 +1049,47 @@ export function UsageContactCalendar({
                     {readOnly && sent?.note && (
                       <p className="text-xs text-gray-500 whitespace-pre-wrap">{sent.note}</p>
                     )}
+
+                    {/* この日のキャンセル。前日まで・予定が入っている日だけ出す。
+                        押し間違いで予定が消えないよう、確認を挟む */}
+                    {canCancel(child.id, selectedDate) && (
+                      <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5">
+                        {cancelTarget === child.id ? (
+                          <>
+                            <p className="text-xs font-semibold text-red-800">
+                              {child.name}さんの{selectedDateObj.getMonth() + 1}月
+                              {selectedDateObj.getDate()}日のご利用をキャンセルします。よろしいですか？
+                            </p>
+                            <p className="mt-1 text-[11px] text-red-700">
+                              施設で確認のうえ、この日の予定を取り消します
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => handleCancel(child.id)}
+                                disabled={submitting}
+                                className="rounded-lg bg-red-600 py-2.5 text-xs font-bold text-white disabled:opacity-50"
+                              >
+                                キャンセルする
+                              </button>
+                              <button
+                                onClick={() => setCancelTarget(null)}
+                                disabled={submitting}
+                                className="rounded-lg border border-gray-200 bg-white py-2.5 text-xs font-medium text-gray-600 disabled:opacity-50"
+                              >
+                                やめる
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setCancelTarget(child.id)}
+                            className="w-full text-xs font-medium text-red-600 underline"
+                          >
+                            この日のご利用をキャンセルする
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -1000,14 +1108,16 @@ export function UsageContactCalendar({
                 </p>
               </div>
 
-              {/* お休みはこの画面から送れない。どうすればよいかを必ず示す */}
+              {/* 当日のお休みはこの画面から送れない。どうすればよいかを必ず示す */}
               <div className="rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3">
                 <p className="text-xs text-amber-800">
                   <strong>お休みのご連絡について</strong>
                 </p>
                 <p className="mt-1 text-xs text-amber-700">
-                  お休み・キャンセルはこの画面からは送れません。
-                  お手数ですが、施設へ直接お電話でご連絡ください。
+                  キャンセルは<strong>前日まで</strong>、お子さまごとの
+                  「この日のご利用をキャンセルする」からお送りいただけます。
+                  当日のお休みはこの画面からは送れませんので、
+                  お手数ですが施設へ直接お電話でご連絡ください。
                 </p>
               </div>
 

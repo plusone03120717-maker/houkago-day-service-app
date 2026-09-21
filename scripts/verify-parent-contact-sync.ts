@@ -29,6 +29,7 @@ import {
   type ServiceAssignmentType,
 } from '../src/lib/parent-contact-service'
 import { buildRouteGroups } from '../src/lib/transport-route'
+import { getTodayJST } from '../src/lib/utils'
 
 function loadEnv(path: string) {
   for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
@@ -226,7 +227,7 @@ async function main() {
 
   console.log(`児童: ${child.name} / 承認者: ${staff.name} / ユニット: ${childUnitId}\n`)
 
-  const dates = Array.from({ length: 9 }, (_, i) => dateFor(i))
+  const dates = Array.from({ length: 10 }, (_, i) => dateFor(i))
   for (const d of dates) await cleanupDate(child.id, d)
 
   try {
@@ -691,6 +692,69 @@ async function main() {
       } finally {
         await supabase.from('child_addresses').delete().eq('id', addressId)
       }
+    }
+    // ── 13. キャンセル連絡の処理（欠席として記録 / 予定から削除） ──
+    console.log('\n13. 保護者がキャンセルした日を欠席・削除で処理する')
+    {
+      const d = dates[9]
+      await cleanupDate(child.id, d)
+
+      // 前提：利用連絡を承認して、その日の予定を作っておく
+      const attending = await seedContact(child.id, {
+        date: d,
+        status: 'attending',
+        service_start_time: '10:00',
+        service_end_time: '16:00',
+      })
+      await applyParentContact(supabase, attending, staff.id)
+      check('前提：利用予定ができている', (await getReservation(child.id, d)) !== null)
+
+      // 保護者がポータルからキャンセル（前日までなら送れる）
+      const cancelEntry = [
+        {
+          childId: child.id,
+          status: 'absent' as const,
+          serviceStartTime: null,
+          serviceEndTime: null,
+          transportType: 'none' as const,
+          pickupPlace: 'home',
+          dropoffPlace: 'home',
+          note: '検証スクリプトが作成',
+        },
+      ]
+      check('キャンセルは入力チェックを通る', validateUsageContact(d, cancelEntry) === null, validateUsageContact(d, cancelEntry))
+      check(
+        '当日のキャンセルは弾かれる',
+        validateUsageContact(getTodayJST(), cancelEntry) !== null
+      )
+      await saveUsageContacts(supabase, d, cancelEntry)
+
+      const cancelled = await reloadContact2(child.id, d)
+      check('キャンセルとして保存される', cancelled.status === 'absent', cancelled.status)
+      check('前の承認の控えは引き継がない', cancelled.applied_at === null, cancelled.applied_at)
+      check('未処理として入る', cancelled.absent_handling === null, cancelled.absent_handling)
+
+      // (a) 欠席として記録する
+      const asAbsent = await applyParentContact(supabase, cancelled, staff.id, undefined, 'absent')
+      check('欠席として反映できる', !asAbsent.error, asAbsent.error)
+      check('欠席として記録される', (await getAttendance(child.id, d))?.status === 'absent')
+      check('利用予定は残る（欠席時対応加算のため）', (await getReservation(child.id, d)) !== null)
+      check(
+        '欠席として処理したことが残る',
+        (await reloadContact(cancelled.id)).absent_handling === 'absent'
+      )
+
+      // (b) 予定から削除する（保護者が送り直した想定で連絡を未処理に戻す）
+      await saveUsageContacts(supabase, d, cancelEntry)
+      const again = await reloadContact2(child.id, d)
+      const asDelete = await applyParentContact(supabase, again, staff.id, undefined, 'delete')
+      check('予定から削除できる', !asDelete.error, asDelete.error)
+      check('利用予定が消える', (await getReservation(child.id, d)) === null)
+      check('出欠記録も消える', (await getAttendance(child.id, d)) === null)
+      check(
+        '削除として処理したことが残る',
+        (await reloadContact(again.id)).absent_handling === 'delete'
+      )
     }
   } finally {
     // ── 後片付け ──

@@ -7,6 +7,7 @@ import {
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
 import { loadTransportPlaces } from '@/lib/parent-usage-contact'
+import type { AbsentHandling } from '@/lib/parent-contact-schedule'
 import type { LocationType } from '@/lib/transport-place'
 
 export default async function ParentContactsPage() {
@@ -16,7 +17,7 @@ export default async function ParentContactsPage() {
   const { data: unconfirmedRaw } = await supabase
     .from('parent_attendance_contacts')
     .select(
-      'id, child_id, date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_location_type, pickup_address_id, dropoff_location_type, dropoff_address_id, note, reported_at, is_new, approval_status, applied_at, children (id, name)'
+      'id, child_id, date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_location_type, pickup_address_id, dropoff_location_type, dropoff_address_id, note, reported_at, is_new, approval_status, applied_at, absent_handling, children (id, name)'
     )
     .eq('is_new', true)
     .order('date', { ascending: true })
@@ -44,6 +45,8 @@ export default async function ParentContactsPage() {
     is_new: boolean
     approval_status: 'pending' | 'approved' | 'rejected'
     applied_at: string | null
+    /** キャンセル連絡をどう処理したか（欠席として記録 / 予定から削除）。null＝未処理 */
+    absent_handling: AbsentHandling | null
     children: { id: string; name: string } | null
   }
   const unconfirmedContacts = (unconfirmedRaw ?? []) as unknown as ContactRow[]

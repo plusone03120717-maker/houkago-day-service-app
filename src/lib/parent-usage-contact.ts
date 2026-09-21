@@ -148,15 +148,18 @@ export function validateUsageContact(
   if (date < getTodayJST()) return '過去の日付には連絡できません'
 
   for (const entry of entries) {
-    // お休み・キャンセルは保護者ポータルからは受け付けない。
-    // いつ連絡があったかで欠席時対応加算の算定可否が変わるため、施設が電話で受けて
-    // スタッフが「欠席」か「予定の削除」かを判断して記録する。
-    // 画面にも選択肢を出していないが、直接APIを叩かれても通さないようここで弾く。
-    if (entry.status === 'absent') {
-      return 'お休み・キャンセルのご連絡は、施設へお電話でお願いします'
-    }
-    if (entry.status !== 'attending') {
+    if (entry.status !== 'attending' && entry.status !== 'absent') {
       return '連絡内容が正しくありません'
+    }
+    // キャンセルは前日まで。当日のお休みは施設が電話で受ける。
+    // 当日の欠席は欠席時対応加算の算定や送迎便の組み直しに関わり、
+    // 連絡が届いたことをその場で確かめる必要があるため。
+    if (entry.status === 'absent') {
+      if (date <= getTodayJST()) {
+        return '当日のお休みのご連絡は、施設へお電話でお願いします'
+      }
+      // 利用時間・送迎の指定は保存時にクリアするので、ここでは見なくてよい
+      continue
     }
     if (entry.transportType !== undefined && !TRANSPORT_TYPES.includes(entry.transportType)) {
       return '送迎区分が正しくありません'
@@ -230,6 +233,19 @@ export async function saveUsageContacts(
       reported_at: new Date().toISOString(),
       is_new: true,
       approval_status: 'pending',
+      // キャンセルの連絡は、前に承認した内容の控えを引き継がない。
+      // 引き継ぐと利用連絡ページで「反映済み」に見えてしまい、
+      // 欠席にするか削除するかをスタッフが選べなくなる。
+      // その日に作った利用予定は、スタッフがどちらかを選んだ時点で
+      // （児童・ユニット・日付から引き直して）処理される。
+      ...(attending
+        ? {}
+        : {
+            applied_at: null,
+            applied_unit_id: null,
+            applied_reservation_id: null,
+            absent_handling: null,
+          }),
     }
   })
 
@@ -540,29 +556,25 @@ export async function loadReservationDeadline(
 }
 
 /**
- * 締切後の月に「新しい日」を足そうとしていないかを確かめる。
+ * その日に「すでに利用することになっている」お子さまを返す。
  *
- * 締め切るのは新規の日だけなので、すでに施設側に予定がある日
- * （利用予定が入っている・以前に送った連絡がある）は通す。
- * 画面でも入力欄を出していないが、締切をまたいで画面を開いたままにしていた場合や
- * 直接APIを叩かれた場合に備えて、保存の直前にもここで確かめる。
+ * 施設側の利用予定が入っている日か、以前に「利用します」と送った日かを見る。
+ * 締切後に増やせるのはこの範囲の日だけで、キャンセルできるのもこの範囲の日だけ。
+ * お休みの連絡しか無い日は含めない（一度キャンセルした日を締切後に
+ * 入れ直せてしまうと、締切の意味が無くなるため）。
  */
-export async function validateReservationDeadline(
+async function plannedChildIdsOn(
   supabase: Client,
   date: string,
-  entries: UsageContactEntry[],
-  deadline: ReservationDeadline
-): Promise<string | null> {
+  childIds: string[]
+): Promise<Set<string>> {
   const [year, month] = date.split('-').map(Number)
-  if (!isMonthClosed(year, month, deadline, getTodayJST())) return null
-
-  const childIds = entries.map((e) => e.childId)
-
   const [{ data: sentRows }, schedule] = await Promise.all([
     supabase
       .from('parent_attendance_contacts')
       .select('child_id')
       .eq('date', date)
+      .eq('status', 'attending')
       .in('child_id', childIds),
     loadFacilitySchedule(supabase, childIds, year, month),
   ])
@@ -571,8 +583,38 @@ export async function validateReservationDeadline(
   for (const s of schedule) {
     if (s.date === date && s.kind === 'planned') known.add(s.child_id)
   }
+  return known
+}
 
-  if (childIds.some((id) => !known.has(id))) {
+/**
+ * 送られてきた連絡が、その日に送れるものかを確かめる。
+ *
+ * - 利用します … 締め切った月に**新しい日**を足すことはできない。
+ *   すでに予定がある日（時間や送迎の変更）は締切後も通す。
+ * - キャンセル … もともと予定が無い日はキャンセルできない。
+ *
+ * 画面でも同じ判定でボタンを出し分けているが、締切をまたいで画面を開いたままに
+ * していた場合や、直接APIを叩かれた場合に備えて保存の直前にも確かめる。
+ */
+export async function validateContactTargets(
+  supabase: Client,
+  date: string,
+  entries: UsageContactEntry[],
+  deadline: ReservationDeadline
+): Promise<string | null> {
+  const [year, month] = date.split('-').map(Number)
+  const closed = isMonthClosed(year, month, deadline, getTodayJST())
+  const cancels = entries.filter((e) => e.status === 'absent')
+  // 締切前で、キャンセルも含まない連絡は確かめることが無い
+  if (!closed && cancels.length === 0) return null
+
+  const known = await plannedChildIdsOn(supabase, date, entries.map((e) => e.childId))
+
+  if (cancels.some((e) => !known.has(e.childId))) {
+    return 'この日はご利用の予定が入っていないため、キャンセルできません'
+  }
+
+  if (closed && entries.some((e) => e.status === 'attending' && !known.has(e.childId))) {
     const limit = formatMonthDay(deadlineDateFor(year, month, deadline.day))
     return `${month}月分の新しいご利用日のお申し込みは締め切りました（${limit}まで）。追加をご希望の場合は施設へお電話ください`
   }

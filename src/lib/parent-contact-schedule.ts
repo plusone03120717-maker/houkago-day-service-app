@@ -46,7 +46,19 @@ export type ParentContact = {
   applied_at: string | null
   applied_unit_id: string | null
   applied_reservation_id: string | null
+  /** キャンセル連絡をどう処理したか。null＝未処理 */
+  absent_handling: AbsentHandling | null
 }
+
+/**
+ * キャンセル連絡の処理方法。施設が利用連絡ページで選ぶ。
+ *
+ * - absent … 欠席として記録する。予約・利用計画は残るので出席管理には欠席として出続け、
+ *   国保連請求の欠席時対応加算も算定できる。前日・当日の急なお休み向け。
+ * - delete … その日の予定をなかったことにする。利用状況ページのゴミ箱と同じ扱いで、
+ *   出席管理の一覧からも消える。ずっと前からのキャンセル向け。
+ */
+export type AbsentHandling = 'absent' | 'delete'
 
 /** 反映に必要な列。API 側の select はこれを使う */
 export const PARENT_CONTACT_COLUMNS =
@@ -55,7 +67,7 @@ export const PARENT_CONTACT_COLUMNS =
   'assigned_daytime_start_time, assigned_daytime_end_time, ' +
   'transport_type, pickup_location_type, pickup_address_id, ' +
   'dropoff_location_type, dropoff_address_id, ' +
-  'applied_at, applied_unit_id, applied_reservation_id'
+  'applied_at, applied_unit_id, applied_reservation_id, absent_handling'
 
 export type ApplyResult = {
   /** 反映できなかった理由。反映できたときは undefined */
@@ -204,6 +216,67 @@ async function clearPlanCancellation(supabase: Client, childId: string, date: st
     .update({ is_cancelled: false })
     .in('plan_id', targetPlanIds)
     .eq('date', date)
+}
+
+/**
+ * 利用計画から自動生成される分を、その日だけキャンセル扱いにする。
+ * clearPlanCancellation の逆。予定を消しても、これをやらないと
+ * 出席管理が利用計画から一覧を作り直して同じ児童が復活してしまう。
+ *
+ * 利用状況ページの削除（@/lib/usage-day.ts の cancelUsagePlanForDate）と同じ動き。
+ * 失敗したときだけ理由を返す。
+ */
+async function cancelPlanForDate(
+  supabase: Client,
+  childId: string,
+  date: string
+): Promise<string | undefined> {
+  const { data: plans } = await supabase
+    .from('usage_plans')
+    .select('id, day_of_week, start_date, end_date, transport_type, pickup_location_type, dropoff_location_type')
+    .eq('child_id', childId)
+    .eq('is_active', true)
+  if (!plans || plans.length === 0) return
+
+  const dow = new Date(date + 'T00:00:00').getDay()
+  for (const plan of plans as {
+    id: string
+    day_of_week: number[] | null
+    start_date: string
+    end_date: string | null
+    transport_type: string
+    pickup_location_type: string
+    dropoff_location_type: string
+  }[]) {
+    if (!(plan.day_of_week ?? []).includes(dow)) continue
+    if (date < plan.start_date) continue
+    if (plan.end_date && date > plan.end_date) continue
+
+    const { data: existing } = await supabase
+      .from('usage_plan_date_overrides')
+      .select('id')
+      .eq('plan_id', plan.id)
+      .eq('date', date)
+      .maybeSingle()
+
+    if (existing) {
+      const { error } = await supabase
+        .from('usage_plan_date_overrides')
+        .update({ is_cancelled: true })
+        .eq('id', (existing as { id: string }).id)
+      if (error) return error.message
+    } else {
+      const { error } = await supabase.from('usage_plan_date_overrides').insert({
+        plan_id: plan.id,
+        date,
+        is_cancelled: true,
+        transport_type: plan.transport_type,
+        pickup_location_type: plan.pickup_location_type,
+        dropoff_location_type: plan.dropoff_location_type,
+      })
+      if (error) return error.message
+    }
+  }
 }
 
 /**
@@ -502,6 +575,7 @@ async function applyAbsent(
       applied_at: new Date().toISOString(),
       applied_unit_id: unitId,
       applied_reservation_id: null,
+      absent_handling: 'absent',
     })
     .eq('id', contact.id)
 
@@ -509,19 +583,88 @@ async function applyAbsent(
 }
 
 /**
- * 保護者の連絡を予定へ反映する。承認（利用）・確認（お休み）の両方から呼ぶ。
+ * 「キャンセル」の連絡を、その日の予定ごと取り消す。
+ *
+ * 利用状況ページのゴミ箱（@/lib/usage-day.ts の deleteUsageDay）と同じ扱いで、
+ * その日の予定・出欠記録・送迎・請求上書きをまとめて消し、利用計画からの
+ * 自動生成も止める。出席管理の一覧からも完全に消える。
+ *
+ * 欠席として残さないので、欠席時対応加算の対象にはならない。
+ * ずっと前からのキャンセルはこちらで処理する（前日・当日の急なお休みは applyAbsent）。
+ *
+ * 元に戻す操作は用意していない。消した予定の内容（時間・送迎）は復元できないため、
+ * 入れ直したい場合は利用状況ページから予定を作り直す。
+ */
+async function applyCancelDelete(
+  supabase: Client,
+  contact: ParentContact,
+  unitId: string
+): Promise<ApplyResult> {
+  // 請求側の上書きレコード
+  await supabase
+    .from('billing_daily_records')
+    .delete()
+    .eq('child_id', contact.child_id)
+    .eq('unit_id', unitId)
+    .eq('date', contact.date)
+
+  // 出欠記録（支援記録・活動記録は ON DELETE CASCADE で一緒に消える）
+  const { error: attError } = await supabase
+    .from('daily_attendance')
+    .delete()
+    .eq('child_id', contact.child_id)
+    .eq('unit_id', unitId)
+    .eq('date', contact.date)
+  if (attError) return { error: `出欠記録の削除に失敗しました: ${attError.message}` }
+
+  // その日の送迎予定から外す
+  await removeFromTransport(supabase, contact.child_id, unitId, contact.date)
+
+  // 利用計画からの自動生成を止める。これをやらないと、予定を消しても
+  // 出席管理が利用計画から一覧を作り直して復活してしまう
+  const planError = await cancelPlanForDate(supabase, contact.child_id, contact.date)
+  if (planError) return { error: `利用計画の取り消しに失敗しました: ${planError}` }
+
+  // 利用予定そのもの
+  const { error: resError } = await supabase
+    .from('usage_reservations')
+    .delete()
+    .eq('child_id', contact.child_id)
+    .eq('unit_id', unitId)
+    .eq('date', contact.date)
+  if (resError) return { error: `利用予定の削除に失敗しました: ${resError.message}` }
+
+  await supabase
+    .from('parent_attendance_contacts')
+    .update({
+      applied_at: new Date().toISOString(),
+      applied_unit_id: unitId,
+      applied_reservation_id: null,
+      absent_handling: 'delete',
+    })
+    .eq('id', contact.id)
+
+  return { unitId }
+}
+
+/**
+ * 保護者の連絡を予定へ反映する。承認（利用）・確認（キャンセル）の両方から呼ぶ。
  * すでに反映済みの連絡をもう一度渡しても、同じ結果になる（再送信への対応）。
  *
  * assignment は承認画面でスタッフが決めたサービス区分と時間。渡された場合は
  * 連絡にも書き戻すので、取り消して承認し直しても同じ割り振りが復元される。
  * 渡されなかった場合は連絡に保存済みの割り振り（無ければ保護者の希望時間を
  * そのまま放デイとして扱う）を使う。
+ *
+ * handling はキャンセル連絡の処理方法（欠席として記録するか、予定から削除するか）。
+ * 既定は欠席。どちらにするかは施設が利用連絡ページで選ぶ。
  */
 export async function applyParentContact(
   supabase: Client,
   contact: ParentContact,
   staffUserId: string,
-  assignment?: ServiceAssignment
+  assignment?: ServiceAssignment,
+  handling: AbsentHandling = 'absent'
 ): Promise<ApplyResult> {
   const unitId =
     contact.applied_unit_id ?? (await resolveUnitId(supabase, contact.child_id, contact.date))
@@ -530,7 +673,9 @@ export async function applyParentContact(
   }
 
   if (contact.status !== 'attending') {
-    return applyAbsent(supabase, contact, unitId, staffUserId)
+    return handling === 'delete'
+      ? applyCancelDelete(supabase, contact, unitId)
+      : applyAbsent(supabase, contact, unitId, staffUserId)
   }
 
   let resolved = resolveAssignment(contact)
@@ -574,8 +719,10 @@ export async function revertParentContact(
           .eq('status', 'scheduled')
       }
     }
-  } else if (unitId) {
-    // お休みの記録を取り消して未記録に戻す（利用状況の欠席ボタンの解除と同じ動き）
+  } else if (unitId && contact.absent_handling !== 'delete') {
+    // お休みの記録を取り消して未記録に戻す（利用状況の欠席ボタンの解除と同じ動き）。
+    // 予定ごと削除した分は、消した内容（時間・送迎）を復元できないのでここでは戻さない。
+    // 入れ直す場合は利用状況ページから予定を作り直す
     await supabase
       .from('daily_attendance')
       .delete()
@@ -587,7 +734,12 @@ export async function revertParentContact(
 
   await supabase
     .from('parent_attendance_contacts')
-    .update({ applied_at: null, applied_unit_id: null, applied_reservation_id: null })
+    .update({
+      applied_at: null,
+      applied_unit_id: null,
+      applied_reservation_id: null,
+      absent_handling: null,
+    })
     .eq('id', contact.id)
 
   return {}
