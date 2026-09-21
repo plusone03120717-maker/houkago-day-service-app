@@ -126,6 +126,7 @@ export default async function TransportPage({
     { data: driversRaw },
     { data: attendanceRaw, error: attendanceError },
     { data: allChildrenRaw },
+    { data: reservationsRaw },
     scheduleDefaults,
   ] = await Promise.all([
     targetUnitIds.length > 0
@@ -151,6 +152,16 @@ export default async function TransportPage({
           .in('unit_id', targetUnitIds)
           .eq('is_active', true)
       : ({ data: [] } as { data: unknown[] }),
+    // その日の利用予定。毎週の利用スケジュールが無い日（保護者の利用連絡を
+    // 承認した日など）は、送迎の時刻をここからしか拾えない
+    targetUnitIds.length > 0
+      ? supabase
+          .from('usage_reservations')
+          .select('child_id, unit_id, pickup_time, dropoff_time')
+          .in('unit_id', targetUnitIds)
+          .eq('date', today)
+          .in('status', ['confirmed', 'reserved'])
+      : ({ data: [] } as { data: unknown[] }),
     // 予定値はユニットごとに解決する（計画はユニット単位なので混ぜられない）
     Promise.all(targetUnitIds.map((id) => fetchScheduleDefaults(supabase, id, today))).then(
       (list) => {
@@ -175,6 +186,18 @@ export default async function TransportPage({
   const schedules = (schedulesRaw ?? []) as unknown as RawSchedule[]
   const vehicles = (vehiclesRaw ?? []) as Vehicle[]
   const drivers = (driversRaw ?? []) as Driver[]
+
+  // その日の利用予定の送迎時刻。利用スケジュールが無い児童の予定値になる
+  type ReservationRow = {
+    child_id: string
+    unit_id: string
+    pickup_time: string | null
+    dropoff_time: string | null
+  }
+  const reservationByChild = new Map<string, ReservationRow>()
+  for (const r of (reservationsRaw ?? []) as unknown as ReservationRow[]) {
+    reservationByChild.set(unitChildKey(r.unit_id, r.child_id), r)
+  }
 
   // 「すべて」表示ではユニットをまたぐため、出席記録はユニット×児童で引く
   const attendanceByChild = new Map<string, AttendanceRow>()
@@ -202,6 +225,9 @@ export default async function TransportPage({
 
       // お迎えは「子どもと合流する時刻」＝到着、お送りは「施設を出る時刻」＝出発。
       // 記録が無ければ利用スケジュールの予定値を未確定として表示する。
+      // 利用スケジュールも無い日（保護者の利用連絡を承認した日など）は、
+      // その日の利用予定に入っている時刻を使う。ここを見ていなかったため、
+      // 毎週の計画が無い児童は送迎管理の時刻がずっと空欄になっていた。
       // 日中一時の送迎にあたる行は、日中一時側の欄が記録先になる。
       const isDaytime = resolveSlotFor(direction, att, plan) === 'daytime'
       const recorded =
@@ -212,7 +238,10 @@ export default async function TransportPage({
           : isDaytime
           ? att?.daytime_dropoff_departure_time
           : att?.dropoff_departure_time
-      const planned = direction === 'pickup' ? plan?.pickupTime : plan?.dropoffTime
+      const reservation = reservationByChild.get(unitChildKey(sched.unit_id, d.child_id))
+      const planned =
+        (direction === 'pickup' ? plan?.pickupTime : plan?.dropoffTime) ??
+        (direction === 'pickup' ? reservation?.pickup_time : reservation?.dropoff_time)
 
       rows.push({
         id: d.id,
