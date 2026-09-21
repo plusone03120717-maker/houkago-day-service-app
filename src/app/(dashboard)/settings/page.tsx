@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash, Clock } from 'lucide-react'
+import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash, Clock, Smartphone } from 'lucide-react'
 import { requireAdmin } from '@/lib/require-admin'
 
 const sections = [
@@ -45,6 +45,12 @@ const sections = [
     icon: CalendarDays,
     label: '施設カレンダー管理',
     description: '休業日・行事・研修日の登録・保護者予約の停止',
+  },
+  {
+    href: '/settings/parent-portal',
+    icon: Smartphone,
+    label: '保護者ポータル設定',
+    description: '利用予定の申込締切（翌月分は前月◯日まで）の設定',
   },
   {
     href: '/settings/notifications',

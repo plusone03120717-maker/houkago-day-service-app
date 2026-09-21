@@ -13,7 +13,8 @@
     "check:anomaly": "tsx scripts/run-anomaly-check.ts",
     "verify:parent-sync": "tsx scripts/verify-parent-contact-sync.ts",
     "verify:parent-link": "tsx scripts/verify-parent-account-link.ts",
-    "verify:parent-schedule": "tsx scripts/verify-parent-schedule-read.ts"
+    "verify:parent-schedule": "tsx scripts/verify-parent-schedule-read.ts",
+    "verify:parent-deadline": "tsx scripts/verify-parent-deadline.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

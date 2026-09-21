@@ -7,6 +7,8 @@ import {
   saveUsageContacts,
   loadFacilityClosures,
   loadTransportPlaces,
+  loadReservationDeadline,
+  validateReservationDeadline,
   type UsageContactEntry,
 } from '@/lib/parent-usage-contact'
 
@@ -64,6 +66,12 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    // 申込を締め切った月に新しい日を足すことはできない（利用時間などの変更は通す）。
+    // 締切をまたいで画面を開いたままにしていた場合に備えて、保存の直前にも確かめる
+    const deadline = await loadReservationDeadline(adminClient, entries!.map((e) => e.childId))
+    const closed = await validateReservationDeadline(adminClient, date!, entries!, deadline)
+    if (closed) return NextResponse.json({ error: closed }, { status: 400 })
 
     // 送迎の場所は、その児童の選択肢（学校・登録住所）に無いものを受け付けない。
     // 他人の住所IDや削除済みの住所を指定されると送迎先が実在しなくなるため

@@ -10,6 +10,13 @@ import {
   type LocationType,
 } from '@/lib/transport-place'
 import {
+  DEFAULT_RESERVATION_DEADLINE,
+  isMonthClosed,
+  deadlineDateFor,
+  formatMonthDay,
+  type ReservationDeadline,
+} from '@/lib/parent-reservation-deadline'
+import {
   buildUsageRoster,
   eachDate,
   type RosterReservation,
@@ -323,6 +330,27 @@ export function validateTransportPlaces(
   return null
 }
 
+/**
+ * その児童たちが所属するユニットの施設を返す。
+ *
+ * 保護者ポータルの「施設ごとの決まりごと」（休業日・申込締切）を引くのに使う。
+ * 所属ユニットが無い児童はどの施設か決められないため、空で返る。
+ */
+async function facilityIdsForChildren(supabase: Client, childIds: string[]): Promise<string[]> {
+  if (childIds.length === 0) return []
+  const { data } = await supabase
+    .from('children_units')
+    .select('units (facility_id)')
+    .in('child_id', childIds)
+  return [
+    ...new Set(
+      ((data ?? []) as unknown as { units: { facility_id: string } | null }[])
+        .map((r) => r.units?.facility_id)
+        .filter((id): id is string => !!id)
+    ),
+  ]
+}
+
 /** 施設がお休みの日（保護者は利用連絡を送れない） */
 export type FacilityClosure = {
   date: string
@@ -349,17 +377,7 @@ export async function loadFacilityClosures(
 ): Promise<FacilityClosure[]> {
   if (childIds.length === 0) return []
 
-  const { data: unitRows } = await supabase
-    .from('children_units')
-    .select('units (facility_id)')
-    .in('child_id', childIds)
-  const facilityIds = [
-    ...new Set(
-      ((unitRows ?? []) as unknown as { units: { facility_id: string } | null }[])
-        .map((r) => r.units?.facility_id)
-        .filter((id): id is string => !!id)
-    ),
-  ]
+  const facilityIds = await facilityIdsForChildren(supabase, childIds)
   if (facilityIds.length === 0) return []
 
   const mm = String(month).padStart(2, '0')
@@ -483,6 +501,82 @@ export async function loadFacilitySchedule(
     }
   }
   return out
+}
+
+/**
+ * 利用連絡の申込締切の設定を取り出す（施設ごと）。
+ *
+ * きょうだいが別の施設に通っている場合など、設定が複数当たることがある。
+ * そのときは**一番ゆるい方**に合わせる（1つでも締切なしの施設があれば締切なし、
+ * 揃って有効なら締切日が遅い方）。厳しい方に寄せると、締切を設けていない施設の
+ * 保護者まで連絡できなくなってしまうため。
+ *
+ * 所属ユニットが無い児童しかいない場合は、施設が1つだけならその設定を使う。
+ */
+export async function loadReservationDeadline(
+  supabase: Client,
+  childIds: string[]
+): Promise<ReservationDeadline> {
+  const facilityIds = await facilityIdsForChildren(supabase, childIds)
+
+  const query = supabase
+    .from('parent_portal_settings')
+    .select('reservation_deadline_enabled, reservation_deadline_day')
+  const { data } = facilityIds.length > 0
+    ? await query.in('facility_id', facilityIds)
+    : await query.limit(2)
+
+  type Row = { reservation_deadline_enabled: boolean; reservation_deadline_day: number }
+  const rows = (data ?? []) as Row[]
+  // 施設が特定できないまま設定が複数あるときは、どれを当てるか決められないので締切なし
+  if (rows.length === 0) return DEFAULT_RESERVATION_DEADLINE
+  if (facilityIds.length === 0 && rows.length > 1) return DEFAULT_RESERVATION_DEADLINE
+  if (rows.some((r) => !r.reservation_deadline_enabled)) return DEFAULT_RESERVATION_DEADLINE
+
+  return {
+    enabled: true,
+    day: Math.max(...rows.map((r) => r.reservation_deadline_day)),
+  }
+}
+
+/**
+ * 締切後の月に「新しい日」を足そうとしていないかを確かめる。
+ *
+ * 締め切るのは新規の日だけなので、すでに施設側に予定がある日
+ * （利用予定が入っている・以前に送った連絡がある）は通す。
+ * 画面でも入力欄を出していないが、締切をまたいで画面を開いたままにしていた場合や
+ * 直接APIを叩かれた場合に備えて、保存の直前にもここで確かめる。
+ */
+export async function validateReservationDeadline(
+  supabase: Client,
+  date: string,
+  entries: UsageContactEntry[],
+  deadline: ReservationDeadline
+): Promise<string | null> {
+  const [year, month] = date.split('-').map(Number)
+  if (!isMonthClosed(year, month, deadline, getTodayJST())) return null
+
+  const childIds = entries.map((e) => e.childId)
+
+  const [{ data: sentRows }, schedule] = await Promise.all([
+    supabase
+      .from('parent_attendance_contacts')
+      .select('child_id')
+      .eq('date', date)
+      .in('child_id', childIds),
+    loadFacilitySchedule(supabase, childIds, year, month),
+  ])
+
+  const known = new Set(((sentRows ?? []) as { child_id: string }[]).map((r) => r.child_id))
+  for (const s of schedule) {
+    if (s.date === date && s.kind === 'planned') known.add(s.child_id)
+  }
+
+  if (childIds.some((id) => !known.has(id))) {
+    const limit = formatMonthDay(deadlineDateFor(year, month, deadline.day))
+    return `${month}月分の新しいご利用日のお申し込みは締め切りました（${limit}まで）。追加をご希望の場合は施設へお電話ください`
+  }
+  return null
 }
 
 /** その月の連絡を取り出す */

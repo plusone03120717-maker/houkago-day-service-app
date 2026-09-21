@@ -10,6 +10,7 @@ import {
   SERVICE_ASSIGNMENT_LABELS,
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
+import { formatMonthDay } from '@/lib/parent-reservation-deadline'
 import {
   toPlaceValue,
   type ChildTransportPlaces,
@@ -86,6 +87,22 @@ export type FacilityScheduleDay = {
   check_in_time?: string | null
   check_out_time?: string | null
   unit_name?: string | null
+}
+
+/**
+ * 利用連絡の申込締切。
+ *
+ * closed の月は「新しい日」を増やせない。すでに予定が入っている日
+ * （施設の利用予定がある・以前に連絡を送った）の時間や送迎の変更は締切後も送れる。
+ */
+export type UsageDeadline = {
+  enabled: boolean
+  /** 前月の何日までか */
+  day: number
+  /** 表示中の月の新規申込が締め切られているか */
+  closed: boolean
+  /** 表示中の月の締切日（YYYY-MM-DD） */
+  deadlineDate: string
 }
 
 /** 受給者証の給付日数上限（児童ごと） */
@@ -277,6 +294,8 @@ type Props = {
   places: ChildTransportPlaces[]
   /** 児童ごとの給付日数上限 */
   benefits: BenefitLimit[]
+  /** 利用連絡の申込締切。null なら締切なし */
+  deadline: UsageDeadline | null
   year: number
   month: number
   loading: boolean
@@ -293,6 +312,7 @@ export function UsageContactCalendar({
   closures,
   places,
   benefits,
+  deadline,
   year,
   month,
   loading,
@@ -338,6 +358,23 @@ export function UsageContactCalendar({
     if (kinds.includes('attended')) return 'attended'
     if (kinds.includes('absent')) return 'absent'
     return null
+  }
+
+  /**
+   * その日・そのお子さまの連絡を「新しい日の追加」として扱うかどうか。
+   *
+   * 締切後は新しい日を増やせないが、すでに施設側に予定がある日
+   * （利用予定が入っている・以前に連絡を送った）は、時間や送迎の変更として送れる。
+   */
+  function canContact(childId: string, dateStr: string): boolean {
+    if (!deadline?.closed) return true
+    if (contactsOn(dateStr).some((c) => c.child_id === childId)) return true
+    return scheduleOn(dateStr).some((s) => s.child_id === childId && s.kind === 'planned')
+  }
+
+  /** その日に1人でも連絡を送れるお子さまがいるか（送信ボタンの出し分けに使う） */
+  function anyContactable(dateStr: string): boolean {
+    return childrenList.some((c) => canContact(c.id, dateStr))
   }
 
   function prevMonth() {
@@ -401,6 +438,16 @@ export function UsageContactCalendar({
     const targets = childrenList.filter((c) => entries[c.id]?.attending)
     if (targets.length === 0) {
       setToast({ ok: false, message: '利用するお子さまを選択してください' })
+      return
+    }
+
+    // 締切後の月に新しい日を足そうとしていないか（APIでも同じ判定をする）
+    const locked = targets.find((c) => !canContact(c.id, selectedDate))
+    if (locked) {
+      setToast({
+        ok: false,
+        message: `${locked.name}さんの新しいご利用日のお申し込みは締め切りました`,
+      })
       return
     }
 
@@ -512,6 +559,26 @@ export function UsageContactCalendar({
           <ChevronRight className="h-5 w-5" />
         </button>
       </div>
+
+      {/* 申込締切。締め切った月は「新しい日」を増やせないことを開く前に伝える */}
+      {deadline?.enabled && (
+        deadline.closed ? (
+          <div className="mt-3 rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3">
+            <p className="text-xs font-semibold text-amber-800">
+              {month}月分の新しいご利用日のお申し込みは締め切りました
+            </p>
+            <p className="mt-1 text-xs text-amber-700">
+              締切は{formatMonthDay(deadline.deadlineDate)}でした。
+              すでにご予定が入っている日の<strong>利用時間・送迎の変更</strong>は、このあとも送れます。
+              新しい日の追加をご希望の場合は、施設へお電話ください。
+            </p>
+          </div>
+        ) : (
+          <p className="mt-3 text-center text-xs text-gray-400">
+            {month}月分の新しいご利用日のお申し込みは{formatMonthDay(deadline.deadlineDate)}までです
+          </p>
+        )
+      )}
 
       {/* カレンダー */}
       <div className="bg-white mt-3 rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -697,6 +764,8 @@ export function UsageContactCalendar({
                 const sched = scheduleOn(selectedDate).find((s) => s.child_id === child.id)
                 const sent = contactsOn(selectedDate).find((c) => c.child_id === child.id)
                 const childPlaces = placesFor(child.id)?.places ?? []
+                // 締切後でも、すでに予定がある日は時間・送迎の変更として送れる
+                const contactable = canContact(child.id, selectedDate)
                 return (
                   <div key={child.id} className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
                     <p className="font-semibold text-gray-900 mb-3">{child.name}</p>
@@ -757,9 +826,30 @@ export function UsageContactCalendar({
                       )
                     })()}
 
+                    {/* 締め切った月に新しい日を足すことはできない。
+                        選ばせてから断るより、開いた時点で伝えるほうが分かりやすい */}
+                    {!readOnly && !contactable && (
+                      <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5">
+                        <p className="text-xs text-amber-800">
+                          この日の新しいお申し込みは締め切りました
+                          {deadline && `（${formatMonthDay(deadline.deadlineDate)}まで）`}
+                        </p>
+                        <p className="mt-1 text-xs text-amber-700">
+                          ご利用をご希望の場合は、施設へお電話ください
+                        </p>
+                      </div>
+                    )}
+
+                    {/* 締切後に変更だけ送れる日は、何ができるのかを先に伝えておく */}
+                    {!readOnly && contactable && deadline?.closed && (
+                      <p className="mb-3 text-xs text-gray-500">
+                        締切後のため日にちの追加はできませんが、利用時間・送迎の変更は送れます
+                      </p>
+                    )}
+
                     {/* 選ぶのは「利用するかどうか」だけ。
                         放デイか日中一時かは施設が承認するときに割り振る */}
-                    {!readOnly && (
+                    {!readOnly && contactable && (
                     <button
                       onClick={() => updateEntry(child.id, { attending: !entry.attending })}
                       className={`w-full rounded-xl py-3 text-sm font-semibold transition-colors mb-3 ${
@@ -772,7 +862,7 @@ export function UsageContactCalendar({
                     </button>
                     )}
 
-                    {!readOnly && entry.attending && (
+                    {!readOnly && contactable && entry.attending && (
                       <>
                         {/* 利用時間 */}
                         <div className="bg-white rounded-xl px-4 py-3 mb-3 border border-gray-200">
@@ -877,7 +967,7 @@ export function UsageContactCalendar({
                       </>
                     )}
 
-                    {!readOnly && (
+                    {!readOnly && contactable && (
                     <AutoTextarea
                       value={entry.note}
                       onChange={(e) => updateEntry(child.id, { note: e.target.value })}
@@ -896,7 +986,7 @@ export function UsageContactCalendar({
                 )
               })}
 
-              {!readOnly && (
+              {!readOnly && anyContactable(selectedDate) && (
               <>
               {/* 保護者に区分を選ばせない代わりに、誰が決めるのかは伝えておく */}
               <div className="rounded-2xl bg-blue-50 border border-blue-100 px-4 py-3">

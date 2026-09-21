@@ -7,7 +7,10 @@ import {
   loadFacilityClosures,
   loadTransportPlaces,
   loadBenefitLimits,
+  loadReservationDeadline,
 } from '@/lib/parent-usage-contact'
+import { deadlineDateFor, isMonthClosed } from '@/lib/parent-reservation-deadline'
+import { getTodayJST } from '@/lib/utils'
 
 const adminClient = createAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,6 +43,7 @@ export async function POST(req: NextRequest) {
     if (children.length === 0) {
       return NextResponse.json({
         children: [], contacts: [], schedule: [], closures: [], places: [], benefits: [],
+        deadline: null,
       })
     }
 
@@ -47,7 +51,7 @@ export async function POST(req: NextRequest) {
     // 保護者自身が送った連絡と、施設側ですでに決まっている予定の両方を返す。
     // 施設の予定が見えないと、毎週の利用スケジュールがある日にも
     // 重ねて連絡を送ってしまい、確認の手間が増える
-    const [contacts, schedule, closures, places, benefits] = await Promise.all([
+    const [contacts, schedule, closures, places, benefits, deadline] = await Promise.all([
       loadUsageContacts(adminClient, childIds, year, month),
       loadFacilitySchedule(adminClient, childIds, year, month),
       loadFacilityClosures(adminClient, childIds, year, month),
@@ -55,9 +59,20 @@ export async function POST(req: NextRequest) {
       loadTransportPlaces(adminClient, childIds),
       // 給付日数の上限。利用済みの日数と並べて残りを出す
       loadBenefitLimits(adminClient, childIds, year, month),
+      // 利用連絡の申込締切。新しい日を足せる月かどうかを画面で出し分けるために返す
+      loadReservationDeadline(adminClient, childIds),
     ])
 
-    return NextResponse.json({ children, contacts, schedule, closures, places, benefits })
+    return NextResponse.json({
+      children, contacts, schedule, closures, places, benefits,
+      deadline: {
+        enabled: deadline.enabled,
+        day: deadline.day,
+        // この月の新規申込が締め切られているか（締切日当日はまだ受け付ける）
+        closed: isMonthClosed(year, month, deadline, getTodayJST()),
+        deadlineDate: deadlineDateFor(year, month, deadline.day),
+      },
+    })
   } catch (err) {
     console.error('[parent/usage-contacts/month]', err)
     return NextResponse.json({ error: 'サーバーエラーが発生しました' }, { status: 500 })
