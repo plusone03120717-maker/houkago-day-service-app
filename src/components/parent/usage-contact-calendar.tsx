@@ -88,6 +88,15 @@ export type FacilityScheduleDay = {
   check_in_time?: string | null
   check_out_time?: string | null
   unit_name?: string | null
+  /**
+   * いまその日に入っている予定の中身。毎週の利用スケジュールから作られた日も含む。
+   * 保護者が「いまの予定」を見たうえで時間を変えられるようにするために使う。
+   */
+  service_start_time?: string | null
+  service_end_time?: string | null
+  transport_type?: TransportType | null
+  pickup_place?: string | null
+  dropoff_place?: string | null
 }
 
 /**
@@ -371,6 +380,24 @@ function ChildEntryFields({
   )
 }
 
+/** 保護者に見せる送迎の言い方。スタッフ側の「迎え・送り」とは言い換えている */
+const TRANSPORT_TEXT: Record<TransportType, string> = {
+  none: '送迎なし',
+  both: '行き帰りの送迎',
+  pickup_only: '行きの送迎',
+  dropoff_only: '帰りの送迎',
+}
+
+/** 「14:00〜17:30／行き帰りの送迎」のように、その日の予定の中身を1行で表す */
+function describeScheduleDay(sched: FacilityScheduleDay): string | null {
+  const start = sched.service_start_time ?? null
+  const end = sched.service_end_time ?? null
+  const time = start || end ? `${start ?? '—'}〜${end ?? '—'}` : null
+  const transport = sched.transport_type ? TRANSPORT_TEXT[sched.transport_type] : null
+  const parts = [time, transport].filter((v): v is string => !!v)
+  return parts.length > 0 ? parts.join('／') : null
+}
+
 const DOW = ['日', '月', '火', '水', '木', '金', '土']
 
 /**
@@ -604,12 +631,39 @@ export function UsageContactCalendar({
     }
   }
 
+  /**
+   * すでに予定が入っている日の入力欄の初期値。
+   *
+   * 毎週の利用スケジュールから作られた日も、施設が個別に入れた日も、
+   * **いまの予定をそのまま初期値**にする。時間を変えたい保護者は、
+   * 入っている時間から直すほうが分かりやすく、うっかり別の時間で
+   * 送ってしまうこともないため。
+   */
+  function plannedEntry(childId: string, sched: FacilityScheduleDay): EntryState {
+    const own = placesFor(childId)
+    const transport = sched.transport_type ?? 'none'
+    return {
+      attending: false,
+      serviceStart: sched.service_start_time ?? '',
+      serviceEnd: sched.service_end_time ?? '',
+      goPickup: transport === 'pickup_only' || transport === 'both',
+      goDropoff: transport === 'dropoff_only' || transport === 'both',
+      pickupPlace: sched.pickup_place ?? own?.defaultPickup ?? 'home',
+      dropoffPlace: sched.dropoff_place ?? own?.defaultDropoff ?? 'home',
+      note: '',
+    }
+  }
+
   function openDate(dateStr: string) {
     const dayContacts = contactsOn(dateStr)
     const init: Record<string, EntryState> = {}
     for (const child of childrenList) {
       const existing = dayContacts.find((c) => c.child_id === child.id)
       const transport = existing?.transport_type ?? 'none'
+      // 連絡がまだ無い日は、施設の予定が入っていればその内容から始める
+      const planned = scheduleOn(dateStr).find(
+        (sc) => sc.child_id === child.id && sc.kind === 'planned'
+      )
       init[child.id] = existing
         ? {
             attending: existing.status === 'attending',
@@ -621,7 +675,9 @@ export function UsageContactCalendar({
             dropoffPlace: toPlaceValue(existing.dropoff_location_type, existing.dropoff_address_id),
             note: existing.note ?? '',
           }
-        : blankEntry(child.id)
+        : planned
+          ? plannedEntry(child.id, planned)
+          : blankEntry(child.id)
     }
     setEntries(init)
     setSelectedDate(dateStr)
@@ -1421,9 +1477,18 @@ export function UsageContactCalendar({
                         <span className={`mt-1 w-2 h-2 shrink-0 rounded-[2px] ${SCHEDULE_META[sched.kind].box}`} />
                         <p className="text-xs text-blue-800">
                           {sched.kind === 'planned' && (
-                            sent && !sent.applied_at
-                              ? '施設の予定では、この日は利用することになっています'
-                              : 'この日はすでに利用予定が入っています。変更がなければ連絡は不要です'
+                            <>
+                              {sent && !sent.applied_at
+                                ? '施設の予定では、この日は利用することになっています'
+                                : 'この日はすでに利用予定が入っています。変更がなければ連絡は不要です'}
+                              {/* いまの予定の中身。時間を変えるときの「変更前」になる */}
+                              {describeScheduleDay(sched) && (
+                                <>
+                                  <br />
+                                  いまの予定：{describeScheduleDay(sched)}
+                                </>
+                              )}
+                            </>
                           )}
                           {sched.kind === 'attended' && (
                             <>
@@ -1501,8 +1566,18 @@ export function UsageContactCalendar({
                           : 'bg-white text-gray-600 border border-gray-200'
                       }`}
                     >
-                      {entry.attending ? 'この日は利用します' : '利用する日として連絡する'}
+                      {entry.attending
+                        ? (sched?.kind === 'planned' ? 'この内容に変更します' : 'この日は利用します')
+                        : sched?.kind === 'planned'
+                          ? '利用時間・送迎を変更する'
+                          : '利用する日として連絡する'}
                     </button>
+                    )}
+
+                    {!readOnly && contactable && entry.attending && sched?.kind === 'planned' && (
+                      <p className="mb-2 text-[11px] text-gray-500">
+                        いま入っている予定を初期値にしています。変更したいところだけ直して送信してください
+                      </p>
                     )}
 
                     {!readOnly && contactable && entry.attending && (

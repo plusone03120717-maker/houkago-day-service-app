@@ -18,6 +18,11 @@ import {
   type ReservationDeadline,
 } from '@/lib/parent-reservation-deadline'
 import {
+  resolveScheduleDefaults,
+  type PlanRow as SchedulePlanRow,
+  type OverrideRow as ScheduleOverrideRow,
+} from '@/lib/schedule-defaults'
+import {
   buildUsageRoster,
   eachDate,
   type RosterReservation,
@@ -81,6 +86,20 @@ export type FacilityScheduleDay = {
   check_in_time?: string | null
   check_out_time?: string | null
   unit_name?: string | null
+  /**
+   * いまその日に入っている予定の中身（利用時間・送迎）。
+   *
+   * 毎週の利用スケジュールから作られた日も、施設が個別に入れた日も、
+   * 保護者が「いまの予定」を見たうえで時間を変更できるようにするために返す。
+   * 解決の優先順位は施設側の画面と同じで、
+   * その日の記録 > 特定日上書き > 曜日別設定 > 利用スケジュール。
+   */
+  service_start_time?: string | null
+  service_end_time?: string | null
+  transport_type?: TransportType | null
+  /** 送迎の行き先・帰り先（@/lib/transport-place の値） */
+  pickup_place?: string | null
+  dropoff_place?: string | null
 }
 
 /** 受給者証の給付日数上限（児童ごと） */
@@ -461,41 +480,66 @@ export async function loadFacilitySchedule(
   const [{ data: reservations }, { data: plans }, { data: attendances }] = await Promise.all([
     supabase
       .from('usage_reservations')
-      .select('id, child_id, date, status, requested_by')
+      .select(
+        'id, child_id, date, status, requested_by, transport_type, ' +
+        'pickup_location_type, pickup_address_id, dropoff_location_type, dropoff_address_id'
+      )
       .in('child_id', childIds)
       .gte('date', startDate)
       .lte('date', endDate),
     supabase
       .from('usage_plans')
-      .select('id, child_id, start_date, end_date, day_of_week')
+      .select(
+        'id, child_id, start_date, end_date, day_of_week, transport_type, ' +
+        'pickup_time, dropoff_time, service_start_time, service_end_time, ' +
+        'pickup_location_type, dropoff_location_type, ' +
+        'daytime_support, daytime_support_start_time, daytime_support_end_time'
+      )
       .in('child_id', childIds)
       .eq('is_active', true)
       .lte('start_date', endDate)
       .or(`end_date.is.null,end_date.gte.${startDate}`),
     supabase
       .from('daily_attendance')
-      .select('child_id, date, status, check_in_time, check_out_time, units (name)')
+      .select(
+        'child_id, date, status, check_in_time, check_out_time, ' +
+        'service_start_time, service_end_time, pickup_type, units (name)'
+      )
       .in('child_id', childIds)
       .gte('date', startDate)
       .lte('date', endDate),
   ])
 
-  const planIds = ((plans ?? []) as { id: string }[]).map((p) => p.id)
-  const { data: overrides } = planIds.length > 0
-    ? await supabase
-        .from('usage_plan_date_overrides')
-        .select('plan_id, date, is_cancelled')
-        .in('plan_id', planIds)
-        .gte('date', startDate)
-        .lte('date', endDate)
-    : { data: [] }
+  const planIds = ((plans ?? []) as unknown as { id: string }[]).map((p) => p.id)
+  // 曜日別設定・特定日上書きは「いまの予定の中身」を組み立てるのにも使うので、
+  // キャンセルの有無だけでなく時間・送迎もそろえて取る
+  const [{ data: overrides }, { data: daySettings }] = planIds.length > 0
+    ? await Promise.all([
+        supabase
+          .from('usage_plan_date_overrides')
+          .select(
+            'plan_id, date, is_cancelled, transport_type, pickup_time, dropoff_time, ' +
+            'service_start_time, service_end_time'
+          )
+          .in('plan_id', planIds)
+          .gte('date', startDate)
+          .lte('date', endDate),
+        supabase
+          .from('usage_plan_day_settings')
+          .select(
+            'plan_id, day_of_week, transport_type, pickup_time, dropoff_time, ' +
+            'service_start_time, service_end_time'
+          )
+          .in('plan_id', planIds),
+      ])
+    : [{ data: [] }, { data: [] }]
 
   const roster = buildUsageRoster({
     dates: eachDate(startDate, endDate),
-    reservations: (reservations ?? []) as RosterReservation[],
-    plans: (plans ?? []) as RosterPlan[],
-    overrides: (overrides ?? []) as RosterOverride[],
-    attendances: (attendances ?? []) as RosterAttendance[],
+    reservations: (reservations ?? []) as unknown as RosterReservation[],
+    plans: (plans ?? []) as unknown as RosterPlan[],
+    overrides: (overrides ?? []) as unknown as RosterOverride[],
+    attendances: (attendances ?? []) as unknown as RosterAttendance[],
   })
 
   // 利用済みの日は、その日の実績（登園・降園と教室）も一緒に返す。
@@ -512,6 +556,82 @@ export async function loadFacilitySchedule(
     detailByKey.set(`${row.child_id}|${row.date}`, row)
   }
 
+  // ── その日の予定の中身（利用時間・送迎）を組み立てる ──
+  //
+  // 施設側の画面（出席管理・送迎管理）と同じ解決順で出す。ここがズレると、
+  // 保護者に見せている「いまの予定」と施設が見ている予定が食い違う。
+  type PlanFull = SchedulePlanRow & {
+    start_date: string
+    end_date: string | null
+    day_of_week: number[] | null
+    pickup_location_type: LocationType | null
+    dropoff_location_type: LocationType | null
+  }
+  type DaySettingRow = ScheduleOverrideRow & { day_of_week: number }
+  type DateOverrideRow = ScheduleOverrideRow & { date: string }
+  type ReservationDetail = {
+    child_id: string
+    date: string
+    transport_type: TransportType | null
+    pickup_location_type: LocationType | null
+    pickup_address_id: string | null
+    dropoff_location_type: LocationType | null
+    dropoff_address_id: string | null
+  }
+  type AttendanceTimes = {
+    child_id: string
+    date: string
+    service_start_time: string | null
+    service_end_time: string | null
+    pickup_type: TransportType | null
+  }
+
+  const planRows = (plans ?? []) as unknown as PlanFull[]
+  const daySettingRows = (daySettings ?? []) as unknown as DaySettingRow[]
+  const overrideRows = (overrides ?? []) as unknown as DateOverrideRow[]
+  const reservationByKey = new Map<string, ReservationDetail>()
+  for (const r of (reservations ?? []) as unknown as ReservationDetail[]) {
+    reservationByKey.set(`${r.child_id}|${r.date}`, r)
+  }
+  const attendanceByKey = new Map<string, AttendanceTimes>()
+  for (const a of (attendances ?? []) as unknown as AttendanceTimes[]) {
+    attendanceByKey.set(`${a.child_id}|${a.date}`, a)
+  }
+  const planById = new Map(planRows.map((p) => [p.id, p]))
+
+  /** その日に効いている利用スケジュールの値（児童ごと） */
+  const defaultsCache = new Map<string, Record<string, ReturnType<typeof resolveScheduleDefaults>[string]>>()
+  function scheduleDefaultsOn(date: string) {
+    const cached = defaultsCache.get(date)
+    if (cached) return cached
+    const dow = new Date(date + 'T00:00:00').getDay()
+    const active = planRows.filter(
+      (p) =>
+        (p.day_of_week ?? []).includes(dow) &&
+        date >= p.start_date &&
+        (!p.end_date || date <= p.end_date)
+    )
+    const resolved = resolveScheduleDefaults(
+      active,
+      daySettingRows.filter((d) => d.day_of_week === dow),
+      overrideRows.filter((o) => o.date === date)
+    )
+    defaultsCache.set(date, resolved)
+    return resolved
+  }
+
+  /** 送迎の場所。その日の予約 → 利用スケジュール の順で決める */
+  function placesOn(childId: string, date: string, planId: string | null) {
+    const res = reservationByKey.get(`${childId}|${date}`)
+    const plan = planId ? planById.get(planId) : undefined
+    const pickupType = res?.pickup_location_type ?? plan?.pickup_location_type ?? null
+    const dropoffType = res?.dropoff_location_type ?? plan?.dropoff_location_type ?? null
+    return {
+      pickup: pickupType ? toPlaceValue(pickupType, res?.pickup_address_id ?? null) : null,
+      dropoff: dropoffType ? toPlaceValue(dropoffType, res?.dropoff_address_id ?? null) : null,
+    }
+  }
+
   // 実績として確定したとみなすのは前日まで（関数の説明を参照）
   const today = getTodayJST()
 
@@ -524,6 +644,12 @@ export async function loadFacilitySchedule(
         : e.absent ? 'absent'
         : 'planned'
       const detail = kind === 'attended' ? detailByKey.get(`${e.childId}|${e.date}`) : undefined
+
+      const att = attendanceByKey.get(`${e.childId}|${e.date}`)
+      const planned = scheduleDefaultsOn(e.date)[e.childId]
+      const res = reservationByKey.get(`${e.childId}|${e.date}`)
+      const places = placesOn(e.childId, e.date, e.planId)
+
       out.push({
         child_id: e.childId,
         date: e.date,
@@ -531,6 +657,17 @@ export async function loadFacilitySchedule(
         check_in_time: detail?.check_in_time ?? null,
         check_out_time: detail?.check_out_time ?? null,
         unit_name: detail?.units?.name ?? null,
+        // その日の記録があればそれが最新。無ければ利用スケジュールから引く
+        service_start_time:
+          att?.service_start_time?.slice(0, 5) ?? planned?.serviceStartTime?.slice(0, 5) ?? null,
+        service_end_time:
+          att?.service_end_time?.slice(0, 5) ?? planned?.serviceEndTime?.slice(0, 5) ?? null,
+        transport_type:
+          (res?.transport_type ?? att?.pickup_type ?? planned?.transportType ?? null) as
+            | TransportType
+            | null,
+        pickup_place: places.pickup,
+        dropoff_place: places.dropoff,
       })
     }
   }

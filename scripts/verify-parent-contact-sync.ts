@@ -21,6 +21,7 @@ import {
   saveUsageContactsForDates,
   validateContactTargets,
   loadUsageContactDefaults,
+  loadFacilitySchedule,
   loadTransportPlaces,
   validateTransportPlaces,
 } from '../src/lib/parent-usage-contact'
@@ -806,6 +807,82 @@ async function main() {
       )
       check('予定がある日はキャンセルできる', !cancels.has(many[0]), cancels.get(many[0]))
       check('予定が無い日だけ弾かれる', cancels.has(dates[2]), [...cancels.entries()])
+    }
+    // ── 15. 利用スケジュールの日を、保護者が時間変更できる形で見せる ──
+    console.log('\n15. 利用スケジュールから作られた日の「いまの予定」')
+    {
+      const d = dateFor(20)
+      await cleanupDate(child.id, d)
+      const dow = new Date(d + 'T00:00:00').getDay()
+
+      // その日だけに効く利用スケジュールを作る（他の検証日に影響させない）
+      const { data: planRow, error: planError } = await supabase
+        .from('usage_plans')
+        .insert({
+          child_id: child.id,
+          unit_id: childUnitId,
+          day_of_week: [dow],
+          start_date: d,
+          end_date: d,
+          is_active: true,
+          transport_type: 'both',
+          service_start_time: '14:00',
+          service_end_time: '17:30',
+          pickup_location_type: 'school',
+          dropoff_location_type: 'home',
+        })
+        .select('id')
+        .single()
+      check('前提：利用スケジュールを作成できる', !planError, planError?.message)
+      const planId = (planRow as { id: string }).id
+
+      try {
+        const [y, m] = d.split('-').map(Number)
+        const find = async () => {
+          const days = await loadFacilitySchedule(supabase, [child.id], y, m)
+          return days.find((x) => x.date === d)
+        }
+
+        const fromPlan = await find()
+        check('利用予定として出る', fromPlan?.kind === 'planned', fromPlan?.kind)
+        check('利用スケジュールの時間が出る', fromPlan?.service_start_time === '14:00', fromPlan?.service_start_time)
+        check('終了時刻も出る', fromPlan?.service_end_time === '17:30', fromPlan?.service_end_time)
+        check('送迎区分も出る', fromPlan?.transport_type === 'both', fromPlan?.transport_type)
+        check('行き先も出る', fromPlan?.pickup_place === 'school', fromPlan?.pickup_place)
+
+        // 特定日の上書きがあれば、そちらが優先される
+        const { error: ovError } = await supabase.from('usage_plan_date_overrides').insert({
+          plan_id: planId,
+          date: d,
+          is_cancelled: false,
+          transport_type: 'both',
+          pickup_location_type: 'school',
+          dropoff_location_type: 'home',
+          service_start_time: '15:00',
+          service_end_time: '17:30',
+        })
+        check('前提：特定日の上書きを作成できる', !ovError, ovError?.message)
+        const fromOverride = await find()
+        check('特定日の上書きが優先される', fromOverride?.service_start_time === '15:00', fromOverride?.service_start_time)
+
+        // その日の記録があれば、さらにそちらが優先される
+        await supabase.from('daily_attendance').insert({
+          child_id: child.id,
+          unit_id: childUnitId,
+          date: d,
+          status: 'scheduled',
+          pickup_type: 'none',
+          service_start_time: '16:00',
+          service_end_time: '18:00',
+        })
+        const fromAttendance = await find()
+        check('その日の記録がいちばん優先される', fromAttendance?.service_start_time === '16:00', fromAttendance?.service_start_time)
+        check('終了時刻も記録が優先される', fromAttendance?.service_end_time === '18:00', fromAttendance?.service_end_time)
+      } finally {
+        await supabase.from('usage_plan_date_overrides').delete().eq('plan_id', planId)
+        await supabase.from('usage_plans').delete().eq('id', planId)
+        await cleanupDate(child.id, d)
+      }
     }
   } finally {
     // ── 後片付け ──

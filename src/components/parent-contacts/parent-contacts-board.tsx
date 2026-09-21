@@ -14,6 +14,7 @@ import {
   ThumbsDown,
   CalendarCheck,
   CalendarRange,
+  Pencil,
   AlertTriangle,
 } from 'lucide-react'
 import {
@@ -92,6 +93,45 @@ const TRANSPORT_LABELS: Record<TransportType, string> = {
   dropoff_only: '送りのみ',
 }
 
+/**
+ * その日にすでに入っている予定の中身。
+ * 毎週の利用スケジュールから作られた日も含めて、保護者側と同じ解決で出している。
+ */
+export type CurrentPlan = {
+  serviceStartTime: string | null
+  serviceEndTime: string | null
+  transportType: TransportType | null
+}
+
+/**
+ * 「新しい申し込み」ではなく「入っている予定の変更」かを判定する。
+ *
+ * 予定が入っている日に連絡が来た場合、時間か送迎が今と違えば変更の希望。
+ * ここを見分けられないと、変更のつもりで送られた連絡を新規と同じように
+ * 承認してしまい、いまの時間のまま予定が残る。
+ */
+function planChange(c: Contact, current: CurrentPlan | undefined) {
+  if (!current || c.status !== 'attending') return null
+  const same =
+    fmtTime(c.service_start_time) === (current.serviceStartTime ?? null) &&
+    fmtTime(c.service_end_time) === (current.serviceEndTime ?? null) &&
+    c.transport_type === (current.transportType ?? 'none')
+  return { current, changed: !same }
+}
+
+/** 「14:00〜17:30／送り迎え」のように予定の中身を1行にする */
+function describePlan(p: {
+  serviceStartTime: string | null
+  serviceEndTime: string | null
+  transportType: TransportType | null
+}): string {
+  const time =
+    p.serviceStartTime || p.serviceEndTime
+      ? `${p.serviceStartTime ?? '—'}〜${p.serviceEndTime ?? '—'}`
+      : '時間未定'
+  return `${time}／${TRANSPORT_LABELS[p.transportType ?? 'none']}`
+}
+
 const DOW = ['日', '月', '火', '水', '木', '金', '土']
 
 /** DBの time 型（HH:MM:SS）を HH:MM で表示する */
@@ -168,6 +208,8 @@ type Props = {
   initialAssignments: Record<string, ServiceAssignment>
   /** 児童ごとの送迎の場所の選択肢。行き先・帰り先を名前で出すために使う */
   transportPlaces: ChildTransportPlaces[]
+  /** 連絡IDごとの「いまその日に入っている予定」。入っていない日は載らない */
+  currentPlans: Record<string, CurrentPlan>
 }
 
 /** 割り振りの時刻欄。空欄は「指定なし」として扱う */
@@ -291,6 +333,7 @@ function AssignmentEditor({
 function ContactCard({
   contact: c,
   approval,
+  current,
   applied,
   handling,
   today,
@@ -303,6 +346,8 @@ function ContactCard({
 }: {
   contact: Contact
   approval: ApprovalStatus
+  /** いまその日に入っている予定。無ければ undefined（新しい申し込み） */
+  current: CurrentPlan | undefined
   /** 予定へ反映済みか */
   applied: boolean
   /** キャンセル連絡をどう処理したか。null＝未処理 */
@@ -319,6 +364,7 @@ function ContactCard({
 }) {
   const editable = needsApproval(c) && approval === 'pending'
   const assignmentError = validateAssignment(assignment)
+  const change = planChange(c, current)
   return (
     <div className="rounded-xl px-4 py-3 shadow-sm border bg-amber-50 border-amber-200 flex items-start gap-3">
       <div className="mt-0.5">
@@ -353,6 +399,18 @@ function ContactCard({
             <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
               <Car className="h-3 w-3" />
               {TRANSPORT_LABELS[c.transport_type]}
+            </span>
+          )}
+          {/* すでに予定が入っている日の連絡は、新しい申し込みと区別して出す */}
+          {change?.changed && (
+            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500 text-white font-bold">
+              <Pencil className="h-3 w-3" />
+              予定の変更
+            </span>
+          )}
+          {change && !change.changed && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
+              予定どおり
             </span>
           )}
           {/* 承認状態（利用の連絡のみ） */}
@@ -405,6 +463,24 @@ function ContactCard({
           </div>
         )}
 
+        {/* どこが変わるのかを、承認する前に見えるところへ出す */}
+        {change?.changed && (
+          <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5">
+            <p className="text-[11px] text-amber-900">
+              いまの予定 <strong>{describePlan(change.current)}</strong>
+              <span className="mx-1">→</span>
+              ご希望{' '}
+              <strong>
+                {describePlan({
+                  serviceStartTime: fmtTime(c.service_start_time),
+                  serviceEndTime: fmtTime(c.service_end_time),
+                  transportType: c.transport_type,
+                })}
+              </strong>
+            </p>
+          </div>
+        )}
+
         {c.note && (
           <p className="text-xs text-gray-500 mt-1 line-clamp-2">{c.note}</p>
         )}
@@ -419,7 +495,33 @@ function ContactCard({
 
         {/* 承認前は区分を決める欄、承認後は決まった内容を出す */}
         {editable ? (
-          <AssignmentEditor contact={c} value={assignment} onChange={onAssignmentChange} />
+          <>
+            <AssignmentEditor contact={c} value={assignment} onChange={onAssignmentChange} />
+            {/* 割り振りの初期値は「いま出席管理に入っている時間」なので、
+                変更の希望はスタッフが取り込まないと反映されない。1タップで入るようにする */}
+            {change?.changed && assignment.serviceType !== 'both' && (
+              <button
+                onClick={() =>
+                  onAssignmentChange(
+                    assignment.serviceType === 'daytime_support'
+                      ? {
+                          ...assignment,
+                          daytimeStartTime: fmtTime(c.service_start_time),
+                          daytimeEndTime: fmtTime(c.service_end_time),
+                        }
+                      : {
+                          ...assignment,
+                          serviceStartTime: fmtTime(c.service_start_time),
+                          serviceEndTime: fmtTime(c.service_end_time),
+                        }
+                  )
+                }
+                className="mt-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
+              >
+                ご希望の時間を割り振りに入れる
+              </button>
+            )}
+          </>
         ) : (
           needsApproval(c) &&
           approval === 'approved' && (
@@ -504,6 +606,7 @@ export function ParentContactsBoard({
   unconfirmedContacts,
   initialAssignments,
   transportPlaces,
+  currentPlans,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -572,9 +675,15 @@ export function ParentContactsBoard({
 
   // 同じ内容で複数の日に届いた連絡は、1枚にまとめて承認できるようにする。
   // 保護者が「まとめて申し込む」で送ると日数ぶんのカードが並ぶため
+  //
+  // いま入っている予定の変更（時間が違う日）はまとめない。
+  // 何がどう変わるのかを1件ずつ見てもらう必要があるため。
   const groups = (() => {
     const byKey = new Map<string, Contact[]>()
-    for (const c of pending.filter(needsApproval)) {
+    const groupable = pending
+      .filter(needsApproval)
+      .filter((c) => !planChange(c, currentPlans[c.id])?.changed)
+    for (const c of groupable) {
       const key = contentKey(c)
       byKey.set(key, [...(byKey.get(key) ?? []), c])
     }
@@ -732,6 +841,8 @@ export function ParentContactsBoard({
           送迎の時刻は聞いていません（承認した利用時間から決まります）。行き先・帰り先だけ保護者が選びます。
           承認した利用連絡はそのまま利用状況・出席管理の利用予定になります。
           同じ内容でまとめて届いた連絡は1枚のカードにまとめています（承認も1回で済みます）。
+          すでに予定が入っている日の連絡には「予定の変更」と出ます。
+          変更後の時間で予定を更新する場合は「ご希望の時間を割り振りに入れる」を押してから承認してください。
           保護者は前日までなら予定をキャンセルできます。届いたキャンセルは
           「欠席として記録」するか「予定から削除」するかをここで選んでください
           （当日のお休みは従来どおり施設が電話で受けます）。
@@ -928,6 +1039,7 @@ export function ParentContactsBoard({
                         key={c.id}
                         contact={c}
                         approval={approvalOf(c)}
+                        current={currentPlans[c.id]}
                         applied={appliedOf(c)}
                         handling={handlingOf(c)}
                         today={today}

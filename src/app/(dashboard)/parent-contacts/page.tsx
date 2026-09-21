@@ -1,12 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
-import { ParentContactsBoard } from '@/components/parent-contacts/parent-contacts-board'
+import {
+  ParentContactsBoard,
+  type CurrentPlan,
+} from '@/components/parent-contacts/parent-contacts-board'
 import {
   attendanceToAssignment,
   type AttendanceAssignmentSource,
   type ServiceAssignment,
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
-import { loadTransportPlaces } from '@/lib/parent-usage-contact'
+import { loadTransportPlaces, loadFacilitySchedule } from '@/lib/parent-usage-contact'
 import type { AbsentHandling } from '@/lib/parent-contact-schedule'
 import type { LocationType } from '@/lib/transport-place'
 
@@ -81,11 +84,39 @@ export default async function ParentContactsPage() {
   // 保護者が指定した行き先・帰り先を名前で出すための選択肢
   const transportPlaces = await loadTransportPlaces(supabase, childIds)
 
+  // その日にすでに入っている予定の中身。
+  // 毎週の利用スケジュールから作られた日は予約も出欠記録も無いことがあるため、
+  // 保護者側と同じ解決（記録 > 特定日上書き > 曜日別設定 > 利用スケジュール）を通す。
+  // これが無いと「新しい申し込み」と「入っている予定の時間変更」を見分けられない。
+  const contactMonths = [...new Set(unconfirmedContacts.map((c) => c.date.slice(0, 7)))]
+  const scheduleDays = (
+    await Promise.all(
+      contactMonths.map((m) => {
+        const [y, mm] = m.split('-').map(Number)
+        return loadFacilitySchedule(supabase, childIds, y, mm)
+      })
+    )
+  ).flat()
+
+  const currentPlans: Record<string, CurrentPlan> = {}
+  for (const c of unconfirmedContacts) {
+    const day = scheduleDays.find(
+      (d) => d.child_id === c.child_id && d.date === c.date && d.kind === 'planned'
+    )
+    if (!day) continue
+    currentPlans[c.id] = {
+      serviceStartTime: day.service_start_time ?? null,
+      serviceEndTime: day.service_end_time ?? null,
+      transportType: day.transport_type ?? null,
+    }
+  }
+
   return (
     <ParentContactsBoard
       unconfirmedContacts={unconfirmedContacts}
       initialAssignments={initialAssignments}
       transportPlaces={transportPlaces}
+      currentPlans={currentPlans}
     />
   )
 }
