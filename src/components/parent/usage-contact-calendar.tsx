@@ -112,6 +112,26 @@ export type BenefitLimit = {
   max_days_per_month: number
 }
 
+/** お子さまごとの「いつもの内容」。前に送った連絡から作る */
+export type UsageDefault = {
+  childId: string
+  serviceStartTime: string | null
+  serviceEndTime: string | null
+  transportType: TransportType
+  pickupPlace: string
+  dropoffPlace: string
+}
+
+/**
+ * 送信の結果。まとめて申し込んだときは、送れた日と送れなかった日が混ざる。
+ * どの日が通ったのかを画面で示すために日付を返してもらう。
+ */
+export type UsageSubmitResult = {
+  error?: string
+  savedDates?: string[]
+  skipped?: { date: string; reason: string }[]
+}
+
 export type UsageContactEntry = {
   childId: string
   status: 'attending' | 'absent'
@@ -227,6 +247,130 @@ function PlaceSelect({
   )
 }
 
+/**
+ * お子さま1人分の「利用時間」と「送迎」の入力欄。
+ *
+ * 1日ずつ連絡する画面と、複数日をまとめて申し込む画面の両方で同じものを使う。
+ * 入力する項目がズレると「まとめて出すと指定できない項目がある」ことになるため、
+ * 1か所にまとめてある。
+ */
+function ChildEntryFields({
+  childName,
+  entry,
+  places,
+  onChange,
+}: {
+  childName: string
+  entry: EntryState
+  places: TransportPlace[]
+  onChange: (patch: Partial<EntryState>) => void
+}) {
+  return (
+    <>
+{/* 利用時間 */}
+<div className="bg-white rounded-xl px-4 py-3 mb-3 border border-gray-200">
+  <div className="flex items-center gap-1.5 mb-2">
+    <Clock className="h-3.5 w-3.5 text-indigo-500" />
+    <span className="text-xs font-semibold text-gray-600">利用時間</span>
+    <span className="text-[10px] text-gray-400">（任意）</span>
+  </div>
+  <div className="grid grid-cols-2 gap-2">
+    <div>
+      <label className="text-[10px] text-gray-400 mb-1 block">開始</label>
+      <TimeSelect
+        ariaLabel={`${childName}の利用開始時刻`}
+        value={entry.serviceStart}
+        onChange={(v) => onChange({ serviceStart: v })}
+      />
+    </div>
+    <div>
+      <label className="text-[10px] text-gray-400 mb-1 block">終了</label>
+      <TimeSelect
+        ariaLabel={`${childName}の利用終了時刻`}
+        value={entry.serviceEnd}
+        onChange={(v) => onChange({ serviceEnd: v })}
+      />
+    </div>
+  </div>
+</div>
+
+{/* 送迎。その日の「行き」「帰り」を1回ずつ聞く。
+    通しで使う日でも家を出るのは1回・帰るのも1回なので、
+    サービスごとには分けない */}
+<div className="bg-white rounded-xl px-4 py-3 mb-3 border border-gray-200">
+  <div className="flex items-center gap-1.5 mb-2">
+    <Car className="h-3.5 w-3.5 text-indigo-500" />
+    <span className="text-xs font-semibold text-gray-600">送迎</span>
+    <span className="text-[10px] text-gray-400">（必要なものを選ぶ）</span>
+  </div>
+  <div className="grid grid-cols-2 gap-2">
+    <button
+      onClick={() => onChange({ goPickup: !entry.goPickup })}
+      className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${
+        entry.goPickup
+          ? 'bg-indigo-500 text-white shadow-sm'
+          : 'bg-gray-50 text-gray-600 border border-gray-200'
+      }`}
+    >
+      行き
+    </button>
+    <button
+      onClick={() => onChange({ goDropoff: !entry.goDropoff })}
+      className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${
+        entry.goDropoff
+          ? 'bg-indigo-500 text-white shadow-sm'
+          : 'bg-gray-50 text-gray-600 border border-gray-200'
+      }`}
+    >
+      帰り
+    </button>
+  </div>
+  {!entry.goPickup && !entry.goDropoff && (
+    <p className="mt-2 text-[10px] text-gray-400">
+      どちらも選ばない場合は「送迎なし」として連絡します
+    </p>
+  )}
+
+  {/* 時刻は聞かない。施設が利用時間から決める。
+      代わりに「どこへ」を選んでもらう */}
+  {entry.goPickup && (
+    <div className="mt-3">
+      <label className="text-[10px] text-gray-400 mb-1 block">
+        行き：どこへ迎えに行きますか
+      </label>
+      <PlaceSelect
+        ariaLabel={`${childName}の迎えに行く場所`}
+        places={places}
+        value={entry.pickupPlace}
+        onChange={(v) => onChange({ pickupPlace: v })}
+      />
+    </div>
+  )}
+
+  {entry.goDropoff && (
+    <div className="mt-3">
+      <label className="text-[10px] text-gray-400 mb-1 block">
+        帰り：どこへ送り届けますか
+      </label>
+      <PlaceSelect
+        ariaLabel={`${childName}の送り届ける場所`}
+        places={places}
+        value={entry.dropoffPlace}
+        onChange={(v) => onChange({ dropoffPlace: v })}
+      />
+    </div>
+  )}
+
+  {(entry.goPickup || entry.goDropoff) && (
+    <p className="mt-2 text-[10px] text-gray-400">
+      送迎の時刻は利用時間をもとに施設で決めてご連絡します
+    </p>
+  )}
+</div>
+    </>
+  )
+}
+
 const DOW = ['日', '月', '火', '水', '木', '金', '土']
 
 /**
@@ -282,6 +426,12 @@ function toDateStr(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
+/** '2026-10-05' -> '10/5（月）' */
+function shortDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return `${d.getMonth() + 1}/${d.getDate()}（${DOW[d.getDay()]}）`
+}
+
 function todayStr(): string {
   const n = new Date()
   return toDateStr(n.getFullYear(), n.getMonth() + 1, n.getDate())
@@ -300,11 +450,19 @@ type Props = {
   benefits: BenefitLimit[]
   /** 利用連絡の申込締切。null なら締切なし */
   deadline: UsageDeadline | null
+  /** お子さまごとの前回の内容。入力欄の初期値に使う */
+  defaults: UsageDefault[]
   year: number
   month: number
   loading: boolean
   onMonthChange: (year: number, month: number) => void
-  onSubmit: (date: string, entries: UsageContactEntry[]) => Promise<{ error?: string }>
+  /** 連絡を送る。まとめて申し込むときは日付が複数になる */
+  onSubmit: (dates: string[], entries: UsageContactEntry[]) => Promise<UsageSubmitResult>
+  /**
+   * 「先月と同じ曜日」で選ぶための、前の月に利用した曜日（0=日）。
+   * 押されたときだけ呼ぶ（毎月ぶんを先読みしないで済むように）
+   */
+  onSuggestDows?: () => Promise<number[]>
   /** 「お子さまを追加登録する」のリンク先。null なら出さない */
   addChildHref?: string | null
 }
@@ -317,11 +475,13 @@ export function UsageContactCalendar({
   places,
   benefits,
   deadline,
+  defaults,
   year,
   month,
   loading,
   onMonthChange,
   onSubmit,
+  onSuggestDows,
   addChildHref = null,
 }: Props) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
@@ -329,6 +489,13 @@ export function UsageContactCalendar({
   const [submitting, setSubmitting] = useState(false)
   // キャンセルの確認中のお子さま。押し間違いで予定が消えないよう2段階にする
   const [cancelTarget, setCancelTarget] = useState<string | null>(null)
+  // まとめて申し込むモード。毎日のように利用する子が1日ずつ送らずに済むようにする
+  const [bulkMode, setBulkMode] = useState(false)
+  const [bulkDates, setBulkDates] = useState<string[]>([])
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkEntries, setBulkEntries] = useState<Record<string, EntryState>>({})
+  const [bulkResult, setBulkResult] = useState<UsageSubmitResult | null>(null)
+  const [suggesting, setSuggesting] = useState(false)
   const [toast, setToast] = useState<{ ok: boolean; message: string } | null>(null)
 
   function buildCells(): (number | null)[] {
@@ -414,13 +581,35 @@ export function UsageContactCalendar({
     onMonthChange(n.y, n.m)
   }
 
+  /**
+   * まだ連絡していない日の入力欄の初期値。
+   *
+   * 前に送った内容（いつもの時間・送迎）があればそれを使う。毎回同じ内容を
+   * 入れ直すのは、日数が多いほど負担になるため。
+   * 一度も送っていないお子さまは、施設に登録されている送迎設定に従う。
+   */
+  function blankEntry(childId: string): EntryState {
+    const own = placesFor(childId)
+    const last = defaults.find((d) => d.childId === childId)
+    const transport = last?.transportType ?? 'none'
+    return {
+      attending: false,
+      serviceStart: last?.serviceStartTime ?? '',
+      serviceEnd: last?.serviceEndTime ?? '',
+      goPickup: transport === 'pickup_only' || transport === 'both',
+      goDropoff: transport === 'dropoff_only' || transport === 'both',
+      pickupPlace: last?.pickupPlace ?? own?.defaultPickup ?? 'home',
+      dropoffPlace: last?.dropoffPlace ?? own?.defaultDropoff ?? 'home',
+      note: '',
+    }
+  }
+
   function openDate(dateStr: string) {
     const dayContacts = contactsOn(dateStr)
     const init: Record<string, EntryState> = {}
     for (const child of childrenList) {
       const existing = dayContacts.find((c) => c.child_id === child.id)
       const transport = existing?.transport_type ?? 'none'
-      const own = placesFor(child.id)
       init[child.id] = existing
         ? {
             attending: existing.status === 'attending',
@@ -432,16 +621,7 @@ export function UsageContactCalendar({
             dropoffPlace: toPlaceValue(existing.dropoff_location_type, existing.dropoff_address_id),
             note: existing.note ?? '',
           }
-        : {
-            attending: false,
-            serviceStart: '',
-            serviceEnd: '',
-            goPickup: false,
-            goDropoff: false,
-            pickupPlace: own?.defaultPickup ?? 'home',
-            dropoffPlace: own?.defaultDropoff ?? 'home',
-            note: '',
-          }
+        : blankEntry(child.id)
     }
     setEntries(init)
     setSelectedDate(dateStr)
@@ -470,7 +650,7 @@ export function UsageContactCalendar({
     const e = entries[childId]
     setSubmitting(true)
     setToast(null)
-    onSubmit(selectedDate, [
+    onSubmit([selectedDate], [
       {
         childId,
         status: 'absent',
@@ -489,6 +669,150 @@ export function UsageContactCalendar({
             : { ok: true, message: 'キャンセルのご連絡を送信しました' }
         )
         setCancelTarget(null)
+      })
+      .finally(() => setSubmitting(false))
+  }
+
+  // ── まとめて申し込む ──────────────────────────────
+
+  /** その月の日付（1日〜末日）をすべて返す */
+  function datesInMonth(): string[] {
+    const lastDay = new Date(year, month, 0).getDate()
+    return Array.from({ length: lastDay }, (_, i) => toDateStr(year, month, i + 1))
+  }
+
+  /** まとめて申し込むときに選べる日か。過ぎた日と施設のお休みは選べない */
+  function isSelectable(dateStr: string): boolean {
+    return dateStr >= today && !closureOn(dateStr)
+  }
+
+  /**
+   * 曜日でまとめて選ぶときの対象。
+   * すでに予定が入っている日・連絡済みの日は外す（重ねて送らなくて済むように）。
+   */
+  function isFreshDay(dateStr: string): boolean {
+    return (
+      isSelectable(dateStr) &&
+      contactsOn(dateStr).length === 0 &&
+      scheduleOn(dateStr).length === 0
+    )
+  }
+
+  function toggleBulkDate(dateStr: string) {
+    setBulkDates((prev) =>
+      prev.includes(dateStr) ? prev.filter((d) => d !== dateStr) : [...prev, dateStr]
+    )
+  }
+
+  /**
+   * 曜日でまとめて選ぶ・外す。
+   * その曜日がすべて選ばれていれば外し、そうでなければ足す（同じボタンで戻せる）。
+   */
+  function toggleDows(dows: number[]) {
+    const targets = datesInMonth().filter(
+      (d) => dows.includes(new Date(d + 'T00:00:00').getDay()) && isFreshDay(d)
+    )
+    if (targets.length === 0) return
+    const allSelected = targets.every((d) => bulkDates.includes(d))
+    setBulkDates((prev) =>
+      allSelected
+        ? prev.filter((d) => !targets.includes(d))
+        : [...new Set([...prev, ...targets])]
+    )
+  }
+
+  /** 前の月に利用した曜日をそのまま選ぶ */
+  function selectLikeLastMonth() {
+    if (!onSuggestDows) return
+    setSuggesting(true)
+    onSuggestDows()
+      .then((dows) => {
+        if (dows.length === 0) {
+          setToast({ ok: false, message: '前の月のご利用がないため、曜日を選べませんでした' })
+          return
+        }
+        const targets = datesInMonth().filter(
+          (d) => dows.includes(new Date(d + 'T00:00:00').getDay()) && isFreshDay(d)
+        )
+        setBulkDates([...new Set(targets)])
+      })
+      .finally(() => setSuggesting(false))
+  }
+
+  function startBulk() {
+    setSelectedDate(null)
+    setBulkMode(true)
+    setBulkDates([])
+    setToast(null)
+  }
+
+  function stopBulk() {
+    setBulkMode(false)
+    setBulkDates([])
+    setBulkOpen(false)
+    setBulkResult(null)
+    setToast(null)
+  }
+
+  /** 選んだ日の内容を入力する画面へ */
+  function openBulkSheet() {
+    const init: Record<string, EntryState> = {}
+    for (const child of childrenList) {
+      // お子さまが1人だけなら、そのまま申し込む想定で最初から選んでおく
+      init[child.id] = { ...blankEntry(child.id), attending: childrenList.length === 1 }
+    }
+    setBulkEntries(init)
+    setBulkResult(null)
+    setToast(null)
+    setBulkOpen(true)
+  }
+
+  function updateBulkEntry(childId: string, patch: Partial<EntryState>) {
+    setBulkEntries((prev) => ({ ...prev, [childId]: { ...prev[childId], ...patch } }))
+  }
+
+  function handleBulkSubmit() {
+    const targets = childrenList.filter((c) => bulkEntries[c.id]?.attending)
+    if (targets.length === 0) {
+      setToast({ ok: false, message: '利用するお子さまを選択してください' })
+      return
+    }
+    for (const c of targets) {
+      const e = bulkEntries[c.id]
+      if (e.serviceStart && e.serviceEnd && e.serviceStart >= e.serviceEnd) {
+        setToast({ ok: false, message: `${c.name}さんの利用時間は終了を開始より後にしてください` })
+        return
+      }
+    }
+
+    const payload: UsageContactEntry[] = targets.map((c) => {
+      const e = bulkEntries[c.id]
+      return {
+        childId: c.id,
+        status: 'attending',
+        serviceStartTime: e.serviceStart,
+        serviceEndTime: e.serviceEnd,
+        transportType: toTransportType(e.goPickup, e.goDropoff),
+        pickupPlace: e.pickupPlace,
+        dropoffPlace: e.dropoffPlace,
+        note: e.note.trim(),
+      }
+    })
+
+    setSubmitting(true)
+    setToast(null)
+    onSubmit([...bulkDates].sort(), payload)
+      .then((result) => {
+        if (result.error && !result.savedDates?.length) {
+          setToast({ ok: false, message: result.error })
+          return
+        }
+        setBulkResult(result)
+        setBulkDates([])
+        setToast({
+          ok: true,
+          message: `${result.savedDates?.length ?? 0}日分の連絡を送信しました`,
+        })
       })
       .finally(() => setSubmitting(false))
   }
@@ -537,7 +861,7 @@ export function UsageContactCalendar({
 
     setSubmitting(true)
     setToast(null)
-    onSubmit(selectedDate, payload)
+    onSubmit([selectedDate], payload)
       .then((result) => {
         setToast(
           result.error
@@ -641,6 +965,80 @@ export function UsageContactCalendar({
         )
       )}
 
+      {/* まとめて申し込む。毎日のように利用する子が1日ずつ送らずに済むようにする。
+          締め切った月は新しい日を足せないので出さない */}
+      {!deadline?.closed && childrenList.length > 0 && (
+        bulkMode ? (
+          <div className="mt-3 rounded-2xl bg-indigo-50 border border-indigo-100 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-indigo-900">まとめて申し込む</p>
+              <button
+                onClick={stopBulk}
+                className="text-xs text-indigo-700 underline"
+              >
+                やめる
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-indigo-700">
+              利用する日をタップして選びます。曜日のボタンでまとめて選べます
+            </p>
+
+            {/* 曜日でまとめて選ぶ。もう一度押すとその曜日を外せる */}
+            <div className="mt-2 flex gap-1">
+              {DOW.map((d, i) => (
+                <button
+                  key={d}
+                  onClick={() => toggleDows([i])}
+                  className={`flex-1 rounded-lg py-1.5 text-xs font-medium border transition-colors ${
+                    i === 0 ? 'text-red-500 border-red-100 bg-white'
+                    : i === 6 ? 'text-blue-500 border-blue-100 bg-white'
+                    : 'text-gray-600 border-gray-200 bg-white'
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => toggleDows([1, 2, 3, 4, 5])}
+                className="rounded-lg bg-white border border-indigo-200 px-2.5 py-1.5 text-xs font-medium text-indigo-700"
+              >
+                平日（月〜金）
+              </button>
+              {onSuggestDows && (
+                <button
+                  onClick={selectLikeLastMonth}
+                  disabled={suggesting}
+                  className="rounded-lg bg-white border border-indigo-200 px-2.5 py-1.5 text-xs font-medium text-indigo-700 disabled:opacity-50"
+                >
+                  {suggesting ? '読み込み中...' : '先月と同じ曜日'}
+                </button>
+              )}
+              {bulkDates.length > 0 && (
+                <button
+                  onClick={() => setBulkDates([])}
+                  className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 underline"
+                >
+                  選択を解除
+                </button>
+              )}
+            </div>
+            <p className="mt-2 text-[10px] text-indigo-600">
+              曜日で選ぶときは、施設のお休みと、すでに予定・連絡がある日を自動で外します
+            </p>
+          </div>
+        ) : (
+          <button
+            onClick={startBulk}
+            className="mt-3 w-full rounded-2xl bg-white border border-indigo-200 py-3 text-sm font-semibold text-indigo-700 shadow-sm"
+          >
+            まとめて申し込む（複数の日をいちどに）
+          </button>
+        )
+      )}
+
       {/* カレンダー */}
       <div className="bg-white mt-3 rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="grid grid-cols-7 border-b border-gray-100">
@@ -673,12 +1071,18 @@ export function UsageContactCalendar({
               const holidayName = getJapaneseHolidayName(dateStr)
               const scheduleMark = scheduleMarkOn(dateStr)
               const closure = closureOn(dateStr)
+              // まとめて申し込むモードでは、タップで選ぶ／外す
+              const picked = bulkMode && bulkDates.includes(dateStr)
+              const blocked = bulkMode && !isSelectable(dateStr)
               return (
                 <button
                   key={idx}
-                  onClick={() => openDate(dateStr)}
+                  onClick={() => (bulkMode ? toggleBulkDate(dateStr) : openDate(dateStr))}
+                  disabled={blocked}
                   title={closure ?? holidayName ?? undefined}
                   className={`relative flex flex-col items-center justify-start pt-1.5 h-12 rounded-xl mx-0.5 mb-0.5 transition-colors ${
+                    picked ? 'bg-indigo-600' :
+                    blocked ? 'opacity-40' :
                     isSelected ? 'bg-indigo-100' :
                     closure ? 'bg-gray-100' :
                     isToday ? 'bg-indigo-50' :
@@ -687,6 +1091,7 @@ export function UsageContactCalendar({
                   }`}
                 >
                   <span className={`text-sm font-medium leading-none ${
+                    picked ? 'text-white' :
                     isSelected ? 'text-indigo-700' :
                     closure ? 'text-gray-400 line-through' :
                     isToday ? 'text-indigo-600' :
@@ -766,6 +1171,177 @@ export function UsageContactCalendar({
           <a href={addChildHref} className="text-xs text-indigo-600 underline">
             お子さまを追加登録する
           </a>
+        </div>
+      )}
+
+      {/* 選んだ日数と、内容の入力へ進むボタン。画面の下に固定して指が届く位置に置く */}
+      {bulkMode && bulkDates.length > 0 && !bulkOpen && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-100 bg-white/95 px-4 py-3 backdrop-blur">
+          <div className="mx-auto flex max-w-2xl items-center gap-3">
+            <p className="text-sm font-bold text-gray-900">
+              {bulkDates.length}日
+              <span className="ml-1 text-xs font-normal text-gray-500">を選択中</span>
+            </p>
+            <button
+              onClick={openBulkSheet}
+              className="ml-auto rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-bold text-white shadow-md"
+            >
+              内容を入力する
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* まとめて申し込む内容の入力シート。利用時間・送迎は1回だけ入力する */}
+      {bulkOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setBulkOpen(false)} />
+          <div
+            className="relative bg-white rounded-t-3xl shadow-2xl max-h-[85vh] overflow-y-auto mx-auto w-full max-w-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full bg-gray-200" />
+            </div>
+
+            <div className="flex items-center justify-between px-5 pb-3 border-b border-gray-100">
+              <p className="font-bold text-gray-900">
+                まとめて申し込む
+                {!bulkResult && (
+                  <span className="ml-1.5 text-sm font-normal text-gray-400">
+                    {bulkDates.length}日分
+                  </span>
+                )}
+              </p>
+              <button
+                onClick={() => setBulkOpen(false)}
+                aria-label="閉じる"
+                className="p-1.5 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="px-4 pt-3 pb-8 space-y-3">
+              {toast && (
+                <div className={`rounded-2xl px-4 py-3 text-sm font-medium ${
+                  toast.ok ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'
+                }`}>
+                  {toast.message}
+                </div>
+              )}
+
+              {bulkResult ? (
+                <>
+                  {/* 送れた日・送れなかった日をはっきり見せる。
+                      まとめて出したときに「どれが通ったのか」が分からないと確かめようがない */}
+                  <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
+                    <p className="text-xs font-semibold text-gray-600">送信した日</p>
+                    <p className="mt-1 text-sm text-gray-800">
+                      {(bulkResult.savedDates ?? []).map(shortDate).join('、') || 'なし'}
+                    </p>
+                  </div>
+                  {(bulkResult.skipped ?? []).length > 0 && (
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
+                      <p className="text-xs font-semibold text-amber-800">送れなかった日</p>
+                      <ul className="mt-1 space-y-0.5">
+                        {(bulkResult.skipped ?? []).map((sk) => (
+                          <li key={sk.date} className="text-xs text-amber-700">
+                            {shortDate(sk.date)}：{sk.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <button
+                    onClick={stopBulk}
+                    className="w-full rounded-2xl bg-indigo-600 py-4 text-base font-bold text-white shadow-md"
+                  >
+                    閉じる
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* 選んだ日。多いので折り返して並べる */}
+                  <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
+                    <p className="text-xs font-semibold text-gray-600">選んだ日</p>
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {[...bulkDates].sort().map((d) => (
+                        <button
+                          key={d}
+                          onClick={() => toggleBulkDate(d)}
+                          className="rounded-lg bg-white border border-gray-200 px-2 py-1 text-[11px] text-gray-600"
+                        >
+                          {shortDate(d)} ×
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1.5 text-[10px] text-gray-400">
+                      タップすると、その日を外せます
+                    </p>
+                  </div>
+
+                  {childrenList.map((child) => {
+                    const entry = bulkEntries[child.id]
+                    if (!entry) return null
+                    const childPlaces = placesFor(child.id)?.places ?? []
+                    return (
+                      <div key={child.id} className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                        <p className="font-semibold text-gray-900 mb-3">{child.name}</p>
+                        <button
+                          onClick={() => updateBulkEntry(child.id, { attending: !entry.attending })}
+                          className={`w-full rounded-xl py-3 text-sm font-semibold transition-colors mb-3 ${
+                            entry.attending
+                              ? 'bg-indigo-600 text-white shadow-sm'
+                              : 'bg-white text-gray-600 border border-gray-200'
+                          }`}
+                        >
+                          {entry.attending ? '選んだ日に利用します' : '選んだ日に利用する'}
+                        </button>
+
+                        {entry.attending && (
+                          <>
+                            <ChildEntryFields
+                              childName={child.name}
+                              entry={entry}
+                              places={childPlaces}
+                              onChange={(patch) => updateBulkEntry(child.id, patch)}
+                            />
+                            <AutoTextarea
+                              value={entry.note}
+                              onChange={(e) => updateBulkEntry(child.id, { note: e.target.value })}
+                              placeholder="備考（任意・選んだ日すべてに付きます）"
+                              minRows={2}
+                              maxRows={10}
+                              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm leading-relaxed text-gray-700 placeholder-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                            />
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  <div className="rounded-2xl bg-blue-50 border border-blue-100 px-4 py-3">
+                    <p className="text-xs text-blue-800">
+                      <strong>入力した内容は、選んだ日すべてに同じように届きます</strong>
+                    </p>
+                    <p className="mt-1 text-xs text-blue-700">
+                      日によって時間や送迎が違う場合は、送信したあとにその日をタップして変更できます。
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={handleBulkSubmit}
+                    disabled={submitting || bulkDates.length === 0}
+                    className="w-full rounded-2xl bg-indigo-600 py-4 text-base font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2 shadow-md"
+                  >
+                    {submitting && <Loader2 className="h-5 w-5 animate-spin" />}
+                    {bulkDates.length}日分を送信する
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -930,108 +1506,12 @@ export function UsageContactCalendar({
                     )}
 
                     {!readOnly && contactable && entry.attending && (
-                      <>
-                        {/* 利用時間 */}
-                        <div className="bg-white rounded-xl px-4 py-3 mb-3 border border-gray-200">
-                          <div className="flex items-center gap-1.5 mb-2">
-                            <Clock className="h-3.5 w-3.5 text-indigo-500" />
-                            <span className="text-xs font-semibold text-gray-600">利用時間</span>
-                            <span className="text-[10px] text-gray-400">（任意）</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-[10px] text-gray-400 mb-1 block">開始</label>
-                              <TimeSelect
-                                ariaLabel={`${child.name}の利用開始時刻`}
-                                value={entry.serviceStart}
-                                onChange={(v) => updateEntry(child.id, { serviceStart: v })}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-gray-400 mb-1 block">終了</label>
-                              <TimeSelect
-                                ariaLabel={`${child.name}の利用終了時刻`}
-                                value={entry.serviceEnd}
-                                onChange={(v) => updateEntry(child.id, { serviceEnd: v })}
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 送迎。その日の「行き」「帰り」を1回ずつ聞く。
-                            通しで使う日でも家を出るのは1回・帰るのも1回なので、
-                            サービスごとには分けない */}
-                        <div className="bg-white rounded-xl px-4 py-3 mb-3 border border-gray-200">
-                          <div className="flex items-center gap-1.5 mb-2">
-                            <Car className="h-3.5 w-3.5 text-indigo-500" />
-                            <span className="text-xs font-semibold text-gray-600">送迎</span>
-                            <span className="text-[10px] text-gray-400">（必要なものを選ぶ）</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              onClick={() => updateEntry(child.id, { goPickup: !entry.goPickup })}
-                              className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${
-                                entry.goPickup
-                                  ? 'bg-indigo-500 text-white shadow-sm'
-                                  : 'bg-gray-50 text-gray-600 border border-gray-200'
-                              }`}
-                            >
-                              行き
-                            </button>
-                            <button
-                              onClick={() => updateEntry(child.id, { goDropoff: !entry.goDropoff })}
-                              className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${
-                                entry.goDropoff
-                                  ? 'bg-indigo-500 text-white shadow-sm'
-                                  : 'bg-gray-50 text-gray-600 border border-gray-200'
-                              }`}
-                            >
-                              帰り
-                            </button>
-                          </div>
-                          {!entry.goPickup && !entry.goDropoff && (
-                            <p className="mt-2 text-[10px] text-gray-400">
-                              どちらも選ばない場合は「送迎なし」として連絡します
-                            </p>
-                          )}
-
-                          {/* 時刻は聞かない。施設が利用時間から決める。
-                              代わりに「どこへ」を選んでもらう */}
-                          {entry.goPickup && (
-                            <div className="mt-3">
-                              <label className="text-[10px] text-gray-400 mb-1 block">
-                                行き：どこへ迎えに行きますか
-                              </label>
-                              <PlaceSelect
-                                ariaLabel={`${child.name}の迎えに行く場所`}
-                                places={childPlaces}
-                                value={entry.pickupPlace}
-                                onChange={(v) => updateEntry(child.id, { pickupPlace: v })}
-                              />
-                            </div>
-                          )}
-
-                          {entry.goDropoff && (
-                            <div className="mt-3">
-                              <label className="text-[10px] text-gray-400 mb-1 block">
-                                帰り：どこへ送り届けますか
-                              </label>
-                              <PlaceSelect
-                                ariaLabel={`${child.name}の送り届ける場所`}
-                                places={childPlaces}
-                                value={entry.dropoffPlace}
-                                onChange={(v) => updateEntry(child.id, { dropoffPlace: v })}
-                              />
-                            </div>
-                          )}
-
-                          {(entry.goPickup || entry.goDropoff) && (
-                            <p className="mt-2 text-[10px] text-gray-400">
-                              送迎の時刻は利用時間をもとに施設で決めてご連絡します
-                            </p>
-                          )}
-                        </div>
-                      </>
+                      <ChildEntryFields
+                        childName={child.name}
+                        entry={entry}
+                        places={childPlaces}
+                        onChange={(patch) => updateEntry(child.id, patch)}
+                      />
                     )}
 
                     {!readOnly && contactable && (

@@ -6,6 +6,7 @@ import {
   defaultPlaceValue,
   fromPlaceValue,
   isKnownPlace,
+  toPlaceValue,
   type ChildTransportPlaces,
   type LocationType,
 } from '@/lib/transport-place'
@@ -196,6 +197,22 @@ export async function saveUsageContacts(
   date: string,
   entries: UsageContactEntry[]
 ): Promise<{ error?: string }> {
+  return saveUsageContactsForDates(supabase, [date], entries)
+}
+
+/**
+ * 同じ内容の連絡を複数の日にまとめて保存する。
+ *
+ * 毎日のように利用する子は、1日ずつ送ってもらうと20回以上の操作になる。
+ * 保護者が選んだ日を1回の送信でまとめて受け取れるようにしてある。
+ * 保存は1回の upsert にまとめる（日数分の往復を作らない）。
+ */
+export async function saveUsageContactsForDates(
+  supabase: Client,
+  dates: string[],
+  entries: UsageContactEntry[]
+): Promise<{ error?: string }> {
+  if (dates.length === 0 || entries.length === 0) return {}
   // お休みの場合は利用時間・送迎の指定を無視してクリアする。
   //
   // service_type（施設が割り振ったサービス区分）は書き換えない。保護者は区分を
@@ -203,7 +220,8 @@ export async function saveUsageContacts(
   // ON CONFLICT でも触られないため、施設の決めた区分はそのまま残る。
   // ただし割り振った時間（assigned_*）は消す。希望時間が変わっているかもしれず、
   // 古い割り振りのまま承認されると実際の利用と食い違うため、施設に決め直してもらう。
-  const records = entries.map((e) => {
+  const reportedAt = new Date().toISOString()
+  const records = dates.flatMap((date) => entries.map((e) => {
     const attending = e.status === 'attending'
     const transport: TransportType = attending ? (e.transportType ?? 'none') : 'none'
     const usesPickup = transport === 'pickup_only' || transport === 'both'
@@ -230,7 +248,7 @@ export async function saveUsageContacts(
       assigned_daytime_end_time: null,
       note: e.note ?? null,
       reported_via: 'portal',
-      reported_at: new Date().toISOString(),
+      reported_at: reportedAt,
       is_new: true,
       approval_status: 'pending',
       // キャンセルの連絡は、前に承認した内容の控えを引き継がない。
@@ -247,7 +265,7 @@ export async function saveUsageContacts(
             absent_handling: null,
           }),
     }
-  })
+  }))
 
   const { error } = await supabase
     .from('parent_attendance_contacts')
@@ -556,38 +574,53 @@ export async function loadReservationDeadline(
 }
 
 /**
- * その日に「すでに利用することになっている」お子さまを返す。
+ * 日ごとに「すでに利用することになっている」お子さまを返す。
  *
  * 施設側の利用予定が入っている日か、以前に「利用します」と送った日かを見る。
  * 締切後に増やせるのはこの範囲の日だけで、キャンセルできるのもこの範囲の日だけ。
  * お休みの連絡しか無い日は含めない（一度キャンセルした日を締切後に
  * 入れ直せてしまうと、締切の意味が無くなるため）。
+ *
+ * まとめて申し込む日は数十日になることがあるので、問い合わせは
+ * 「連絡は1回」「施設の予定は月ごとに1回」にまとめる。
  */
-async function plannedChildIdsOn(
+async function plannedChildIdsByDate(
   supabase: Client,
-  date: string,
+  dates: string[],
   childIds: string[]
-): Promise<Set<string>> {
-  const [year, month] = date.split('-').map(Number)
-  const [{ data: sentRows }, schedule] = await Promise.all([
+): Promise<Map<string, Set<string>>> {
+  const months = [...new Set(dates.map((d) => d.slice(0, 7)))]
+
+  const [{ data: sentRows }, ...schedules] = await Promise.all([
     supabase
       .from('parent_attendance_contacts')
-      .select('child_id')
-      .eq('date', date)
+      .select('child_id, date')
+      .in('date', dates)
       .eq('status', 'attending')
       .in('child_id', childIds),
-    loadFacilitySchedule(supabase, childIds, year, month),
+    ...months.map((m) => {
+      const [y, mm] = m.split('-').map(Number)
+      return loadFacilitySchedule(supabase, childIds, y, mm)
+    }),
   ])
 
-  const known = new Set(((sentRows ?? []) as { child_id: string }[]).map((r) => r.child_id))
-  for (const s of schedule) {
-    if (s.date === date && s.kind === 'planned') known.add(s.child_id)
+  const byDate = new Map<string, Set<string>>()
+  const add = (date: string, childId: string) => {
+    const set = byDate.get(date) ?? new Set<string>()
+    set.add(childId)
+    byDate.set(date, set)
   }
-  return known
+  for (const row of (sentRows ?? []) as { child_id: string; date: string }[]) {
+    add(row.date, row.child_id)
+  }
+  for (const entry of schedules.flat()) {
+    if (entry.kind === 'planned') add(entry.date, entry.child_id)
+  }
+  return byDate
 }
 
 /**
- * 送られてきた連絡が、その日に送れるものかを確かめる。
+ * 送られてきた連絡が、その日に送れるものかを日ごとに確かめる。
  *
  * - 利用します … 締め切った月に**新しい日**を足すことはできない。
  *   すでに予定がある日（時間や送迎の変更）は締切後も通す。
@@ -595,30 +628,109 @@ async function plannedChildIdsOn(
  *
  * 画面でも同じ判定でボタンを出し分けているが、締切をまたいで画面を開いたままに
  * していた場合や、直接APIを叩かれた場合に備えて保存の直前にも確かめる。
+ * 送れない日だけを日付をキーにして返す（返らなかった日は送れる）。
  */
 export async function validateContactTargets(
   supabase: Client,
-  date: string,
+  dates: string[],
   entries: UsageContactEntry[],
   deadline: ReservationDeadline
-): Promise<string | null> {
-  const [year, month] = date.split('-').map(Number)
-  const closed = isMonthClosed(year, month, deadline, getTodayJST())
-  const cancels = entries.filter((e) => e.status === 'absent')
-  // 締切前で、キャンセルも含まない連絡は確かめることが無い
-  if (!closed && cancels.length === 0) return null
+): Promise<Map<string, string>> {
+  const errors = new Map<string, string>()
+  if (dates.length === 0) return errors
 
-  const known = await plannedChildIdsOn(supabase, date, entries.map((e) => e.childId))
+  const today = getTodayJST()
+  const hasCancel = entries.some((e) => e.status === 'absent')
+  const closedMonths = new Set(
+    dates.filter((d) => {
+      const [y, m] = d.split('-').map(Number)
+      return isMonthClosed(y, m, deadline, today)
+    })
+  )
+  // 締切前の月ばかりで、キャンセルも含まない連絡は確かめることが無い
+  if (closedMonths.size === 0 && !hasCancel) return errors
 
-  if (cancels.some((e) => !known.has(e.childId))) {
-    return 'この日はご利用の予定が入っていないため、キャンセルできません'
+  const known = await plannedChildIdsByDate(supabase, dates, entries.map((e) => e.childId))
+
+  for (const date of dates) {
+    const on = known.get(date) ?? new Set<string>()
+    if (entries.some((e) => e.status === 'absent' && !on.has(e.childId))) {
+      errors.set(date, 'ご利用の予定が入っていないため、キャンセルできません')
+      continue
+    }
+    if (!closedMonths.has(date)) continue
+    if (entries.some((e) => e.status === 'attending' && !on.has(e.childId))) {
+      const [y, m] = date.split('-').map(Number)
+      const limit = formatMonthDay(deadlineDateFor(y, m, deadline.day))
+      errors.set(
+        date,
+        `${m}月分の新しいご利用日のお申し込みは締め切りました（${limit}まで）`
+      )
+    }
+  }
+  return errors
+}
+
+/**
+ * お子さまごとの「いつもの内容」。
+ *
+ * 前に送った利用時間・送迎をそのまま初期値にするためのもの。
+ * 毎回同じ内容を入れ直すのは、日数が多いほど負担になるため。
+ */
+export type UsageContactDefault = {
+  childId: string
+  serviceStartTime: string | null
+  serviceEndTime: string | null
+  transportType: TransportType
+  pickupPlace: string
+  dropoffPlace: string
+}
+
+/**
+ * 直近に送った「利用します」の連絡から、お子さまごとの初期値を作る。
+ * 一度も送っていないお子さまは返らない（画面側で施設の送迎設定に従う）。
+ */
+export async function loadUsageContactDefaults(
+  supabase: Client,
+  childIds: string[]
+): Promise<UsageContactDefault[]> {
+  if (childIds.length === 0) return []
+
+  const { data } = await supabase
+    .from('parent_attendance_contacts')
+    .select(
+      'child_id, service_start_time, service_end_time, transport_type, ' +
+      'pickup_location_type, pickup_address_id, dropoff_location_type, dropoff_address_id'
+    )
+    .in('child_id', childIds)
+    .eq('status', 'attending')
+    .order('reported_at', { ascending: false })
+    .limit(100)
+
+  type Row = {
+    child_id: string
+    service_start_time: string | null
+    service_end_time: string | null
+    transport_type: TransportType
+    pickup_location_type: LocationType
+    pickup_address_id: string | null
+    dropoff_location_type: LocationType
+    dropoff_address_id: string | null
   }
 
-  if (closed && entries.some((e) => e.status === 'attending' && !known.has(e.childId))) {
-    const limit = formatMonthDay(deadlineDateFor(year, month, deadline.day))
-    return `${month}月分の新しいご利用日のお申し込みは締め切りました（${limit}まで）。追加をご希望の場合は施設へお電話ください`
+  const seen = new Map<string, UsageContactDefault>()
+  for (const row of (data ?? []) as unknown as Row[]) {
+    if (seen.has(row.child_id)) continue
+    seen.set(row.child_id, {
+      childId: row.child_id,
+      serviceStartTime: row.service_start_time?.slice(0, 5) ?? null,
+      serviceEndTime: row.service_end_time?.slice(0, 5) ?? null,
+      transportType: row.transport_type,
+      pickupPlace: toPlaceValue(row.pickup_location_type, row.pickup_address_id),
+      dropoffPlace: toPlaceValue(row.dropoff_location_type, row.dropoff_address_id),
+    })
   }
-  return null
+  return [...seen.values()]
 }
 
 /** その月の連絡を取り出す */

@@ -8,6 +8,7 @@ import {
   loadTransportPlaces,
   loadBenefitLimits,
   loadReservationDeadline,
+  loadUsageContactDefaults,
 } from '@/lib/parent-usage-contact'
 import { deadlineDateFor, isMonthClosed } from '@/lib/parent-reservation-deadline'
 import { getTodayJST } from '@/lib/utils'
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
     if (children.length === 0) {
       return NextResponse.json({
         children: [], contacts: [], schedule: [], closures: [], places: [], benefits: [],
-        deadline: null,
+        deadline: null, defaults: [],
       })
     }
 
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
     // 保護者自身が送った連絡と、施設側ですでに決まっている予定の両方を返す。
     // 施設の予定が見えないと、毎週の利用スケジュールがある日にも
     // 重ねて連絡を送ってしまい、確認の手間が増える
-    const [contacts, schedule, closures, places, benefits, deadline] = await Promise.all([
+    const [contacts, schedule, closures, places, benefits, deadline, defaults] = await Promise.all([
       loadUsageContacts(adminClient, childIds, year, month),
       loadFacilitySchedule(adminClient, childIds, year, month),
       loadFacilityClosures(adminClient, childIds, year, month),
@@ -61,10 +62,12 @@ export async function POST(req: NextRequest) {
       loadBenefitLimits(adminClient, childIds, year, month),
       // 利用連絡の申込締切。新しい日を足せる月かどうかを画面で出し分けるために返す
       loadReservationDeadline(adminClient, childIds),
+      // 前に送った内容。毎回同じ時間・送迎を入れ直さずに済むよう初期値にする
+      loadUsageContactDefaults(adminClient, childIds),
     ])
 
     return NextResponse.json({
-      children, contacts, schedule, closures, places, benefits,
+      children, contacts, schedule, closures, places, benefits, defaults,
       deadline: {
         enabled: deadline.enabled,
         day: deadline.day,

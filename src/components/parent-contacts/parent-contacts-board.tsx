@@ -13,6 +13,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   CalendarCheck,
+  CalendarRange,
   AlertTriangle,
 } from 'lucide-react'
 import {
@@ -128,6 +129,28 @@ function formatDateLabel(dateStr: string) {
  */
 function recommendedHandling(dateStr: string, today: string): AbsentHandling {
   return dateStr <= addDays(today, 1) ? 'absent' : 'delete'
+}
+
+/**
+ * 同じ内容として1枚にまとめてよい連絡かを表す鍵。
+ *
+ * 保護者が「まとめて申し込む」で送ると、同じ内容の連絡が日数ぶん届く。
+ * 日付だけが違う連絡を1枚にまとめて、区分の割り振りと承認を1回で済ませる。
+ * 内容が1つでも違えば別の鍵になるので、違う条件の日が混ざることはない。
+ */
+function contentKey(c: Contact): string {
+  return [
+    c.child_id,
+    c.status,
+    c.service_start_time ?? '',
+    c.service_end_time ?? '',
+    c.transport_type,
+    c.pickup_location_type,
+    c.pickup_address_id ?? '',
+    c.dropoff_location_type,
+    c.dropoff_address_id ?? '',
+    c.note ?? '',
+  ].join('|')
 }
 
 /** 今日/明日/過去日の相対ラベル（該当しない日は null） */
@@ -493,6 +516,8 @@ export function ParentContactsBoard({
   const [appliedOverrides, setAppliedOverrides] = useState<Record<string, boolean>>({})
   // キャンセルをどちらで処理したか。押した直後からバッジに出す
   const [handlingOverrides, setHandlingOverrides] = useState<Record<string, AbsentHandling>>({})
+  // まとめて届いた連絡の割り振り。1枚のカードで決めて、日数ぶんに同じものを当てる
+  const [groupAssignments, setGroupAssignments] = useState<Record<string, ServiceAssignment>>({})
   // 処理した連絡の送迎の場所。承認するとサーバーの未確認一覧から消えるため、
   // 選択肢も一緒に消えてしまう。控えておかないと「祖父母宅」が
   // ただの「登録住所」に見えてしまい、送り先を読み違える
@@ -545,12 +570,49 @@ export function ParentContactsBoard({
   ].sort((a, b) => a.date.localeCompare(b.date))
   const pending = visible.filter(isPending)
 
-  // 日付ごとにまとめる
+  // 同じ内容で複数の日に届いた連絡は、1枚にまとめて承認できるようにする。
+  // 保護者が「まとめて申し込む」で送ると日数ぶんのカードが並ぶため
+  const groups = (() => {
+    const byKey = new Map<string, Contact[]>()
+    for (const c of pending.filter(needsApproval)) {
+      const key = contentKey(c)
+      byKey.set(key, [...(byKey.get(key) ?? []), c])
+    }
+    return [...byKey.entries()]
+      .filter(([, list]) => list.length > 1)
+      .map(([key, list]) => ({ key, contacts: [...list].sort((a, b) => a.date.localeCompare(b.date)) }))
+      .sort((a, b) => a.contacts[0].date.localeCompare(b.contacts[0].date))
+  })()
+  const groupedIds = new Set(groups.flatMap((g) => g.contacts.map((c) => c.id)))
+  const groupAssignmentOf = (g: { key: string; contacts: Contact[] }): ServiceAssignment =>
+    groupAssignments[g.key] ?? assignmentOf(g.contacts[0])
+
+  // 日付ごとにまとめる（まとめカードに出している分は除く）
   const pendingByDate = new Map<string, Contact[]>()
   for (const c of visible) {
+    if (groupedIds.has(c.id)) continue
     const arr = pendingByDate.get(c.date) ?? []
     arr.push(c)
     pendingByDate.set(c.date, arr)
+  }
+
+  /** まとめて届いた連絡を、同じ割り振りで一度に承認する／しない */
+  async function setGroupApproval(
+    g: { key: string; contacts: Contact[] },
+    next: ApprovalStatus
+  ) {
+    const assignment = groupAssignmentOf(g)
+    if (next === 'approved') {
+      const invalid = validateAssignment(assignment)
+      if (invalid) {
+        const name = g.contacts[0].children?.name ?? '不明'
+        setWarnings((prev) => [...new Set([...prev, `${name}さん ${g.contacts.length}日分：${invalid}`])])
+        return
+      }
+    }
+    for (const c of g.contacts) {
+      await setApproval(c.id, next, next === 'approved' ? assignment : undefined)
+    }
   }
 
   /**
@@ -592,7 +654,16 @@ export function ParentContactsBoard({
     startTransition(() => router.refresh())
   }
 
-  async function setApproval(id: string, next: ApprovalStatus) {
+  /**
+   * 1件の連絡の承認状態を変える。
+   * forced は、まとめて承認するときに全日へ同じ割り振りを当てるために使う
+   * （state の反映を待たずに確実に同じ内容を送るため）。
+   */
+  async function setApproval(
+    id: string,
+    next: ApprovalStatus,
+    forced?: ServiceAssignment
+  ) {
     const target = visible.find((c) => c.id === id)
 
     // 承認する利用連絡には、施設が決めた区分と時間を必ず添える。
@@ -600,7 +671,7 @@ export function ParentContactsBoard({
     // 予定に入れると、出席管理も請求もどちらのサービスか判断できなくなる
     let assignment: ServiceAssignment | undefined
     if (next === 'approved' && target && needsApproval(target)) {
-      assignment = assignmentOf(target)
+      assignment = forced ?? assignmentOf(target)
       const invalid = validateAssignment(assignment)
       if (invalid) {
         const name = target.children?.name ?? '不明'
@@ -660,6 +731,7 @@ export function ParentContactsBoard({
           放デイ・日中一時のどちらでお預かりするかは、承認するときにここで決めてください。
           送迎の時刻は聞いていません（承認した利用時間から決まります）。行き先・帰り先だけ保護者が選びます。
           承認した利用連絡はそのまま利用状況・出席管理の利用予定になります。
+          同じ内容でまとめて届いた連絡は1枚のカードにまとめています（承認も1回で済みます）。
           保護者は前日までなら予定をキャンセルできます。届いたキャンセルは
           「欠席として記録」するか「予定から削除」するかをここで選んでください
           （当日のお休みは従来どおり施設が電話で受けます）。
@@ -726,6 +798,98 @@ export function ParentContactsBoard({
             </div>
           )}
         </div>
+
+        {/* まとめて届いた連絡。日付だけが違う連絡を1枚にして、割り振りと承認を1回で済ませる */}
+        {groups.length > 0 && (
+          <div className="border-b border-gray-100 bg-indigo-50/40 px-4 py-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <CalendarRange className="h-4 w-4 text-indigo-500" />
+              <span className="text-sm font-bold text-gray-900">まとめて届いた連絡</span>
+              <span className="text-xs text-gray-400">
+                同じ内容の日をまとめています。承認は1回で済みます
+              </span>
+            </div>
+            {groups.map((g) => {
+              const c = g.contacts[0]
+              const assignment = groupAssignmentOf(g)
+              const invalid = validateAssignment(assignment)
+              const places = placesFor(c.child_id)
+              return (
+                <div key={g.key} className="rounded-xl border border-indigo-200 bg-white px-4 py-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-gray-900 text-sm">
+                      {c.children?.name ?? '不明'}
+                    </span>
+                    <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-bold text-white">
+                      {g.contacts.length}日分
+                    </span>
+                    {hasTransport(c) && (
+                      <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                        <Car className="h-3 w-3" />
+                        {TRANSPORT_LABELS[c.transport_type]}
+                      </span>
+                    )}
+                    {(fmtTime(c.service_start_time) || fmtTime(c.service_end_time)) && (
+                      <span className="flex items-center gap-1 text-xs text-gray-500">
+                        <Clock className="h-3 w-3 text-indigo-400" />
+                        希望 {fmtTime(c.service_start_time) ?? '—'}〜{fmtTime(c.service_end_time) ?? '—'}
+                      </span>
+                    )}
+                    {(c.transport_type === 'pickup_only' || c.transport_type === 'both') && (
+                      <span className="text-xs text-gray-500">
+                        迎え {placeLabel(places?.places ?? [], toPlaceValue(c.pickup_location_type, c.pickup_address_id))}
+                      </span>
+                    )}
+                    {(c.transport_type === 'dropoff_only' || c.transport_type === 'both') && (
+                      <span className="text-xs text-gray-500">
+                        送り {placeLabel(places?.places ?? [], toPlaceValue(c.dropoff_location_type, c.dropoff_address_id))}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* どの日が含まれているか。ここで日を外すことはできないので、
+                      違う扱いにしたい日は承認したあとに利用状況ページで直す */}
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {g.contacts.map((gc) => (
+                      <span
+                        key={gc.id}
+                        className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600"
+                      >
+                        {formatDateLabel(gc.date)}
+                      </span>
+                    ))}
+                  </div>
+
+                  {c.note && <p className="text-xs text-gray-500 mt-1">{c.note}</p>}
+
+                  <AssignmentEditor
+                    contact={c}
+                    value={assignment}
+                    onChange={(next) => setGroupAssignments((prev) => ({ ...prev, [g.key]: next }))}
+                  />
+
+                  <div className="mt-2 flex items-center justify-end gap-1.5">
+                    <button
+                      onClick={() => setGroupApproval(g, 'approved')}
+                      disabled={reviewing || invalid !== null}
+                      title={invalid ?? undefined}
+                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {g.contacts.length}日分をまとめて承認
+                    </button>
+                    <button
+                      onClick={() => setGroupApproval(g, 'rejected')}
+                      disabled={reviewing}
+                      className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      承認しない
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         {visible.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-gray-400">

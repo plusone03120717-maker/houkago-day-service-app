@@ -18,6 +18,9 @@ import {
 import {
   validateUsageContact,
   saveUsageContacts,
+  saveUsageContactsForDates,
+  validateContactTargets,
+  loadUsageContactDefaults,
   loadTransportPlaces,
   validateTransportPlaces,
 } from '../src/lib/parent-usage-contact'
@@ -227,7 +230,7 @@ async function main() {
 
   console.log(`児童: ${child.name} / 承認者: ${staff.name} / ユニット: ${childUnitId}\n`)
 
-  const dates = Array.from({ length: 10 }, (_, i) => dateFor(i))
+  const dates = Array.from({ length: 13 }, (_, i) => dateFor(i))
   for (const d of dates) await cleanupDate(child.id, d)
 
   try {
@@ -755,6 +758,54 @@ async function main() {
         '削除として処理したことが残る',
         (await reloadContact(again.id)).absent_handling === 'delete'
       )
+    }
+    // ── 14. 複数日をまとめて申し込む ──
+    console.log('\n14. 複数日をまとめて申し込む')
+    {
+      const many = [dates[10], dates[11], dates[12]]
+      for (const d of many) await cleanupDate(child.id, d)
+
+      const entry = {
+        childId: child.id,
+        status: 'attending' as const,
+        serviceStartTime: '10:00',
+        serviceEndTime: '16:00',
+        transportType: 'both' as const,
+        pickupPlace: 'home',
+        dropoffPlace: 'home',
+        note: '検証スクリプトが作成',
+      }
+
+      const saved = await saveUsageContactsForDates(supabase, many, [entry])
+      check('まとめて保存できる', !saved.error, saved.error)
+
+      const { data: rows } = await supabase
+        .from('parent_attendance_contacts')
+        .select('date, service_start_time, transport_type')
+        .eq('child_id', child.id)
+        .in('date', many)
+      const list = (rows ?? []) as { date: string; service_start_time: string | null; transport_type: string }[]
+      check('選んだ日数ぶん作られる', list.length === many.length, list.length)
+      check(
+        'どの日も同じ内容になる',
+        list.every((r) => r.service_start_time?.startsWith('10:00') && r.transport_type === 'both'),
+        list
+      )
+
+      // 「いつもの内容」は直近の連絡から作られる
+      const [def] = await loadUsageContactDefaults(supabase, [child.id])
+      check('前回の内容を初期値として取り出せる', def?.serviceStartTime === '10:00', def)
+      check('送迎の希望も引き継ぐ', def?.transportType === 'both', def?.transportType)
+
+      // 予定が無い日のキャンセルは、その日だけ弾かれる
+      const cancels = await validateContactTargets(
+        supabase,
+        [many[0], dates[2]],
+        [{ ...entry, status: 'absent' as const }],
+        { enabled: false, day: 15 }
+      )
+      check('予定がある日はキャンセルできる', !cancels.has(many[0]), cancels.get(many[0]))
+      check('予定が無い日だけ弾かれる', cancels.has(dates[2]), [...cancels.entries()])
     }
   } finally {
     // ── 後片付け ──

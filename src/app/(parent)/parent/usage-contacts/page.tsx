@@ -11,6 +11,8 @@ import {
   type FacilityClosure,
   type BenefitLimit,
   type UsageDeadline,
+  type UsageDefault,
+  type UsageSubmitResult,
 } from '@/components/parent/usage-contact-calendar'
 import type { ChildTransportPlaces } from '@/lib/transport-place'
 
@@ -34,6 +36,7 @@ export default function ParentUsageContactsPage() {
   const [places, setPlaces] = useState<ChildTransportPlaces[]>([])
   const [benefits, setBenefits] = useState<BenefitLimit[]>([])
   const [deadline, setDeadline] = useState<UsageDeadline | null>(null)
+  const [defaults, setDefaults] = useState<UsageDefault[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -54,6 +57,7 @@ export default function ParentUsageContactsPage() {
           places?: ChildTransportPlaces[]
           benefits?: BenefitLimit[]
           deadline?: UsageDeadline | null
+          defaults?: UsageDefault[]
           error?: string
         }
         if (!res.ok) {
@@ -67,6 +71,7 @@ export default function ParentUsageContactsPage() {
         setPlaces(json.places ?? [])
         setBenefits(json.benefits ?? [])
         setDeadline(json.deadline ?? null)
+        setDefaults(json.defaults ?? [])
         setError(null)
       })
       .catch(() => setError('通信エラーが発生しました'))
@@ -82,21 +87,50 @@ export default function ParentUsageContactsPage() {
   }
 
   const handleSubmit = async (
-    date: string,
+    dates: string[],
     entries: UsageContactEntry[]
-  ): Promise<{ error?: string }> => {
+  ): Promise<UsageSubmitResult> => {
     try {
       const res = await fetch('/api/parent/usage-contacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, entries }),
+        body: JSON.stringify({ dates, entries }),
       })
-      const json = await res.json() as { error?: string }
-      if (!res.ok) return { error: json.error ?? '送信に失敗しました' }
+      const json = await res.json() as UsageSubmitResult
+      if (!res.ok) return { error: json.error ?? '送信に失敗しました', skipped: json.skipped }
       loadMonth(year, month)
-      return {}
+      return { savedDates: json.savedDates ?? dates, skipped: json.skipped ?? [] }
     } catch {
       return { error: '通信エラーが発生しました' }
+    }
+  }
+
+  /**
+   * 「先月と同じ曜日」で選ぶための、前の月に利用した曜日を返す。
+   *
+   * 施設の予定（利用予定・利用済み）と、自分が送った連絡の両方から拾う。
+   * 押されたときだけ読みに行く（毎月ぶんを先読みして通信を増やさない）。
+   */
+  const handleSuggestDows = async (): Promise<number[]> => {
+    const prev = month === 1 ? { y: year - 1, m: 12 } : { y: year, m: month - 1 }
+    try {
+      const res = await fetch('/api/parent/usage-contacts/month', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year: prev.y, month: prev.m }),
+      })
+      if (!res.ok) return []
+      const json = await res.json() as {
+        contacts?: UsageContact[]
+        schedule?: FacilityScheduleDay[]
+      }
+      const dates = [
+        ...(json.schedule ?? []).filter((s) => s.kind !== 'absent').map((s) => s.date),
+        ...(json.contacts ?? []).filter((c) => c.status === 'attending').map((c) => c.date),
+      ]
+      return [...new Set(dates.map((d) => new Date(d + 'T00:00:00').getDay()))].sort()
+    } catch {
+      return []
     }
   }
 
@@ -122,8 +156,9 @@ export default function ParentUsageContactsPage() {
       <div>
         <h1 className="text-lg font-bold text-gray-900">利用連絡</h1>
         <p className="text-xs text-gray-500 mt-0.5">
-          利用する日を、当日以降の日付から連絡できます。ご予定のキャンセルは前日まで
-          この画面から送れます（当日のお休みは施設へお電話ください）。
+          利用する日を、当日以降の日付から連絡できます。
+          毎日のようにご利用の場合は「まとめて申し込む」から複数の日をいちどに選べます。
+          ご予定のキャンセルは前日までこの画面から送れます（当日のお休みは施設へお電話ください）。
           施設で決まっている予定と、ご利用済みの日もこの画面で確認できます。
           送迎の時刻は施設で決めますので、行き先・帰り先だけお選びください
           {deadline?.enabled && (
@@ -140,11 +175,13 @@ export default function ParentUsageContactsPage() {
         places={places}
         benefits={benefits}
         deadline={deadline}
+        defaults={defaults}
         year={year}
         month={month}
         loading={loading}
         onMonthChange={handleMonthChange}
         onSubmit={handleSubmit}
+        onSuggestDows={handleSuggestDows}
       />
     </div>
   )
