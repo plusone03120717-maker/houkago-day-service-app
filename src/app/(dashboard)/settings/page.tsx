@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash, Clock, Smartphone } from 'lucide-react'
+import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash, Clock, Smartphone, Calculator } from 'lucide-react'
 import { requireAdmin } from '@/lib/require-admin'
 
 const sections = [
@@ -17,10 +17,16 @@ const sections = [
     description: 'スタッフ招待、役割設定、勤務情報',
   },
   {
+    href: '/settings/facility-additions',
+    icon: Calculator,
+    label: '事業所の加算・減算設定',
+    description: '体制届の区分（加配加算・処遇改善加算・各種減算）を登録。再集計で全児童の明細に自動反映',
+  },
+  {
     href: '/settings/additions',
     icon: PlusCircle,
-    label: '処遇改善加算設定',
-    description: 'ユニット別の加算区分・算定率を設定',
+    label: '処遇改善加算の要件メモ',
+    description: '加算区分と算定率の控え（請求の計算には使いません）',
   },
   {
     href: '/settings/service-codes',

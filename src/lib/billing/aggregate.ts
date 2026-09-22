@@ -4,6 +4,12 @@
 
 import type { createClient } from '@/lib/supabase/server'
 import {
+  FACILITY_ADDITION_MAP,
+  additionLineName,
+  type FacilityAdditionDef,
+  type UnitServiceType,
+} from './facility-additions'
+import {
   computeBillingDay,
   getItemQuantity,
   isItemChecked,
@@ -114,6 +120,23 @@ type ExtensionRateRow = {
   billing_code: string | null
 }
 
+type UnitAdditionSettingRow = {
+  addition_key: string
+  option_value: string | null
+  unit_count: number
+  rate: number | string | null
+  billing_code: string | null
+}
+
+/** 事業所単位で算定する加算・減算（設定済みのものだけ） */
+type FacilityAddition = {
+  def: FacilityAdditionDef
+  name: string
+  unitCount: number
+  rate: number | null
+  code: string | null
+}
+
 type CertRow = {
   id: string
   child_id: string
@@ -191,7 +214,7 @@ export async function aggregateUnitMonth(
   }
 
   // ── 単位数マスタ ──────────────────────────────────────────
-  const [{ data: itemsRaw }, { data: ratesRaw }, { data: extRatesRaw }] = await Promise.all([
+  const [{ data: itemsRaw }, { data: ratesRaw }, { data: extRatesRaw }, { data: addSettingsRaw }] = await Promise.all([
     supabase
       .from('billing_service_items')
       .select('id, name, category, trigger_field, billing_code, unit_count')
@@ -206,12 +229,30 @@ export async function aggregateUnitMonth(
       .from('billing_extension_rates')
       .select('extension_level, unit_count, billing_code')
       .eq('unit_id', unitId),
+    supabase
+      .from('unit_addition_settings')
+      .select('addition_key, option_value, unit_count, rate, billing_code')
+      .eq('unit_id', unitId),
   ])
   const serviceItems = (itemsRaw ?? []) as ServiceItemRow[]
   const basicRates = (ratesRaw ?? []) as BasicRateRow[]
   const extensionRateMap = new Map(
     ((extRatesRaw ?? []) as ExtensionRateRow[]).map((r) => [r.extension_level, r]),
   )
+  // 事業所につく加算・減算。区分が選ばれているものだけを対象にする
+  const facilityAdditions: FacilityAddition[] = ((addSettingsRaw ?? []) as UnitAdditionSettingRow[])
+    .flatMap((row) => {
+      const def = FACILITY_ADDITION_MAP.get(row.addition_key)
+      if (!def || !row.option_value) return []
+      if (!def.serviceTypes.includes(serviceType as UnitServiceType)) return []
+      return [{
+        def,
+        name: additionLineName(def, row.option_value),
+        unitCount: row.unit_count,
+        rate: row.rate == null ? null : Number(row.rate),
+        code: row.billing_code,
+      }]
+    })
   if (serviceItems.length === 0) {
     return empty('サービス項目が登録されていません（児童別の月次サービス実績で「標準項目を追加」を実行してください）')
   }
@@ -353,8 +394,12 @@ export async function aggregateUnitMonth(
     const tooShortDates: string[] = []
     const missingRates = new Set<string>()
     const missingItemUnits = new Set<string>()
+    const missingAdditionValues = new Set<string>()
     const dayRecords: ServiceDayRecord[] = []
     let totalDays = 0
+    // 事業所加算・減算の計算に使う、基本報酬を算定できた日数と単位数
+    let billableDays = 0
+    let basicUnits = 0
 
     const addLine = (code: string | null, name: string, unitCount: number, count: number) => {
       if (unitCount <= 0 || count <= 0) return
@@ -365,6 +410,19 @@ export async function aggregateUnitMonth(
         prev.units += unitCount * count
       } else {
         lines.set(key, { code, name, unitCount, count, units: unitCount * count })
+      }
+    }
+
+    // 減算・処遇改善加算のように、算出した単位数をそのまま1行として計上する（マイナス可）
+    const addRawLine = (code: string | null, name: string, units: number) => {
+      if (units === 0) return
+      const key = `${code ?? '-'}|${units}|${name}`
+      const prev = lines.get(key)
+      if (prev) {
+        prev.count += 1
+        prev.units += units
+      } else {
+        lines.set(key, { code, name, unitCount: units, count: 1, units })
       }
     }
 
@@ -420,6 +478,8 @@ export async function aggregateUnitMonth(
             rate.unit_count,
             1,
           )
+          billableDays++
+          basicUnits += rate.unit_count
           continue
         }
 
@@ -489,6 +549,42 @@ export async function aggregateUnitMonth(
       }
     }
 
+    // ── 事業所につく加算・減算 ────────────────────────────
+    // 体制届の区分を設定画面で登録しておき、全児童の明細へ自動で積む。
+    //   日額加算: 基本報酬を算定できた日数分
+    //   月額加算: 月1回
+    //   減算    : 基本報酬（所定単位数）に対する割合をマイナス計上
+    //   処遇改善: 基本報酬＋加算−減算の合計に対する割合
+    if (billableDays > 0) {
+      for (const add of facilityAdditions) {
+        if (add.def.calc !== 'per_day' && add.def.calc !== 'per_month') continue
+        if (add.unitCount <= 0) {
+          missingAdditionValues.add(add.name)
+          continue
+        }
+        addLine(add.code, add.name, add.unitCount, add.def.calc === 'per_day' ? billableDays : 1)
+      }
+
+      for (const add of facilityAdditions) {
+        if (add.def.calc !== 'deduction') continue
+        if (!add.rate || add.rate <= 0) {
+          missingAdditionValues.add(add.name)
+          continue
+        }
+        addRawLine(add.code, add.name, -Math.floor((basicUnits * add.rate) / 100))
+      }
+
+      const subtotal = Array.from(lines.values()).reduce((s, l) => s + l.units, 0)
+      for (const add of facilityAdditions) {
+        if (add.def.calc !== 'treatment') continue
+        if (!add.rate || add.rate <= 0) {
+          missingAdditionValues.add(add.name)
+          continue
+        }
+        addRawLine(add.code, add.name, Math.floor((subtotal * add.rate) / 100))
+      }
+    }
+
     const breakdown = Array.from(lines.values()).sort((a, b) => b.units - a.units)
     const totalUnits = breakdown.reduce((s, l) => s + l.units, 0)
 
@@ -523,6 +619,9 @@ export async function aggregateUnitMonth(
     }
     for (const name of missingItemUnits) {
       errors.push(`「${name}」の単位数が未設定です: 設定 → 国保連サービスコード・単位数設定`)
+    }
+    for (const name of missingAdditionValues) {
+      errors.push(`「${name}」の単位数（または率）が未設定です: 設定 → 事業所の加算・減算設定`)
     }
     if (breakdown.some((l) => !l.code)) {
       const names = breakdown.filter((l) => !l.code).map((l) => l.name)
