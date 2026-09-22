@@ -14,27 +14,41 @@ import path from 'node:path'
  */
 let cache: string | null = null
 
-const CANDIDATE_PATHS = [
-  path.join(process.cwd(), 'docs', 'manual.html'),
+const DOCS_DIRS = [
+  path.join(process.cwd(), 'docs'),
   // Vercel でトレースの基準がずれた場合の保険
-  path.join(process.cwd(), '..', 'docs', 'manual.html'),
+  path.join(process.cwd(), '..', 'docs'),
 ]
 
-export async function loadManualText(): Promise<string | null> {
-  if (cache !== null) return cache
-
-  for (const file of CANDIDATE_PATHS) {
+/**
+ * docs/ 配下のファイルをそのまま読む。見つからなければ null。
+ *
+ * マニュアルを画面に出す /manual と、ボットの知識源の両方から使う。
+ * 同じファイルを見ているので、docs/manual.html を更新して push すれば
+ * 両方に反映される。
+ */
+export async function readDocsFile(fileName: string): Promise<string | null> {
+  for (const dir of DOCS_DIRS) {
     try {
-      const html = await readFile(file, 'utf8')
-      cache = htmlToText(html)
-      return cache
+      return await readFile(path.join(dir, fileName), 'utf8')
     } catch {
       // 次の候補へ
     }
   }
-
-  console.error('support bot: docs/manual.html を読み込めませんでした')
   return null
+}
+
+export async function loadManualText(): Promise<string | null> {
+  if (cache !== null) return cache
+
+  const html = await readDocsFile('manual.html')
+  if (html === null) {
+    console.error('support bot: docs/manual.html を読み込めませんでした')
+    return null
+  }
+
+  cache = htmlToText(html)
+  return cache
 }
 
 /**

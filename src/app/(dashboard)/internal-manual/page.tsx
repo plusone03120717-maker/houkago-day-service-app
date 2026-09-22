@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { BookMarked, FileText, StickyNote, ChevronRight } from 'lucide-react'
+import { BookMarked, BookOpen, ExternalLink, FileText, StickyNote, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSessionUser } from '@/lib/auth'
 import { Card, CardContent } from '@/components/ui/card'
@@ -45,6 +45,29 @@ export default async function InternalManualPage() {
               「うちの法人ではどうしてる？」にボットが答えられるようになります。
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <a
+            href="/manual"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-start gap-3 rounded-lg p-4 transition-colors hover:bg-gray-50"
+          >
+            <BookOpen className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500" />
+            <div className="min-w-0 space-y-1 leading-relaxed">
+              <p className="flex items-center gap-1 text-sm font-medium text-gray-900">
+                アプリの操作マニュアル
+                <ExternalLink className="h-3.5 w-3.5 text-gray-400" />
+              </p>
+              <p className="text-sm text-gray-600">
+                画面ごとの使い方（出席登録・請求・シフトなど）はこちら。別のタブで開きます。
+                このページにまとめるのは、アプリの使い方ではなく「うちの法人ではこうする」という決めごとです。
+              </p>
+            </div>
+          </a>
         </CardContent>
       </Card>
 
