@@ -277,12 +277,15 @@ export function TransportDaytimePanel({
   saving,
   saved,
 }: PanelProps) {
+  // お迎えの到着＝学校に着いた時刻、利用開始＝事業所に着いた時刻。
+  // 学校から事業所までを TRANSPORT_TRAVEL_MINUTES（10分）とみて自動で埋める。
+  // 保護者の利用連絡を承認したときも同じ計算をしている（@/lib/transport-timing）
   const handlePickupDepartureChange = (val: string) => {
     const patch: Partial<TransportFields> = { pickupDepartureTime: val }
     if (val && !f.pickupArrivalTime) {
       const arrival = addMinutes(val, TRANSPORT_TRAVEL_MINUTES)
       patch.pickupArrivalTime = arrival
-      patch.serviceStartTime = arrival
+      patch.serviceStartTime = addMinutes(arrival, TRANSPORT_TRAVEL_MINUTES)
       if (!f.serviceEndTime) patch.serviceEndTime = defaultServiceEndTime
     }
     onChange(patch)
@@ -291,7 +294,7 @@ export function TransportDaytimePanel({
   const handlePickupArrivalChange = (val: string) => {
     const patch: Partial<TransportFields> = { pickupArrivalTime: val }
     if (val) {
-      patch.serviceStartTime = val
+      patch.serviceStartTime = addMinutes(val, TRANSPORT_TRAVEL_MINUTES)
       if (!f.serviceEndTime) patch.serviceEndTime = defaultServiceEndTime
     }
     onChange(patch)
@@ -432,7 +435,7 @@ export function TransportDaytimePanel({
                 </div>
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                ※ お迎え到着時間を入力すると開始時間に自動反映
+                ※ お迎え到着時間（学校に到着）を入力すると、その10分後が開始時間に自動反映
               </p>
             </div>
           </div>

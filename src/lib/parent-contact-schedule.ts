@@ -394,15 +394,14 @@ async function applyAttending(
 
   // ── 送迎の時刻を、スタッフが手で入れるときと同じ形にして埋める ──
   //
-  // 送迎・日中一時の入力欄では、お迎えの到着時刻がそのまま利用開始時間になり、
-  // 出発はその10分前になる。承認したときも同じ形にして、承認後にスタッフが
-  // 入れ直さなくて済むようにする（@/lib/transport-timing）。
+  // 送迎・日中一時の入力欄では、お迎えの到着時刻（＝学校に着いた時刻）を入れると
+  // その10分後が利用開始（＝事業所に着いた時刻）になる。承認したときも同じ形にして、
+  // 承認後にスタッフが入れ直さなくて済むようにする（@/lib/transport-timing）。
   //
-  //   お迎え出発 = 利用開始の10分前 / お迎え到着 = 利用開始
-  //   送り出発   = 利用終了         / 送り到着   = その10分後
+  //   お迎え到着 = 希望の開始時刻（学校到着） / 利用開始 = その10分後（事業所到着）
+  //   送り出発   = 利用終了                   / 送り到着 = その10分後
   //
-  // 利用時間そのものは動かさない。提供時間が10分ずれると、日中一時の
-  // 利用時間区分が変わってしまうことがあるため。
+  // お迎えの出発時刻は入れない（施設の運用では使っていないため）。
   const derived = deriveTransportTimes({
     firstStart: starts[0] ?? null,
     lastEnd: ends.length > 0 ? ends[ends.length - 1] : null,
@@ -410,8 +409,14 @@ async function applyAttending(
     usesDropoff,
   })
 
-  const serviceStartTime = assignment.serviceStartTime
-  const daytimeStartTime = assignment.daytimeStartTime
+  // 事業所に着いた時刻から始まるのは、その日いちばん早いサービスの方。
+  // 放デイと日中一時を続けて使う日に、両方を10分ずらさないための判定。
+  const shifted = (planned: string | null) =>
+    derived.serviceStartsAt && planned && planned === starts[0]
+      ? derived.serviceStartsAt
+      : planned
+  const serviceStartTime = shifted(assignment.serviceStartTime)
+  const daytimeStartTime = shifted(assignment.daytimeStartTime)
 
   // 送迎をどちらの欄（放デイ / 日中一時）に記録するかは、出席管理・請求と同じ判定を使う。
   // ここがずれると送迎加算が二重に立つ
@@ -426,12 +431,14 @@ async function applyAttending(
   const pickupSlot = resolveTransportSlot('pickup', slotSource)
   const dropoffSlot = resolveTransportSlot('dropoff', slotSource)
 
-  /** 送迎の時刻を、記録先の欄に合わせた列名で組み立てる */
+  /**
+   * 送迎の時刻を、記録先の欄に合わせた列名で組み立てる。
+   * お迎えの出発時刻は施設の運用で使っていないので入れない（空欄のまま）。
+   */
   function transportColumns(): Record<string, string | null> {
     const out: Record<string, string | null> = {}
     if (usesPickup) {
       const prefix = pickupSlot === 'daytime' ? 'daytime_pickup' : 'pickup'
-      out[`${prefix}_departure_time`] = derived.pickupDeparture
       out[`${prefix}_arrival_time`] = derived.pickupArrival
     }
     if (usesDropoff) {
