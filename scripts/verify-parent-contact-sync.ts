@@ -243,7 +243,7 @@ async function main() {
 
   console.log(`児童: ${child.name} / 承認者: ${staff.name} / ユニット: ${childUnitId}\n`)
 
-  const dates = Array.from({ length: 17 }, (_, i) => dateFor(i))
+  const dates = Array.from({ length: 18 }, (_, i) => dateFor(i))
   for (const d of dates) await cleanupDate(child.id, d)
 
   try {
@@ -1016,6 +1016,50 @@ async function main() {
       } finally {
         await cleanupDate(child.id, d)
       }
+    }
+    // ── 20. 承認し直しても時刻がずれない ──
+    console.log('\n20. 同じ連絡を承認し直しても時刻がずれない')
+    {
+      const d = dates[16]
+      await cleanupDate(child.id, d)
+
+      const contact = await seedContact(child.id, {
+        date: d,
+        status: 'attending',
+        service_start_time: '10:00',
+        service_end_time: '16:00',
+        transport_type: 'both',
+      })
+      await applyParentContact(supabase, contact, staff.id)
+      const first = await getAttendance(child.id, d)
+      check('1回目：利用開始は10:10', first?.service_start_time?.startsWith('10:10'), first?.service_start_time)
+      check('1回目：お迎え到着は10:00', first?.pickup_arrival_time?.startsWith('10:00'), first?.pickup_arrival_time)
+
+      // 承認画面は「いま記録されている利用時間」を初期値にするので、
+      // その値をそのまま割り振って承認し直したときに10分ずれないことを見る
+      const again = await reloadContact(contact.id)
+      await applyParentContact(supabase, again, staff.id, {
+        serviceType: 'regular',
+        serviceStartTime: '10:10',
+        serviceEndTime: '16:00',
+        daytimeStartTime: null,
+        daytimeEndTime: null,
+      })
+      const second = await getAttendance(child.id, d)
+      check('2回目：利用開始は10:10のまま', second?.service_start_time?.startsWith('10:10'), second?.service_start_time)
+      check('2回目：お迎え到着も10:00のまま', second?.pickup_arrival_time?.startsWith('10:00'), second?.pickup_arrival_time)
+
+      // スタッフが別の時刻を割り振ったときは、その時刻が利用開始になる
+      await applyParentContact(supabase, again, staff.id, {
+        serviceType: 'regular',
+        serviceStartTime: '11:00',
+        serviceEndTime: '16:00',
+        daytimeStartTime: null,
+        daytimeEndTime: null,
+      })
+      const third = await getAttendance(child.id, d)
+      check('決め直した時刻がそのまま利用開始になる', third?.service_start_time?.startsWith('11:00'), third?.service_start_time)
+      check('お迎え到着はその10分前', third?.pickup_arrival_time?.startsWith('10:50'), third?.pickup_arrival_time)
     }
   } finally {
     // ── 後片付け ──

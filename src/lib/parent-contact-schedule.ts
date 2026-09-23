@@ -7,7 +7,10 @@ import {
 } from '@/lib/parent-contact-service'
 import { getTodayJST } from '@/lib/utils'
 import { resolveTransportSlot } from '@/lib/schedule-defaults'
-import { deriveTransportTimes } from '@/lib/transport-timing'
+import {
+  deriveTransportTimes,
+  serviceStartFromPickupArrival,
+} from '@/lib/transport-timing'
 
 /**
  * 保護者ポータルからの利用連絡を、実際の予定へ反映する。
@@ -402,21 +405,30 @@ async function applyAttending(
   //   送り出発   = 利用終了                   / 送り到着 = その10分後
   //
   // お迎えの出発時刻は入れない（施設の運用では使っていないため）。
-  const derived = deriveTransportTimes({
-    firstStart: starts[0] ?? null,
-    lastEnd: ends.length > 0 ? ends[ends.length - 1] : null,
-    usesPickup,
-    usesDropoff,
-  })
+  //
+  // 10分足すのは、保護者が連絡してきた時刻（＝学校到着）をそのまま割り振ったときだけ。
+  // すでに記録されている利用時間（＝事業所到着）を引き継いで承認し直したときにも
+  // 足してしまうと、承認のたびに10分ずつ後ろへずれていく。
+  const requestedStart = contact.service_start_time?.slice(0, 5) ?? null
+  const fromParentRequest =
+    usesPickup && requestedStart !== null && starts[0] === requestedStart
+  const recordedStart = starts[0]
+    ? (fromParentRequest ? serviceStartFromPickupArrival(starts[0]) : starts[0])
+    : null
 
   // 事業所に着いた時刻から始まるのは、その日いちばん早いサービスの方。
   // 放デイと日中一時を続けて使う日に、両方を10分ずらさないための判定。
   const shifted = (planned: string | null) =>
-    derived.serviceStartsAt && planned && planned === starts[0]
-      ? derived.serviceStartsAt
-      : planned
+    recordedStart && planned && planned === starts[0] ? recordedStart : planned
   const serviceStartTime = shifted(assignment.serviceStartTime)
   const daytimeStartTime = shifted(assignment.daytimeStartTime)
+
+  const derived = deriveTransportTimes({
+    serviceStart: recordedStart,
+    lastEnd: ends.length > 0 ? ends[ends.length - 1] : null,
+    usesPickup,
+    usesDropoff,
+  })
 
   // 送迎をどちらの欄（放デイ / 日中一時）に記録するかは、出席管理・請求と同じ判定を使う。
   // ここがずれると送迎加算が二重に立つ

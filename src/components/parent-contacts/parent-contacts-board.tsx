@@ -30,6 +30,7 @@ import {
 } from '@/lib/parent-contact-service'
 import { placeLabel, type ChildTransportPlaces, type LocationType, toPlaceValue } from '@/lib/transport-place'
 import type { AbsentHandling } from '@/lib/parent-contact-schedule'
+import { serviceStartFromPickupArrival } from '@/lib/transport-timing'
 
 type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
@@ -112,8 +113,15 @@ export type CurrentPlan = {
  */
 function planChange(c: Contact, current: CurrentPlan | undefined) {
   if (!current || c.status !== 'attending') return null
+  // 保護者が送ってくる開始時刻は「学校に着く時刻」なので、
+  // 記録されている利用開始（事業所に着く時刻）と比べるときは10分を足してそろえる。
+  // そろえないと、同じ内容の連絡がいつも「予定の変更」に見えてしまう
+  const requestedStart = fmtTime(c.service_start_time)
+  const usesPickup = c.transport_type === 'pickup_only' || c.transport_type === 'both'
+  const comparableStart =
+    requestedStart && usesPickup ? serviceStartFromPickupArrival(requestedStart) : requestedStart
   const same =
-    fmtTime(c.service_start_time) === (current.serviceStartTime ?? null) &&
+    comparableStart === (current.serviceStartTime ?? null) &&
     fmtTime(c.service_end_time) === (current.serviceEndTime ?? null) &&
     c.transport_type === (current.transportType ?? 'none')
   return { current, changed: !same }
@@ -518,6 +526,7 @@ function ContactCard({
                         }
                   )
                 }
+                title="保護者が希望した時刻を入れます（お迎えがある日は、承認時に10分後が利用開始になります）"
                 className="mt-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
               >
                 ご希望の時間を割り振りに入れる

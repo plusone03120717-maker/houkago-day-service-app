@@ -25,53 +25,50 @@ export function addMinutes(hhmm: string, minutes: number): string {
 }
 
 export type DerivedTransportTimes = {
-  /** お迎えの到着時刻（＝学校に着いた時刻）。保護者が希望した時刻をそのまま使う */
+  /** お迎えの到着時刻（＝学校に着いた時刻）。利用開始の10分前 */
   pickupArrival: string | null
   /** お送りの出発時刻＝利用終了時間 */
   dropoffDeparture: string | null
   /** お送りの到着時刻（出発の10分後） */
   dropoffArrival: string | null
-  /**
-   * 記録する利用開始時間（＝事業所に着いた時刻）。
-   * お迎えがある日は学校到着の10分後。お迎えが無い日は希望した時刻のまま。
-   */
-  serviceStartsAt: string | null
 }
 
 /**
- * 保護者が希望した利用時間から、その日の送迎の時刻を組み立てる。
+ * 学校に着いた時刻から、記録する利用開始時間（＝事業所に着いた時刻）を出す。
+ * 保護者が連絡してくる「利用開始時間」は学校に着く時刻なので、これを通して変換する。
+ */
+export function serviceStartFromPickupArrival(schoolArrival: string): string {
+  return addMinutes(schoolArrival, TRANSPORT_TRAVEL_MINUTES)
+}
+
+/**
+ * その日の利用時間から、送迎の時刻を組み立てる。
  *
- * firstStart … その日いちばん早い開始（放デイと日中一時を続けて使う日は早い方）
- * lastEnd    … その日いちばん遅い終了
+ * serviceStart … その日いちばん早い**利用開始**（＝事業所に着いた時刻）
+ * lastEnd      … その日いちばん遅い利用終了
  *
- *   お迎え … 希望した時刻に**学校へ到着**し、その10分後に事業所へ着く＝利用開始
+ *   お迎え … 利用開始の10分前に学校へ到着している
  *   お送り … 利用終了の時刻に事業所を出発し、その10分後に到着する
  *
  * お迎えの出発時刻は決めない（施設の運用では使っていないため、空欄のままにする）。
  */
 export function deriveTransportTimes({
-  firstStart,
+  serviceStart,
   lastEnd,
   usesPickup,
   usesDropoff,
 }: {
-  firstStart: string | null
+  serviceStart: string | null
   lastEnd: string | null
   usesPickup: boolean
   usesDropoff: boolean
 }): DerivedTransportTimes {
-  const pickupArrival = usesPickup ? firstStart : null
+  const pickupArrival =
+    usesPickup && serviceStart ? addMinutes(serviceStart, -TRANSPORT_TRAVEL_MINUTES) : null
   const dropoffDeparture = usesDropoff ? lastEnd : null
   const dropoffArrival = dropoffDeparture
     ? addMinutes(dropoffDeparture, TRANSPORT_TRAVEL_MINUTES)
     : null
 
-  return {
-    pickupArrival,
-    dropoffDeparture,
-    dropoffArrival,
-    serviceStartsAt: pickupArrival
-      ? addMinutes(pickupArrival, TRANSPORT_TRAVEL_MINUTES)
-      : firstStart,
-  }
+  return { pickupArrival, dropoffDeparture, dropoffArrival }
 }
