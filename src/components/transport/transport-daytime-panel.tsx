@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { Trash2, Check, Copy, CalendarClock, Car, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { addMinutes, TRANSPORT_TRAVEL_MINUTES } from '@/lib/transport-timing'
 
 /** daily_attendance のうち送迎・日中一時に関わるカラム */
 export type TransportRow = {
@@ -72,12 +73,9 @@ export function fmtTime(t: string | null | undefined): string {
   return hhmm === '00:00' ? '' : hhmm
 }
 
-export function addMinutes(hhmm: string, minutes: number): string {
-  const [h, m] = hhmm.split(':').map(Number)
-  const total = h * 60 + m + minutes
-  const norm = ((total % 1440) + 1440) % 1440
-  return `${String(Math.floor(norm / 60)).padStart(2, '0')}:${String(norm % 60).padStart(2, '0')}`
-}
+// 送迎の時刻の計算は、保護者の利用連絡を承認したときにも同じものを使うので
+// 共通ライブラリに置いてある（@/lib/transport-timing）
+export { addMinutes } from '@/lib/transport-timing'
 
 export function initFields(a: TransportRow, defaultEnd: string): TransportFields {
   return {
@@ -282,7 +280,7 @@ export function TransportDaytimePanel({
   const handlePickupDepartureChange = (val: string) => {
     const patch: Partial<TransportFields> = { pickupDepartureTime: val }
     if (val && !f.pickupArrivalTime) {
-      const arrival = addMinutes(val, 10)
+      const arrival = addMinutes(val, TRANSPORT_TRAVEL_MINUTES)
       patch.pickupArrivalTime = arrival
       patch.serviceStartTime = arrival
       if (!f.serviceEndTime) patch.serviceEndTime = defaultServiceEndTime
@@ -413,7 +411,7 @@ export function TransportDaytimePanel({
               f.dropoffDriverId, (v) => onChange({ dropoffDriverId: v }),
               f.dropoffVehicleId, (v) => onChange({ dropoffVehicleId: v }),
               () => onChange({ dropoffDepartureTime: '', dropoffArrivalTime: '', dropoffDriverId: '', dropoffVehicleId: '' }),
-              (v) => { if (v) onChange({ dropoffDepartureTime: addMinutes(v, -10) }) },
+              (v) => { if (v) onChange({ dropoffDepartureTime: addMinutes(v, -TRANSPORT_TRAVEL_MINUTES) }) },
             )}
 
             {/* 利用時間 */}

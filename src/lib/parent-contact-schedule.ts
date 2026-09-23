@@ -5,6 +5,8 @@ import {
   type ServiceAssignment,
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
+import { resolveTransportSlot } from '@/lib/schedule-defaults'
+import { deriveTransportTimes } from '@/lib/transport-timing'
 
 /**
  * 保護者ポータルからの利用連絡を、実際の予定へ反映する。
@@ -389,10 +391,72 @@ async function applyAttending(
   const useBasic = assignment.serviceType !== 'daytime_support'
   const useDaytime = assignment.serviceType !== 'regular'
 
+  // ── 送迎の時刻を、スタッフが手で入れるときと同じ形にして埋める ──
+  //
+  // 送迎・日中一時の入力欄は「お迎えの出発時刻を入れると、10分後が到着時刻になり、
+  // その到着時刻が利用開始時間になる」という動きをする。承認したときも同じにして、
+  // 承認後にスタッフが入れ直さなくて済むようにする（@/lib/transport-timing）。
+  //
+  //   お迎え出発 = 希望の開始時刻 / お迎え到着 = その10分後 / 利用開始 = お迎え到着
+  //   利用終了   = 希望の終了時刻 / 送り出発   = 同じ時刻   / 送り到着 = その10分後
+  const derived = deriveTransportTimes({
+    firstStart: starts[0] ?? null,
+    lastEnd: ends.length > 0 ? ends[ends.length - 1] : null,
+    usesPickup,
+    usesDropoff,
+  })
+
+  // お迎えで到着した時刻から始まるのは、その日いちばん早いサービスの方。
+  // 放デイと日中一時を続けて使う日に、両方を10分ずらさないための判定。
+  const shifted = (planned: string | null) =>
+    derived.serviceStartsAt && planned && planned === starts[0]
+      ? derived.serviceStartsAt
+      : planned
+  const serviceStartTime = shifted(assignment.serviceStartTime)
+  const daytimeStartTime = shifted(assignment.daytimeStartTime)
+
+  // 送迎をどちらの欄（放デイ / 日中一時）に記録するかは、出席管理・請求と同じ判定を使う。
+  // ここがずれると送迎加算が二重に立つ
+  const slotSource = {
+    basic_service: useBasic,
+    service_start_time: serviceStartTime,
+    service_end_time: assignment.serviceEndTime,
+    daytime_support: useDaytime,
+    daytime_support_start_time: daytimeStartTime,
+    daytime_support_end_time: assignment.daytimeEndTime,
+  }
+  const pickupSlot = resolveTransportSlot('pickup', slotSource)
+  const dropoffSlot = resolveTransportSlot('dropoff', slotSource)
+
+  /** 送迎の時刻を、記録先の欄に合わせた列名で組み立てる */
+  function transportColumns(): Record<string, string | null> {
+    const out: Record<string, string | null> = {}
+    if (usesPickup) {
+      const prefix = pickupSlot === 'daytime' ? 'daytime_pickup' : 'pickup'
+      out[`${prefix}_departure_time`] = derived.pickupDeparture
+      out[`${prefix}_arrival_time`] = derived.pickupArrival
+    }
+    if (usesDropoff) {
+      const prefix = dropoffSlot === 'daytime' ? 'daytime_dropoff' : 'dropoff'
+      out[`${prefix}_departure_time`] = derived.dropoffDeparture
+      out[`${prefix}_arrival_time`] = derived.dropoffArrival
+    }
+    return out
+  }
+
+  const TRANSPORT_COLUMNS = [
+    'pickup_departure_time', 'pickup_arrival_time',
+    'dropoff_departure_time', 'dropoff_arrival_time',
+    'daytime_pickup_departure_time', 'daytime_pickup_arrival_time',
+    'daytime_dropoff_departure_time', 'daytime_dropoff_arrival_time',
+  ] as const
+
   const { data: existingAttendance } = await supabase
     .from('daily_attendance')
     .select(
-      'id, status, basic_service, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time'
+      'id, status, basic_service, service_start_time, service_end_time, ' +
+      'daytime_support, daytime_support_start_time, daytime_support_end_time, ' +
+      TRANSPORT_COLUMNS.join(', ')
     )
     .eq('child_id', contact.child_id)
     .eq('unit_id', unitId)
@@ -400,7 +464,7 @@ async function applyAttending(
     .maybeSingle()
 
   if (existingAttendance) {
-    const row = existingAttendance as {
+    const row = existingAttendance as unknown as {
       id: string
       status: string
       basic_service: boolean
@@ -409,7 +473,7 @@ async function applyAttending(
       daytime_support: boolean
       daytime_support_start_time: string | null
       daytime_support_end_time: string | null
-    }
+    } & Record<(typeof TRANSPORT_COLUMNS)[number], string | null>
     const patch: Record<string, unknown> = {}
     if (row.basic_service !== useBasic) patch.basic_service = useBasic
     if (row.daytime_support !== useDaytime) patch.daytime_support = useDaytime
@@ -419,8 +483,8 @@ async function applyAttending(
       next !== null && (assigned || !current)
 
     if (useBasic) {
-      if (fill(row.service_start_time, assignment.serviceStartTime)) {
-        patch.service_start_time = assignment.serviceStartTime
+      if (fill(row.service_start_time, serviceStartTime)) {
+        patch.service_start_time = serviceStartTime
       }
       if (fill(row.service_end_time, assignment.serviceEndTime)) {
         patch.service_end_time = assignment.serviceEndTime
@@ -431,8 +495,8 @@ async function applyAttending(
     }
 
     if (useDaytime) {
-      if (fill(row.daytime_support_start_time, assignment.daytimeStartTime)) {
-        patch.daytime_support_start_time = assignment.daytimeStartTime
+      if (fill(row.daytime_support_start_time, daytimeStartTime)) {
+        patch.daytime_support_start_time = daytimeStartTime
       }
       if (fill(row.daytime_support_end_time, assignment.daytimeEndTime)) {
         patch.daytime_support_end_time = assignment.daytimeEndTime
@@ -441,6 +505,20 @@ async function applyAttending(
       patch.daytime_support_start_time = null
       patch.daytime_support_end_time = null
     }
+
+    // 送迎の時刻。すでに来た日（実績が入っている日）には触らない
+    if (row.status !== 'attended') {
+      for (const [column, value] of Object.entries(transportColumns())) {
+        if (fill(row[column as (typeof TRANSPORT_COLUMNS)[number]], value)) {
+          patch[column] = value
+        }
+      }
+    }
+
+    // 利用時間は check_in_time / check_out_time にも同じ値を入れる。
+    // スタッフの入力欄（送迎・日中一時）と同じ保存の仕方に合わせる
+    if (patch.service_start_time !== undefined) patch.check_in_time = patch.service_start_time
+    if (patch.service_end_time !== undefined) patch.check_out_time = patch.service_end_time
 
     // お休みとして記録済みの日を「やっぱり利用します」に変えた場合は予定に戻す
     if (row.status === 'absent') patch.status = 'scheduled'
@@ -461,11 +539,14 @@ async function applyAttending(
       status: 'scheduled',
       pickup_type: contact.transport_type,
       basic_service: useBasic,
-      service_start_time: useBasic ? assignment.serviceStartTime : null,
+      service_start_time: useBasic ? serviceStartTime : null,
       service_end_time: useBasic ? assignment.serviceEndTime : null,
+      check_in_time: useBasic ? serviceStartTime : null,
+      check_out_time: useBasic ? assignment.serviceEndTime : null,
       daytime_support: useDaytime,
-      daytime_support_start_time: useDaytime ? assignment.daytimeStartTime : null,
+      daytime_support_start_time: useDaytime ? daytimeStartTime : null,
       daytime_support_end_time: useDaytime ? assignment.daytimeEndTime : null,
+      ...transportColumns(),
       created_by: staffUserId,
     })
   }

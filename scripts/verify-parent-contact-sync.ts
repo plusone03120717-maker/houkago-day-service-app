@@ -167,12 +167,14 @@ async function getAttendance(childId: string, date: string) {
   const { data } = await supabase
     .from('daily_attendance')
     .select(
-      'id, unit_id, status, basic_service, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time, pickup_type'
+      'id, unit_id, status, basic_service, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time, pickup_type, ' +
+      'check_in_time, check_out_time, pickup_departure_time, pickup_arrival_time, dropoff_departure_time, dropoff_arrival_time, ' +
+      'daytime_pickup_departure_time, daytime_pickup_arrival_time, daytime_dropoff_departure_time, daytime_dropoff_arrival_time'
     )
     .eq('child_id', childId)
     .eq('date', date)
     .maybeSingle()
-  return data as {
+  return data as unknown as {
     id: string
     unit_id: string
     status: string
@@ -183,6 +185,16 @@ async function getAttendance(childId: string, date: string) {
     daytime_support_start_time: string | null
     daytime_support_end_time: string | null
     pickup_type: string
+    check_in_time: string | null
+    check_out_time: string | null
+    pickup_departure_time: string | null
+    pickup_arrival_time: string | null
+    dropoff_departure_time: string | null
+    dropoff_arrival_time: string | null
+    daytime_pickup_departure_time: string | null
+    daytime_pickup_arrival_time: string | null
+    daytime_dropoff_departure_time: string | null
+    daytime_dropoff_arrival_time: string | null
   } | null
 }
 
@@ -231,7 +243,7 @@ async function main() {
 
   console.log(`児童: ${child.name} / 承認者: ${staff.name} / ユニット: ${childUnitId}\n`)
 
-  const dates = Array.from({ length: 13 }, (_, i) => dateFor(i))
+  const dates = Array.from({ length: 15 }, (_, i) => dateFor(i))
   for (const d of dates) await cleanupDate(child.id, d)
 
   try {
@@ -263,7 +275,8 @@ async function main() {
 
       const att = await getAttendance(child.id, d)
       check('出席記録が予定として下書きされる', att?.status === 'scheduled', att?.status)
-      check('利用開始時刻が下書きされる', att?.service_start_time?.startsWith('10:00'), att?.service_start_time)
+      // お迎えがある日の利用開始は「お迎え到着」＝希望の開始時刻の10分後になる
+      check('利用開始はお迎え到着の時刻になる', att?.service_start_time?.startsWith('10:10'), att?.service_start_time)
       check('利用終了時刻が下書きされる', att?.service_end_time?.startsWith('16:00'), att?.service_end_time)
       check('送迎区分が出席記録にも入る', att?.pickup_type === 'both', att?.pickup_type)
 
@@ -546,7 +559,8 @@ async function main() {
       const att = await getAttendance(child.id, d)
       check('放デイの提供が立つ', att?.basic_service === true, att?.basic_service)
       check('日中一時フラグも立つ', att?.daytime_support === true, att?.daytime_support)
-      check('日中一時は午前に入る', att?.daytime_support_start_time?.startsWith('09:00'), att?.daytime_support_start_time)
+      // その日いちばん早い開始（＝日中一時）だけが、お迎え到着の時刻にずれる
+      check('日中一時はお迎え到着の時刻から始まる', att?.daytime_support_start_time?.startsWith('09:10'), att?.daytime_support_start_time)
       check('日中一時は14時で終わる', att?.daytime_support_end_time?.startsWith('14:00'), att?.daytime_support_end_time)
       check('放デイは14時から始まる', att?.service_start_time?.startsWith('14:00'), att?.service_start_time)
       check('放デイは18時で終わる', att?.service_end_time?.startsWith('18:00'), att?.service_end_time)
@@ -883,6 +897,55 @@ async function main() {
         await supabase.from('usage_plans').delete().eq('id', planId)
         await cleanupDate(child.id, d)
       }
+    }
+    // ── 16. 承認すると送迎の時刻まで入る ──
+    console.log('\n16. 承認すると送迎の時刻が入る（出発＝希望時刻・到着＝その10分後）')
+    {
+      const d = dates[13]
+      await cleanupDate(child.id, d)
+
+      const contact = await seedContact(child.id, {
+        date: d,
+        status: 'attending',
+        service_start_time: '10:00',
+        service_end_time: '16:00',
+        transport_type: 'both',
+      })
+      const result = await applyParentContact(supabase, contact, staff.id)
+      check('承認できる', !result.error, result.error)
+
+      const att = await getAttendance(child.id, d)
+      check('お迎え出発＝希望の開始時刻', att?.pickup_departure_time?.startsWith('10:00'), att?.pickup_departure_time)
+      check('お迎え到着＝出発の10分後', att?.pickup_arrival_time?.startsWith('10:10'), att?.pickup_arrival_time)
+      check('利用開始＝お迎え到着', att?.service_start_time?.startsWith('10:10'), att?.service_start_time)
+      check('登園時刻も同じ値になる', att?.check_in_time?.startsWith('10:10'), att?.check_in_time)
+      check('利用終了＝希望の終了時刻', att?.service_end_time?.startsWith('16:00'), att?.service_end_time)
+      check('送り出発＝利用終了と同じ', att?.dropoff_departure_time?.startsWith('16:00'), att?.dropoff_departure_time)
+      check('送り到着＝出発の10分後', att?.dropoff_arrival_time?.startsWith('16:10'), att?.dropoff_arrival_time)
+      check('日中一時側の送迎欄は空のまま', att?.daytime_pickup_departure_time === null, att?.daytime_pickup_departure_time)
+    }
+
+    // ── 17. 送迎を使わない日は10分ずらさない ──
+    console.log('\n17. 送迎を使わない日は利用時間をそのまま記録する')
+    {
+      const d = dates[14]
+      await cleanupDate(child.id, d)
+
+      const contact = await seedContact(child.id, {
+        date: d,
+        status: 'attending',
+        service_start_time: '10:00',
+        service_end_time: '16:00',
+        transport_type: 'none',
+      })
+      await applyParentContact(supabase, contact, staff.id)
+
+      const att = await getAttendance(child.id, d)
+      check('利用開始は希望どおり', att?.service_start_time?.startsWith('10:00'), att?.service_start_time)
+      check('送迎の時刻は入らない', att?.pickup_departure_time === null && att?.dropoff_departure_time === null, {
+        pickup: att?.pickup_departure_time,
+        dropoff: att?.dropoff_departure_time,
+      })
     }
   } finally {
     // ── 後片付け ──
