@@ -1947,29 +1947,31 @@
   <p class="note">児童にユニットが設定されていない場合など、予定に反映できなかったときはページ上部に<strong>黄色の警告</strong>が出ます。その分は利用状況ページから手動で予定を追加してください。承認の記録自体は残っています。</p>
 
   <h3>承認したときに入る送迎の時刻</h3>
-  <p>承認すると、出席管理の<strong>送迎欄（出発・到着）と利用時間</strong>まで自動で埋まります。スタッフが送迎欄にお迎えの出発時刻を入れたときと<strong>同じ埋まり方</strong>になるので、承認後に入れ直す必要はありません。</p>
+  <p>承認すると、出席管理の<strong>送迎欄（出発・到着）と利用時間</strong>まで自動で埋まります。スタッフが送迎欄に時刻を入れたときと<strong>同じ埋まり方</strong>になるので、承認後に入れ直す必要はありません。</p>
+
+  <p><strong>利用時間は保護者が希望したとおりに入ります。</strong>前後に伸びるのは送迎の時刻だけです。</p>
 
   <table>
     <tr><th>出席管理の欄</th><th>入る時刻</th></tr>
-    <tr><td>お迎え <strong>出発</strong></td><td>保護者が希望した<strong>利用開始時間</strong>（そのまま）</td></tr>
-    <tr><td>お迎え <strong>到着</strong></td><td>お迎え出発の<strong>10分後</strong></td></tr>
-    <tr><td><strong>利用開始</strong>（登園時刻も同じ値）</td><td>お迎え到着と同じ＝利用開始時間の<strong>10分後</strong></td></tr>
+    <tr><td>お迎え <strong>出発</strong></td><td>利用開始の<strong>10分前</strong></td></tr>
+    <tr><td>お迎え <strong>到着</strong></td><td><strong>利用開始と同じ時刻</strong></td></tr>
+    <tr><td><strong>利用開始</strong>（登園時刻も同じ値）</td><td>保護者が希望した<strong>利用開始時間</strong>（そのまま）</td></tr>
     <tr><td><strong>利用終了</strong>（降園時刻も同じ値）</td><td>保護者が希望した<strong>利用終了時間</strong>（そのまま）</td></tr>
-    <tr><td>送り <strong>出発</strong></td><td>利用終了と同じ時刻</td></tr>
+    <tr><td>送り <strong>出発</strong></td><td><strong>利用終了と同じ時刻</strong></td></tr>
     <tr><td>送り <strong>到着</strong></td><td>送り出発の<strong>10分後</strong></td></tr>
   </table>
 
-  <p class="note">例：保護者が「10:00〜16:00・送り迎えあり」で連絡した場合<br>
-  お迎え出発 <strong>10:00</strong> → お迎え到着 <strong>10:10</strong> → 利用開始 <strong>10:10</strong> → 利用終了 <strong>16:00</strong> → 送り出発 <strong>16:00</strong> → 送り到着 <strong>16:10</strong></p>
+  <p class="note">例：保護者が「14:40〜16:30・送り迎えあり」で連絡した場合<br>
+  お迎え出発 <strong>14:30</strong> → お迎え到着 <strong>14:40</strong> → 利用開始 <strong>14:40</strong> → 利用終了 <strong>16:30</strong> → 送り出発 <strong>16:30</strong> → 送り到着 <strong>16:40</strong></p>
 
   <table>
     <tr><th>送迎の希望</th><th>入る欄</th></tr>
-    <tr><td>行きのみ</td><td>お迎えの出発・到着だけ。利用開始はお迎え到着の時刻</td></tr>
-    <tr><td>帰りのみ</td><td>送りの出発・到着だけ。利用開始は<strong>希望した時刻のまま</strong>（10分ずれません）</td></tr>
-    <tr><td>送迎なし</td><td>送迎欄は空のまま。利用時間も希望どおりに入る</td></tr>
+    <tr><td>行きのみ</td><td>お迎えの出発・到着だけ入る</td></tr>
+    <tr><td>帰りのみ</td><td>送りの出発・到着だけ入る</td></tr>
+    <tr><td>送迎なし</td><td>送迎欄は空のまま。利用時間だけが入る</td></tr>
   </table>
 
-  <p class="note">放デイと日中一時を<strong>同じ日に両方使う</strong>場合、10分ずれるのは<strong>その日いちばん早く始まる方</strong>だけです（例：日中一時 9:00開始なら、日中一時の開始が 9:10 になり、午後の放デイはそのまま）。送迎の時刻が<strong>放デイ側と日中一時側のどちらの欄に入るか</strong>も自動で判定されます（送迎加算が二重に立たないようにするため）。</p>
+  <p class="note">放デイと日中一時を<strong>同じ日に両方使う</strong>場合、お迎えはその日<strong>いちばん早い開始</strong>の10分前、お送りは<strong>いちばん遅い終了</strong>から出発します。送迎の時刻が<strong>放デイ側と日中一時側のどちらの欄に入るか</strong>も自動で判定されます（送迎加算が二重に立たないようにするため）。</p>
 
   <div class="warn"><strong>⚠️ すでに入力がある日：</strong> 承認画面で時間を<strong>直してから</strong>承認した場合は、その内容で上書きされます。直さずに承認した場合は、<strong>空いている欄だけ</strong>が埋まり、すでに入っている時刻はそのまま残ります。<strong>出席済み（実績が入っている日）の送迎の時刻には触りません。</strong></div>
 

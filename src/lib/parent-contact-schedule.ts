@@ -393,12 +393,15 @@ async function applyAttending(
 
   // ── 送迎の時刻を、スタッフが手で入れるときと同じ形にして埋める ──
   //
-  // 送迎・日中一時の入力欄は「お迎えの出発時刻を入れると、10分後が到着時刻になり、
-  // その到着時刻が利用開始時間になる」という動きをする。承認したときも同じにして、
-  // 承認後にスタッフが入れ直さなくて済むようにする（@/lib/transport-timing）。
+  // 送迎・日中一時の入力欄では、お迎えの到着時刻がそのまま利用開始時間になり、
+  // 出発はその10分前になる。承認したときも同じ形にして、承認後にスタッフが
+  // 入れ直さなくて済むようにする（@/lib/transport-timing）。
   //
-  //   お迎え出発 = 希望の開始時刻 / お迎え到着 = その10分後 / 利用開始 = お迎え到着
-  //   利用終了   = 希望の終了時刻 / 送り出発   = 同じ時刻   / 送り到着 = その10分後
+  //   お迎え出発 = 利用開始の10分前 / お迎え到着 = 利用開始
+  //   送り出発   = 利用終了         / 送り到着   = その10分後
+  //
+  // 利用時間そのものは動かさない。提供時間が10分ずれると、日中一時の
+  // 利用時間区分が変わってしまうことがあるため。
   const derived = deriveTransportTimes({
     firstStart: starts[0] ?? null,
     lastEnd: ends.length > 0 ? ends[ends.length - 1] : null,
@@ -406,14 +409,8 @@ async function applyAttending(
     usesDropoff,
   })
 
-  // お迎えで到着した時刻から始まるのは、その日いちばん早いサービスの方。
-  // 放デイと日中一時を続けて使う日に、両方を10分ずらさないための判定。
-  const shifted = (planned: string | null) =>
-    derived.serviceStartsAt && planned && planned === starts[0]
-      ? derived.serviceStartsAt
-      : planned
-  const serviceStartTime = shifted(assignment.serviceStartTime)
-  const daytimeStartTime = shifted(assignment.daytimeStartTime)
+  const serviceStartTime = assignment.serviceStartTime
+  const daytimeStartTime = assignment.daytimeStartTime
 
   // 送迎をどちらの欄（放デイ / 日中一時）に記録するかは、出席管理・請求と同じ判定を使う。
   // ここがずれると送迎加算が二重に立つ

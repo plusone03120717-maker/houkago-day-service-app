@@ -22,20 +22,14 @@ export function addMinutes(hhmm: string, minutes: number): string {
 }
 
 export type DerivedTransportTimes = {
-  /** お迎えの出発時刻。保護者が希望した利用開始時間をそのまま使う */
+  /** お迎えの出発時刻。利用開始の10分前に出る */
   pickupDeparture: string | null
-  /** お迎えの到着時刻（出発の10分後） */
+  /** お迎えの到着時刻＝利用開始時間 */
   pickupArrival: string | null
-  /** お送りの出発時刻。保護者が希望した利用終了時間をそのまま使う */
+  /** お送りの出発時刻＝利用終了時間 */
   dropoffDeparture: string | null
   /** お送りの到着時刻（出発の10分後） */
   dropoffArrival: string | null
-  /**
-   * 記録する利用開始時間。
-   * お迎えがある日は「施設に着いた時刻」＝出発の10分後から始まる。
-   * お迎えが無い日は、保護者が希望した時刻がそのまま利用開始になる。
-   */
-  serviceStartsAt: string | null
 }
 
 /**
@@ -44,8 +38,9 @@ export type DerivedTransportTimes = {
  * firstStart … その日いちばん早い開始（放デイと日中一時を続けて使う日は早い方）
  * lastEnd    … その日いちばん遅い終了
  *
- * 利用終了時間は動かさない。お送りは「利用が終わってから出発する」ため、
- * 終了時刻がそのまま出発時刻になり、その10分後に着く。
+ * **利用時間そのものは動かさない。** 送迎の時刻だけを前後に伸ばす。
+ *   お迎え … 利用開始の10分前に出発し、利用開始の時刻に到着する
+ *   お送り … 利用終了の時刻に出発し、その10分後に到着する
  */
 export function deriveTransportTimes({
   firstStart,
@@ -58,20 +53,14 @@ export function deriveTransportTimes({
   usesPickup: boolean
   usesDropoff: boolean
 }): DerivedTransportTimes {
-  const pickupDeparture = usesPickup ? firstStart : null
-  const pickupArrival = pickupDeparture
-    ? addMinutes(pickupDeparture, TRANSPORT_TRAVEL_MINUTES)
+  const pickupArrival = usesPickup ? firstStart : null
+  const pickupDeparture = pickupArrival
+    ? addMinutes(pickupArrival, -TRANSPORT_TRAVEL_MINUTES)
     : null
   const dropoffDeparture = usesDropoff ? lastEnd : null
   const dropoffArrival = dropoffDeparture
     ? addMinutes(dropoffDeparture, TRANSPORT_TRAVEL_MINUTES)
     : null
 
-  return {
-    pickupDeparture,
-    pickupArrival,
-    dropoffDeparture,
-    dropoffArrival,
-    serviceStartsAt: pickupArrival ?? firstStart,
-  }
+  return { pickupDeparture, pickupArrival, dropoffDeparture, dropoffArrival }
 }
