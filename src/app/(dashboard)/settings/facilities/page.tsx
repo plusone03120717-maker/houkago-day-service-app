@@ -27,9 +27,10 @@ type Facility = {
   units: Unit[]
 }
 
+// units.service_type の値は 'afterschool' / 'development_support' の2つ
 const serviceTypeLabel: Record<string, string> = {
   afterschool: '放課後等デイサービス',
-  child_dev: '児童発達支援',
+  development_support: '児童発達支援',
 }
 
 export default async function SettingsFacilitiesPage() {
@@ -50,7 +51,7 @@ export default async function SettingsFacilitiesPage() {
         </Link>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">施設・ユニット管理</h1>
-          <p className="text-sm text-gray-500 mt-0.5">施設情報とユニット設定の確認</p>
+          <p className="text-sm text-gray-500 mt-0.5">施設情報・事業所番号・ユニット設定</p>
         </div>
       </div>
 
@@ -84,6 +85,7 @@ export default async function SettingsFacilitiesPage() {
 
               <FacilityBillingForm
                 facilityId={facility.id}
+                initialFacilityNumber={facility.facility_number ?? ''}
                 initialRegionCode={facility.region_code ?? '20'}
                 initialUnitPrice={Number(facility.unit_price ?? 10)}
               />
