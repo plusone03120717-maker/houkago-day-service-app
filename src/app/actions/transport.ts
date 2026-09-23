@@ -246,7 +246,24 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     daytime_dropoff_departure_time: string | null
     children: ChildRow | null
   }
-  const attendanceOnly = ((attendancesRaw ?? []) as unknown as AttendanceSource[]).filter(
+  const attendances = (attendancesRaw ?? []) as unknown as AttendanceSource[]
+
+  // 利用計画・予約に送迎時刻が無い児童は、その日の記録に入っている時刻で便を決める。
+  // 計画の時刻が空のまま運用している児童（時刻は出席記録側にだけある）が、
+  // 「時間が不明」として毎日便に載らず、送迎管理に出てこなかった。
+  for (const a of attendances) {
+    if (!a.child_id || !childrenMap.has(a.child_id)) continue
+    const recordedPickup = a.pickup_arrival_time ?? a.daytime_pickup_arrival_time
+    const recordedDropoff = a.dropoff_departure_time ?? a.daytime_dropoff_departure_time
+    if (pickupTimeMap.get(a.child_id) == null && recordedPickup) {
+      pickupTimeMap.set(a.child_id, toHourSlot(recordedPickup))
+    }
+    if (dropoffTimeMap.get(a.child_id) == null && recordedDropoff) {
+      dropoffTimeMap.set(a.child_id, toHourSlot(recordedDropoff))
+    }
+  }
+
+  const attendanceOnly = attendances.filter(
     (a) => a.child_id && a.children && !childrenMap.has(a.child_id)
   )
 
