@@ -243,7 +243,7 @@ async function main() {
 
   console.log(`児童: ${child.name} / 承認者: ${staff.name} / ユニット: ${childUnitId}\n`)
 
-  const dates = Array.from({ length: 15 }, (_, i) => dateFor(i))
+  const dates = Array.from({ length: 17 }, (_, i) => dateFor(i))
   for (const d of dates) await cleanupDate(child.id, d)
 
   try {
@@ -945,6 +945,77 @@ async function main() {
         pickup: att?.pickup_departure_time,
         dropoff: att?.dropoff_departure_time,
       })
+    }
+    // ── 18. 前倒しで出席を付けてある日 ──
+    console.log('\n18. 児童が来る前に出席を付けてある日を承認する')
+    {
+      const d = dates[15]
+      await cleanupDate(child.id, d)
+
+      // スタッフがまとめて出席を付けた状態（まだ先の日付なので実績ではない）
+      await supabase.from('daily_attendance').insert({
+        child_id: child.id,
+        unit_id: childUnitId,
+        date: d,
+        status: 'attended',
+        pickup_type: 'none',
+      })
+
+      const contact = await seedContact(child.id, {
+        date: d,
+        status: 'attending',
+        service_start_time: '10:00',
+        service_end_time: '16:00',
+        transport_type: 'both',
+      })
+      await applyParentContact(supabase, contact, staff.id)
+
+      const att = await getAttendance(child.id, d)
+      check('出席のままにする', att?.status === 'attended', att?.status)
+      check('お迎え出発が入る', att?.pickup_departure_time?.startsWith('09:50'), att?.pickup_departure_time)
+      check('お迎え到着が入る', att?.pickup_arrival_time?.startsWith('10:00'), att?.pickup_arrival_time)
+      check('送り出発が入る', att?.dropoff_departure_time?.startsWith('16:00'), att?.dropoff_departure_time)
+      check('送り到着が入る', att?.dropoff_arrival_time?.startsWith('16:10'), att?.dropoff_arrival_time)
+      check('利用時間も入る', att?.service_start_time?.startsWith('10:00'), att?.service_start_time)
+    }
+
+    // ── 19. 過ぎた日の実績には触らない ──
+    console.log('\n19. すでに来た日（過ぎた日の出席記録）は書き換えない')
+    {
+      // 運用が始まる前の日付を使う（本番データに当たらないようにするため）
+      const d = '2020-05-05'
+      await cleanupDate(child.id, d)
+
+      await supabase.from('daily_attendance').insert({
+        child_id: child.id,
+        unit_id: childUnitId,
+        date: d,
+        status: 'attended',
+        pickup_type: 'both',
+        service_start_time: '13:00',
+        service_end_time: '17:00',
+        pickup_departure_time: '12:30',
+        pickup_arrival_time: '13:00',
+      })
+
+      try {
+        const contact = await seedContact(child.id, {
+          date: d,
+          status: 'attending',
+          service_start_time: '10:00',
+          service_end_time: '16:00',
+          transport_type: 'both',
+        })
+        await applyParentContact(supabase, contact, staff.id)
+
+        const att = await getAttendance(child.id, d)
+        check('利用開始は実績のまま', att?.service_start_time?.startsWith('13:00'), att?.service_start_time)
+        check('利用終了も実績のまま', att?.service_end_time?.startsWith('17:00'), att?.service_end_time)
+        check('お迎え出発も実績のまま', att?.pickup_departure_time?.startsWith('12:30'), att?.pickup_departure_time)
+        check('送りの時刻は入れない', att?.dropoff_departure_time === null, att?.dropoff_departure_time)
+      } finally {
+        await cleanupDate(child.id, d)
+      }
     }
   } finally {
     // ── 後片付け ──

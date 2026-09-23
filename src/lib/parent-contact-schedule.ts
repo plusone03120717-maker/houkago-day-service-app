@@ -5,6 +5,7 @@ import {
   type ServiceAssignment,
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
+import { getTodayJST } from '@/lib/utils'
 import { resolveTransportSlot } from '@/lib/schedule-defaults'
 import { deriveTransportTimes } from '@/lib/transport-timing'
 
@@ -475,11 +476,23 @@ async function applyAttending(
     if (row.basic_service !== useBasic) patch.basic_service = useBasic
     if (row.daytime_support !== useDaytime) patch.daytime_support = useDaytime
 
+    /**
+     * その日の記録が「実績」として確定しているか。
+     *
+     * この施設では、児童が来る前にまとめて出席を付けることがある。
+     * 出席として記録されているだけでは実績とは限らないので、
+     * 過ぎた日の出席だけを実績として扱う（保護者に「利用済み」と見せる判定と同じ）。
+     * 実績の日は、承認しても時刻にはいっさい触らない。
+     */
+    const isRecorded = row.status === 'attended' && contact.date < getTodayJST()
+
     /** 上書きしてよい場面か、まだ空欄のときだけ埋める場面か */
     const fill = (current: string | null, next: string | null) =>
-      next !== null && (assigned || !current)
+      !isRecorded && next !== null && (assigned || !current)
 
-    if (useBasic) {
+    if (isRecorded) {
+      // 実績のある日は時刻を触らない（区分だけは施設が決めたとおりにそろえる）
+    } else if (useBasic) {
       if (fill(row.service_start_time, serviceStartTime)) {
         patch.service_start_time = serviceStartTime
       }
@@ -491,7 +504,9 @@ async function applyAttending(
       patch.service_end_time = null
     }
 
-    if (useDaytime) {
+    if (isRecorded) {
+      // 同上
+    } else if (useDaytime) {
       if (fill(row.daytime_support_start_time, daytimeStartTime)) {
         patch.daytime_support_start_time = daytimeStartTime
       }
@@ -503,12 +518,10 @@ async function applyAttending(
       patch.daytime_support_end_time = null
     }
 
-    // 送迎の時刻。すでに来た日（実績が入っている日）には触らない
-    if (row.status !== 'attended') {
-      for (const [column, value] of Object.entries(transportColumns())) {
-        if (fill(row[column as (typeof TRANSPORT_COLUMNS)[number]], value)) {
-          patch[column] = value
-        }
+    // 送迎の時刻。前倒しで出席を付けてあるだけの日（まだ来ていない日）には入れる
+    for (const [column, value] of Object.entries(transportColumns())) {
+      if (fill(row[column as (typeof TRANSPORT_COLUMNS)[number]], value)) {
+        patch[column] = value
       }
     }
 
