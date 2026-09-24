@@ -54,6 +54,8 @@ export type ParentContact = {
   applied_reservation_id: string | null
   /** キャンセル連絡をどう処理したか。null＝未処理 */
   absent_handling: AbsentHandling | null
+  /** 保護者が連絡に添えたメモ。お休み連絡では欠席理由として引き継ぐ */
+  note?: string | null
 }
 
 /**
@@ -73,7 +75,7 @@ export const PARENT_CONTACT_COLUMNS =
   'assigned_daytime_start_time, assigned_daytime_end_time, ' +
   'transport_type, pickup_location_type, pickup_address_id, ' +
   'dropoff_location_type, dropoff_address_id, ' +
-  'applied_at, applied_unit_id, applied_reservation_id, absent_handling'
+  'applied_at, applied_unit_id, applied_reservation_id, absent_handling, note'
 
 export type ApplyResult = {
   /** 反映できなかった理由。反映できたときは undefined */
@@ -658,10 +660,15 @@ async function applyAbsent(
     .eq('date', contact.date)
     .maybeSingle()
 
+  // 保護者がお休み連絡に理由を書いていれば、欠席理由として引き継ぐ
+  // （書いていないときは、職員が入れた理由を消さない）
+  const reason = contact.note?.trim()
+  const reasonField = reason ? { absence_reason: reason } : {}
+
   if (existing) {
     const { error } = await supabase
       .from('daily_attendance')
-      .update({ status: 'absent', ...ABSENT_CLEARED_FIELDS })
+      .update({ status: 'absent', ...ABSENT_CLEARED_FIELDS, ...reasonField })
       .eq('id', (existing as { id: string }).id)
     if (error) return { error: `欠席の記録に失敗しました: ${error.message}` }
   } else {
@@ -672,6 +679,7 @@ async function applyAbsent(
       status: 'absent',
       pickup_type: 'none',
       created_by: staffUserId,
+      ...reasonField,
     })
     if (error) return { error: `欠席の記録に失敗しました: ${error.message}` }
   }

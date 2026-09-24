@@ -24,6 +24,7 @@ import { formatDate } from '@/lib/utils'
 import { ALL_UNITS, unitChildKey } from '@/lib/attendance-board-data'
 import { deleteUsageDay, ABSENT_CLEARED_FIELDS } from '@/lib/usage-day'
 import { MonthlyAttendanceView } from './monthly-attendance-view'
+import { AbsenceReasonInput } from './absence-reason-input'
 import {
   TransportDaytimePanel,
   TransportDaytimeToggle,
@@ -73,6 +74,8 @@ export type Attendance = TransportRow & {
   status: string
   pickup_type: string
   health_condition: string | null
+  /** 欠席の理由（欠席のときだけ使う） */
+  absence_reason: string | null
 }
 
 /** 児童ID → 直近の出席日の送迎入力（前回コピー用） */
@@ -344,8 +347,11 @@ export function AttendanceBoard({
     }
 
     // 欠席にする場合は送迎時間・利用時間のクリアも同じ1回のUPDATEにまとめる
+    // 出席に戻したときは、前に入れた欠席理由を残さない
     const mergedUpdates = updates.status === 'absent'
       ? { ...scheduledTimes, ...updates, ...ABSENT_CLEARED_FIELDS }
+      : updates.status === 'attended'
+      ? { ...scheduledTimes, ...updates, absence_reason: null }
       : { ...scheduledTimes, ...updates }
 
     if (existing) {
@@ -393,6 +399,19 @@ export function AttendanceBoard({
     }
 
     setSaving(null)
+  }
+
+  // 欠席理由の保存
+  const saveAbsenceReason = async (attendanceId: string, reason: string | null) => {
+    const { data, error } = await supabase
+      .from('daily_attendance')
+      .update({ absence_reason: reason })
+      .eq('id', attendanceId)
+      .select('*')
+      .single()
+    if (error) { alert(`欠席理由の保存エラー: ${error.message}`); return false }
+    if (data) applyRow(data as unknown as Attendance)
+    return true
   }
 
   // 出席取り消し（レコードを削除して未記録に戻す）
@@ -773,6 +792,16 @@ export function AttendanceBoard({
                       </button>
                     </div>
                   </CardContent>
+
+                    {/* 欠席理由（欠席にした児童のみ） */}
+                    {att?.status === 'absent' && res.status !== 'cancel_waiting' && (
+                      <div className="border-t border-red-100 bg-red-50/50 px-4 py-2.5">
+                        <AbsenceReasonInput
+                          value={att.absence_reason}
+                          onSave={(reason) => saveAbsenceReason(att.id, reason)}
+                        />
+                      </div>
+                    )}
 
                     {/* 送迎・日中一時入力トグル（日々の記録と同じUI） */}
                     {isPresent && att && fields && (

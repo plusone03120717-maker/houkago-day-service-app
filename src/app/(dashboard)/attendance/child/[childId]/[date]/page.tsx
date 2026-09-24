@@ -18,7 +18,7 @@ export default async function AttendanceDateDetailPage({
     supabase.from('children').select('id, name').eq('id', childId).single(),
     supabase
       .from('daily_attendance')
-      .select('id, status, check_in_time, check_out_time, unit_id, units(name)')
+      .select('id, status, check_in_time, check_out_time, absence_reason, unit_id, units(name)')
       .eq('child_id', childId)
       .eq('date', date)
       .maybeSingle(),
@@ -31,6 +31,7 @@ export default async function AttendanceDateDetailPage({
     status: string
     check_in_time: string | null
     check_out_time: string | null
+    absence_reason: string | null
     unit_id: string
     units: { name: string } | null
   }
@@ -97,6 +98,12 @@ export default async function AttendanceDateDetailPage({
       {attendance?.check_in_time && attendance?.check_out_time && (
         <p className="text-sm text-gray-500">
           入室 {attendance.check_in_time.slice(0, 5)} 〜 退室 {attendance.check_out_time.slice(0, 5)}
+        </p>
+      )}
+
+      {attendance?.status === 'absent' && (
+        <p className="text-sm text-gray-600">
+          欠席理由：{attendance.absence_reason || '（未入力）'}
         </p>
       )}
 
