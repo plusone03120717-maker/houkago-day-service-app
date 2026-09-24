@@ -609,7 +609,8 @@ async function applyAbsent(
   supabase: Client,
   contact: ParentContact,
   unitId: string,
-  staffUserId: string
+  staffUserId: string,
+  absenceReason?: string
 ): Promise<ApplyResult> {
   // その日に予定（予約 or 有効な利用計画）があるかを確認する
   const { data: reservationRaw } = await supabase
@@ -660,9 +661,9 @@ async function applyAbsent(
     .eq('date', contact.date)
     .maybeSingle()
 
-  // 保護者がお休み連絡に理由を書いていれば、欠席理由として引き継ぐ
-  // （書いていないときは、職員が入れた理由を消さない）
-  const reason = contact.note?.trim()
+  // スタッフが利用連絡の画面で書いた理由を優先し、無ければ保護者のメモを引き継ぐ
+  // （どちらも空のときは、職員が出席管理で入れた理由を消さない）
+  const reason = (absenceReason ?? contact.note)?.trim()
   const reasonField = reason ? { absence_reason: reason } : {}
 
   if (existing) {
@@ -782,7 +783,9 @@ export async function applyParentContact(
   contact: ParentContact,
   staffUserId: string,
   assignment?: ServiceAssignment,
-  handling: AbsentHandling = 'absent'
+  handling: AbsentHandling = 'absent',
+  /** 欠席として記録するときの欠席理由。省略時は保護者のメモを使う */
+  absenceReason?: string
 ): Promise<ApplyResult> {
   const unitId =
     contact.applied_unit_id ?? (await resolveUnitId(supabase, contact.child_id, contact.date))
@@ -793,7 +796,7 @@ export async function applyParentContact(
   if (contact.status !== 'attending') {
     return handling === 'delete'
       ? applyCancelDelete(supabase, contact, unitId)
-      : applyAbsent(supabase, contact, unitId, staffUserId)
+      : applyAbsent(supabase, contact, unitId, staffUserId, absenceReason)
   }
 
   let resolved = resolveAssignment(contact)

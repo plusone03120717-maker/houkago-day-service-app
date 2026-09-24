@@ -30,6 +30,7 @@ import {
 } from '@/lib/parent-contact-service'
 import { placeLabel, type ChildTransportPlaces, type LocationType, toPlaceValue } from '@/lib/transport-place'
 import type { AbsentHandling } from '@/lib/parent-contact-schedule'
+import { ABSENCE_REASON_PRESETS } from '@/components/attendance/absence-reason-input'
 import { serviceStartFromPickupArrival } from '@/lib/transport-timing'
 
 type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
@@ -369,10 +370,12 @@ function ContactCard({
   /** 送迎の場所を名前で出すための選択肢 */
   places: ChildTransportPlaces | undefined
   onAssignmentChange: (next: ServiceAssignment) => void
-  onReviewed: (id: string, handling: AbsentHandling) => void
+  onReviewed: (id: string, handling: AbsentHandling, absenceReason?: string) => void
   onApproval: (id: string, next: ApprovalStatus) => void
 }) {
   const editable = needsApproval(c) && approval === 'pending'
+  // 「欠席として記録」で出席管理に入る欠席理由。保護者のメモを初期値にする
+  const [absenceReason, setAbsenceReason] = useState(c.note ?? '')
   const assignmentError = validateAssignment(assignment)
   const change = planChange(c, current)
   return (
@@ -503,6 +506,38 @@ function ContactCard({
           </p>
         )}
 
+        {/* 欠席理由。「欠席として記録」を押すと出席管理の欠席理由に入る */}
+        {c.status !== 'attending' && !applied && (
+          <div className="mt-2 space-y-1">
+            <label className="block text-[11px] font-medium text-red-600">
+              欠席理由（「欠席として記録」で出席管理に入ります）
+            </label>
+            <input
+              type="text"
+              value={absenceReason}
+              onChange={(e) => setAbsenceReason(e.target.value)}
+              placeholder="例：発熱のため"
+              className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+            />
+            <div className="flex flex-wrap gap-1">
+              {ABSENCE_REASON_PRESETS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setAbsenceReason(p)}
+                  className={`px-2 py-0.5 rounded-full text-xs border transition-colors ${
+                    absenceReason === p
+                      ? 'bg-red-500 border-red-500 text-white'
+                      : 'bg-white border-gray-200 text-gray-600 hover:bg-red-50 hover:text-red-700'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 承認前は区分を決める欄、承認後は決まった内容を出す */}
         {editable ? (
           <>
@@ -591,7 +626,7 @@ function ContactCard({
               return (
                 <button
                   key={h}
-                  onClick={() => onReviewed(c.id, h)}
+                  onClick={() => onReviewed(c.id, h, h === 'absent' ? absenceReason : undefined)}
                   disabled={reviewing}
                   className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium disabled:opacity-50 ${
                     recommended
@@ -739,13 +774,13 @@ export function ParentContactsBoard({
    * キャンセルの連絡を処理する。
    * handling で「欠席として記録」か「予定から削除」かを選ぶ。
    */
-  async function markReviewed(ids: string[], handling: AbsentHandling) {
+  async function markReviewed(ids: string[], handling: AbsentHandling, absenceReason?: string) {
     if (ids.length === 0) return
     setReviewing(true)
     const res = await fetch('/api/parent-contacts/reviewed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids, handling }),
+      body: JSON.stringify({ ids, handling, absenceReason }),
     })
     const json = (await res.json().catch(() => ({}))) as {
       warnings?: string[]
@@ -1060,7 +1095,7 @@ export function ParentContactsBoard({
                         onAssignmentChange={(next) =>
                           setAssignments((prev) => ({ ...prev, [c.id]: next }))
                         }
-                        onReviewed={(id, handling) => markReviewed([id], handling)}
+                        onReviewed={(id, handling, reason) => markReviewed([id], handling, reason)}
                         onApproval={setApproval}
                       />
                     ))}

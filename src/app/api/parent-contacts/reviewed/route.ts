@@ -21,10 +21,12 @@ const HANDLINGS: AbsentHandling[] = ['absent', 'delete']
 // （利用の連絡は承認が必要なので /api/parent-contacts/approval 側で反映する）
 export async function POST(req: NextRequest) {
   try {
-    const { id, ids, handling } = await req.json() as {
+    const { id, ids, handling, absenceReason } = await req.json() as {
       id?: string
       ids?: string[]
       handling?: AbsentHandling
+      /** 欠席として記録するときの欠席理由（スタッフがその場で書いたもの） */
+      absenceReason?: string
     }
     const targetIds = ids ?? (id ? [id] : [])
     if (targetIds.length === 0) {
@@ -57,7 +59,14 @@ export async function POST(req: NextRequest) {
     const results: { id: string; applied: boolean; handling?: AbsentHandling; error?: string }[] = []
     for (const contact of contacts) {
       if (contact.status !== 'absent') continue
-      const result = await applyParentContact(supabase, contact, userId, undefined, handling)
+      const result = await applyParentContact(
+        supabase,
+        contact,
+        userId,
+        undefined,
+        handling,
+        typeof absenceReason === 'string' ? absenceReason : undefined
+      )
       results.push({
         id: contact.id,
         applied: !result.error,
