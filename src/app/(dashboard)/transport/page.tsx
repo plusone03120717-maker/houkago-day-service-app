@@ -11,6 +11,7 @@ import {
   type ScheduleDefaults,
 } from '@/lib/schedule-defaults'
 import { ALL_UNITS, unitChildKey } from '@/lib/attendance-board-data'
+import { fetchDriverRanking } from '@/lib/driver-ranking'
 
 type Unit = { id: string; name: string; service_type: string }
 type Vehicle = { id: string; name: string; capacity: number }
@@ -102,6 +103,8 @@ export default async function TransportPage({
   // ここで先に走らせて autoCreate の待ち時間に重ねる（.then で即時実行）
   const vehiclesPromise = supabase.from('transport_vehicles').select('id, name, capacity').order('name').then((r) => r)
   const driversPromise = supabase.from('staff_members').select('id, name').order('name').then((r) => r)
+  // ドライバーの選択肢を「よく入る順」に並べるための過去の傾向
+  const driverRankingPromise = fetchDriverRanking(supabase, today)
 
   const { data: unitsRaw } = await supabase
     .from('units')
@@ -128,6 +131,7 @@ export default async function TransportPage({
     { data: allChildrenRaw },
     { data: reservationsRaw },
     scheduleDefaults,
+    driverRanking,
   ] = await Promise.all([
     targetUnitIds.length > 0
       ? supabase
@@ -174,6 +178,7 @@ export default async function TransportPage({
         return byKey
       }
     ),
+    driverRankingPromise,
   ])
 
   // 取得に失敗したときは「0件」として黙って空表示にせず、原因をそのまま画面に出す。
@@ -281,6 +286,10 @@ export default async function TransportPage({
         isManualGroup: !!d.trip_group_id,
         schoolName: d.children?.schools?.name ?? null,
         homeAddress: d.children?.address ?? null,
+        driverScores: driverRanking.scoresFor(
+          d.child_id,
+          isDaytime ? (direction === 'pickup' ? 'daytime_pickup' : 'daytime_dropoff') : direction
+        ),
       })
     }
   }

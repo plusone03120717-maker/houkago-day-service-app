@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { ALL_UNITS } from '@/lib/attendance-board-data'
+import { rankDrivers, type DriverScores } from '@/lib/driver-ranking'
 import {
   deleteAndRecreateTransportSchedules,
   saveTransportRecord,
@@ -57,6 +58,8 @@ export type TransportRow = {
   isManualGroup: boolean
   schoolName: string | null
   homeAddress: string | null
+  /** これまでの記録からの、ドライバーごとの「よく入る」点数（選択肢の並び順に使う） */
+  driverScores?: DriverScores
 }
 
 export type UnitChild = {
@@ -606,6 +609,11 @@ function TripCell({
   const mixedVehicle = sharedVehicle === null && group.rows.length > 1
   const canSplit = group.rows.length >= 2
   const allAbsent = group.rows.every((r) => r.isAbsent)
+  // 便に乗る児童全員の傾向を足して、よく入る人から並べる
+  const rankedDrivers = rankDrivers(
+    drivers,
+    group.rows.map((r) => r.driverScores)
+  )
 
   const selectCls =
     'flex-1 min-w-0 text-xs border rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50'
@@ -629,11 +637,32 @@ function TripCell({
             className={`${selectCls} ${mixedDriver ? 'border-dashed border-gray-300 text-gray-500' : 'border-gray-200'}`}
           >
             <option value="">{mixedDriver ? '混在' : '未設定'}</option>
-            {drivers.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
+            {rankedDrivers.frequent.length > 0 ? (
+              <>
+                <optgroup label="よく入る順">
+                  {rankedDrivers.frequent.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </optgroup>
+                {rankedDrivers.others.length > 0 && (
+                  <optgroup label="その他">
+                    {rankedDrivers.others.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </>
+            ) : (
+              drivers.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))
+            )}
           </select>
           <select
             value={sharedVehicle ?? ''}
