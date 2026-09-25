@@ -120,8 +120,11 @@ const futureAttended: Rule = {
   key: 'future_attended',
   label: '未来の日が「出席済み」',
   description:
-    'まだ来ていない日付に出席済みの記録が付いています。日付を間違えて入力した可能性があります。',
-  enabled: true,
+    'まだ来ていない日付に出席済みの記録が付いています。前日に翌日分の出席をまとめて付ける運用のため、既定ではオフにしています。',
+  // 翌日来る子を前日のうちに「出席」にしておく運用が定着しており
+  // （2026-09 の集計で、手で出席にした記録の約8割が利用日より前）、
+  // 出る指摘がほぼ全て正常な記録だったためオフにする。
+  enabled: false,
   run: (ctx) =>
     ctx.attendance
       .filter((a) => a.status === 'attended' && a.date > ctx.today)
