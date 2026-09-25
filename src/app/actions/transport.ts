@@ -86,8 +86,10 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     supabase
       .from('daily_attendance')
       .select(
-        'child_id, status, pickup_arrival_time, dropoff_departure_time, ' +
+        'child_id, status, pickup_type, pickup_arrival_time, dropoff_departure_time, ' +
         'daytime_pickup_arrival_time, daytime_dropoff_departure_time, ' +
+        'pickup_driver_member_id, dropoff_driver_member_id, ' +
+        'daytime_pickup_driver_member_id, daytime_dropoff_driver_member_id, ' +
         'children(id, name, postal_code, address, school_id, schools(id, name, latitude, longitude))'
       )
       .eq('unit_id', unitId)
@@ -240,10 +242,15 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   // 送迎の時刻が入っていればそれを、無ければその児童の利用計画の送迎設定を使う。
   type AttendanceSource = {
     child_id: string
+    pickup_type: string | null
     pickup_arrival_time: string | null
     dropoff_departure_time: string | null
     daytime_pickup_arrival_time: string | null
     daytime_dropoff_departure_time: string | null
+    pickup_driver_member_id: string | null
+    dropoff_driver_member_id: string | null
+    daytime_pickup_driver_member_id: string | null
+    daytime_dropoff_driver_member_id: string | null
     children: ChildRow | null
   }
   const attendances = (attendancesRaw ?? []) as unknown as AttendanceSource[]
@@ -261,6 +268,26 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     if (dropoffTimeMap.get(a.child_id) == null && recordedDropoff) {
       dropoffTimeMap.set(a.child_id, toHourSlot(recordedDropoff))
     }
+
+    // その日の記録でドライバーが決まっている（または送迎区分に入っている）方向は、
+    // 利用計画が「送りのみ」「送迎なし」でもその日は送迎の対象にする。
+    // 出席管理や日々の記録でお迎えのドライバーだけ入れると送迎区分が広がらないため、
+    // 計画どおり「送りのみ」と判定されてお迎えが送迎管理に出てこなかった。
+    // 時刻だけでは判定しない（利用スケジュールの初期値で入っていることがあるため）。
+    const type = transportTypeMap.get(a.child_id) ?? 'both'
+    const recordedType = a.pickup_type ?? 'none'
+    const needPickup =
+      !!(a.pickup_driver_member_id || a.daytime_pickup_driver_member_id) ||
+      recordedType === 'both' || recordedType === 'pickup_only'
+    const needDropoff =
+      !!(a.dropoff_driver_member_id || a.daytime_dropoff_driver_member_id) ||
+      recordedType === 'both' || recordedType === 'dropoff_only'
+    const hasPickup = type === 'both' || type === 'pickup_only' || needPickup
+    const hasDropoff = type === 'both' || type === 'dropoff_only' || needDropoff
+    const widened = hasPickup && hasDropoff
+      ? 'both'
+      : hasPickup ? 'pickup_only' : hasDropoff ? 'dropoff_only' : 'none'
+    if (widened !== type) transportTypeMap.set(a.child_id, widened)
   }
 
   const attendanceOnly = attendances.filter(
