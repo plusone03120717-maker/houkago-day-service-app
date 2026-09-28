@@ -172,11 +172,35 @@ export function applyTransportDefaults(f: TransportFields, s: ScheduleDefaults):
   }
 }
 
+/**
+ * 入力されている方向から送迎区分（pickup_type）を決める。
+ * 送迎管理は時刻だけでは送迎の対象にしない（予定の初期値で時刻が入っている行があるため）ので、
+ * 出席管理・日々の記録で送迎を入れて保存しても区分が「なし」のままだと送迎管理に出てこなかった。
+ */
+export function transportTypeOf(f: TransportFields): 'both' | 'pickup_only' | 'dropoff_only' | 'none' {
+  const filled = (...vals: string[]) => vals.some((v) => v && v !== '00:00')
+  const pickup =
+    filled(f.pickupDepartureTime, f.pickupArrivalTime, f.pickupDriverId, f.pickupVehicleId) ||
+    (f.daytimeSupport && filled(
+      f.daytimePickupDepartureTime, f.daytimePickupArrivalTime,
+      f.daytimePickupDriverId, f.daytimePickupVehicleId,
+    ))
+  const dropoff =
+    filled(f.dropoffDepartureTime, f.dropoffArrivalTime, f.dropoffDriverId, f.dropoffVehicleId) ||
+    (f.daytimeSupport && filled(
+      f.daytimeDropoffDepartureTime, f.daytimeDropoffArrivalTime,
+      f.daytimeDropoffDriverId, f.daytimeDropoffVehicleId,
+    ))
+  return pickup && dropoff ? 'both' : pickup ? 'pickup_only' : dropoff ? 'dropoff_only' : 'none'
+}
+
 /** daily_attendance へ保存する形に変換 */
 export function buildTransportUpdate(f: TransportFields) {
   const n = (v: string) => (v && v !== '00:00' ? v : null)
   return {
     basic_service: f.basicService,
+    // 送迎管理・サービス提供実績記録票はこの区分で送迎の有無を見る
+    pickup_type: transportTypeOf(f),
     pickup_departure_time: n(f.pickupDepartureTime),
     pickup_arrival_time: n(f.pickupArrivalTime),
     pickup_driver_member_id: f.pickupDriverId || null,
