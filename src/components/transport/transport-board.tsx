@@ -475,7 +475,7 @@ export function TransportManageBoard({
               <span>区分</span>
               <span>名前</span>
               <span>送迎場所</span>
-              <span>送迎時間</span>
+              <span>到着時間</span>
               <span />
             </div>
             <div className={`${TRIP_COL} flex items-center gap-2 pl-3`}>
@@ -573,6 +573,10 @@ export function TransportManageBoard({
           でひとりずつの行に分解、
           <Merge className="h-3 w-3 inline mx-0.5 -mt-0.5" />
           でほかの児童を同じ便に合流させられます（時間や場所が違う児童をまとめた場合は、児童ごとの行のままドライバー・車種だけが共通になります）。
+        </p>
+        <p>
+          時刻はお迎え・お送りとも<span className="text-gray-500 font-medium">到着時間</span>
+          です（お迎え＝学校などに着く時刻、お送り＝自宅などに着く時刻）。出発時間が空なら到着の10分前を自動で入れます。
         </p>
         <p>時刻・ドライバー・車種は日々の記録と同じデータです。どちらの画面で直しても両方に反映されます。</p>
       </div>
@@ -1034,7 +1038,7 @@ function TransportRowItem({
 
       {/* 送迎時間 */}
       <label className="flex items-center gap-1.5 md:gap-0 md:flex-col md:items-start">
-        <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">送迎時間</span>
+        <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">到着時間</span>
         <input
           type="time"
           step={300}

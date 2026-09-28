@@ -219,6 +219,30 @@ export function scheduleDefaultsToAttendanceFields(s: ScheduleDefaults): Record<
   }
 }
 
+/** 'HH:MM' を分単位でずらす。日をまたぐ場合は null */
+export function shiftTime(hhmm: string, minutes: number): string | null {
+  const [h, m] = hhmm.split(':').map(Number)
+  if (Number.isNaN(h) || Number.isNaN(m)) return null
+  const total = h * 60 + m + minutes
+  if (total < 0 || total >= 24 * 60) return null
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+/**
+ * 送迎管理に出す「お送りの到着時刻」。
+ * 送迎管理はお迎え・お送りとも到着時刻で揃えている。到着が未入力で施設の出発時刻だけ
+ * 記録されている日は、送迎管理が保存時に補完するのと同じく出発の10分後とみなす。
+ */
+export function dropoffArrivalOf(
+  arrival: string | null | undefined,
+  departure: string | null | undefined
+): string | null {
+  const a = hhmm(arrival)
+  if (a) return a
+  const d = hhmm(departure)
+  return d ? shiftTime(d, 10) : null
+}
+
 // =====================================================
 // 送迎の記録先（放デイの送迎欄／日中一時の送迎欄）
 // =====================================================
