@@ -203,10 +203,11 @@ export function resolveScheduleDefaults(
 
 /**
  * daily_attendance に「その日の記録」として確定させる利用時間。
- * 送迎・日中一時パネルと同じく、利用開始が未設定ならお迎え時刻を充てる。
+ * 送迎・日中一時パネルと同じく、利用開始が未設定ならお迎え時刻（学校などに着く時刻）の
+ * 10分後（事業所に着く時刻）を充てる。
  */
 export function scheduleDefaultsToAttendanceFields(s: ScheduleDefaults): Record<string, unknown> {
-  const start = s.serviceStartTime ?? s.pickupTime
+  const start = s.serviceStartTime ?? (s.pickupTime ? shiftTime(s.pickupTime, 10) : null)
   const end = s.serviceEndTime
   return {
     service_start_time: start,
@@ -229,18 +230,22 @@ export function shiftTime(hhmm: string, minutes: number): string | null {
 }
 
 /**
- * 送迎管理に出す「お送りの到着時刻」。
- * 送迎管理はお迎え・お送りとも到着時刻で揃えている。到着が未入力で施設の出発時刻だけ
- * 記録されている日は、送迎管理が保存時に補完するのと同じく出発の10分後とみなす。
+ * 送迎管理・出席管理のカードに出す「送迎時間」。お迎え・お送りとも**出発時間の欄**を使う。
+ *
+ * 現場の記録は次の形で入っている（2026-10 時点で9〜10月の記録の大半がこの形）:
+ *   お迎え … 出発＝送迎場所（学校など）に着いて子どもと出る時刻 / 到着＝事業所に着く時刻＝利用開始
+ *   お送り … 出発＝事業所を出る時刻＝利用終了               / 到着＝自宅などに着く時刻
+ * スタッフが配車で見るのは「学校に何時」「事業所を何時に出る」なので、どちらも出発の欄になる。
+ * 出発が未入力で到着だけある日は、到着の10分前とみなす。
  */
-export function dropoffArrivalOf(
-  arrival: string | null | undefined,
-  departure: string | null | undefined
+export function transportTimeOf(
+  departure: string | null | undefined,
+  arrival: string | null | undefined
 ): string | null {
-  const a = hhmm(arrival)
-  if (a) return a
   const d = hhmm(departure)
-  return d ? shiftTime(d, 10) : null
+  if (d) return d
+  const a = hhmm(arrival)
+  return a ? shiftTime(a, -10) : null
 }
 
 // =====================================================

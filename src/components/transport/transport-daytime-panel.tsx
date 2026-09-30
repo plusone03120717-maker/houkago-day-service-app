@@ -126,12 +126,19 @@ export function isBlankFields(f: TransportFields): boolean {
 export function applyScheduleDefaults(f: TransportFields, s: ScheduleDefaults, defaultEnd: string): TransportFields {
   const showPickup = s.transportType === 'pickup_only' || s.transportType === 'both'
   const showDropoff = s.transportType === 'dropoff_only' || s.transportType === 'both'
+  // 予定のお迎え時刻＝学校などに着く時刻（出発の欄）、予定のお送り時刻＝事業所を出る時刻。
+  // 到着はどちらも10分後（@/lib/schedule-defaults の transportTimeOf）
   const pickupTime = fmtTime(s.pickupTime)
+  const dropoffTime = fmtTime(s.dropoffTime)
+  const pickupArrival = pickupTime ? addMinutes(pickupTime, TRANSPORT_TRAVEL_MINUTES) : ''
   return {
     ...f,
-    pickupArrivalTime: showPickup ? pickupTime : '',
-    dropoffDepartureTime: showDropoff ? fmtTime(s.dropoffTime) : '',
-    serviceStartTime: fmtTime(s.serviceStartTime) || (showPickup ? pickupTime : ''),
+    pickupDepartureTime: showPickup ? pickupTime : '',
+    pickupArrivalTime: showPickup ? pickupArrival : '',
+    dropoffDepartureTime: showDropoff ? dropoffTime : '',
+    dropoffArrivalTime:
+      showDropoff && dropoffTime ? addMinutes(dropoffTime, TRANSPORT_TRAVEL_MINUTES) : '',
+    serviceStartTime: fmtTime(s.serviceStartTime) || (showPickup ? pickupArrival : ''),
     serviceEndTime: fmtTime(s.serviceEndTime) || defaultEnd,
     daytimeSupport: s.daytimeSupport,
     daytimeSupportStartTime: s.daytimeSupport ? fmtTime(s.daytimeSupportStartTime) : '',
@@ -163,12 +170,18 @@ export function applyTransportDefaults(f: TransportFields, s: ScheduleDefaults):
     !f.pickupDepartureTime && !f.pickupArrivalTime && !f.pickupDriverId && !f.pickupVehicleId
   const dropoffBlank =
     !f.dropoffDepartureTime && !f.dropoffArrivalTime && !f.dropoffDriverId && !f.dropoffVehicleId
+  const pickupTime = fmtTime(s.pickupTime)
+  const dropoffTime = fmtTime(s.dropoffTime)
+  const fillPickup = showPickup && pickupBlank && !!pickupTime
+  const fillDropoff = showDropoff && dropoffBlank && !!dropoffTime
   return {
     ...f,
+    pickupDepartureTime: fillPickup ? pickupTime : f.pickupDepartureTime,
     pickupArrivalTime:
-      showPickup && pickupBlank ? fmtTime(s.pickupTime) : f.pickupArrivalTime,
-    dropoffDepartureTime:
-      showDropoff && dropoffBlank ? fmtTime(s.dropoffTime) : f.dropoffDepartureTime,
+      fillPickup ? addMinutes(pickupTime, TRANSPORT_TRAVEL_MINUTES) : f.pickupArrivalTime,
+    dropoffDepartureTime: fillDropoff ? dropoffTime : f.dropoffDepartureTime,
+    dropoffArrivalTime:
+      fillDropoff ? addMinutes(dropoffTime, TRANSPORT_TRAVEL_MINUTES) : f.dropoffArrivalTime,
   }
 }
 
@@ -301,15 +314,21 @@ export function TransportDaytimePanel({
   saving,
   saved,
 }: PanelProps) {
-  // お迎えの到着＝学校に着いた時刻、利用開始＝事業所に着いた時刻。
-  // 学校から事業所までを TRANSPORT_TRAVEL_MINUTES（10分）とみて自動で埋める。
-  // 保護者の利用連絡を承認したときも同じ計算をしている（@/lib/transport-timing）
+  // お迎えの出発＝学校などに着いて子どもと出る時刻（送迎管理の時刻）、
+  // 到着＝事業所に着いた時刻＝利用開始。お送りの出発＝事業所を出る時刻（送迎管理の時刻）、
+  // 到着＝自宅などに着いた時刻。移動は TRANSPORT_TRAVEL_MINUTES（10分）とみて自動で埋める。
+  // 保護者の利用連絡を承認したときも同じ形にしている（@/lib/transport-timing）
+
+  /** 到着が空か、前の出発から自動で入れた値（出発＋10分）のままなら、出発に合わせて動かしてよい */
+  const isAutoArrival = (arrival: string, departure: string) =>
+    !arrival || (!!departure && arrival === addMinutes(departure, TRANSPORT_TRAVEL_MINUTES))
+
   const handlePickupDepartureChange = (val: string) => {
     const patch: Partial<TransportFields> = { pickupDepartureTime: val }
-    if (val && !f.pickupArrivalTime) {
+    if (val && isAutoArrival(f.pickupArrivalTime, f.pickupDepartureTime)) {
       const arrival = addMinutes(val, TRANSPORT_TRAVEL_MINUTES)
       patch.pickupArrivalTime = arrival
-      patch.serviceStartTime = addMinutes(arrival, TRANSPORT_TRAVEL_MINUTES)
+      patch.serviceStartTime = arrival
       if (!f.serviceEndTime) patch.serviceEndTime = defaultServiceEndTime
     }
     onChange(patch)
@@ -318,14 +337,29 @@ export function TransportDaytimePanel({
   const handlePickupArrivalChange = (val: string) => {
     const patch: Partial<TransportFields> = { pickupArrivalTime: val }
     if (val) {
-      patch.serviceStartTime = addMinutes(val, TRANSPORT_TRAVEL_MINUTES)
+      patch.serviceStartTime = val
       if (!f.serviceEndTime) patch.serviceEndTime = defaultServiceEndTime
     }
     onChange(patch)
   }
 
+  /** 出発を入れたら、到着（空か自動で入れた値のままなら）を10分後にそろえる */
+  const withAutoArrival = (
+    val: string,
+    departure: string,
+    arrival: string,
+    depKey: keyof TransportFields,
+    arrKey: keyof TransportFields,
+  ): Partial<TransportFields> => ({
+    [depKey]: val,
+    ...(val && isAutoArrival(arrival, departure)
+      ? { [arrKey]: addMinutes(val, TRANSPORT_TRAVEL_MINUTES) }
+      : {}),
+  })
+
   const renderTransportDirection = (
     label: string,
+    kind: 'pickup' | 'dropoff',
     deptVal: string, onDept: (v: string) => void,
     arrivVal: string, onArriv: (v: string) => void,
     driverId: string, onDriver: (v: string) => void,
@@ -347,13 +381,18 @@ export function TransportDaytimePanel({
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">出発時間</label>
+            <label className="text-xs text-gray-500 mb-1 block">
+              {kind === 'pickup' ? '学校など到着' : '事業所出発'}
+              <span className="text-gray-400">（送迎時間）</span>
+            </label>
             <input type="time" value={deptVal}
               onChange={(e) => onDept(e.target.value)}
               className={purple ? inputClsPurple : inputCls} />
           </div>
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">到着時間</label>
+            <label className="text-xs text-gray-500 mb-1 block">
+              {kind === 'pickup' ? '事業所到着' : '自宅など到着'}
+            </label>
             <input type="time" value={arrivVal}
               onChange={(e) => onArriv(e.target.value)}
               onBlur={onArrivBlur ? (e) => onArrivBlur(e.target.value) : undefined}
@@ -423,7 +462,7 @@ export function TransportDaytimePanel({
         {f.basicService && (
           <div className="space-y-4 pl-1">
             {renderTransportDirection(
-              'お迎え',
+              'お迎え', 'pickup',
               f.pickupDepartureTime, handlePickupDepartureChange,
               f.pickupArrivalTime, handlePickupArrivalChange,
               f.pickupDriverId, (v) => onChange({ pickupDriverId: v }),
@@ -432,13 +471,15 @@ export function TransportDaytimePanel({
             )}
 
             {renderTransportDirection(
-              '送り',
-              f.dropoffDepartureTime, (v) => onChange({ dropoffDepartureTime: v }),
+              '送り', 'dropoff',
+              f.dropoffDepartureTime,
+              (v) => onChange(withAutoArrival(v, f.dropoffDepartureTime, f.dropoffArrivalTime, 'dropoffDepartureTime', 'dropoffArrivalTime')),
               f.dropoffArrivalTime, (v) => onChange({ dropoffArrivalTime: v }),
               f.dropoffDriverId, (v) => onChange({ dropoffDriverId: v }),
               f.dropoffVehicleId, (v) => onChange({ dropoffVehicleId: v }),
               () => onChange({ dropoffDepartureTime: '', dropoffArrivalTime: '', dropoffDriverId: '', dropoffVehicleId: '' }),
-              (v) => { if (v) onChange({ dropoffDepartureTime: addMinutes(v, -TRANSPORT_TRAVEL_MINUTES) }) },
+              // 到着だけ入れたときは出発（送迎時間）を10分前で埋める。入っている出発は上書きしない
+              (v) => { if (v && !f.dropoffDepartureTime) onChange({ dropoffDepartureTime: addMinutes(v, -TRANSPORT_TRAVEL_MINUTES) }) },
             )}
 
             {/* 利用時間 */}
@@ -459,7 +500,7 @@ export function TransportDaytimePanel({
                 </div>
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                ※ お迎え到着時間（学校に到着）を入力すると、その10分後が開始時間に自動反映
+                ※ お迎えの学校など到着を入力すると、その10分後（事業所到着）が開始時間に自動反映
               </p>
             </div>
           </div>
@@ -501,8 +542,9 @@ export function TransportDaytimePanel({
 
             {/* 日中一時 お迎え */}
             {renderTransportDirection(
-              'お迎え（日中一時）',
-              f.daytimePickupDepartureTime, (v) => onChange({ daytimePickupDepartureTime: v }),
+              'お迎え（日中一時）', 'pickup',
+              f.daytimePickupDepartureTime,
+              (v) => onChange(withAutoArrival(v, f.daytimePickupDepartureTime, f.daytimePickupArrivalTime, 'daytimePickupDepartureTime', 'daytimePickupArrivalTime')),
               f.daytimePickupArrivalTime, (v) => onChange({ daytimePickupArrivalTime: v }),
               f.daytimePickupDriverId, (v) => onChange({ daytimePickupDriverId: v }),
               f.daytimePickupVehicleId, (v) => onChange({ daytimePickupVehicleId: v }),
@@ -513,8 +555,9 @@ export function TransportDaytimePanel({
 
             {/* 日中一時 送り */}
             {renderTransportDirection(
-              '送り（日中一時）',
-              f.daytimeDropoffDepartureTime, (v) => onChange({ daytimeDropoffDepartureTime: v }),
+              '送り（日中一時）', 'dropoff',
+              f.daytimeDropoffDepartureTime,
+              (v) => onChange(withAutoArrival(v, f.daytimeDropoffDepartureTime, f.daytimeDropoffArrivalTime, 'daytimeDropoffDepartureTime', 'daytimeDropoffArrivalTime')),
               f.daytimeDropoffArrivalTime, (v) => onChange({ daytimeDropoffArrivalTime: v }),
               f.daytimeDropoffDriverId, (v) => onChange({ daytimeDropoffDriverId: v }),
               f.daytimeDropoffVehicleId, (v) => onChange({ daytimeDropoffVehicleId: v }),

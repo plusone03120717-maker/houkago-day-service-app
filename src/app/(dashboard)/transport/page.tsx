@@ -6,7 +6,7 @@ import { TransportManageBoard } from '@/components/transport/transport-board'
 import type { TransportRow, UnitChild } from '@/components/transport/transport-board'
 import { autoCreateTransportSchedules } from '@/app/actions/transport'
 import {
-  dropoffArrivalOf,
+  transportTimeOf,
   fetchScheduleDefaults,
   resolveSlotFor,
   type ScheduleDefaults,
@@ -229,9 +229,9 @@ export default async function TransportPage({
       const att = attendanceByChild.get(unitChildKey(sched.unit_id, d.child_id))
       const plan = scheduleDefaults[unitChildKey(sched.unit_id, d.child_id)]
 
-      // お迎え・お送りとも到着時刻で揃える（お迎え＝学校などに着いた時刻、
-      // お送り＝自宅などに着いた時刻）。お送りの到着が未入力で出発だけ記録されて
-      // いる日は、出発の10分後とみなす。記録が無ければ利用スケジュールの予定値を未確定として表示する。
+      // お迎え・お送りとも出発時間の欄を出す（お迎え＝学校などに着いて出る時刻、
+      // お送り＝事業所を出る時刻。@/lib/schedule-defaults の transportTimeOf）。
+      // 記録が無ければ利用スケジュールの予定値を未確定として表示する。
       // 利用スケジュールも無い日（保護者の利用連絡を承認した日など）は、
       // その日の利用予定に入っている時刻を使う。ここを見ていなかったため、
       // 毎週の計画が無い児童は送迎管理の時刻がずっと空欄になっていた。
@@ -240,11 +240,11 @@ export default async function TransportPage({
       const recorded =
         direction === 'pickup'
           ? isDaytime
-            ? att?.daytime_pickup_arrival_time
-            : att?.pickup_arrival_time
+            ? transportTimeOf(att?.daytime_pickup_departure_time, att?.daytime_pickup_arrival_time)
+            : transportTimeOf(att?.pickup_departure_time, att?.pickup_arrival_time)
           : isDaytime
-          ? dropoffArrivalOf(att?.daytime_dropoff_arrival_time, att?.daytime_dropoff_departure_time)
-          : dropoffArrivalOf(att?.dropoff_arrival_time, att?.dropoff_departure_time)
+          ? transportTimeOf(att?.daytime_dropoff_departure_time, att?.daytime_dropoff_arrival_time)
+          : transportTimeOf(att?.dropoff_departure_time, att?.dropoff_arrival_time)
       const reservation = reservationByChild.get(unitChildKey(sched.unit_id, d.child_id))
       const planned =
         (direction === 'pickup' ? plan?.pickupTime : plan?.dropoffTime) ??

@@ -399,14 +399,14 @@ async function applyAttending(
 
   // ── 送迎の時刻を、スタッフが手で入れるときと同じ形にして埋める ──
   //
-  // 送迎・日中一時の入力欄では、お迎えの到着時刻（＝学校に着いた時刻）を入れると
-  // その10分後が利用開始（＝事業所に着いた時刻）になる。承認したときも同じ形にして、
+  // 送迎・日中一時の入力欄では、お迎えの出発時刻（＝学校などに着いて出る時刻）を入れると
+  // その10分後が到着＝利用開始（＝事業所に着いた時刻）になる。承認したときも同じ形にして、
   // 承認後にスタッフが入れ直さなくて済むようにする（@/lib/transport-timing）。
   //
-  //   お迎え到着 = 希望の開始時刻（学校到着） / 利用開始 = その10分後（事業所到着）
-  //   送り出発   = 利用終了                   / 送り到着 = その10分後
+  //   お迎え出発 = 希望の開始時刻（学校到着） / お迎え到着 = 利用開始 = その10分後（事業所到着）
+  //   送り出発   = 利用終了                   / 送り到着   = その10分後
   //
-  // お迎えの出発時刻は入れない（施設の運用では使っていないため）。
+  // 送迎管理・出席管理の「送迎時間」はどちらも出発の欄（@/lib/schedule-defaults の transportTimeOf）。
   //
   // 10分足すのは、保護者が連絡してきた時刻（＝学校到着）をそのまま割り振ったときだけ。
   // すでに記録されている利用時間（＝事業所到着）を引き継いで承認し直したときにも
@@ -445,14 +445,12 @@ async function applyAttending(
   const pickupSlot = resolveTransportSlot('pickup', slotSource)
   const dropoffSlot = resolveTransportSlot('dropoff', slotSource)
 
-  /**
-   * 送迎の時刻を、記録先の欄に合わせた列名で組み立てる。
-   * お迎えの出発時刻は施設の運用で使っていないので入れない（空欄のまま）。
-   */
+  /** 送迎の時刻を、記録先の欄に合わせた列名で組み立てる */
   function transportColumns(): Record<string, string | null> {
     const out: Record<string, string | null> = {}
     if (usesPickup) {
       const prefix = pickupSlot === 'daytime' ? 'daytime_pickup' : 'pickup'
+      out[`${prefix}_departure_time`] = derived.pickupDeparture
       out[`${prefix}_arrival_time`] = derived.pickupArrival
     }
     if (usesDropoff) {

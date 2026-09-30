@@ -1,6 +1,9 @@
 /**
  * 送迎の時刻の決め方を1か所にまとめたもの。
  *
+ * 送迎の欄は次の形で記録している（送迎管理・出席管理の「送迎時間」は出発の欄）。
+ *   お迎え … 出発＝学校などに着いて子どもと出る時刻 / 到着＝事業所に着く時刻＝利用開始
+ *   お送り … 出発＝事業所を出る時刻＝利用終了       / 到着＝自宅などに着く時刻
  * スタッフが送迎欄にお迎えの出発時刻を入れると、10分後を到着時刻として埋め、
  * その到着時刻を利用開始時間にする——という運用が送迎・日中一時の入力欄にある
  * （@/components/transport/transport-daytime-panel.tsx）。
@@ -25,7 +28,9 @@ export function addMinutes(hhmm: string, minutes: number): string {
 }
 
 export type DerivedTransportTimes = {
-  /** お迎えの到着時刻（＝学校に着いた時刻）。利用開始の10分前 */
+  /** お迎えの出発時刻（＝学校などに着いて子どもと出る時刻）。利用開始の10分前 */
+  pickupDeparture: string | null
+  /** お迎えの到着時刻（＝事業所に着いた時刻）＝利用開始 */
   pickupArrival: string | null
   /** お送りの出発時刻＝利用終了時間 */
   dropoffDeparture: string | null
@@ -47,10 +52,8 @@ export function serviceStartFromPickupArrival(schoolArrival: string): string {
  * serviceStart … その日いちばん早い**利用開始**（＝事業所に着いた時刻）
  * lastEnd      … その日いちばん遅い利用終了
  *
- *   お迎え … 利用開始の10分前に学校へ到着している
- *   お送り … 利用終了の時刻に事業所を出発し、その10分後に到着する
- *
- * お迎えの出発時刻は決めない（施設の運用では使っていないため、空欄のままにする）。
+ *   お迎え … 利用開始の10分前に学校などを出発し（＝送迎時間）、利用開始に事業所へ到着する
+ *   お送り … 利用終了の時刻に事業所を出発し（＝送迎時間）、その10分後に到着する
  */
 export function deriveTransportTimes({
   serviceStart,
@@ -63,12 +66,14 @@ export function deriveTransportTimes({
   usesPickup: boolean
   usesDropoff: boolean
 }): DerivedTransportTimes {
-  const pickupArrival =
-    usesPickup && serviceStart ? addMinutes(serviceStart, -TRANSPORT_TRAVEL_MINUTES) : null
+  const pickupArrival = usesPickup && serviceStart ? serviceStart : null
+  const pickupDeparture = pickupArrival
+    ? addMinutes(pickupArrival, -TRANSPORT_TRAVEL_MINUTES)
+    : null
   const dropoffDeparture = usesDropoff ? lastEnd : null
   const dropoffArrival = dropoffDeparture
     ? addMinutes(dropoffDeparture, TRANSPORT_TRAVEL_MINUTES)
     : null
 
-  return { pickupArrival, dropoffDeparture, dropoffArrival }
+  return { pickupDeparture, pickupArrival, dropoffDeparture, dropoffArrival }
 }

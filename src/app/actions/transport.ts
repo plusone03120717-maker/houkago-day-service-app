@@ -3,13 +3,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { buildRouteGroups, nearestNeighborSort, type RouteChildData } from '@/lib/transport-route'
 import {
-  dropoffArrivalOf,
   fetchScheduleDefaults,
   isCancelMarkerOverride,
   pickPrimaryPlanPerChild,
   resolveSlotFor,
   scheduleDefaultsToAttendanceFields,
   shiftTime,
+  transportTimeOf,
   type ScheduleDefaults,
 } from '@/lib/schedule-defaults'
 
@@ -88,8 +88,9 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     supabase
       .from('daily_attendance')
       .select(
-        'child_id, status, pickup_type, pickup_arrival_time, ' +
-        'dropoff_departure_time, dropoff_arrival_time, daytime_pickup_arrival_time, ' +
+        'child_id, status, pickup_type, pickup_departure_time, pickup_arrival_time, ' +
+        'dropoff_departure_time, dropoff_arrival_time, ' +
+        'daytime_pickup_departure_time, daytime_pickup_arrival_time, ' +
         'daytime_dropoff_departure_time, daytime_dropoff_arrival_time, ' +
         'pickup_driver_member_id, dropoff_driver_member_id, ' +
         'daytime_pickup_driver_member_id, daytime_dropoff_driver_member_id, ' +
@@ -246,9 +247,11 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   type AttendanceSource = {
     child_id: string
     pickup_type: string | null
+    pickup_departure_time: string | null
     pickup_arrival_time: string | null
     dropoff_departure_time: string | null
     dropoff_arrival_time: string | null
+    daytime_pickup_departure_time: string | null
     daytime_pickup_arrival_time: string | null
     daytime_dropoff_departure_time: string | null
     daytime_dropoff_arrival_time: string | null
@@ -265,10 +268,12 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   // 「時間が不明」として毎日便に載らず、送迎管理に出てこなかった。
   for (const a of attendances) {
     if (!a.child_id || !childrenMap.has(a.child_id)) continue
-    const recordedPickup = a.pickup_arrival_time ?? a.daytime_pickup_arrival_time
+    const recordedPickup =
+      transportTimeOf(a.pickup_departure_time, a.pickup_arrival_time) ??
+      transportTimeOf(a.daytime_pickup_departure_time, a.daytime_pickup_arrival_time)
     const recordedDropoff =
-      dropoffArrivalOf(a.dropoff_arrival_time, a.dropoff_departure_time) ??
-      dropoffArrivalOf(a.daytime_dropoff_arrival_time, a.daytime_dropoff_departure_time)
+      transportTimeOf(a.dropoff_departure_time, a.dropoff_arrival_time) ??
+      transportTimeOf(a.daytime_dropoff_departure_time, a.daytime_dropoff_arrival_time)
     if (pickupTimeMap.get(a.child_id) == null && recordedPickup) {
       pickupTimeMap.set(a.child_id, toHourSlot(recordedPickup))
     }
@@ -305,8 +310,10 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     // 記録に時刻が無い児童は、その児童の利用計画（曜日は問わない）の送迎設定に従う。
     // 「いつもは送迎なし」の児童を、別の曜日に足しただけで送迎対象にしないための確認でもある。
     const needPlan = attendanceOnly
-      .filter((a) => !a.pickup_arrival_time && !a.dropoff_departure_time && !a.dropoff_arrival_time &&
-        !a.daytime_pickup_arrival_time && !a.daytime_dropoff_departure_time &&
+      .filter((a) => !a.pickup_departure_time && !a.pickup_arrival_time &&
+        !a.dropoff_departure_time && !a.dropoff_arrival_time &&
+        !a.daytime_pickup_departure_time && !a.daytime_pickup_arrival_time &&
+        !a.daytime_dropoff_departure_time &&
         !a.daytime_dropoff_arrival_time)
       .map((a) => a.child_id)
 
@@ -338,10 +345,12 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
     for (const a of attendanceOnly) {
       if (childrenMap.has(a.child_id)) continue
       // 日中一時側の欄に入っている児童もその時刻で並べる（@/lib/schedule-defaults）
-      const recordedPickup = a.pickup_arrival_time ?? a.daytime_pickup_arrival_time
+      const recordedPickup =
+        transportTimeOf(a.pickup_departure_time, a.pickup_arrival_time) ??
+        transportTimeOf(a.daytime_pickup_departure_time, a.daytime_pickup_arrival_time)
       const recordedDropoff =
-        dropoffArrivalOf(a.dropoff_arrival_time, a.dropoff_departure_time) ??
-        dropoffArrivalOf(a.daytime_dropoff_arrival_time, a.daytime_dropoff_departure_time)
+        transportTimeOf(a.dropoff_departure_time, a.dropoff_arrival_time) ??
+        transportTimeOf(a.daytime_dropoff_departure_time, a.daytime_dropoff_arrival_time)
       const plan = planByChild.get(a.child_id)
 
       let transportType: string
@@ -706,9 +715,35 @@ type TransportRecordInput = {
 }
 
 /**
+ * 送迎管理の時刻1つを、その日の記録の出発・到着の欄に振り分ける。
+ *
+ * 送迎管理の時刻は出発時間の欄（お迎え＝学校などに着いて出る時刻、お送り＝事業所を出る時刻。
+ * @/lib/schedule-defaults の transportTimeOf）。到着は出発の10分後で、空のときか、
+ * 前の出発から自動で入れた値（出発＋10分）のままのときだけ一緒に動かす。
+ * 手で直した到着時間は上書きしない。時刻を消したときは到着も消す
+ * （到着だけ残ると、その10分前が送迎時間として表示され続けるため）。
+ */
+function transportTimePatch(
+  prefix: 'pickup' | 'dropoff' | 'daytime_pickup' | 'daytime_dropoff',
+  time: string | null,
+  existing: AttendanceRow | null
+): Record<string, string | null> {
+  const depKey = `${prefix}_departure_time` as const
+  const arrKey = `${prefix}_arrival_time` as const
+  if (!time) return { [depKey]: null, [arrKey]: null }
+  const oldDep = existing?.[depKey]
+  const oldArr = existing?.[arrKey]
+  const derivedArrival = hasTime(oldDep) ? shiftTime(oldDep!.slice(0, 5), 10) : null
+  const arrivalIsAuto = !hasTime(oldArr) || oldArr!.slice(0, 5) === derivedArrival
+  return arrivalIsAuto
+    ? { [depKey]: time, [arrKey]: shiftTime(time, 10) }
+    : { [depKey]: time }
+}
+
+/**
  * 送迎管理で編集した1行分を、その日の記録に保存する。
- * お迎え・お送りとも時刻は「到着時刻」に対応させ（お迎え＝学校などに着いた時刻、
- * お送り＝自宅などに着いた時刻）、対になる出発時刻は空のときだけ到着の10分前で補完する。
+ * お迎え・お送りとも時刻は「出発時間」の欄に対応させ（お迎え＝学校などに着いて出る時刻、
+ * お送り＝事業所を出る時刻）、到着は出発の10分後で補完する（transportTimePatch）。
  *
  * 書き込み先は放デイ側（pickup_* / dropoff_*）と日中一時側（daytime_pickup_* /
  * daytime_dropoff_*）のどちらかで、その日の利用のかたちから決まる（@/lib/schedule-defaults）。
@@ -745,13 +780,7 @@ export async function saveTransportRecord(input: TransportRecordInput) {
     // 日中一時が先に始まる児童。最初に施設へ入るのは日中一時のお迎え。
     if (driverMemberId !== undefined) patch.daytime_pickup_driver_member_id = driverMemberId
     if (vehicleId !== undefined) patch.daytime_pickup_vehicle_id = vehicleId
-    if (time !== undefined) {
-      patch.daytime_pickup_arrival_time = time
-      // 施設を出るのは到着の10分前
-      if (time && !hasTime(existing?.daytime_pickup_departure_time)) {
-        patch.daytime_pickup_departure_time = shiftTime(time, -10)
-      }
-    }
+    if (time !== undefined) Object.assign(patch, transportTimePatch('daytime_pickup', time, existing))
     // お迎えは1日1回。反対側に残っていると送迎加算が二重に立つため空にする。
     if (
       hasTime(existing?.pickup_departure_time) || hasTime(existing?.pickup_arrival_time) ||
@@ -765,13 +794,7 @@ export async function saveTransportRecord(input: TransportRecordInput) {
   } else if (direction === 'pickup') {
     if (driverMemberId !== undefined) patch.pickup_driver_member_id = driverMemberId
     if (vehicleId !== undefined) patch.pickup_vehicle_id = vehicleId
-    if (time !== undefined) {
-      patch.pickup_arrival_time = time
-      // 施設を出るのは到着の10分前
-      if (time && !hasTime(existing?.pickup_departure_time)) {
-        patch.pickup_departure_time = shiftTime(time, -10)
-      }
-    }
+    if (time !== undefined) Object.assign(patch, transportTimePatch('pickup', time, existing))
     if (
       hasTime(existing?.daytime_pickup_departure_time) || hasTime(existing?.daytime_pickup_arrival_time) ||
       existing?.daytime_pickup_driver_member_id || existing?.daytime_pickup_vehicle_id
@@ -785,13 +808,7 @@ export async function saveTransportRecord(input: TransportRecordInput) {
     // 日中一時が最後の児童。施設を出るのは日中一時の終わりなので日中一時の送り欄へ。
     if (driverMemberId !== undefined) patch.daytime_dropoff_driver_member_id = driverMemberId
     if (vehicleId !== undefined) patch.daytime_dropoff_vehicle_id = vehicleId
-    if (time !== undefined) {
-      patch.daytime_dropoff_arrival_time = time
-      // 施設を出るのは到着の10分前
-      if (time && !hasTime(existing?.daytime_dropoff_departure_time)) {
-        patch.daytime_dropoff_departure_time = shiftTime(time, -10)
-      }
-    }
+    if (time !== undefined) Object.assign(patch, transportTimePatch('daytime_dropoff', time, existing))
     // 送りは1日1回。放デイ側に残っていると放デイと日中一時の送迎加算が
     // 二重に立つため、こちらへ移したうえで空にする。
     if (
@@ -806,13 +823,7 @@ export async function saveTransportRecord(input: TransportRecordInput) {
   } else {
     if (driverMemberId !== undefined) patch.dropoff_driver_member_id = driverMemberId
     if (vehicleId !== undefined) patch.dropoff_vehicle_id = vehicleId
-    if (time !== undefined) {
-      patch.dropoff_arrival_time = time
-      // 施設を出るのは到着の10分前
-      if (time && !hasTime(existing?.dropoff_departure_time)) {
-        patch.dropoff_departure_time = shiftTime(time, -10)
-      }
-    }
+    if (time !== undefined) Object.assign(patch, transportTimePatch('dropoff', time, existing))
     if (
       hasTime(existing?.daytime_dropoff_departure_time) || hasTime(existing?.daytime_dropoff_arrival_time) ||
       existing?.daytime_dropoff_driver_member_id || existing?.daytime_dropoff_vehicle_id

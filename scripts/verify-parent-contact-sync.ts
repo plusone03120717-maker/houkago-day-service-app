@@ -915,8 +915,8 @@ async function main() {
       check('承認できる', !result.error, result.error)
 
       const att = await getAttendance(child.id, d)
-      check('お迎え出発は入れない', att?.pickup_departure_time === null, att?.pickup_departure_time)
-      check('お迎え到着＝希望の開始時刻（学校到着）', att?.pickup_arrival_time?.startsWith('10:00'), att?.pickup_arrival_time)
+      check('お迎え出発＝希望の開始時刻（学校到着・送迎時間）', att?.pickup_departure_time?.startsWith('10:00'), att?.pickup_departure_time)
+      check('お迎え到着＝利用開始（事業所到着）', att?.pickup_arrival_time?.startsWith('10:10'), att?.pickup_arrival_time)
       check('利用開始＝お迎え到着の10分後（事業所到着）', att?.service_start_time?.startsWith('10:10'), att?.service_start_time)
       check('登園時刻も同じ値になる', att?.check_in_time?.startsWith('10:10'), att?.check_in_time)
       check('利用終了＝希望の終了時刻', att?.service_end_time?.startsWith('16:00'), att?.service_end_time)
@@ -973,7 +973,8 @@ async function main() {
 
       const att = await getAttendance(child.id, d)
       check('出席のままにする', att?.status === 'attended', att?.status)
-      check('お迎え到着が入る', att?.pickup_arrival_time?.startsWith('10:00'), att?.pickup_arrival_time)
+      check('お迎え出発が入る', att?.pickup_departure_time?.startsWith('10:00'), att?.pickup_departure_time)
+      check('お迎え到着が入る', att?.pickup_arrival_time?.startsWith('10:10'), att?.pickup_arrival_time)
       check('送り出発が入る', att?.dropoff_departure_time?.startsWith('16:00'), att?.dropoff_departure_time)
       check('送り到着が入る', att?.dropoff_arrival_time?.startsWith('16:10'), att?.dropoff_arrival_time)
       check('利用時間も入る', att?.service_start_time?.startsWith('10:10'), att?.service_start_time)
@@ -1033,7 +1034,7 @@ async function main() {
       await applyParentContact(supabase, contact, staff.id)
       const first = await getAttendance(child.id, d)
       check('1回目：利用開始は10:10', first?.service_start_time?.startsWith('10:10'), first?.service_start_time)
-      check('1回目：お迎え到着は10:00', first?.pickup_arrival_time?.startsWith('10:00'), first?.pickup_arrival_time)
+      check('1回目：お迎え出発は10:00', first?.pickup_departure_time?.startsWith('10:00'), first?.pickup_departure_time)
 
       // 承認画面は「いま記録されている利用時間」を初期値にするので、
       // その値をそのまま割り振って承認し直したときに10分ずれないことを見る
@@ -1047,7 +1048,7 @@ async function main() {
       })
       const second = await getAttendance(child.id, d)
       check('2回目：利用開始は10:10のまま', second?.service_start_time?.startsWith('10:10'), second?.service_start_time)
-      check('2回目：お迎え到着も10:00のまま', second?.pickup_arrival_time?.startsWith('10:00'), second?.pickup_arrival_time)
+      check('2回目：お迎え出発も10:00のまま', second?.pickup_departure_time?.startsWith('10:00'), second?.pickup_departure_time)
 
       // スタッフが別の時刻を割り振ったときは、その時刻が利用開始になる
       await applyParentContact(supabase, again, staff.id, {
@@ -1059,7 +1060,7 @@ async function main() {
       })
       const third = await getAttendance(child.id, d)
       check('決め直した時刻がそのまま利用開始になる', third?.service_start_time?.startsWith('11:00'), third?.service_start_time)
-      check('お迎え到着はその10分前', third?.pickup_arrival_time?.startsWith('10:50'), third?.pickup_arrival_time)
+      check('お迎え出発はその10分前', third?.pickup_departure_time?.startsWith('10:50'), third?.pickup_departure_time)
     }
   } finally {
     // ── 後片付け ──
