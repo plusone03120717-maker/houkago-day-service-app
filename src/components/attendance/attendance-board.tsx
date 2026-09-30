@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { ALL_UNITS, unitChildKey } from '@/lib/attendance-board-data'
+import { dropoffArrivalOf } from '@/lib/schedule-defaults'
 import { deleteUsageDay, ABSENT_CLEARED_FIELDS } from '@/lib/usage-day'
 import { MonthlyAttendanceView } from './monthly-attendance-view'
 import { AbsenceReasonInput } from './absence-reason-input'
@@ -652,20 +653,24 @@ export function AttendanceBoard({
                 const fields = att ? getFields(att) : null
                 const isTransportExpanded = !!att && expanded === att.id
 
-                // 出発時間の表示（お迎え出発 〜 事務所出発）
-                const departureStart = fmtTime(att?.pickup_departure_time)
-                const departureEnd = fmtTime(att?.dropoff_departure_time)
-                const departureRange =
-                  departureStart || departureEnd ? `${departureStart || '—'}〜${departureEnd || '—'}` : ''
+                // 送迎場所到着時間の表示（お迎え到着 〜 お送り到着）。
+                // 送迎管理の「到着時間」と同じ値を出す（お送りの到着が空で出発だけある日は
+                // 出発の10分後とみなす。@/lib/schedule-defaults の dropoffArrivalOf）
+                const arrivalStart = fmtTime(att?.pickup_arrival_time)
+                const arrivalEnd = fmtTime(dropoffArrivalOf(att?.dropoff_arrival_time, att?.dropoff_departure_time))
+                const arrivalRange =
+                  arrivalStart || arrivalEnd ? `${arrivalStart || '—'}〜${arrivalEnd || '—'}` : ''
 
-                // 日中一時利用の出発時間（お迎え出発 〜 送り事務所出発）
+                // 日中一時利用の送迎場所到着時間（お迎え到着 〜 お送り到着）
                 // 日中一時まで残る児童は放デイ側の送りが空になるため、
                 // 実際の最終お送りはこちらに入る
-                const daytimeDepartureStart = fmtTime(att?.daytime_pickup_departure_time)
-                const daytimeDepartureEnd = fmtTime(att?.daytime_dropoff_departure_time)
-                const daytimeDepartureRange =
-                  att?.daytime_support && (daytimeDepartureStart || daytimeDepartureEnd)
-                    ? `${daytimeDepartureStart || '—'}〜${daytimeDepartureEnd || '—'}`
+                const daytimeArrivalStart = fmtTime(att?.daytime_pickup_arrival_time)
+                const daytimeArrivalEnd = fmtTime(
+                  dropoffArrivalOf(att?.daytime_dropoff_arrival_time, att?.daytime_dropoff_departure_time)
+                )
+                const daytimeArrivalRange =
+                  att?.daytime_support && (daytimeArrivalStart || daytimeArrivalEnd)
+                    ? `${daytimeArrivalStart || '—'}〜${daytimeArrivalEnd || '—'}`
                     : ''
 
                 return (
@@ -707,24 +712,27 @@ export function AttendanceBoard({
                       </div>
                     </div>
 
-                    {/* 出発時間（表示のみ・入力は下の「送迎・日中一時入力」から） */}
-                    {isPresent && (departureRange || daytimeDepartureRange) && (
+                    {/* 送迎場所到着時間（表示のみ・入力は下の「送迎・日中一時入力」から） */}
+                    {isPresent && (arrivalRange || daytimeArrivalRange) && (
                       <div className="flex flex-col gap-0.5">
-                        {departureRange && (
-                          <div className="flex items-center gap-1.5 text-xs">
-                            <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                            <span className="text-gray-500 w-16 flex-shrink-0">出発時間</span>
-                            <span className="text-gray-700">{departureRange}</span>
-                          </div>
-                        )}
-                        {daytimeDepartureRange && (
+                        {arrivalRange && (
                           <div
                             className="flex items-center gap-1.5 text-xs"
-                            title="日中一時利用のお迎え出発〜送り事務所出発"
+                            title="お迎え＝学校などに着く時刻〜お送り＝自宅などに着く時刻（送迎管理の到着時間と同じ）"
+                          >
+                            <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                            <span className="text-gray-500 w-24 flex-shrink-0">送迎場所到着時間</span>
+                            <span className="text-gray-700">{arrivalRange}</span>
+                          </div>
+                        )}
+                        {daytimeArrivalRange && (
+                          <div
+                            className="flex items-center gap-1.5 text-xs"
+                            title="日中一時利用のお迎え到着〜お送り到着（送迎管理の到着時間と同じ）"
                           >
                             <Clock className="h-4 w-4 text-purple-400 flex-shrink-0" />
-                            <span className="text-purple-600 w-16 flex-shrink-0">日中一時</span>
-                            <span className="text-gray-700">{daytimeDepartureRange}</span>
+                            <span className="text-purple-600 w-24 flex-shrink-0">日中一時</span>
+                            <span className="text-gray-700">{daytimeArrivalRange}</span>
                           </div>
                         )}
                       </div>
