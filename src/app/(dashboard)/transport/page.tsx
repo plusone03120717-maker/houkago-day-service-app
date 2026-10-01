@@ -121,8 +121,59 @@ export default async function TransportPage({
     ? units.map((u) => u.id)
     : units.filter((u) => u.id === selectedUnitId).map((u) => u.id)
 
-  // 利用計画から送迎対象の児童を補完（未追加の児童を自動追加）
-  await Promise.all(targetUnitIds.map((id) => autoCreateTransportSchedules(id, today)))
+  const hasTargets = targetUnitIds.length > 0
+
+  // 利用計画から送迎対象の児童を補完（未追加の児童を自動追加）。
+  // autoCreate が書き込むのは transport_schedules / transport_details だけなので、
+  // 出席・計画・予約・予定値の取得はこの完了を待たずに並行して走らせる。
+  // 待つ必要があるのは、補完結果を読む送迎スケジュールの取得だけ。
+  const autoCreatePromise = Promise.all(
+    targetUnitIds.map((id) => autoCreateTransportSchedules(id, today))
+  )
+  const attendancePromise = hasTargets
+    ? supabase.from('daily_attendance').select(ATTENDANCE_SELECT).in('unit_id', targetUnitIds).eq('date', today).then((r) => r)
+    : Promise.resolve({ data: [], error: null } as { data: unknown[]; error: null })
+  const plansPromise = hasTargets
+    ? supabase
+        .from('usage_plans')
+        .select('child_id, unit_id, children(id, name, name_kana, address, school_id, schools(id, name))')
+        .in('unit_id', targetUnitIds)
+        .eq('is_active', true)
+        .then((r) => r)
+    : Promise.resolve({ data: [] as unknown[] })
+  // その日の利用予定。毎週の利用スケジュールが無い日（保護者の利用連絡を
+  // 承認した日など）は、送迎の時刻をここからしか拾えない
+  const reservationsPromise = hasTargets
+    ? supabase
+        .from('usage_reservations')
+        .select('child_id, unit_id, pickup_time, dropoff_time')
+        .in('unit_id', targetUnitIds)
+        .eq('date', today)
+        .in('status', ['confirmed', 'reserved'])
+        .then((r) => r)
+    : Promise.resolve({ data: [] as unknown[] })
+  // 予定値はユニットごとに解決する（計画はユニット単位なので混ぜられない）
+  const scheduleDefaultsPromise = Promise.all(
+    targetUnitIds.map((id) => fetchScheduleDefaults(supabase, id, today))
+  ).then((list) => {
+    const byKey: Record<string, ScheduleDefaults> = {}
+    list.forEach((defaults, i) => {
+      for (const [childId, v] of Object.entries(defaults)) {
+        byKey[unitChildKey(targetUnitIds[i], childId)] = v
+      }
+    })
+    return byKey
+  })
+
+  await autoCreatePromise
+  const schedulesPromise = hasTargets
+    ? supabase
+        .from('transport_schedules')
+        .select(SCHEDULE_SELECT)
+        .in('unit_id', targetUnitIds)
+        .eq('date', today)
+        .then((r) => r)
+    : Promise.resolve({ data: [], error: null } as { data: unknown[]; error: null })
 
   const [
     { data: schedulesRaw, error: schedulesError },
@@ -134,51 +185,13 @@ export default async function TransportPage({
     scheduleDefaults,
     driverRanking,
   ] = await Promise.all([
-    targetUnitIds.length > 0
-      ? supabase
-          .from('transport_schedules')
-          .select(SCHEDULE_SELECT)
-          .in('unit_id', targetUnitIds)
-          .eq('date', today)
-      : ({ data: [], error: null } as { data: unknown[]; error: null }),
+    schedulesPromise,
     vehiclesPromise,
     driversPromise,
-    targetUnitIds.length > 0
-      ? supabase
-          .from('daily_attendance')
-          .select(ATTENDANCE_SELECT)
-          .in('unit_id', targetUnitIds)
-          .eq('date', today)
-      : ({ data: [], error: null } as { data: unknown[]; error: null }),
-    targetUnitIds.length > 0
-      ? supabase
-          .from('usage_plans')
-          .select('child_id, unit_id, children(id, name, name_kana, address, school_id, schools(id, name))')
-          .in('unit_id', targetUnitIds)
-          .eq('is_active', true)
-      : ({ data: [] } as { data: unknown[] }),
-    // その日の利用予定。毎週の利用スケジュールが無い日（保護者の利用連絡を
-    // 承認した日など）は、送迎の時刻をここからしか拾えない
-    targetUnitIds.length > 0
-      ? supabase
-          .from('usage_reservations')
-          .select('child_id, unit_id, pickup_time, dropoff_time')
-          .in('unit_id', targetUnitIds)
-          .eq('date', today)
-          .in('status', ['confirmed', 'reserved'])
-      : ({ data: [] } as { data: unknown[] }),
-    // 予定値はユニットごとに解決する（計画はユニット単位なので混ぜられない）
-    Promise.all(targetUnitIds.map((id) => fetchScheduleDefaults(supabase, id, today))).then(
-      (list) => {
-        const byKey: Record<string, ScheduleDefaults> = {}
-        list.forEach((defaults, i) => {
-          for (const [childId, v] of Object.entries(defaults)) {
-            byKey[unitChildKey(targetUnitIds[i], childId)] = v
-          }
-        })
-        return byKey
-      }
-    ),
+    attendancePromise,
+    plansPromise,
+    reservationsPromise,
+    scheduleDefaultsPromise,
     driverRankingPromise,
   ])
 
