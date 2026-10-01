@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, Save, Trash2 } from 'lucide-react'
+import { Calculator, Plus, Save, Trash2 } from 'lucide-react'
 import { saveUpperLimit, deleteUpperLimit, type UpperLimitOfficeInput } from '@/app/actions/upper-limit'
 
 export type UpperLimitFormChild = {
@@ -84,6 +84,36 @@ export function UpperLimitForm({
 
   const removeOffice = (i: number) =>
     setOffices((prev) => prev.filter((_, idx) => idx !== i).map((o, idx) => ({ ...o, lineNo: idx + 1 })))
+
+  /**
+   * 管理結果と「管理結果後利用者負担額」を、入力済みの利用者負担額から計算する。
+   * 管理事業所（当事業所）の負担額を先に充当し、残りの上限額を他事業所へ項番順に割り当てる。
+   */
+  const handleAutoCalc = () => {
+    const limit = parseInt(copayLimit) || 0
+    const copays = offices.map((o) => Number(o.copayAmount) || 0)
+    const total = copays.reduce((a, b) => a + b, 0)
+    const selfIdx = offices.findIndex((o) => o.officeNumber === facilityNumber)
+
+    if (total <= limit) {
+      setResult('2')
+      setOffices((prev) => prev.map((o, i) => ({ ...o, managedCopayAmount: copays[i] })))
+      return
+    }
+    let remaining = limit
+    const managed = copays.map(() => 0)
+    if (selfIdx >= 0) {
+      managed[selfIdx] = Math.min(copays[selfIdx], remaining)
+      remaining -= managed[selfIdx]
+    }
+    copays.forEach((c, i) => {
+      if (i === selfIdx) return
+      managed[i] = Math.min(c, remaining)
+      remaining -= managed[i]
+    })
+    setResult(selfIdx >= 0 && managed[selfIdx] >= limit ? '1' : '3')
+    setOffices((prev) => prev.map((o, i) => ({ ...o, managedCopayAmount: managed[i] })))
+  }
 
   const sum = (key: keyof Pick<UpperLimitOfficeInput, 'totalCost' | 'copayAmount' | 'managedCopayAmount'>) =>
     offices.reduce((s, o) => s + (Number(o[key]) || 0), 0)
@@ -212,10 +242,16 @@ export function UpperLimitForm({
             事業所ごとの内訳{isSelfManaged ? '' : '（当事業所ぶんのみ入力すれば足ります）'}
           </p>
           {isSelfManaged && (
-            <Button variant="ghost" size="sm" onClick={addOffice}>
-              <Plus className="h-3.5 w-3.5" />
-              事業所を追加
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={handleAutoCalc}>
+                <Calculator className="h-3.5 w-3.5" />
+                管理結果を自動計算
+              </Button>
+              <Button variant="ghost" size="sm" onClick={addOffice}>
+                <Plus className="h-3.5 w-3.5" />
+                事業所を追加
+              </Button>
+            </div>
           )}
         </div>
         <div className="overflow-x-auto">

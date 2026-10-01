@@ -1,5 +1,5 @@
 // 「利用者負担上限額管理結果票」の印刷レイアウト（A4縦・児童ごとに1枚）。
-// 印刷したものをJFAXで関係事業所へ送るため、様式どおりの体裁にしている。
+// 印刷したものをJFAXで関係事業所へ送るため、様式どおりの体裁にしている（様式は事業所提供のExcelに合わせた）。
 
 import type { UpperLimitChild } from '@/lib/kokuhoren/upper-limit'
 
@@ -150,7 +150,7 @@ export function UpperLimitDocument({ data }: { data: UpperLimitDocumentData }) {
           <table style={{ borderCollapse: 'collapse', flex: 1 }}>
             <tbody>
               <tr>
-                <td style={{ ...label, width: '130px' }}>都道府県等番号</td>
+                <td style={{ ...label, width: '130px' }}>市 町 村 番 号</td>
                 <td style={cell}>{c.municipalityCode}</td>
               </tr>
               <tr>
@@ -163,7 +163,7 @@ export function UpperLimitDocument({ data }: { data: UpperLimitDocumentData }) {
                   <br />
                   氏　　　　　　名
                 </td>
-                <td style={{ ...cell, height: '34px', textAlign: 'center' }}>{c.childName}</td>
+                <td style={{ ...cell, height: '34px', textAlign: 'center' }} />
               </tr>
               <tr>
                 <td style={label}>
@@ -233,12 +233,6 @@ export function UpperLimitDocument({ data }: { data: UpperLimitDocumentData }) {
         <Block offices={first} slots={UPPER_SLOTS} totals={null} />
         <Block offices={rest} slots={LOWER_SLOTS} totals={totals} />
 
-        <div style={{ textAlign: 'center', marginTop: '18px' }}>上記内容について確認しました。</div>
-        <div style={{ textAlign: 'center', marginTop: '6px' }}>令和　　　年　　　月　　　日</div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '14px', padding: '0 40px' }}>
-          <span>支給決定障害者等氏名</span>
-          <span>印</span>
-        </div>
       </div>
     </div>
   )
