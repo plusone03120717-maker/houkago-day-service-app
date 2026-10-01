@@ -454,7 +454,53 @@ export function BillingChildMonthlyView({
         })
       }
     }
+
+    // 保険外（おやつ・学習教材など）は日々の記録の活動参加と同じものなので、請求側のチェックも日々の記録へ反映する
+    if (item.category === '保険外' && item.trigger_field === 'manual') {
+      await syncActivityParticipation(item.name, dateStr, newChecked)
+    }
     setSaving(null)
+  }
+
+  // 請求側のチェックを、日々の記録（活動の参加）に反映する。同名の活動プログラムがなければ何もしない
+  const syncActivityParticipation = async (programName: string, dateStr: string, participated: boolean) => {
+    if (!facilityId) return
+    const { data: program } = await supabase
+      .from('activity_programs')
+      .select('id')
+      .eq('facility_id', facilityId)
+      .eq('name', programName)
+      .maybeSingle()
+    if (!program) return
+
+    const att = attMap.get(dateStr)
+    if (!att || att.status !== 'attended') {
+      if (participated) alert(`${dateStr} は出席の記録がないため、日々の記録には反映されません（請求側のチェックのみ保存しました）`)
+      return
+    }
+
+    const { data: existing } = await supabase
+      .from('daily_activities')
+      .select('id')
+      .eq('attendance_id', att.id)
+      .eq('program_id', program.id)
+      .maybeSingle()
+    if (existing) {
+      await supabase.from('daily_activities').update({ participated }).eq('id', existing.id)
+    } else if (participated) {
+      await supabase
+        .from('daily_activities')
+        .insert({ attendance_id: att.id, program_id: program.id, participated: true })
+    }
+
+    setActivityMap((prev) => {
+      const next = new Map(prev)
+      const names = new Set(next.get(dateStr) ?? [])
+      if (participated) names.add(programName)
+      else names.delete(programName)
+      next.set(dateStr, names)
+      return next
+    })
   }
 
   // ── Update billing times ────────────────────────────────────
