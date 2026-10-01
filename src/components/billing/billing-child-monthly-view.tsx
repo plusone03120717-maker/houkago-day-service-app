@@ -30,7 +30,7 @@ type ServiceItem = {
   unit_id: string
   name: string
   category: '基本' | '加算' | '保険外'
-  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'daytime_pickup' | 'daytime_dropoff' | 'absent' | 'extension' | 'manual'
+  trigger_field: 'basic' | 'transport_pickup' | 'transport_dropoff' | 'daytime_support' | 'daytime_pickup' | 'daytime_dropoff' | 'absent' | 'extension' | 'specialized_support' | 'manual'
   billing_code: string | null
   is_active: boolean
   sort_order: number
@@ -594,7 +594,7 @@ export function BillingChildMonthlyView({
       { unit_id: unitId, name: '送迎加算（送り）', category: '加算', trigger_field: 'transport_dropoff', is_active: true, sort_order: 6 },
       { unit_id: unitId, name: '欠席時対応加算', category: '加算', trigger_field: 'absent', is_active: true, sort_order: 7 },
       { unit_id: unitId, name: '延長加算', category: '加算', trigger_field: 'extension', is_active: true, sort_order: 8 },
-      { unit_id: unitId, name: '専門的支援実施加算', category: '加算', trigger_field: 'manual', is_active: true, sort_order: 9 },
+      { unit_id: unitId, name: '専門的支援実施加算', category: '加算', trigger_field: 'specialized_support', is_active: true, sort_order: 9 },
       { unit_id: unitId, name: 'おやつ', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 10 },
       { unit_id: unitId, name: '学習教材', category: '保険外', trigger_field: 'manual', is_active: true, sort_order: 11 },
     ]
@@ -655,7 +655,8 @@ export function BillingChildMonthlyView({
   // 月次グリッド表示順: daytime_pickup / daytime_dropoff は daytime_support の直後に固定
   const daytimeSupportSortOrder =
     serviceItems.find((i) => i.trigger_field === 'daytime_support')?.sort_order ?? Infinity
-  const gridServiceItems = [...serviceItems].sort((a, b) => {
+  // 専門的支援実施加算は月の実利用日数から自動算出するので、日ごとのチェック行には出さない
+  const gridServiceItems = serviceItems.filter((i) => i.trigger_field !== 'specialized_support').sort((a, b) => {
     const effectiveOrder = (item: ServiceItem) => {
       if (item.trigger_field === 'daytime_pickup') return daytimeSupportSortOrder + 0.1
       if (item.trigger_field === 'daytime_dropoff') return daytimeSupportSortOrder + 0.2
@@ -746,6 +747,8 @@ export function BillingChildMonthlyView({
                 <h2 className="text-sm font-semibold text-gray-700">月次サービス実績</h2>
                 <span className="text-xs text-gray-400">
                   出席 {attendedDays.length}日
+                  {serviceItems.some((i) => i.trigger_field === 'specialized_support') &&
+                    '　※専門的支援実施加算は月の利用日数から自動算定（この表には出ません）'}
                 </span>
               </div>
               <div className="overflow-x-auto">
