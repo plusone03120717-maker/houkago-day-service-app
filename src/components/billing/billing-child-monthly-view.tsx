@@ -295,6 +295,21 @@ export function BillingChildMonthlyView({
       if (!items.some((i) => i.trigger_field === 'extension')) {
         toInsert.push({ unit_id: unitId, name: '延長加算', category: '加算', trigger_field: 'extension', billing_code: null, is_active: true, sort_order: ++maxOrder })
       }
+      // 日々の記録で参加チェックできる有料の活動（料金設定あり）は、活動名と同名の保険外項目で
+      // 請求側に出す。項目がないと日々の記録でチェックしても請求の表に反映されない。
+      if (facilityId) {
+        const { data: chargedPrograms } = await supabase
+          .from('activity_programs')
+          .select('name')
+          .eq('facility_id', facilityId)
+          .gt('extra_charge', 0)
+        const existingNames = new Set(items.map((i) => i.name))
+        for (const p of (chargedPrograms ?? []) as { name: string }[]) {
+          if (existingNames.has(p.name)) continue
+          existingNames.add(p.name)
+          toInsert.push({ unit_id: unitId, name: p.name, category: '保険外', trigger_field: 'manual', billing_code: null, is_active: true, sort_order: ++maxOrder })
+        }
+      }
       if (toInsert.length > 0) {
         const { data: inserted } = await supabase
           .from('billing_service_items')
