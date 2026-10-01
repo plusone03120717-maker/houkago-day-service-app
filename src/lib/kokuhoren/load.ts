@@ -93,6 +93,7 @@ export async function loadBillingChildren(
     // サービス提供月に有効な受給者証を優先
     const cert = certs.find((c) => c.start_date <= monthEnd && c.end_date >= monthStart) ?? certs[0]
     return {
+      childId: d.children?.id ?? null,
       childName: d.children?.name ?? '(不明)',
       childNameKana: d.children?.name_kana ?? null,
       certificateNumber: cert?.certificate_number ?? '',

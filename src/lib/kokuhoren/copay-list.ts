@@ -9,6 +9,7 @@ import type { BillingScope } from './scope'
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
 
 export type CopayListChild = {
+  childId: string
   municipalityCode: string
   certificateNumber: string
   childName: string
@@ -117,6 +118,7 @@ export async function loadCopayList(supabase: SupabaseLike, scope: BillingScope)
     const key = managerNumber || managerName
     const g = groups.get(key) ?? { managerNumber, managerName, children: [] }
     g.children.push({
+      childId: hit.childId,
       municipalityCode: c.municipalityCode,
       certificateNumber: c.certificateNumber,
       childName: c.childName,

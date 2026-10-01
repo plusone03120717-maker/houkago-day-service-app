@@ -150,6 +150,7 @@ export function BillingChildMonthlyView({
   serviceItems: initialServiceItems,
   certInfo,
   facilityId,
+  readOnly = false,
 }: {
   childId: string
   childName: string
@@ -158,6 +159,11 @@ export function BillingChildMonthlyView({
   serviceItems: ServiceItem[]
   certInfo: { certificate_number?: string; max_days_per_month?: number; copay_limit?: number; municipality?: string } | null
   facilityId?: string | null
+  /**
+   * 確認・PDF用（複数児童をまとめて並べる画面）。月次グリッドだけを出し、
+   * セルのクリック・日別明細・項目追加など書き込みを伴う操作はすべて出さない。
+   */
+  readOnly?: boolean
 }) {
   const supabase = createClient()
   const router = useRouter()
@@ -279,7 +285,9 @@ export function BillingChildMonthlyView({
       .eq('is_active', true)
       .order('sort_order')
     let items = (latestItems ?? []) as ServiceItem[]
-    if (items.length > 0) {
+    // 確認用の画面では項目を自動追加しない（同じユニットの児童を複数並べると、
+    // それぞれが同時に追加して項目が重複してしまうため）
+    if (!readOnly && items.length > 0) {
       const toInsert: Omit<ServiceItem, 'id'>[] = []
       let maxOrder = Math.max(...items.map((i) => i.sort_order), 0)
       const hasDaytimeSupportItem = items.some((i) => i.trigger_field === 'daytime_support')
@@ -321,7 +329,7 @@ export function BillingChildMonthlyView({
     setServiceItems(items)
 
     setLoading(false)
-  }, [childId, unitId, effYearMonth]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [childId, unitId, effYearMonth, readOnly]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -775,7 +783,7 @@ export function BillingChildMonthlyView({
   return (
     <div className="space-y-5">
       {/* 月選択 */}
-      <div className="flex items-center gap-3">
+      {!readOnly && <div className="flex items-center gap-3">
         <button onClick={() => goToMonth(-1)} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -783,7 +791,7 @@ export function BillingChildMonthlyView({
         <button onClick={() => goToMonth(1)} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
           <ChevronRight className="h-4 w-4" />
         </button>
-      </div>
+      </div>}
 
       {loading ? (
         <div className="flex justify-center py-12">
@@ -795,9 +803,11 @@ export function BillingChildMonthlyView({
           {serviceItems.length === 0 && (
             <div className="text-center py-8 bg-amber-50 border border-amber-200 rounded-lg">
               <p className="text-sm text-amber-700 mb-3">サービス項目が設定されていません</p>
-              <Button onClick={addDefaultItems} size="sm" variant="outline">
-                デフォルト項目を追加
-              </Button>
+              {!readOnly && (
+                <Button onClick={addDefaultItems} size="sm" variant="outline">
+                  デフォルト項目を追加
+                </Button>
+              )}
             </div>
           )}
 
@@ -812,14 +822,15 @@ export function BillingChildMonthlyView({
                     '　※専門的支援実施加算は月の利用日数から自動算定（この表には出ません）'}
                 </span>
               </div>
-              <div className="overflow-x-auto">
-                <table className="text-xs border-collapse min-w-max">
+              {/* 確認用（PDF化）では、横スクロールや固定列があると画像化で欠けるので外す */}
+              <div className={readOnly ? '' : 'overflow-x-auto'}>
+                <table className={`text-xs border-collapse ${readOnly ? 'w-full' : 'min-w-max'}`}>
                   <thead>
                     <tr className="bg-[#f5f0e8]">
-                      <th className="border border-gray-300 px-2 py-1.5 text-left min-w-[160px] sticky left-0 bg-[#f5f0e8] z-10">
+                      <th className={`border border-gray-300 px-2 py-1.5 text-left min-w-[160px] bg-[#f5f0e8] ${readOnly ? '' : 'sticky left-0 z-10'}`}>
                         サービス内容
                       </th>
-                      <th className="border border-gray-300 px-1 py-1.5 w-8 text-center sticky left-[160px] bg-[#f5f0e8] z-10">
+                      <th className={`border border-gray-300 px-1 py-1.5 w-8 text-center bg-[#f5f0e8] ${readOnly ? '' : 'sticky left-[160px] z-10'}`}>
 
                       </th>
                       {days.map((d) => {
@@ -856,7 +867,7 @@ export function BillingChildMonthlyView({
                         // 実績行
                         <tr key={`${item.id}-actual`}>
                           <td
-                            className={`border border-gray-300 px-2 py-1 sticky left-0 z-10 ${isDaytimeItem(item) ? 'bg-purple-50' : 'bg-white'}`}
+                            className={`border border-gray-300 px-2 py-1 ${readOnly ? '' : 'sticky left-0 z-10'} ${isDaytimeItem(item) ? 'bg-purple-50' : 'bg-white'}`}
                             rowSpan={1}
                           >
                             <div className={`flex items-center gap-1.5 ${isDaytimeTransportItem(item) ? 'pl-3' : ''}`}>
@@ -870,7 +881,7 @@ export function BillingChildMonthlyView({
                               <span className="text-gray-800 font-medium leading-tight">{item.name}</span>
                             </div>
                           </td>
-                          <td className={`border border-gray-300 px-1 py-1 text-center sticky left-[160px] z-10 text-gray-500 text-[10px] ${isDaytimeItem(item) ? 'bg-purple-50' : 'bg-white'}`}>
+                          <td className={`border border-gray-300 px-1 py-1 text-center ${readOnly ? '' : 'sticky left-[160px] z-10'} text-gray-500 text-[10px] ${isDaytimeItem(item) ? 'bg-purple-50' : 'bg-white'}`}>
                             実績
                           </td>
                           {days.map((d) => {
@@ -882,12 +893,12 @@ export function BillingChildMonthlyView({
                             return (
                               <td
                                 key={d}
-                                className={`border border-gray-300 w-7 p-0.5 text-center cursor-pointer transition-colors ${
+                                className={`border border-gray-300 w-7 p-0.5 text-center transition-colors ${readOnly ? '' : 'cursor-pointer'} ${
                                   isDaytimeItem(item)
-                                    ? 'bg-purple-50/50 hover:bg-purple-100/60'
-                                    : `hover:bg-gray-50 ${dow === 6 ? 'bg-blue-50/50' : (dow === 0 || isJapaneseNationalHoliday(d)) ? 'bg-red-50/50' : dd.isAbsent ? 'bg-gray-100/70' : dd.isCancelled ? 'bg-orange-50/70' : ''}`
+                                    ? `bg-purple-50/50 ${readOnly ? '' : 'hover:bg-purple-100/60'}`
+                                    : `${readOnly ? '' : 'hover:bg-gray-50'} ${dow === 6 ? 'bg-blue-50/50' : (dow === 0 || isJapaneseNationalHoliday(d)) ? 'bg-red-50/50' : dd.isAbsent ? 'bg-gray-100/70' : dd.isCancelled ? 'bg-orange-50/70' : ''}`
                                 }`}
-                                onClick={() => toggleItem(item, d, !checked)}
+                                onClick={readOnly ? undefined : () => toggleItem(item, d, !checked)}
                                 title={dd.isAbsent ? `${d} (欠席)` : dd.isCancelled ? `${d} (キャンセル)` : d}
                               >
                                 {isSaving ? (
@@ -913,6 +924,7 @@ export function BillingChildMonthlyView({
           )}
 
           {/* ── 日別明細（第2スクリーンショット） ───────────── */}
+          {!readOnly && (<>
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
               <h2 className="text-sm font-semibold text-gray-700">サービス提供実績（日別）</h2>
@@ -1316,6 +1328,7 @@ export function BillingChildMonthlyView({
               </Button>
             )}
           </div>
+          </>)}
 
           {/* 凡例 */}
           <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
@@ -1351,9 +1364,11 @@ export function BillingChildMonthlyView({
               ※ 延長加算欄の番号は延長時間の区分です（1: 30分以上1時間未満／2: 1時間以上2時間未満／3: 2時間以上）。
               延長時間は平日3時間・学校休業日5時間を超えた分で判定します
             </span>
+            {!readOnly && (<>
             <span className="text-gray-400">※ 月次グリッドのセルをクリックでチェックのオン/オフが切り替えられます</span>
             <span className="text-gray-400">※ 出欠記録がない日に「放デイ基本報酬」をチェックすると、その日は出席として登録され、日別表で時間・送迎・日中一時を入力できるようになります（欠席時対応加算のチェックなら欠席として登録）</span>
             <span className="text-gray-400">※ 日別表の「操作」列のゴミ箱は、欠席にする操作ではなく利用予定ごと削除して未記録に戻す操作です</span>
+            </>)}
           </div>
         </>
       )}

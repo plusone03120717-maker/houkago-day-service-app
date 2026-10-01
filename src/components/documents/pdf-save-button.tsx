@@ -8,13 +8,15 @@ interface Props {
   /** PDFにするページ要素のCSSセレクタ（1要素 = A4の1枚） */
   pageSelector: string
   fileName: string
+  /** 用紙の向き。日付が横に31列並ぶ表などは横向き（landscape）にする */
+  orientation?: 'portrait' | 'landscape'
 }
 
 /**
- * 画面に出ている帳票（1要素 = 1枚）をそのままA4縦のPDFにして保存する。
+ * 画面に出ている帳票（1要素 = 1枚）をそのままA4のPDFにして保存する。
  * 印刷ダイアログを経由せず、ワンクリックでファイルになる。
  */
-export function PdfSaveButton({ pageSelector, fileName }: Props) {
+export function PdfSaveButton({ pageSelector, fileName, orientation = 'portrait' }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -27,17 +29,29 @@ export function PdfSaveButton({ pageSelector, fileName }: Props) {
         setError('PDFにする帳票がありません')
         return
       }
+      // 画面側で読み込み中の帳票があると、読み込み中の表示がそのままPDFに写ってしまう
+      if (pages.some((p) => p.querySelector('.animate-spin'))) {
+        setError('まだ読み込み中の表があります。表示が終わってからもう一度押してください')
+        return
+      }
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
         import('html2canvas-pro'),
-        import('jspdf'),
+        // ブラウザ専用ビルドを直接読む。'jspdf' だとサーバー側の事前描画で Node 用ビルド
+        // （fflate の worker_threads 版）が選ばれ、Vercel のビルドが失敗していた
+        import('jspdf/dist/jspdf.es.min.js'),
       ])
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      const pageW = 210
-      const pageH = 297
+      const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4' })
+      const pageW = orientation === 'landscape' ? 297 : 210
+      const pageH = orientation === 'landscape' ? 210 : 297
       const margin = 10
 
       for (let i = 0; i < pages.length; i++) {
-        const canvas = await html2canvas(pages[i], { scale: 2, backgroundColor: '#ffffff' })
+        // 画面幅より広い帳票も切れずに写るよう、描画時の画面幅を帳票の幅に合わせる
+        const canvas = await html2canvas(pages[i], {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          windowWidth: Math.max(window.innerWidth, pages[i].scrollWidth),
+        })
         // 余白を除いた領域に、縦横比を保って収める
         const maxW = pageW - margin * 2
         const maxH = pageH - margin * 2

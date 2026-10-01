@@ -3,6 +3,8 @@ import { ArrowLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { PrintButton } from '@/components/documents/print-button'
 import { PdfSaveButton } from '@/components/documents/pdf-save-button'
+import { PrintChildFilter, type PrintChildOption } from '@/components/documents/print-child-filter'
+import { childrenFileLabel, parseChildrenParam } from '@/lib/print-children'
 import { COPAY_LIST_ROWS, CopayListDocument } from '@/components/documents/copay-list-document'
 import { loadCopayList } from '@/lib/kokuhoren/copay-list'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
@@ -14,10 +16,12 @@ export default async function CopayListPrintPage({
   searchParams,
 }: {
   params: Promise<{ yearMonth: string }>
-  searchParams: Promise<{ billing?: string }>
+  searchParams: Promise<{ billing?: string; children?: string }>
 }) {
   const { yearMonth } = await params
-  const { billing: billingMonthlyId } = await searchParams
+  const { billing: billingMonthlyId, children: childrenParam } = await searchParams
+  const selectedIds = parseChildrenParam(childrenParam)
+  const filtered = selectedIds.length > 0
   const year = yearMonth.slice(0, 4)
   const month = yearMonth.slice(4, 6)
 
@@ -31,7 +35,17 @@ export default async function CopayListPrintPage({
     return <p className="p-8 text-sm text-red-600">{scope.error}</p>
   }
 
-  const { facility, groups } = await loadCopayList(supabase, scope)
+  const { facility, groups: allGroups } = await loadCopayList(supabase, scope)
+
+  const childOptions: PrintChildOption[] = allGroups
+    .flatMap((g) => g.children)
+    .map((c) => ({ id: c.childId, name: c.childName }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+  const groups = filtered
+    ? allGroups
+        .map((g) => ({ ...g, children: g.children.filter((c) => selectedIds.includes(c.childId)) }))
+        .filter((g) => g.children.length > 0)
+    : allGroups
 
   // 提供先ごとに、1枚10名ずつに分ける
   const pages = groups.flatMap((g) => {
@@ -58,20 +72,25 @@ export default async function CopayListPrintPage({
               {year}年{month}月分 利用者負担額一覧表
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              {pages.length}枚（上限額管理事業所ごと）/ A4縦・1枚ずつ改ページされます
+              {pages.length}枚（上限額管理事業所ごと{filtered ? '・選んだ児童のみ' : ''}）/ A4縦・1枚ずつ改ページされます
             </p>
           </div>
           <div className="flex items-start gap-2">
             {pages.length > 0 && (
               <PdfSaveButton
                 pageSelector=".copay-list-page"
-                fileName={`利用者負担額一覧表_${yearMonth}.pdf`}
+                fileName={
+                  filtered
+                    ? `利用者負担額一覧表_${yearMonth}_${childrenFileLabel(groups.flatMap((g) => g.children.map((c) => c.childName)))}.pdf`
+                    : `利用者負担額一覧表_${yearMonth}.pdf`
+                }
               />
             )}
             <PrintButton />
           </div>
         </div>
-        {pages.length === 0 && (
+        <PrintChildFilter options={childOptions} selectedIds={selectedIds} />
+        {pages.length === 0 && !filtered && (
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
             他事業所が上限額管理事業所になっている児童がこの月にはいません。
             受給者証の「上限管理事業所」が入っていない場合は、児童詳細の受給者証編集で入力してください。

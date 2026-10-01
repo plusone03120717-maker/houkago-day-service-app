@@ -6,6 +6,8 @@ import {
 } from './format'
 
 export type ChildBillingInput = {
+  /** 児童ID。帳票の対象者絞り込みに使う（CSVには出力しない） */
+  childId?: string | null
   childName: string
   /** 氏名カナ。明細書の保護者カナ・障害児カナに半角カナで出力する */
   childNameKana: string | null

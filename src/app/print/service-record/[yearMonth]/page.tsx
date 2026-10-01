@@ -2,6 +2,9 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { PrintButton } from '@/components/documents/print-button'
+import { PdfSaveButton } from '@/components/documents/pdf-save-button'
+import { PrintChildFilter, type PrintChildOption } from '@/components/documents/print-child-filter'
+import { childrenFileLabel, parseChildrenParam } from '@/lib/print-children'
 import {
   ServiceRecordDocument,
   type ServiceRecordDocumentData,
@@ -16,10 +19,12 @@ export default async function ServiceRecordPrintPage({
   searchParams,
 }: {
   params: Promise<{ yearMonth: string }>
-  searchParams: Promise<{ billing?: string }>
+  searchParams: Promise<{ billing?: string; children?: string }>
 }) {
   const { yearMonth } = await params
-  const { billing: billingMonthlyId } = await searchParams
+  const { billing: billingMonthlyId, children: childrenParam } = await searchParams
+  const selectedIds = parseChildrenParam(childrenParam)
+  const filtered = selectedIds.length > 0
   const year = yearMonth.slice(0, 4)
   const month = yearMonth.slice(4, 6)
 
@@ -57,6 +62,8 @@ export default async function ServiceRecordPrintPage({
   const warnings: string[] = []
   const documents: Omit<ServiceRecordDocumentData, 'pageNo' | 'pageCount'>[] = []
   const childIds: string[] = []
+  // 対象者の選択肢（実績のある児童全員）
+  const optionById = new Map<string, PrintChildOption>()
 
   for (const unitId of scope.unitIds) {
     const result = await aggregateUnitMonth(supabase, unitId, yearMonth)
@@ -67,6 +74,8 @@ export default async function ServiceRecordPrintPage({
       : 'afterschool'
     for (const c of result.children) {
       if (c.days.length === 0) continue
+      optionById.set(c.childId, { id: c.childId, name: c.childName })
+      if (filtered && !selectedIds.includes(c.childId)) continue
       childIds.push(c.childId)
       documents.push({
         yearMonth,
@@ -123,11 +132,27 @@ export default async function ServiceRecordPrintPage({
               {year}年{month}月分 サービス提供実績記録票
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              {pages.length}枚（児童ごと）/ A4縦・1枚ずつ改ページされます
+              {pages.length}枚（児童ごと{filtered ? '・選んだ児童のみ' : ''}）/ A4縦・1枚ずつ改ページされます
             </p>
           </div>
-          <PrintButton />
+          <div className="flex items-start gap-2">
+            {pages.length > 0 && (
+              <PdfSaveButton
+                pageSelector=".record-page"
+                fileName={
+                  filtered
+                    ? `実績記録票_${yearMonth}_${childrenFileLabel(pages.map((p) => p.childName))}.pdf`
+                    : `実績記録票_${yearMonth}.pdf`
+                }
+              />
+            )}
+            <PrintButton />
+          </div>
         </div>
+        <PrintChildFilter
+          options={[...optionById.values()].sort((a, b) => a.name.localeCompare(b.name, 'ja'))}
+          selectedIds={selectedIds}
+        />
         {warnings.length > 0 && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             <p className="font-semibold">確認してください（{warnings.length}件）</p>

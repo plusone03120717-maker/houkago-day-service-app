@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FileText, AlertCircle, User } from 'lucide-react'
-import { BillingConfirmToggle } from '@/components/billing/billing-confirm-toggle'
+import { BillingChildrenUnitList } from '@/components/billing/billing-children-unit-list'
 import { RecalcBillingButton } from '@/components/billing/recalc-billing-button'
 
 type BillingDetail = {
@@ -31,6 +31,7 @@ type UnitWithFacility = {
   id: string
   name: string
   service_type: string
+  is_billing_target: boolean
   facilities: { name: string; facility_number: string } | null
 }
 
@@ -88,7 +89,7 @@ export default async function BillingPage({
   ] = await Promise.all([
     supabase
       .from('units')
-      .select('id, name, service_type, facilities(name, facility_number)')
+      .select('id, name, service_type, is_billing_target, facilities(name, facility_number)')
       .order('name'),
     supabase
       .from('billing_monthly')
@@ -228,15 +229,17 @@ export default async function BillingPage({
           {units.map((unit) => {
             const children = childrenByUnit[unit.id] ?? []
             if (children.length === 0) return null
-            const effYearMonth = `${year}-${String(month).padStart(2, '0')}`
             return (
               <Card key={unit.id}>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-gray-700">{unit.name}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <div className="divide-y divide-gray-100">
-                    {children
+                  <BillingChildrenUnitList
+                    unitId={unit.id}
+                    yearMonth={yearMonth}
+                    billingMonthlyId={unit.is_billing_target ? billingByUnit[unit.id]?.id ?? null : null}
+                    rows={children
                       .filter((cu) => cu.children)
                       .sort((a, b) => {
                         const ka = a.children?.name_kana ?? a.children?.name ?? ''
@@ -245,48 +248,15 @@ export default async function BillingPage({
                       })
                       .map((cu) => {
                         const child = cu.children!
-                        const detail = detailByUnitChild[unit.id]?.[child.id]
-                        return (
-                          <div key={child.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
-                            <Link
-                              href={`/billing/child/${child.id}?month=${effYearMonth}&unit=${unit.id}`}
-                              className="flex items-center gap-3 flex-1 min-w-0"
-                            >
-                              <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-sm font-bold flex-shrink-0">
-                                {child.name.charAt(0)}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-900">{child.name}</p>
-                                {child.name_kana && (
-                                  <p className="text-xs text-gray-400">{child.name_kana}</p>
-                                )}
-                                {upperLimitMap.get(child.id) && (
-                                  <p className="text-xs text-indigo-600 mt-0.5">
-                                    上限管理: {upperLimitMap.get(child.id)}
-                                  </p>
-                                )}
-                              </div>
-                            </Link>
-                            <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                              {detail ? (
-                                <BillingConfirmToggle
-                                  billingDetailId={detail.id}
-                                  initialConfirmed={detail.is_confirmed}
-                                />
-                              ) : (
-                                <span className="text-xs text-gray-400">未作成</span>
-                              )}
-                              <Link
-                                href={`/billing/child/${child.id}?month=${effYearMonth}&unit=${unit.id}`}
-                                className="text-xs text-indigo-600 font-medium whitespace-nowrap"
-                              >
-                                明細を見る →
-                              </Link>
-                            </div>
-                          </div>
-                        )
+                        return {
+                          id: child.id,
+                          name: child.name,
+                          name_kana: child.name_kana,
+                          upperLimitManager: upperLimitMap.get(child.id) ?? null,
+                          detail: detailByUnitChild[unit.id]?.[child.id] ?? null,
+                        }
                       })}
-                  </div>
+                  />
                 </CardContent>
               </Card>
             )

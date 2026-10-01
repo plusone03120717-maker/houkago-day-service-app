@@ -2,6 +2,9 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { PrintButton } from '@/components/documents/print-button'
+import { PdfSaveButton } from '@/components/documents/pdf-save-button'
+import { PrintChildFilter, type PrintChildOption } from '@/components/documents/print-child-filter'
+import { childrenFileLabel, parseChildrenParam } from '@/lib/print-children'
 import {
   KokuhorenInvoiceDocument,
   type KokuhorenInvoiceData,
@@ -30,10 +33,11 @@ export default async function KokuhorenPrintPage({
   searchParams,
 }: {
   params: Promise<{ yearMonth: string }>
-  searchParams: Promise<{ billing?: string }>
+  searchParams: Promise<{ billing?: string; children?: string }>
 }) {
   const { yearMonth } = await params
-  const { billing: billingMonthlyId } = await searchParams
+  const { billing: billingMonthlyId, children: childrenParam } = await searchParams
+  const selectedIds = parseChildrenParam(childrenParam)
   const year = yearMonth.slice(0, 4)
   const month = yearMonth.slice(4, 6)
 
@@ -63,10 +67,21 @@ export default async function KokuhorenPrintPage({
     phone: string | null
   } | null
 
+  // 対象者の選択肢は全員分。絞り込み時は選んだ児童だけで計算する
+  // （金額は児童ごとに独立して計算されるので、絞っても各明細書の数字は変わらない）
+  const childOptions: PrintChildOption[] = [...childrenInput]
+    .filter((c) => c.childId)
+    .sort((a, b) => (a.childNameKana ?? a.childName).localeCompare(b.childNameKana ?? b.childName, 'ja'))
+    .map((c) => ({ id: c.childId!, name: c.childName }))
+  const filtered = selectedIds.length > 0
+  const targetInput = filtered
+    ? childrenInput.filter((c) => c.childId && selectedIds.includes(c.childId))
+    : childrenInput
+
   const { errors, warnings, children } = computeKokuhorenBilling(
     { facilityNumber: scope.facilityNumber, regionCode: scope.regionCode, unitPrice: scope.unitPrice },
     yearMonth,
-    childrenInput,
+    targetInput,
   )
 
   const facility = {
@@ -84,7 +99,8 @@ export default async function KokuhorenPrintPage({
 
   const byMunicipality = [...groupByMunicipality(children)].sort((a, b) => a[0].localeCompare(b[0]))
 
-  const invoices: KokuhorenInvoiceData[] = byMunicipality.map(([municipalityCode, group]) => ({
+  // 請求書（市町村ごとの合計）は全員分の書類なので、対象者を絞ったときは出さない
+  const invoices: KokuhorenInvoiceData[] = filtered ? [] : byMunicipality.map(([municipalityCode, group]) => ({
     yearMonth,
     municipalityCode,
     claimDate,
@@ -131,12 +147,28 @@ export default async function KokuhorenPrintPage({
               {year}年{month}月分 障害児通所給付費 請求書・明細書
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              請求書 {invoices.length}枚（市町村ごと）＋ 明細書 {details.length}枚（児童ごと）
-              / A4縦・1枚ずつ改ページされます
+              {filtered
+                ? `明細書 ${details.length}枚（選んだ児童のみ・請求書は全員分の書類のため出しません）`
+                : `請求書 ${invoices.length}枚（市町村ごと）＋ 明細書 ${details.length}枚（児童ごと）`}
+              {' '}/ A4縦・1枚ずつ改ページされます
             </p>
           </div>
-          <PrintButton />
+          <div className="flex items-start gap-2">
+            {details.length > 0 && (
+              <PdfSaveButton
+                pageSelector=".kokuhoren-page"
+                fileName={
+                  filtered
+                    ? `明細書_${yearMonth}_${childrenFileLabel(ordered.map((c) => c.childName))}.pdf`
+                    : `請求書・明細書_${yearMonth}.pdf`
+                }
+              />
+            )}
+            <PrintButton />
+          </div>
         </div>
+
+        <PrintChildFilter options={childOptions} selectedIds={selectedIds} />
 
         {errors.length > 0 && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
