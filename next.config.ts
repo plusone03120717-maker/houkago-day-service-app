@@ -88,7 +88,13 @@ const nextConfig: NextConfig = {
   // 既定の .next ディレクトリがファイルシステム破損で削除不能になったため出力先を変更
   // （ドライブを chkdsk で修復後は .next に戻してよい）
   distDir: 'build',
-  turbopack: {},
+  turbopack: {
+    resolveAlias: {
+      // jsPDF（PDF保存ボタン）が使う圧縮ライブラリ。Node 用ビルドは worker_threads を
+      // 動的に読むためビルドが失敗する。PDF化はブラウザでしか行わないのでブラウザ版に固定する
+      fflate: 'fflate/browser',
+    },
+  },
   experimental: {
     // クライアントサイドのルーターキャッシュ。
     // 動的ページも30秒はキャッシュを再利用し「戻る」等の遷移を高速化する。
