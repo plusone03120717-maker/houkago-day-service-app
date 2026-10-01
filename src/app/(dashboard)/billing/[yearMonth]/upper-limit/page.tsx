@@ -203,6 +203,22 @@ export default async function UpperLimitPage({
         </div>
       )}
 
+      <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+        <p className="text-sm font-semibold text-gray-900">利用者負担額一覧表（他事業所が管理事業所の児童）</p>
+        <Link
+          href={`/print/copay-list/${yearMonth}?billing=${targetId}`}
+          target="_blank"
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          <Printer className="h-4 w-4" />
+          利用者負担額一覧表を開く（PDF保存・印刷）
+        </Link>
+        <p className="text-xs text-gray-400">
+          当事業所の総費用額・利用者負担額・利用回数・欠席回数を、上限額管理事業所ごとにまとめた表です。
+          PDFにして各管理事業所へJFAXで送ります。
+        </p>
+      </div>
+
       {others.length > 0 && (
         <details className="rounded-xl border border-gray-200 bg-white p-4">
           <summary className="text-sm font-semibold text-gray-700 cursor-pointer">
