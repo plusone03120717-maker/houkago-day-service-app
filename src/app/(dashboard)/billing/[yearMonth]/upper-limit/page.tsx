@@ -195,7 +195,7 @@ export default async function UpperLimitPage({
             className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
           >
             <Printer className="h-4 w-4" />
-            上限額管理結果票を印刷
+            上限額管理結果票を開く（PDF保存・印刷）
           </Link>
           <p className="text-xs text-gray-400">
             印刷した結果票をJFAXで各事業所へ送ります。CSVは取込送信ソフトへ取り込んでください。

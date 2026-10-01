@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { PrintButton } from '@/components/documents/print-button'
+import { PdfSaveButton } from '@/components/documents/pdf-save-button'
 import { UpperLimitDocument } from '@/components/documents/upper-limit-document'
 import { loadUpperLimitChildren } from '@/lib/kokuhoren/load'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
@@ -58,7 +59,15 @@ export default async function UpperLimitPrintPage({
               {children.length}枚（児童ごと）/ A4縦・1枚ずつ改ページされます
             </p>
           </div>
-          <PrintButton />
+          <div className="flex items-start gap-2">
+            {children.length > 0 && (
+              <PdfSaveButton
+                pageSelector=".upper-limit-page"
+                fileName={`利用者負担上限額管理結果票_${yearMonth}.pdf`}
+              />
+            )}
+            <PrintButton />
+          </div>
         </div>
         {children.length === 0 && (
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
