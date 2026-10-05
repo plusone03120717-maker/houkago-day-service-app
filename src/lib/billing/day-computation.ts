@@ -77,7 +77,7 @@ export type ComputedDay = {
   daytimeTransportDropoff: boolean
   /** 基準時間（平日3時間・学校休業日5時間）を超えた分数。欠席日は0 */
   extensionMinutes: number
-  /** 延長支援加算の区分。0=なし 1=30分以上1時間未満 2=1時間以上2時間未満 3=2時間以上 */
+  /** 延長支援加算の区分。0=なし 2=1時間以上2時間未満 3=2時間以上（1は1時間未満のため算定しない） */
   extensionLevel: ExtensionLevel
   participatedActivities: Set<string>
 }
@@ -120,14 +120,12 @@ export function getBillingCategory(
 
 /**
  * 延長支援加算の区分。基準時間（平日3時間・学校休業日5時間）を超えた分数で決まる。
- * 超過が30分未満の日は算定しない。
- *   1: 30分以上〜1時間未満（延長支援加算111）
+ * 超過が1時間未満の日は算定しない（区分1＝30分以上1時間未満は使わない）。
  *   2: 1時間以上〜2時間未満（延長支援加算112）
  *   3: 2時間以上（延長支援加算113）
  */
 export function getExtensionLevel(overMinutes: number): ExtensionLevel {
-  if (overMinutes < 30) return 0
-  if (overMinutes < 60) return 1
+  if (overMinutes < 60) return 0
   if (overMinutes < 120) return 2
   return 3
 }

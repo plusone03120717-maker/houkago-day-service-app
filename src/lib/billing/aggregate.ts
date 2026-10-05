@@ -47,7 +47,7 @@ export type ServiceDayRecord = {
   transportDropoff: boolean
   /** 欠席時対応加算を算定する欠席日 */
   absent: boolean
-  /** 延長支援加算の区分（0=なし 1=30分以上1時間未満 2=1時間以上2時間未満 3=2時間以上） */
+  /** 延長支援加算の区分（0=なし 2=1時間以上2時間未満 3=2時間以上。1は1時間未満のため算定しない） */
   extensionLevel: 0 | 1 | 2 | 3
   /** 専門的支援実施加算を算定する日 */
   specializedSupport: boolean

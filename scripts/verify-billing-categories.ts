@@ -23,12 +23,13 @@ type Pattern = {
 // 事業所の規定（2026-09-04 に事務担当者へ確認）
 //   算定時間数 1〜3 の区切りは平日・休業日で共通。算定4は休業日のみで、
 //   平日は5時間を超えても算定3のまま（超過分は延長支援加算で算定する）。
-//   延長支援加算は基準時間（平日3時間・休業日5時間）を超えた分が30分以上で算定。
+//   延長支援加算は基準時間（平日3時間・休業日5時間）を超えた分が1時間以上で算定（2026-10-05 変更。
+//   1時間未満は加算なし。1時間以上2時間未満＝区分2／2時間以上＝区分3）。
 const HOUSE_RULES: Pattern[] = [
   // 平日
   { label: '平日 3時間1分（区分3・延長なし）', form: 1, start: '13:00', end: '16:01', category: 3, extension: 0 },
-  { label: '平日 3時間30分（区分3・延長1）', form: 1, start: '13:00', end: '16:30', category: 3, extension: 1 },
-  { label: '平日 3時間59分（区分3・延長1）', form: 1, start: '13:00', end: '16:59', category: 3, extension: 1 },
+  { label: '平日 3時間30分（区分3・延長なし）', form: 1, start: '13:00', end: '16:30', category: 3, extension: 0 },
+  { label: '平日 3時間59分（区分3・延長なし）', form: 1, start: '13:00', end: '16:59', category: 3, extension: 0 },
   { label: '平日 4時間（区分3・延長2）', form: 1, start: '13:00', end: '17:00', category: 3, extension: 2 },
   { label: '平日 4時間59分（区分3・延長2）', form: 1, start: '13:00', end: '17:59', category: 3, extension: 2 },
   { label: '平日 5時間（区分3・延長3）', form: 1, start: '13:00', end: '18:00', category: 3, extension: 3 },
@@ -37,7 +38,7 @@ const HOUSE_RULES: Pattern[] = [
   { label: '休業日 4時間（5時間以下は平日と同じ区分・延長なし）', form: 2, start: '10:00', end: '14:00', category: 3, extension: 0 },
   { label: '休業日 5時間（区分3・延長なし）', form: 2, start: '10:00', end: '15:00', category: 3, extension: 0 },
   { label: '休業日 5時間29分（区分4・延長なし）', form: 2, start: '10:00', end: '15:29', category: 4, extension: 0 },
-  { label: '休業日 5時間30分（区分4・延長1）', form: 2, start: '10:00', end: '15:30', category: 4, extension: 1 },
+  { label: '休業日 5時間30分（区分4・延長なし）', form: 2, start: '10:00', end: '15:30', category: 4, extension: 0 },
   { label: '休業日 6時間（区分4・延長2）', form: 2, start: '10:00', end: '16:00', category: 4, extension: 2 },
   { label: '休業日 6時間59分（区分4・延長2）', form: 2, start: '10:00', end: '16:59', category: 4, extension: 2 },
   { label: '休業日 7時間（区分4・延長3）', form: 2, start: '09:00', end: '16:00', category: 4, extension: 3 },
@@ -54,7 +55,7 @@ const PATTERNS: Pattern[] = [
   { label: '⑦ 休業日 10:00〜16:00（6時間）', form: 2, start: '10:00', end: '16:00', category: 4, extension: 2 },
   { label: '⑧ 休業日 9:00〜16:00（7時間）', form: 2, start: '09:00', end: '16:00', category: 4, extension: 3 },
   // マニュアル「3．延長支援加算の入力ルール」の具体例
-  { label: '休業日 10:00〜15:45（5時間45分）→延長45分', form: 2, start: '10:00', end: '15:45', category: 4, extension: 1 },
+  { label: '休業日 10:00〜15:45（5時間45分）→延長45分は加算なし', form: 2, start: '10:00', end: '15:45', category: 4, extension: 0 },
   // 区分の境界（マニュアル「1時間30分ちょうどは1」）
   { label: '平日 15:00〜16:30（ちょうど1時間30分）', form: 1, start: '15:00', end: '16:30', category: 1, extension: 0 },
   { label: '平日 15:00〜15:20（20分・算定対象外）', form: 1, start: '15:00', end: '15:20', category: 0, extension: 0 },

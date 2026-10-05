@@ -54,7 +54,7 @@ const BASIC_SLOTS: { form: 1 | 2; category: 1 | 2 | 3 | 4; label: string; hint: 
 
 /** 延長支援加算の入力欄。延長時間（平日3時間・休業日5時間の超過分）の区分ごと */
 const EXTENSION_SLOTS: { level: 1 | 2 | 3; label: string; hint: string; unitPlaceholder: string; codePlaceholder: string }[] = [
-  { level: 1, label: '延長・区分1', hint: '30分以上〜1時間未満', unitPlaceholder: '61', codePlaceholder: '636301' },
+  { level: 1, label: '延長・区分1', hint: '1時間未満（現在は算定対象外のため未使用）', unitPlaceholder: '61', codePlaceholder: '636301' },
   { level: 2, label: '延長・区分2', hint: '1時間以上〜2時間未満', unitPlaceholder: '92', codePlaceholder: '636302' },
   { level: 3, label: '延長・区分3', hint: '2時間以上', unitPlaceholder: '123', codePlaceholder: '636303' },
 ]
