@@ -37,6 +37,7 @@ export default async function ChildSchedulePage({
     { data: unitsRaw },
     { data: plansRaw },
     { data: transportSettingRaw },
+    { data: childUnitsRaw },
   ] = await Promise.all([
     supabase
       .from('children')
@@ -60,6 +61,11 @@ export default async function ChildSchedulePage({
       .select('transport_type, pickup_location_type, dropoff_location_type')
       .eq('child_id', childId)
       .maybeSingle(),
+    // 児童の所属ユニット（新規計画のユニット初期値用）
+    supabase
+      .from('children_units')
+      .select('unit_id')
+      .eq('child_id', childId),
   ])
 
   const viewerJobTitles = viewerPromise
@@ -295,6 +301,7 @@ export default async function ChildSchedulePage({
         childAddress={child.address}
         schoolName={child.schools?.name ?? null}
         units={units}
+        childUnitIds={((childUnitsRaw ?? []) as { unit_id: string }[]).map((cu) => cu.unit_id)}
         initialPlans={plans}
         initialDaySettings={daySettings}
         initialDateOverrides={dateOverrides.filter((o) => !o.is_cancelled)}

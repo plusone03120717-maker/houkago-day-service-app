@@ -152,6 +152,8 @@ interface Props {
   childAddress: string | null
   schoolName: string | null
   units: Unit[]
+  /** 児童が所属するユニット。新規計画のユニット初期値に使う */
+  childUnitIds?: string[]
   initialPlans: Plan[]
   initialDaySettings: DaySetting[]
   initialDateOverrides: DateOverride[]
@@ -163,7 +165,7 @@ interface Props {
 }
 
 export function ChildSchedulePlanner({
-  childId, units, initialPlans, initialDaySettings, initialDateOverrides,
+  childId, units, childUnitIds = [], initialPlans, initialDaySettings, initialDateOverrides,
   childAddress, schoolName,
   defaultTransportType, defaultPickupLocationType, defaultDropoffLocationType,
   canEdit = true,
@@ -196,7 +198,10 @@ export function ChildSchedulePlanner({
   // 新規追加フォーム状態
   const [planName, setPlanName] = useState('')
   const [addMode, setAddMode] = useState<'repeat' | 'once'>('repeat')
-  const [selectedUnit, setSelectedUnit] = useState(units[0]?.id ?? '')
+  const [selectedUnit, setSelectedUnit] = useState(
+    // 一覧の先頭ではなく児童の所属ユニットを初期値にする（先頭固定だとプラスワン2の児童の計画がプラスワン1で作られる）
+    () => (units.find((u) => childUnitIds.includes(u.id)) ?? units[0])?.id ?? '',
+  )
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5])
   const [onceDate, setOnceDate] = useState(() => getTodayJST())
   const [startDate, setStartDate] = useState(() => getTodayJST())
