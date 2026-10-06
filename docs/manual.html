@@ -300,6 +300,7 @@
         <li>おやつ代・パソコン・そろばん・プリント</li>
         <li>日中一時支援の自己負担</li>
         <li>請求書の発行・入金記録・領収書</li>
+        <li>人を選んで請求書・領収書をPDFにする</li>
       </ul>
     </li>
     <li><a href="#ch13">帳票出力</a></li>
@@ -2162,6 +2163,7 @@
     <tr><td>月次実績をまとめて見る</td><td>選んだ児童の「月次サービス実績」の表（橙色の丸の表）を縦に並べた画面。<strong>1人＝A4横1枚</strong>でPDF保存・印刷できます</td></tr>
     <tr><td>明細書</td><td>選んだ児童の明細書（様式第二）</td></tr>
     <tr><td>実績記録票</td><td>選んだ児童の実績記録票（様式5）</td></tr>
+    <tr><td>保護者向け請求書／領収書</td><td>保護者に渡す、自己負担額・日中一時・おやつ代などの合計の請求書／領収書（詳しくは Chapter 12-2）</td></tr>
   </table>
   <div class="step"><span class="step-num">3</span> 表示が終わったら<strong>「PDFで保存」</strong>（ファイル名に「〇〇ほか2名」のように対象者が入ります）</div>
   <h4>方法2：帳票の画面で選ぶ</h4>
@@ -2529,7 +2531,8 @@
   <h3>画面の開き方</h3>
   <div class="step"><span class="step-num">1</span> サイドバーの「国保連請求」をクリック</div>
   <div class="step"><span class="step-num">2</span> 対象の年月を開く</div>
-  <div class="step"><span class="step-num">3</span> オレンジ色の「利用者負担額の請求書・領収書」をクリック</div>
+  <div class="step"><span class="step-num">3</span> 児童の一覧（「児童別」タブ）の上にあるオレンジ色の帯の<strong>「請求書・領収書を発行する」</strong>をクリック</div>
+  <p class="note">以前は請求明細画面の中（エラー表示の下）にしかボタンがなく見つけにくかったため、国保連請求の児童一覧から直接開けるようにしました。請求明細画面のオレンジ色の「利用者負担額の請求書・領収書」からも、これまでどおり開けます。</p>
   <p>URL から直接開く場合は <code>/billing/年月/invoices</code>（例：<code>/billing/202608/invoices</code>）です。</p>
   <p class="note">ユニットボタンの初期状態は<strong>「すべて」</strong>で、ユニットごとに見出しを付けて続けて表示されます。単位数単価・日中一時の送迎費はユニットごとの設定を使うため、金額はユニット単位で計算されます。1ユニットだけ見たいときはそのユニットのボタンを押してください。</p>
 
@@ -2575,8 +2578,14 @@
   <h3>請求書の発行</h3>
   <div class="step"><span class="step-num">1</span> 利用者負担額の画面で金額を確認（児童名をクリックすると内訳が開きます）</div>
   <div class="step"><span class="step-num">2</span> 「全員分を発行」をクリック（一部だけならチェックを入れて「◯名を発行」）</div>
-  <div class="step"><span class="step-num">3</span> 「請求書を印刷」をクリック → 印刷ダイアログで「PDFに保存」も可能</div>
+  <div class="step"><span class="step-num">3</span> 「請求書を印刷」をクリック → 開いた画面の<strong>「PDFで保存」</strong>を押す</div>
   <p>A4縦・1人1枚で連続印刷されます。請求額が0円の児童は自動的に除外されます。</p>
+  <h4>人を選んで請求書・領収書をPDFにする</h4>
+  <div class="step"><span class="step-num">1</span> 国保連請求の児童一覧（「児童別」タブ）で、保護者に渡したい児童にチェックを入れる</div>
+  <div class="step"><span class="step-num">2</span> 右上に出る<strong>「保護者向け請求書」</strong>または<strong>「保護者向け領収書」</strong>をクリック</div>
+  <div class="step"><span class="step-num">3</span> 開いた画面で<strong>「PDFで保存」</strong>（ファイル名に「〇〇ほか2名」のように対象者が入ります）</div>
+  <p>開いた画面の上部「対象者」欄からも、あとから人を選び直せます。「国保連請求へ戻る」を押すと、元の児童一覧（同じ年月）に戻ります。</p>
+  <div class="note"><strong>国保連に出す「明細書」との違い：</strong>児童一覧の「明細書」ボタンは国保連に提出する書類（保護者には渡しません）です。保護者に渡す、自己負担額とおやつ代などの合計が入ったものは<strong>「保護者向け請求書／領収書」</strong>です。</div>
   <div class="tip"><strong>💡 ヒント：</strong> 発行後に出席や記録を直すと「要再発行」と表示されます。もう一度「発行」を押すと最新の金額で上書きされます。</div>
 
   <h3>入金記録と領収書</h3>

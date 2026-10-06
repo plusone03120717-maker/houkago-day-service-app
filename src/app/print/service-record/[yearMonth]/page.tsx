@@ -120,7 +120,7 @@ export default async function ServiceRecordPrintPage({
     <div className="p-4 sm:p-8">
       <div className="print:hidden mb-5 max-w-5xl mx-auto space-y-3">
         <Link
-          href={`/billing/${yearMonth}`}
+          href={`/billing?year=${parseInt(year)}&month=${parseInt(month)}`}
           className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800"
         >
           <ArrowLeft className="h-4 w-4" />

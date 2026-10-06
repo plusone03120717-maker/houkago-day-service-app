@@ -155,7 +155,7 @@ export default async function BillingDetailPage({
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <Link href="/billing" className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
+        <Link href={`/billing?year=${year}&month=${parseInt(month)}`} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { CalendarDays, FileText, ClipboardList } from 'lucide-react'
+import { CalendarDays, FileText, ClipboardList, Receipt } from 'lucide-react'
 import { BillingConfirmToggle } from '@/components/billing/billing-confirm-toggle'
 
 export type BillingChildRow = {
@@ -15,7 +15,7 @@ export type BillingChildRow = {
 
 /**
  * 国保連請求「児童別」タブのユニット1つ分の一覧。
- * チェックを入れた児童だけの月次実績・明細書・実績記録票をまとめて開ける。
+ * チェックを入れた児童だけの月次実績・明細書・実績記録票・保護者向け請求書／領収書をまとめて開ける。
  */
 export function BillingChildrenUnitList({
   unitId,
@@ -39,9 +39,26 @@ export function BillingChildrenUnitList({
   const ids = selected.join(',')
   const linkCls =
     'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-indigo-200 bg-white text-xs font-medium text-indigo-700 hover:bg-indigo-50'
+  const parentLinkCls =
+    'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-orange-200 bg-white text-xs font-medium text-orange-700 hover:bg-orange-50'
+  const invoiceHref = (type: 'invoice' | 'receipt') =>
+    `/print/invoice/${yearMonth}?unit=${unitId}&type=${type}&children=${ids}`
 
   return (
     <>
+      {/* 保護者に渡す請求書・領収書（自己負担額＋日中一時・おやつ代などの実費の合計）への入口 */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-orange-100 bg-orange-50/60 px-4 py-2">
+        <p className="text-xs text-orange-800">
+          保護者に渡す請求書・領収書（自己負担額＋おやつ代などの実費の合計）
+        </p>
+        <Link
+          href={`/billing/${yearMonth}/invoices?unit=${unitId}`}
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-orange-300 bg-orange-100 text-xs font-medium text-orange-900 hover:bg-orange-200"
+        >
+          <Receipt className="h-3.5 w-3.5" />
+          請求書・領収書を発行する
+        </Link>
+      </div>
       <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-2">
         <label className="flex items-center gap-2 text-xs text-gray-500">
           <input
@@ -54,6 +71,14 @@ export function BillingChildrenUnitList({
         </label>
         {selected.length > 0 && (
           <div className="flex flex-wrap gap-2 ml-auto">
+            <Link href={invoiceHref('invoice')} target="_blank" className={parentLinkCls}>
+              <Receipt className="h-3.5 w-3.5" />
+              保護者向け請求書
+            </Link>
+            <Link href={invoiceHref('receipt')} target="_blank" className={parentLinkCls}>
+              <Receipt className="h-3.5 w-3.5" />
+              保護者向け領収書
+            </Link>
             <Link
               href={`/print/billing-monthly/${yearMonth}?unit=${unitId}&children=${ids}`}
               target="_blank"
