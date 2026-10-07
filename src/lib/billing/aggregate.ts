@@ -300,7 +300,7 @@ export async function aggregateUnitMonth(
   ] = await Promise.all([
     supabase
       .from('billing_daily_records')
-      .select('child_id, date, service_item_id, is_checked, billing_start_time, billing_end_time')
+      .select('child_id, date, service_item_id, is_checked, billing_start_time, billing_end_time, service_form_override')
       .eq('unit_id', unitId)
       .gte('date', start)
       .lte('date', end),

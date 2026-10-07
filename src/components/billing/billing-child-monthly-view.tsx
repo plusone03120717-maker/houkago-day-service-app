@@ -74,6 +74,7 @@ type BillingDailyRecord = {
   is_checked: boolean
   billing_start_time: string | null
   billing_end_time: string | null
+  service_form_override: number | null
   daytime_pickup: boolean
   daytime_dropoff: boolean
 }
@@ -237,7 +238,7 @@ export function BillingChildMonthlyView({
         : { data: [] },
       supabase
         .from('billing_daily_records')
-        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, daytime_pickup, daytime_dropoff')
+        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, service_form_override, daytime_pickup, daytime_dropoff')
         .eq('child_id', childId)
         .eq('unit_id', unitId)
         .gte('date', monthStart)
@@ -451,7 +452,7 @@ export function BillingChildMonthlyView({
       const { data, error } = await supabase
         .from('billing_daily_records')
         .upsert(payload, { onConflict: 'child_id,unit_id,date,service_item_id' })
-        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, daytime_pickup, daytime_dropoff')
+        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, service_form_override, daytime_pickup, daytime_dropoff')
         .single()
       if (!error && data) {
         setManualRecords((prev) => {
@@ -531,7 +532,7 @@ export function BillingChildMonthlyView({
     const { data, error } = await supabase
       .from('billing_daily_records')
       .upsert({ ...(existing ?? {}), ...payload }, { onConflict: 'child_id,unit_id,date,service_item_id' })
-      .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, daytime_pickup, daytime_dropoff')
+      .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, service_form_override, daytime_pickup, daytime_dropoff')
       .single()
     if (!error && data) {
       setManualRecords((prev) => {
@@ -545,6 +546,37 @@ export function BillingChildMonthlyView({
           setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, [attendanceField]: value || null } : a))
         }
       }
+    }
+  }
+
+  // ── 提供形態（平日／休日）の手動切替 ─────────────────────────
+  // 自動判定（土日祝・学校休日など）と同じ値に戻したら上書きを外す。基本報酬の行に保存する
+  const toggleServiceForm = async (itemId: string, dateStr: string, current: 1 | 2, auto: 1 | 2) => {
+    const next: 1 | 2 = current === 1 ? 2 : 1
+    const existing = getManualRecord(itemId, dateStr)
+    const payload = {
+      child_id: childId,
+      unit_id: unitId,
+      date: dateStr,
+      year_month: effYearMonth,
+      service_item_id: itemId,
+      is_checked: true,
+      service_form_override: next === auto ? null : next,
+    }
+    const { data, error } = await supabase
+      .from('billing_daily_records')
+      .upsert({ ...(existing ?? {}), ...payload }, { onConflict: 'child_id,unit_id,date,service_item_id' })
+      .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, service_form_override, daytime_pickup, daytime_dropoff')
+      .single()
+    if (error) {
+      alert(`提供形態を変更できませんでした: ${error.message}`)
+      return
+    }
+    if (data) {
+      setManualRecords((prev) => {
+        const filtered = prev.filter((r) => !(r.date === dateStr && r.service_item_id === itemId))
+        return [...filtered, data as BillingDailyRecord]
+      })
     }
   }
 
@@ -1077,10 +1109,17 @@ export function BillingChildMonthlyView({
                         <td className="border border-gray-200 px-3 py-2 text-gray-700 font-medium">
                           {dayLabel}
                         </td>
-                        <td className="border border-gray-200 px-2 py-2 text-center">
+                        <td
+                          className={`border border-gray-200 px-2 py-2 text-center ${basicItem ? 'cursor-pointer hover:bg-orange-50' : ''}`}
+                          onClick={() => {
+                            if (basicItem) toggleServiceForm(basicItem.id, dateStr, d.serviceFormType, d.autoServiceFormType)
+                          }}
+                          title="クリックで平日／休日を切替（算定時間数・延長加算の基準も変わります）"
+                        >
                           <FormTypeCircle type={d.serviceFormType} />
                           <div className="text-[9px] text-gray-400 mt-0.5">
                             {d.serviceFormType === 1 ? '平日' : '休日'}
+                            {d.serviceFormType !== d.autoServiceFormType && <span className="text-orange-500">（変更）</span>}
                           </div>
                         </td>
                         <td className="border border-gray-200 px-2 py-2 text-center">

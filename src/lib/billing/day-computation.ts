@@ -45,6 +45,8 @@ export type DailyRecordLike = {
   is_checked: boolean
   billing_start_time: string | null
   billing_end_time: string | null
+  /** 提供形態の手動上書き（1=平日 2=休日）。null/未指定は自動判定 */
+  service_form_override?: number | null
 }
 
 export type SchoolHolidayLike = {
@@ -62,8 +64,10 @@ export type ComputedDay = {
   isAttended: boolean
   isAbsent: boolean
   isSchoolHoliday: boolean
-  /** 1=平日（提供形態①） 2=学校休業日・土日祝（提供形態②） */
+  /** 1=平日（提供形態①） 2=学校休業日・土日祝（提供形態②）。手動で切り替えた場合はその値 */
   serviceFormType: 1 | 2
+  /** 日付から自動判定した提供形態（手動上書きを除いた値） */
+  autoServiceFormType: 1 | 2
   startTime: string | null
   endTime: string | null
   durationMinutes: number
@@ -164,12 +168,14 @@ export function computeBillingDay(params: {
 
   const isAttended = att?.status === 'attended'
   const isAbsent = att?.status === 'absent'
-  const serviceFormType: 1 | 2 = isHoliday ? 2 : 1
 
-  // 基本報酬行に入力された請求用時刻があればそれを優先する
+  // 基本報酬行に入力された請求用時刻・提供形態があればそれを優先する
   const basicRecord = dailyRecords.find(
     (r) => r.date === date && r.service_item_id != null && basicItemIds.has(r.service_item_id),
   )
+  const autoServiceFormType: 1 | 2 = isHoliday ? 2 : 1
+  const override = basicRecord?.service_form_override
+  const serviceFormType: 1 | 2 = override === 1 || override === 2 ? override : autoServiceFormType
   const startTime = basicRecord?.billing_start_time ?? att?.service_start_time ?? att?.check_in_time ?? null
   const endTime = basicRecord?.billing_end_time ?? att?.service_end_time ?? att?.check_out_time ?? null
 
@@ -188,8 +194,9 @@ export function computeBillingDay(params: {
     date,
     isAttended,
     isAbsent,
-    isSchoolHoliday: isHoliday,
+    isSchoolHoliday: serviceFormType === 2,
     serviceFormType,
+    autoServiceFormType,
     startTime: startTime?.slice(0, 5) ?? null,
     endTime: endTime?.slice(0, 5) ?? null,
     durationMinutes: rawMinutes,
