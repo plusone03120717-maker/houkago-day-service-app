@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Plus, Settings, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
+import { participatedNamesByAttendance, type ActivityParticipationRow } from '@/lib/billing/default-activities'
 import {
   calcHours,
   computeBillingDay,
@@ -246,7 +247,6 @@ export function BillingChildMonthlyView({
             .from('daily_activities')
             .select('attendance_id, participated, activity_programs(name)')
             .in('attendance_id', attendanceIds)
-            .eq('participated', true)
         : { data: [] },
       supabase
         .from('usage_reservations')
@@ -267,13 +267,11 @@ export function BillingChildMonthlyView({
     // 日付ごとの参加活動名セットを構築
     const attIdToDate = new Map((attData ?? []).map((a: { id: string; date: string }) => [a.id, a.date]))
     const newActivityMap = new Map<string, Set<string>>()
-    for (const act of (actData ?? []) as unknown as { attendance_id: string; activity_programs: { name: string } | null }[]) {
-      const date = attIdToDate.get(act.attendance_id)
-      if (!date) continue
-      const progName = act.activity_programs?.name
-      if (!progName) continue
-      if (!newActivityMap.has(date)) newActivityMap.set(date, new Set())
-      newActivityMap.get(date)!.add(progName)
+    // 出席日は おやつ・学習教材 を既定で参加として扱う（日々の記録で外した日を除く）
+    const participatedByAtt = participatedNamesByAttendance(attendanceIds, (actData ?? []) as unknown as ActivityParticipationRow[])
+    for (const [attendanceId, names] of participatedByAtt) {
+      const date = attIdToDate.get(attendanceId)
+      if (date) newActivityMap.set(date, names)
     }
     setActivityMap(newActivityMap)
 
@@ -495,10 +493,11 @@ export function BillingChildMonthlyView({
       .maybeSingle()
     if (existing) {
       await supabase.from('daily_activities').update({ participated }).eq('id', existing.id)
-    } else if (participated) {
+    } else {
+      // おやつ・学習教材は出席日に既定で参加扱いなので、外した場合も「参加なし」の行を残す
       await supabase
         .from('daily_activities')
-        .insert({ attendance_id: att.id, program_id: program.id, participated: true })
+        .insert({ attendance_id: att.id, program_id: program.id, participated })
     }
 
     setActivityMap((prev) => {

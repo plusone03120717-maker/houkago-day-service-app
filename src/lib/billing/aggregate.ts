@@ -18,6 +18,7 @@ import {
   type DailyRecordLike,
   type ServiceItemLike,
 } from './day-computation'
+import { participatedNamesByAttendance, type ActivityParticipationRow } from './default-activities'
 
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
 
@@ -321,9 +322,8 @@ export async function aggregateUnitMonth(
     attendedIds.length > 0
       ? supabase
           .from('daily_activities')
-          .select('attendance_id, activity_programs(name)')
+          .select('attendance_id, participated, activity_programs(name)')
           .in('attendance_id', attendedIds)
-          .eq('participated', true)
       : Promise.resolve({ data: [] }),
     supabase
       .from('benefit_certificates')
@@ -352,17 +352,15 @@ export async function aggregateUnitMonth(
   const attIdToDate = new Map(attendances.map((a) => [a.id, a.date]))
   const attIdToChild = new Map(attendances.map((a) => [a.id, a.child_id]))
   const activityMap = new Map<string, Set<string>>() // `${childId}|${date}` → 活動名
-  for (const act of (activitiesRaw ?? []) as unknown as Array<{
-    attendance_id: string
-    activity_programs: { name: string } | null
-  }>) {
-    const name = act.activity_programs?.name
-    const date = attIdToDate.get(act.attendance_id)
-    const childId = attIdToChild.get(act.attendance_id)
-    if (!name || !date || !childId) continue
-    const key = `${childId}|${date}`
-    if (!activityMap.has(key)) activityMap.set(key, new Set())
-    activityMap.get(key)!.add(name)
+  const participatedByAtt = participatedNamesByAttendance(
+    attendedIds,
+    (activitiesRaw ?? []) as unknown as ActivityParticipationRow[],
+  )
+  for (const [attendanceId, names] of participatedByAtt) {
+    const date = attIdToDate.get(attendanceId)
+    const childId = attIdToChild.get(attendanceId)
+    if (!date || !childId) continue
+    activityMap.set(`${childId}|${date}`, names)
   }
 
   // 月内に有効な受給者証（複数ある場合は開始日が新しいものを採用）

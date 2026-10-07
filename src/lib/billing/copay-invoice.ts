@@ -17,6 +17,7 @@ import {
   type DailyRecordLike,
   type ServiceItemLike,
 } from './day-computation'
+import { participatedNamesByAttendance, type ActivityParticipationRow } from './default-activities'
 
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
 
@@ -222,6 +223,7 @@ export async function buildMonthInvoices(
     { data: childrenRaw },
     { data: ratesRaw },
     { data: activitiesRaw },
+    { data: chargedProgramsRaw },
     { data: costsRaw },
     { data: invoicesRaw },
   ] = await Promise.all([
@@ -247,11 +249,15 @@ export async function buildMonthInvoices(
     attendedIds.length > 0
       ? supabase
           .from('daily_activities')
-          .select('attendance_id, activity_programs (name, extra_charge)')
+          .select('attendance_id, participated, activity_programs (name)')
           .in('attendance_id', attendedIds)
-          .eq('participated', true)
           .not('program_id', 'is', null)
       : Promise.resolve({ data: [] }),
+    supabase
+      .from('activity_programs')
+      .select('name, extra_charge')
+      .eq('facility_id', facilityId)
+      .gt('extra_charge', 0),
     supabase
       .from('billing_actual_costs')
       .select('child_id, date, item_name, amount')
@@ -290,20 +296,27 @@ export async function buildMonthInvoices(
   const attIdToChild = new Map(attendances.map((a) => [a.id, a.child_id]))
   const attIdToDate = new Map(attendances.map((a) => [a.id, a.date]))
   const extraByChild = new Map<string, Map<string, { price: number; dates: string[] }>>()
-  for (const act of (activitiesRaw ?? []) as unknown as Array<{
-    attendance_id: string
-    activity_programs: { name: string; extra_charge: number | null } | null
-  }>) {
-    const prog = act.activity_programs
-    if (!prog || prog.extra_charge == null || prog.extra_charge <= 0) continue
-    const childId = attIdToChild.get(act.attendance_id)
-    const date = attIdToDate.get(act.attendance_id)
+  const priceByProgram = new Map(
+    ((chargedProgramsRaw ?? []) as Array<{ name: string; extra_charge: number }>).map((p) => [p.name, p.extra_charge]),
+  )
+  // 出席日は おやつ・学習教材 を既定で参加として数える（日々の記録で外した日を除く）
+  const participatedByAtt = participatedNamesByAttendance(
+    attendedIds,
+    (activitiesRaw ?? []) as unknown as ActivityParticipationRow[],
+  )
+  for (const [attendanceId, names] of participatedByAtt) {
+    const childId = attIdToChild.get(attendanceId)
+    const date = attIdToDate.get(attendanceId)
     if (!childId || !date) continue
-    const byName = extraByChild.get(childId) ?? new Map<string, { price: number; dates: string[] }>()
-    const entry = byName.get(prog.name) ?? { price: prog.extra_charge, dates: [] }
-    entry.dates.push(date)
-    byName.set(prog.name, entry)
-    extraByChild.set(childId, byName)
+    for (const name of names) {
+      const price = priceByProgram.get(name)
+      if (price == null) continue
+      const byName = extraByChild.get(childId) ?? new Map<string, { price: number; dates: string[] }>()
+      const entry = byName.get(name) ?? { price, dates: [] }
+      entry.dates.push(date)
+      byName.set(name, entry)
+      extraByChild.set(childId, byName)
+    }
   }
 
   const costsByChild = new Map<string, Array<{ date: string; item_name: string; amount: number }>>()

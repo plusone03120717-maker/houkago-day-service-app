@@ -22,6 +22,7 @@ import {
 import { MedicationLogForm } from '@/components/medications/medication-log-form'
 import { formatDate } from '@/lib/utils'
 import { AutoTextarea } from '@/components/ui/auto-textarea'
+import { DEFAULT_PARTICIPATION_PROGRAM_NAMES } from '@/lib/billing/default-activities'
 
 type Child = {
   id: string
@@ -35,6 +36,7 @@ type Child = {
 
 type Attendance = {
   id: string
+  status: string
   check_in_time: string | null
   check_out_time: string | null
   pickup_type: string
@@ -142,9 +144,16 @@ export function DailyRecordForm({
   const [activityNotes, setActivityNotes] = useState<Record<string, string>>(
     Object.fromEntries(activities.map((a) => [a.program_id ?? '', a.evaluation_notes ?? '']))
   )
-  const [selectedPrograms, setSelectedPrograms] = useState<string[]>(
-    activities.filter((a) => a.participated).map((a) => a.program_id ?? '').filter(Boolean)
-  )
+  // 出席した日は おやつ・学習教材 を既定でチェック済みにする（記録済みの日は、その内容のまま）
+  const [selectedPrograms, setSelectedPrograms] = useState<string[]>(() => {
+    const saved = activities.filter((a) => a.participated).map((a) => a.program_id ?? '').filter(Boolean)
+    if (attendance?.status !== 'attended') return saved
+    const recorded = new Set(activities.map((a) => a.program_id))
+    const defaults = programs
+      .filter((p) => DEFAULT_PARTICIPATION_PROGRAM_NAMES.includes(p.name) && !recorded.has(p.id))
+      .map((p) => p.id)
+    return [...saved, ...defaults]
+  })
   const [contactNoteContent, setContactNoteContent] = useState(initialContactNote?.content ?? '')
   const [aiLoading, setAiLoading] = useState(false)
   const [refineLoading, setRefineLoading] = useState(false)
@@ -309,6 +318,24 @@ export function DailyRecordForm({
           participated: true,
           achievement_level: null,
           evaluation_notes: activityNotes[programId] ?? null,
+        })
+      }
+    }
+
+    // チェックを外した活動は「参加なし」にする。おやつ・学習教材は既定で参加扱いなので、
+    // 記録のない状態から外した場合も「参加なし」の行を残す（残さないと既定の参加に戻ってしまう）
+    for (const prog of programs) {
+      if (selectedPrograms.includes(prog.id)) continue
+      const existing = activities.find((a) => a.program_id === prog.id)
+      if (existing) {
+        if (existing.participated) {
+          await supabase.from('daily_activities').update({ participated: false }).eq('id', existing.id)
+        }
+      } else if (attendance.status === 'attended' && DEFAULT_PARTICIPATION_PROGRAM_NAMES.includes(prog.name)) {
+        await supabase.from('daily_activities').insert({
+          attendance_id: attendance.id,
+          program_id: prog.id,
+          participated: false,
         })
       }
     }

@@ -10,6 +10,7 @@ import { AiCheckButton } from '@/components/billing/ai-check-button'
 import { RecalcBillingButton } from '@/components/billing/recalc-billing-button'
 import { ActualCostForm } from '@/components/billing/actual-cost-form'
 import { BillingDetailsTable } from '@/components/billing/billing-details-table'
+import { participatedNamesByAttendance, type ActivityParticipationRow } from '@/lib/billing/default-activities'
 
 type BillingDetail = {
   id: string
@@ -118,36 +119,47 @@ export default async function BillingDetailPage({
   if (unitIds.length > 0) {
     const { data: attendancesRaw } = await supabase
       .from('daily_attendance')
-      .select('id, child_id, unit_id, children(name)')
+      .select('id, child_id, unit_id, status, children(name)')
       .in('unit_id', unitIds)
       .gte('date', dateStart)
       .lt('date', dateEnd)
-    const attendances = (attendancesRaw ?? []) as unknown as { id: string; child_id: string; unit_id: string; children: { name: string } | null }[]
+    const attendances = (attendancesRaw ?? []) as unknown as { id: string; child_id: string; unit_id: string; status: string; children: { name: string } | null }[]
 
     if (attendances.length > 0) {
       const attendanceIds = attendances.map((a) => a.id)
       const attendanceMap = Object.fromEntries(attendances.map((a) => [a.id, a]))
 
-      const { data: activitiesRaw } = await supabase
-        .from('daily_activities')
-        .select('attendance_id, activity_programs(name, extra_charge)')
-        .in('attendance_id', attendanceIds)
-        .eq('participated', true)
-        .not('program_id', 'is', null)
-      const activities = (activitiesRaw ?? []) as unknown as { attendance_id: string; activity_programs: { name: string; extra_charge: number | null } | null }[]
+      const [{ data: activitiesRaw }, { data: chargedProgramsRaw }] = await Promise.all([
+        supabase
+          .from('daily_activities')
+          .select('attendance_id, participated, activity_programs(name)')
+          .in('attendance_id', attendanceIds)
+          .not('program_id', 'is', null),
+        supabase.from('activity_programs').select('name, extra_charge').gt('extra_charge', 0),
+      ])
+      const priceByProgram = new Map(
+        ((chargedProgramsRaw ?? []) as { name: string; extra_charge: number }[]).map((p) => [p.name, p.extra_charge]),
+      )
+      // 出席日は おやつ・学習教材 を既定で参加として数える（日々の記録で外した日を除く）
+      const participatedByAtt = participatedNamesByAttendance(
+        attendances.filter((a) => a.status === 'attended').map((a) => a.id),
+        (activitiesRaw ?? []) as unknown as ActivityParticipationRow[],
+      )
 
-      for (const act of activities) {
-        const prog = act.activity_programs
-        if (!prog || prog.extra_charge == null) continue
-        const att = attendanceMap[act.attendance_id]
+      for (const [attendanceId, names] of participatedByAtt) {
+        const att = attendanceMap[attendanceId]
         if (!att) continue
-        extraChargeRows.push({
-          child_id: att.child_id,
-          child_name: att.children?.name ?? '—',
-          program_name: prog.name,
-          extra_charge: prog.extra_charge,
-          unit_id: att.unit_id,
-        })
+        for (const name of names) {
+          const price = priceByProgram.get(name)
+          if (price == null) continue
+          extraChargeRows.push({
+            child_id: att.child_id,
+            child_name: att.children?.name ?? '—',
+            program_name: name,
+            extra_charge: price,
+            unit_id: att.unit_id,
+          })
+        }
       }
     }
   }
