@@ -20,6 +20,7 @@ import {
 } from './day-computation'
 import { isDefaultParticipationChild, participatedNamesByAttendance, type ActivityParticipationRow } from './default-activities'
 import { loadUpperLimitBillingInfo, UPPER_LIMIT_ADDITION } from '@/lib/kokuhoren/upper-limit-targets'
+import { unitsByRate } from './units'
 
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
 
@@ -74,15 +75,6 @@ export function specializedSupportCount(
 
 /** 日中一時支援の項目。国保連請求（給付費・実績記録票・CSV）には含めない */
 const DAYTIME_TRIGGERS = new Set<string>(['daytime_support', 'daytime_pickup', 'daytime_dropoff'])
-
-/**
- * 単位数 × 率（％）。1単位未満の端数は四捨五入する（国保連の算定と同じ）。
- * 例: 処遇改善加算 10,693単位 × 16.1% = 1,721.57 → 1,722単位
- * 浮動小数の誤差で .5 の判定がずれないよう、率は小数第3位までの整数にして計算する。
- */
-export function unitsByRate(units: number, ratePercent: number): number {
-  return Math.round((units * Math.round(ratePercent * 1000)) / 100000)
-}
 
 export type ChildAggregate = {
   childId: string

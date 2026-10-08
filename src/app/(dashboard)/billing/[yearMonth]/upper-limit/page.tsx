@@ -6,7 +6,7 @@ import { KokuhorenExportButton } from '@/components/billing/kokuhoren-export-but
 import { computeKokuhorenBilling } from '@/lib/kokuhoren/build'
 import { loadBillingChildren, loadUpperLimits } from '@/lib/kokuhoren/load'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
-import { resolveUpperLimitTargets } from '@/lib/kokuhoren/upper-limit-targets'
+import { loadSelfCostBases, resolveUpperLimitTargets } from '@/lib/kokuhoren/upper-limit-targets'
 
 export const dynamic = 'force-dynamic'
 
@@ -113,10 +113,11 @@ export default async function UpperLimitPage({
   )
 
   const childIds = [...new Set(children.map((c) => c.childId).filter(Boolean) as string[])]
-  const [saved, previous, targets] = await Promise.all([
+  const [saved, previous, targets, costBases] = await Promise.all([
     loadUpperLimits(supabase, yearMonth, childIds),
     loadUpperLimits(supabase, yearMonth, childIds, true),
     resolveUpperLimitTargets(supabase, yearMonth, childIds, facility),
+    loadSelfCostBases(supabase, scope.billingMonthlyIds, childIds),
   ])
 
   const selfForms: UpperLimitFormChild[] = []
@@ -128,6 +129,7 @@ export default async function UpperLimitPage({
     const target = targets.get(c.childId)
     const record = saved.get(c.childId)
     const prev = record ? null : previous.get(c.childId)
+    const costBase = costBases.get(c.childId)
     const form: UpperLimitFormChild = {
       childId: c.childId,
       childName: c.childName,
@@ -135,6 +137,9 @@ export default async function UpperLimitPage({
       copayLimit: c.copayLimit,
       selfTotalCost: c.totalCost,
       selfCopayAmount: c.capAdjusted,
+      selfProjection: costBase
+        ? { ...costBase, unitPrice: scope.unitPrice, copayExempt: c.copayExempt }
+        : null,
       isSelf: target?.isSelf ?? false,
       managerName: target?.managerName ?? '',
       managerNumber: target?.managerNumber ?? '',

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AlertTriangle, Calculator, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
 import { saveUpperLimit, deleteUpperLimit, type UpperLimitOfficeInput } from '@/app/actions/upper-limit'
+import { projectSelfCost, type SelfCostProjection } from '@/lib/billing/units'
 
 export type UpperLimitFormChild = {
   childId: string
@@ -16,6 +17,11 @@ export type UpperLimitFormChild = {
   /** 当月の当事業所ぶんの総費用額・利用者負担額（再集計の結果・上限額管理前） */
   selfTotalCost: number
   selfCopayAmount: number
+  /**
+   * 利用者負担上限額管理加算を付けた／外したときの当事業所の総費用額を計算する材料。
+   * 加算は保存後に請求明細へ付くので、保存前でも加算込みの見込み額を出すために使う
+   */
+  selfProjection: SelfCostProjection | null
   /** 受給者証・上限管理事業所情報から判定した、当事業所が管理事業所か */
   isSelf: boolean
   /** 他事業所が管理事業所のときの名称・番号 */
@@ -72,6 +78,7 @@ export function UpperLimitForm({
   const router = useRouter()
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
 
   const [isSelfManaged, setIsSelfManaged] = useState(child.saved?.isSelfManaged ?? child.isSelf)
@@ -134,9 +141,17 @@ export function UpperLimitForm({
     setOffices((prev) => prev.filter((_, idx) => idx !== i).map((o, idx) => ({ ...o, lineNo: idx + 1 })))
 
   const selfIdx = offices.findIndex((o) => o.officeNumber === facilityNumber)
+  // 他事業所に総費用額が入っていれば、保存時に利用者負担上限額管理加算（150単位）が付く。
+  // 加算は処遇改善加算の計算にも入るので、当事業所の総費用額は加算込みで見る
+  const withAddition = offices.some(
+    (o) => o.officeNumber.trim() !== facilityNumber && (Number(o.totalCost) || 0) > 0,
+  )
+  const expectedSelf = child.selfProjection
+    ? projectSelfCost(child.selfProjection, withAddition, child.copayLimit)
+    : { totalCost: child.selfTotalCost, copayAmount: child.selfCopayAmount }
   const selfStale =
     selfIdx >= 0 &&
-    (offices[selfIdx].totalCost !== child.selfTotalCost || offices[selfIdx].copayAmount !== child.selfCopayAmount)
+    (offices[selfIdx].totalCost !== expectedSelf.totalCost || offices[selfIdx].copayAmount !== expectedSelf.copayAmount)
 
   /**
    * 管理結果と「管理結果後利用者負担額」を、入力済みの利用者負担額から計算する。
@@ -182,6 +197,7 @@ export function UpperLimitForm({
 
   const handleSave = async () => {
     setMessage('')
+    setNotice('')
     setError('')
     if (!isSelfManaged && resultAmount.trim() === '') {
       setError('管理事業所から戻ってきた「管理結果後の利用者負担額」を入力してください')
@@ -209,6 +225,18 @@ export function UpperLimitForm({
     if (res.error) {
       setError(res.error)
       return
+    }
+    // 当事業所の総費用額は請求明細（国保連に出す明細書）と同じ額にそろえられる。入力と違えば知らせる
+    const applied = res.appliedSelfTotalCost
+    if (isSelfManaged && applied != null && selfIdx >= 0) {
+      const entered = Number(offices[selfIdx].totalCost) || 0
+      setOffice(selfIdx, { totalCost: applied })
+      if (applied !== entered) {
+        setNotice(
+          `当事業所の総費用額は、入力された ${yen(entered)} ではなく、請求明細の計算どおり ${yen(applied)} で保存しました。` +
+            `${yen(entered)}が正しい場合は、児童別の月次サービス実績で加算（延長加算など）の付き方を確認してください。`,
+        )
+      }
     }
     setMessage('保存しました。保護者への請求額と国保連請求に反映されます')
     router.refresh()
@@ -405,11 +433,12 @@ export function UpperLimitForm({
             {selfStale && (
               <div className="flex items-center justify-between gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5">
                 <span>
-                  当事業所の行が最新の実績（総費用額 {yen(child.selfTotalCost)} / 負担額 {yen(child.selfCopayAmount)}）と違います
+                  当事業所の行が最新の実績（総費用額 {yen(expectedSelf.totalCost)} / 負担額 {yen(expectedSelf.copayAmount)}
+                  {withAddition && child.selfProjection ? '・上限額管理加算込み' : ''}）と違います
                 </span>
                 <button
                   type="button"
-                  onClick={() => setOffice(selfIdx, { totalCost: child.selfTotalCost, copayAmount: child.selfCopayAmount })}
+                  onClick={() => setOffice(selfIdx, { totalCost: expectedSelf.totalCost, copayAmount: expectedSelf.copayAmount })}
                   className="inline-flex items-center gap-1 font-medium hover:underline shrink-0"
                 >
                   <RefreshCw className="h-3 w-3" />
@@ -518,6 +547,12 @@ export function UpperLimitForm({
       )}
 
       {error && <p className="text-xs text-red-600">{error}</p>}
+      {notice && (
+        <p className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5">
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          {notice}
+        </p>
+      )}
       {message && <p className="text-xs text-green-600">{message}</p>}
     </div>
   )

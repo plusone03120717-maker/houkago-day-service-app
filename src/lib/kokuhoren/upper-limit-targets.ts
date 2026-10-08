@@ -8,6 +8,7 @@
 // 書かれていることが多いので、名前でも自事業所かどうかを判定する。
 
 import type { createClient } from '@/lib/supabase/server'
+import { FACILITY_ADDITION_MAP } from '@/lib/billing/facility-additions'
 
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
 
@@ -217,3 +218,64 @@ export async function loadManagedCopays(
   for (const [childId, i] of info) if (i.managedCopay != null) map.set(childId, i.managedCopay)
   return map
 }
+
+/**
+ * 当事業所が上限管理する児童の「上限額管理加算を付けた／外したときの総費用額」を計算する材料。
+ * 加算は上限管理を保存したあとで請求明細に付くので、保存前の画面では請求明細の総費用額と
+ * 他事業所が計算した額（加算込み）がずれる。画面で見込み額を出せるように、
+ * 処遇改善加算・上限額管理加算を除いた単位数と処遇改善加算の率を返す。
+ */
+export async function loadSelfCostBases(
+  supabase: SupabaseLike,
+  billingMonthlyIds: string[],
+  childIds: string[],
+): Promise<Map<string, { baseUnits: number; treatmentRate: number; additionUnits: number }>> {
+  const map = new Map<string, { baseUnits: number; treatmentRate: number; additionUnits: number }>()
+  if (billingMonthlyIds.length === 0 || childIds.length === 0) return map
+
+  const [{ data: detailRows }, { data: monthlyRows }] = await Promise.all([
+    supabase
+      .from('billing_details')
+      .select('child_id, billing_monthly_id, total_units, service_breakdown')
+      .in('billing_monthly_id', billingMonthlyIds)
+      .in('child_id', childIds),
+    supabase.from('billing_monthly').select('id, unit_id').in('id', billingMonthlyIds),
+  ])
+  const unitByMonthly = new Map(
+    ((monthlyRows ?? []) as Array<{ id: string; unit_id: string }>).map((m) => [m.id, m.unit_id]),
+  )
+  const unitIds = [...new Set(unitByMonthly.values())]
+  const { data: rateRows } = unitIds.length
+    ? await supabase
+        .from('unit_addition_settings')
+        .select('unit_id, rate')
+        .eq('addition_key', 'treatment_improvement')
+        .in('unit_id', unitIds)
+    : { data: [] }
+  const rateByUnit = new Map(
+    ((rateRows ?? []) as Array<{ unit_id: string; rate: number | null }>).map((r) => [r.unit_id, Number(r.rate) || 0]),
+  )
+
+  for (const d of (detailRows ?? []) as Array<{
+    child_id: string
+    billing_monthly_id: string
+    total_units: number
+    service_breakdown: Array<{ name?: string; units: number }> | null
+  }>) {
+    if (map.has(d.child_id)) continue
+    const lines = d.service_breakdown ?? []
+    const treatment = lines.filter((l) => l.name?.startsWith(TREATMENT_LINE_PREFIX))
+    const addition = lines.filter((l) => l.name === UPPER_LIMIT_ADDITION.name)
+    const sum = (ls: Array<{ units: number }>) => ls.reduce((s, l) => s + (Number(l.units) || 0), 0)
+    map.set(d.child_id, {
+      baseUnits: d.total_units - sum(treatment) - sum(addition),
+      // 処遇改善加算の行がない（算定していない）児童は率 0 として扱う
+      treatmentRate: treatment.length > 0 ? rateByUnit.get(unitByMonthly.get(d.billing_monthly_id) ?? '') ?? 0 : 0,
+      additionUnits: UPPER_LIMIT_ADDITION.unitCount,
+    })
+  }
+  return map
+}
+
+/** 請求明細の内訳で、処遇改善加算の行の名前の先頭（「福祉・介護職員等処遇改善加算（Ⅰ）」など） */
+const TREATMENT_LINE_PREFIX = FACILITY_ADDITION_MAP.get('treatment_improvement')?.label ?? '福祉・介護職員等処遇改善加算'
