@@ -72,6 +72,15 @@ export function specializedSupportCount(
   return Math.min(base, usedDays)
 }
 
+/**
+ * 単位数 × 率（％）。1単位未満の端数は四捨五入する（国保連の算定と同じ）。
+ * 例: 処遇改善加算 10,693単位 × 16.1% = 1,721.57 → 1,722単位
+ * 浮動小数の誤差で .5 の判定がずれないよう、率は小数第3位までの整数にして計算する。
+ */
+export function unitsByRate(units: number, ratePercent: number): number {
+  return Math.round((units * Math.round(ratePercent * 1000)) / 100000)
+}
+
 export type ChildAggregate = {
   childId: string
   childName: string
@@ -575,7 +584,7 @@ export async function aggregateUnitMonth(
           missingAdditionValues.add(add.name)
           continue
         }
-        addRawLine(add.code, add.name, -Math.floor((basicUnits * add.rate) / 100))
+        addRawLine(add.code, add.name, -unitsByRate(basicUnits, add.rate))
       }
 
       // 当事業所が上限額管理事業所で、他事業所の利用もあった月（上限管理の画面で入力した内容から判定）
@@ -590,7 +599,7 @@ export async function aggregateUnitMonth(
           missingAdditionValues.add(add.name)
           continue
         }
-        addRawLine(add.code, add.name, Math.floor((subtotal * add.rate) / 100))
+        addRawLine(add.code, add.name, unitsByRate(subtotal, add.rate))
       }
     }
 
