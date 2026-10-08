@@ -113,8 +113,9 @@ export default async function UpperLimitPage({
   )
 
   const childIds = [...new Set(children.map((c) => c.childId).filter(Boolean) as string[])]
-  const [saved, targets] = await Promise.all([
+  const [saved, previous, targets] = await Promise.all([
     loadUpperLimits(supabase, yearMonth, childIds),
+    loadUpperLimits(supabase, yearMonth, childIds, true),
     resolveUpperLimitTargets(supabase, yearMonth, childIds, facility),
   ])
 
@@ -126,6 +127,7 @@ export default async function UpperLimitPage({
     if (!c.childId) continue
     const target = targets.get(c.childId)
     const record = saved.get(c.childId)
+    const prev = record ? null : previous.get(c.childId)
     const form: UpperLimitFormChild = {
       childId: c.childId,
       childName: c.childName,
@@ -137,6 +139,14 @@ export default async function UpperLimitPage({
       managerName: target?.managerName ?? '',
       managerNumber: target?.managerNumber ?? '',
       conflict: target?.conflict ?? null,
+      previous: prev
+        ? {
+            yearMonth: prev.yearMonth,
+            isSelfManaged: prev.isSelfManaged,
+            managerOfficeNumber: prev.managerOfficeNumber,
+            offices: prev.offices,
+          }
+        : null,
       saved: record
         ? {
             managerOfficeNumber: record.managerOfficeNumber,

@@ -22,6 +22,13 @@ export type UpperLimitFormChild = {
   managerName: string
   managerNumber: string
   conflict: string | null
+  /** 今月の入力がないとき、前に入力した月の内容（事業所の引き継ぎ用） */
+  previous: {
+    yearMonth: string
+    isSelfManaged: boolean
+    managerOfficeNumber: string
+    offices: UpperLimitOfficeInput[]
+  } | null
   saved: {
     managerOfficeNumber: string
     isSelfManaged: boolean
@@ -69,7 +76,10 @@ export function UpperLimitForm({
 
   const [isSelfManaged, setIsSelfManaged] = useState(child.saved?.isSelfManaged ?? child.isSelf)
   const [managerNumber, setManagerNumber] = useState(
-    child.saved && !child.saved.isSelfManaged ? child.saved.managerOfficeNumber : child.managerNumber,
+    child.saved && !child.saved.isSelfManaged
+      ? child.saved.managerOfficeNumber
+      : child.managerNumber ||
+          (child.previous && !child.previous.isSelfManaged ? child.previous.managerOfficeNumber : ''),
   )
   const [result, setResult] = useState<'1' | '2' | '3'>(child.saved?.result ?? '3')
   const [resultTouched, setResultTouched] = useState(child.saved != null)
@@ -91,8 +101,24 @@ export function UpperLimitForm({
   )
 
   // ── 当事業所が管理事業所: 事業所ごとの内訳 ──
+  // 前の月に調整した他事業所は、番号・名称だけ引き継ぐ（金額は毎月届く一覧表を見て入れ直す）
+  const carriedOffices = child.saved
+    ? []
+    : (child.previous?.isSelfManaged ? child.previous.offices : []).filter((o) => o.officeNumber !== facilityNumber)
   const [offices, setOffices] = useState<UpperLimitOfficeInput[]>(
-    child.saved?.isSelfManaged ? child.saved.offices : [selfRow(Math.min(child.selfCopayAmount, child.copayLimit))],
+    child.saved?.isSelfManaged
+      ? child.saved.offices
+      : [
+          selfRow(Math.min(child.selfCopayAmount, child.copayLimit)),
+          ...carriedOffices.map((o, i) => ({
+            lineNo: i + 2,
+            officeNumber: o.officeNumber,
+            officeName: o.officeName,
+            totalCost: 0,
+            copayAmount: 0,
+            managedCopayAmount: 0,
+          })),
+        ],
   )
 
   const setOffice = (i: number, patch: Partial<UpperLimitOfficeInput>) =>
@@ -369,6 +395,13 @@ export function UpperLimitForm({
                 </Button>
               </div>
             </div>
+            {carriedOffices.length > 0 && child.previous && (
+              <p className="text-xs text-indigo-700 bg-indigo-50 rounded-lg px-2.5 py-1.5">
+                {parseInt(child.previous.yearMonth.slice(4, 6))}月に調整した事業所（
+                {carriedOffices.map((o) => o.officeName || o.officeNumber).join('・')}
+                ）を引き継いでいます。金額は今月届いた一覧表を見て入力してください
+              </p>
+            )}
             {selfStale && (
               <div className="flex items-center justify-between gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5">
                 <span>
@@ -476,7 +509,8 @@ export function UpperLimitForm({
             )}
             {selfIdx >= 0 && (
               <p className="text-xs text-gray-500">
-                当事業所の「管理結果後」{yen(Number(offices[selfIdx].managedCopayAmount) || 0)}が、保護者への請求額になります
+                当事業所の「管理結果後」{yen(Number(offices[selfIdx].managedCopayAmount) || 0)}が、保護者への請求額になります。
+                他の事業所に総費用額が入っていると、利用者負担上限額管理加算（150単位）が自動で付きます
               </p>
             )}
           </div>

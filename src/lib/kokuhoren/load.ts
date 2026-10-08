@@ -155,6 +155,7 @@ function buildUpperLimitInput(
 
 export type UpperLimitRecord = {
   childId: string
+  yearMonth: string
   managerOfficeNumber: string
   isSelfManaged: boolean
   result: string
@@ -170,24 +171,29 @@ export async function loadUpperLimits(
   supabase: SupabaseLike,
   yearMonth: string,
   childIds: string[],
+  /** true: その月より前で最も新しい月の記録（翌月へ事業所を引き継ぐため） */
+  previous = false,
 ): Promise<Map<string, UpperLimitRecord>> {
   const map = new Map<string, UpperLimitRecord>()
   if (childIds.length === 0) return map
 
-  const { data: rows } = await supabase
+  const query = supabase
     .from('upper_limit_managements')
     .select(`
-      id, child_id, manager_office_number, is_self_managed, result, copay_limit,
+      id, child_id, year_month, manager_office_number, is_self_managed, result, copay_limit,
       upper_limit_management_offices (
         line_no, office_number, office_name, total_cost, copay_amount, managed_copay_amount
       )
     `)
-    .eq('year_month', yearMonth)
     .in('child_id', childIds)
+  const { data: rows } = previous
+    ? await query.lt('year_month', yearMonth).order('year_month', { ascending: false })
+    : await query.eq('year_month', yearMonth)
 
   type Row = {
     id: string
     child_id: string
+    year_month: string
     manager_office_number: string
     is_self_managed: boolean
     result: string
@@ -203,8 +209,10 @@ export async function loadUpperLimits(
   }
 
   for (const r of (rows ?? []) as unknown as Row[]) {
+    if (map.has(r.child_id)) continue
     map.set(r.child_id, {
       childId: r.child_id,
+      yearMonth: r.year_month,
       managerOfficeNumber: r.manager_office_number,
       isSelfManaged: r.is_self_managed,
       result: r.result,

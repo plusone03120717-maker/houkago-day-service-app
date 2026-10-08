@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { loadManagedCopays } from '@/lib/kokuhoren/upper-limit-targets'
+import { aggregateUnitMonth } from '@/lib/billing/aggregate'
 
 export type UpperLimitOfficeInput = {
   lineNo: number
@@ -128,9 +129,10 @@ function revalidateUpperLimit(yearMonth: string) {
 }
 
 /**
- * 請求明細（billing_details）の利用者負担額を、上限額管理の結果に合わせて直す。
- * 再集計しなくても、保護者への請求額と国保連請求にすぐ反映されるようにするため。
- * 結果がない（削除した）ときは、再集計と同じ min(負担上限月額, 1割) に戻す。
+ * 請求明細（billing_details）を、上限額管理の入力内容に合わせてその児童の分だけ計算し直す。
+ * 再集計しなくても、利用者負担額（管理結果後の額）と利用者負担上限額管理加算が
+ * 保護者への請求額と国保連請求にすぐ反映されるようにするため。
+ * 手入力で直した明細（recalculated_at が空）は内訳を作り直さず、負担額だけを置き換える。
  */
 async function syncBillingCopay(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -140,9 +142,9 @@ async function syncBillingCopay(
   const { data: rows } = await supabase
     .from('billing_details')
     .select(`
-      id, total_units, unit_price,
+      id, total_units, unit_price, recalculated_at,
       benefit_certificates (copay_limit),
-      billing_monthly!inner (year_month, units (facilities (facility_number)))
+      billing_monthly!inner (year_month, unit_id, units (facilities (facility_number)))
     `)
     .eq('child_id', childId)
     .eq('billing_monthly.year_month', yearMonth)
@@ -151,11 +153,54 @@ async function syncBillingCopay(
     id: string
     total_units: number
     unit_price: number
+    recalculated_at: string | null
     benefit_certificates: { copay_limit: number } | null
-    billing_monthly: { units: { facilities: { facility_number: string | null } | null } | null } | null
+    billing_monthly: { unit_id: string; units: { facilities: { facility_number: string | null } | null } | null } | null
   }
 
   for (const r of (rows ?? []) as unknown as Row[]) {
+    const unitId = r.billing_monthly?.unit_id
+    if (r.recalculated_at && unitId) {
+      const result = await aggregateUnitMonth(supabase, unitId, yearMonth)
+      const c = result.children.find((x) => x.childId === childId)
+      if (c) {
+        const { error } = await supabase
+          .from('billing_details')
+          .update({
+            total_days: c.totalDays,
+            total_units: c.totalUnits,
+            service_code: c.serviceCode,
+            unit_price: c.unitPrice,
+            copay_amount: c.copayAmount,
+            billed_amount: c.billedAmount,
+            service_breakdown: c.breakdown,
+            errors: c.errors,
+            recalculated_at: new Date().toISOString(),
+          })
+          .eq('id', r.id)
+        if (error) return `請求明細を更新できませんでした: ${error.message}`
+
+        // 当事業所が管理事業所なら、結果票の当事業所の行も加算後の総費用額にそろえる
+        // （利用者負担額は負担上限月額で頭打ちのことが多く、無償化の扱いもあるので画面で確認してもらう）
+        const facilityNumber = r.billing_monthly?.units?.facilities?.facility_number ?? ''
+        const { data: record } = await supabase
+          .from('upper_limit_managements')
+          .select('id')
+          .eq('child_id', childId)
+          .eq('year_month', yearMonth)
+          .eq('is_self_managed', true)
+          .maybeSingle()
+        if (record && facilityNumber) {
+          await supabase
+            .from('upper_limit_management_offices')
+            .update({ total_cost: c.totalCost })
+            .eq('management_id', record.id)
+            .eq('office_number', facilityNumber)
+        }
+        continue
+      }
+    }
+
     const facilityNumber = r.billing_monthly?.units?.facilities?.facility_number ?? ''
     const managed = await loadManagedCopays(supabase, yearMonth, [childId], facilityNumber)
     const totalCost = Math.floor(r.total_units * Number(r.unit_price))

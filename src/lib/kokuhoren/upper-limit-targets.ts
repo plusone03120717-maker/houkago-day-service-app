@@ -149,31 +149,71 @@ export async function resolveUpperLimitTargets(
 }
 
 /**
- * 上限額管理の結果、当事業所が利用者から受け取る負担額（管理結果後利用者負担額）。
- * 月ごとの記録のうち、当事業所の行があるものだけを返す。
- * この額が請求明細の利用者負担額・保護者への請求額・国保連の決定利用者負担額になる。
+ * 利用者負担上限額管理加算（月1回・150単位）のサービスコード。
+ * 放デイは令和6年度サービスコード表「放デイ上限額管理加算」で確認済み。
+ * 児発はコード表の並び（専門的支援実施加算 615702 / 635702 など）から 61 に置き換えたもの。
  */
+export const UPPER_LIMIT_ADDITION = {
+  name: '利用者負担上限額管理加算',
+  unitCount: 150,
+  code: (serviceType: string) => (serviceType === 'development_support' ? '615370' : '635370'),
+}
+
+export type UpperLimitBillingInfo = {
+  /** 管理結果後利用者負担額（当事業所の行）。null = 当事業所の行がない */
+  managedCopay: number | null
+  /**
+   * 利用者負担上限額管理加算を算定するか。
+   * 当事業所が管理事業所で、その月に他事業所の利用（総費用額あり）があるときだけ算定できる。
+   * 管理事業所しか利用していない月は、上限額に達していても算定できない。
+   */
+  managementAddition: boolean
+}
+
+/**
+ * 上限額管理の記録から、請求の計算に必要な値だけを児童ごとに読む。
+ * 管理結果後利用者負担額が、請求明細の利用者負担額・保護者への請求額・国保連の決定利用者負担額になる。
+ */
+export async function loadUpperLimitBillingInfo(
+  supabase: SupabaseLike,
+  yearMonth: string,
+  childIds: string[],
+  facilityNumber: string,
+): Promise<Map<string, UpperLimitBillingInfo>> {
+  const map = new Map<string, UpperLimitBillingInfo>()
+  if (childIds.length === 0 || !facilityNumber) return map
+
+  const { data } = await supabase
+    .from('upper_limit_managements')
+    .select('child_id, is_self_managed, upper_limit_management_offices (office_number, total_cost, managed_copay_amount)')
+    .eq('year_month', yearMonth)
+    .in('child_id', childIds)
+
+  for (const r of (data ?? []) as unknown as Array<{
+    child_id: string
+    is_self_managed: boolean
+    upper_limit_management_offices: Array<{ office_number: string; total_cost: number; managed_copay_amount: number }>
+  }>) {
+    const offices = r.upper_limit_management_offices ?? []
+    const self = offices.find((o) => o.office_number === facilityNumber)
+    map.set(r.child_id, {
+      managedCopay: self ? self.managed_copay_amount : null,
+      managementAddition:
+        r.is_self_managed && offices.some((o) => o.office_number !== facilityNumber && o.total_cost > 0),
+    })
+  }
+  return map
+}
+
+/** 管理結果後利用者負担額（当事業所の行があるものだけ） */
 export async function loadManagedCopays(
   supabase: SupabaseLike,
   yearMonth: string,
   childIds: string[],
   facilityNumber: string,
 ): Promise<Map<string, number>> {
+  const info = await loadUpperLimitBillingInfo(supabase, yearMonth, childIds, facilityNumber)
   const map = new Map<string, number>()
-  if (childIds.length === 0 || !facilityNumber) return map
-
-  const { data } = await supabase
-    .from('upper_limit_managements')
-    .select('child_id, upper_limit_management_offices (office_number, managed_copay_amount)')
-    .eq('year_month', yearMonth)
-    .in('child_id', childIds)
-
-  for (const r of (data ?? []) as unknown as Array<{
-    child_id: string
-    upper_limit_management_offices: Array<{ office_number: string; managed_copay_amount: number }>
-  }>) {
-    const self = (r.upper_limit_management_offices ?? []).find((o) => o.office_number === facilityNumber)
-    if (self) map.set(r.child_id, self.managed_copay_amount)
-  }
+  for (const [childId, i] of info) if (i.managedCopay != null) map.set(childId, i.managedCopay)
   return map
 }

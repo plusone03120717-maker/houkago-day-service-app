@@ -19,7 +19,7 @@ import {
   type ServiceItemLike,
 } from './day-computation'
 import { participatedNamesByAttendance, type ActivityParticipationRow } from './default-activities'
-import { loadManagedCopays } from '@/lib/kokuhoren/upper-limit-targets'
+import { loadUpperLimitBillingInfo, UPPER_LIMIT_ADDITION } from '@/lib/kokuhoren/upper-limit-targets'
 
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
 
@@ -370,7 +370,7 @@ export async function aggregateUnitMonth(
     certByChild.set(c.child_id, c)
   }
 
-  const managedCopays = await loadManagedCopays(supabase, yearMonth, childIds, facility?.facility_number ?? '')
+  const upperLimits = await loadUpperLimitBillingInfo(supabase, yearMonth, childIds, facility?.facility_number ?? '')
 
   // ── 児童ごとに集計 ────────────────────────────────────────
   const attByChild = new Map<string, typeof attendances>()
@@ -575,6 +575,11 @@ export async function aggregateUnitMonth(
         addRawLine(add.code, add.name, -Math.floor((basicUnits * add.rate) / 100))
       }
 
+      // 当事業所が上限額管理事業所で、他事業所の利用もあった月（上限管理の画面で入力した内容から判定）
+      if (upperLimits.get(childId)?.managementAddition) {
+        addLine(UPPER_LIMIT_ADDITION.code(serviceType), UPPER_LIMIT_ADDITION.name, UPPER_LIMIT_ADDITION.unitCount, 1)
+      }
+
       const subtotal = Array.from(lines.values()).reduce((s, l) => s + l.units, 0)
       for (const add of facilityAdditions) {
         if (add.def.calc !== 'treatment') continue
@@ -599,7 +604,7 @@ export async function aggregateUnitMonth(
     const totalCost = Math.floor(totalUnits * unitPrice)
     const tenPercent = Math.floor(totalCost / 10)
     // 上限額管理の結果が入力されていれば、その額（管理結果後利用者負担額）を負担額にする
-    const managedCopay = managedCopays.get(childId)
+    const managedCopay = upperLimits.get(childId)?.managedCopay ?? null
     const copayAmount = managedCopay ?? Math.min(copayLimit, tenPercent)
     const billedAmount = totalCost - copayAmount
 
