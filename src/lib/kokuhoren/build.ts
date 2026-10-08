@@ -332,9 +332,11 @@ export function buildKokuhorenCsv(
         '', '',                                         // 入院日数・外泊日数
       ])
 
-      // K122 明細書 明細情報レコード（03）: サービスコードごとに1行
+      // K122 明細書 明細情報レコード（03）: サービスコードごとに1行。
+      // 送迎加算の迎え・送りのように同じコード・同じ単位数の内訳は1行にまとめる
+      // （国保連の明細書も「送迎加算1 54単位 × 往復の合計回数」の1行になっている）
       const detailLines = c.breakdown && c.breakdown.length > 0
-        ? c.breakdown.map((l) => ({ code: l.code, unitCount: l.unitCount, count: l.count, units: l.units }))
+        ? mergeSameCode(c.breakdown)
         : [{
             code: c.serviceCode,
             unitCount: c.totalDays > 0 ? Math.round(c.totalUnits / c.totalDays) : c.totalUnits,
@@ -400,4 +402,22 @@ export function buildKokuhorenCsv(
   })
 
   return { errors, warnings, fileName, bytes: toShiftJis(content) }
+}
+
+/** 同じサービスコード・同じ1回あたり単位数の内訳を1行にまとめる（並び順は最初に出てきた順） */
+function mergeSameCode(
+  lines: Array<{ code: string; unitCount: number; count: number; units: number }>,
+): Array<{ code: string; unitCount: number; count: number; units: number }> {
+  const merged = new Map<string, { code: string; unitCount: number; count: number; units: number }>()
+  for (const l of lines) {
+    const key = `${l.code}|${l.unitCount}`
+    const prev = merged.get(key)
+    if (prev) {
+      prev.count += l.count
+      prev.units += l.units
+    } else {
+      merged.set(key, { code: l.code, unitCount: l.unitCount, count: l.count, units: l.units })
+    }
+  }
+  return [...merged.values()]
 }
