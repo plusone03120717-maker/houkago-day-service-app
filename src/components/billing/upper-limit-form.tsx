@@ -232,9 +232,22 @@ export function UpperLimitForm({
       const entered = Number(offices[selfIdx].totalCost) || 0
       setOffice(selfIdx, { totalCost: applied })
       if (applied !== entered) {
+        // 入力額が「上限額管理加算込み」の額なのに、他事業所の総費用額が0円で加算が付かなかった場合
+        const enteredWithAddition =
+          !withAddition &&
+          child.selfProjection != null &&
+          projectSelfCost(child.selfProjection, true, child.copayLimit).totalCost === entered
+        const zeroOffices = offices
+          .filter((o) => o.officeNumber.trim() !== facilityNumber && !(Number(o.totalCost) > 0))
+          .map((o) => o.officeName || o.officeNumber)
+          .filter(Boolean)
         setNotice(
-          `当事業所の総費用額は、入力された ${yen(entered)} ではなく、請求明細の計算どおり ${yen(applied)} で保存しました。` +
-            `${yen(entered)}が正しい場合は、児童別の月次サービス実績で加算（延長加算など）の付き方を確認してください。`,
+          enteredWithAddition
+            ? `入力された ${yen(entered)} は、利用者負担上限額管理加算（150単位）込みの額です。` +
+                `他の事業所${zeroOffices.length ? `（${zeroOffices.join('・')}）` : ''}の総費用額が0円のため加算は付かず、${yen(applied)} で保存しました。` +
+                `他の事業所の利用がある月は、届いた上限管理一覧表の総費用額・利用者負担額を入力して保存し直してください。`
+            : `当事業所の総費用額は、入力された ${yen(entered)} ではなく、請求明細の計算どおり ${yen(applied)} で保存しました。` +
+                `${yen(entered)}が正しい場合は、児童別の月次サービス実績で加算（延長加算など）の付き方を確認してください。`,
         )
       }
     }
@@ -525,6 +538,17 @@ export function UpperLimitForm({
                 </tbody>
               </table>
             </div>
+            {offices.some((o) => o.officeNumber.trim() !== facilityNumber && !(Number(o.totalCost) > 0)) && (
+              <p className="text-xs text-amber-600">
+                総費用額が0円の事業所があります（
+                {offices
+                  .filter((o) => o.officeNumber.trim() !== facilityNumber && !(Number(o.totalCost) > 0))
+                  .map((o) => o.officeName || o.officeNumber || `項番${o.lineNo}`)
+                  .join('・')}
+                ）。利用がある事業所は、届いた上限管理一覧表の総費用額・利用者負担額を入力してください。
+                利用がなかった事業所は行を削除してください（0円の事業所だけでは上限額管理加算は付きません）。
+              </p>
+            )}
             {selfIdx < 0 && (
               <p className="text-xs text-red-600">
                 当事業所（{facilityNumber}）の行がありません。当事業所の負担額が反映されません
