@@ -72,6 +72,9 @@ export function specializedSupportCount(
   return Math.min(base, usedDays)
 }
 
+/** 日中一時支援の項目。国保連請求（給付費・実績記録票・CSV）には含めない */
+const DAYTIME_TRIGGERS = new Set<string>(['daytime_support', 'daytime_pickup', 'daytime_dropoff'])
+
 /**
  * 単位数 × 率（％）。1単位未満の端数は四捨五入する（国保連の算定と同じ）。
  * 例: 処遇改善加算 10,693単位 × 16.1% = 1,721.57 → 1,722単位
@@ -458,6 +461,8 @@ export async function aggregateUnitMonth(
       for (const item of serviceItems) {
         // 保険外は給付費の対象外（実費管理で扱う）
         if (item.category === '保険外') continue
+        // 日中一時支援（送迎加算を含む）は市町村事業で国保連請求の対象外（保護者請求側で扱う）
+        if (DAYTIME_TRIGGERS.has(item.trigger_field)) continue
         // 専門的支援実施加算は月の実利用日数から回数が決まるので日ごとには扱わない
         if (item.trigger_field === 'specialized_support') continue
 
