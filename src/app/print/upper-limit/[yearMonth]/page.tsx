@@ -3,6 +3,8 @@ import { ArrowLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { PrintButton } from '@/components/documents/print-button'
 import { PdfSaveButton } from '@/components/documents/pdf-save-button'
+import { PrintChildFilter, type PrintChildOption } from '@/components/documents/print-child-filter'
+import { childrenFileLabel, parseChildrenParam } from '@/lib/print-children'
 import { UpperLimitDocument } from '@/components/documents/upper-limit-document'
 import { loadUpperLimitChildren } from '@/lib/kokuhoren/load'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
@@ -14,10 +16,12 @@ export default async function UpperLimitPrintPage({
   searchParams,
 }: {
   params: Promise<{ yearMonth: string }>
-  searchParams: Promise<{ billing?: string }>
+  searchParams: Promise<{ billing?: string; children?: string }>
 }) {
   const { yearMonth } = await params
-  const { billing: billingMonthlyId } = await searchParams
+  const { billing: billingMonthlyId, children: childrenParam } = await searchParams
+  const selectedIds = parseChildrenParam(childrenParam)
+  const filtered = selectedIds.length > 0
   const year = yearMonth.slice(0, 4)
   const month = yearMonth.slice(4, 6)
 
@@ -31,7 +35,7 @@ export default async function UpperLimitPrintPage({
     return <p className="p-8 text-sm text-red-600">{scope.error}</p>
   }
 
-  const [{ data: facilityRaw }, children] = await Promise.all([
+  const [{ data: facilityRaw }, allChildren] = await Promise.all([
     supabase.from('facilities').select('name').eq('facility_number', scope.facilityNumber).maybeSingle(),
     loadUpperLimitChildren(supabase, scope),
   ])
@@ -39,6 +43,14 @@ export default async function UpperLimitPrintPage({
     name: (facilityRaw as { name: string } | null)?.name ?? '',
     facilityNumber: scope.facilityNumber,
   }
+
+  const childOptions: PrintChildOption[] = allChildren
+    .filter((c) => c.childId)
+    .map((c) => ({ id: c.childId!, name: c.childName }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+  const children = filtered
+    ? allChildren.filter((c) => c.childId && selectedIds.includes(c.childId))
+    : allChildren
 
   return (
     <div className="p-4 sm:p-8">
@@ -48,7 +60,7 @@ export default async function UpperLimitPrintPage({
           className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800"
         >
           <ArrowLeft className="h-4 w-4" />
-          上限額管理へ戻る
+          上限管理へ戻る
         </Link>
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -63,15 +75,20 @@ export default async function UpperLimitPrintPage({
             {children.length > 0 && (
               <PdfSaveButton
                 pageSelector=".upper-limit-page"
-                fileName={`利用者負担上限額管理結果票_${yearMonth}.pdf`}
+                fileName={
+                  filtered
+                    ? `利用者負担上限額管理結果票_${yearMonth}_${childrenFileLabel(children.map((c) => c.childName))}.pdf`
+                    : `利用者負担上限額管理結果票_${yearMonth}.pdf`
+                }
               />
             )}
             <PrintButton />
           </div>
         </div>
-        {children.length === 0 && (
+        <PrintChildFilter options={childOptions} selectedIds={selectedIds} />
+        {children.length === 0 && !filtered && (
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-            当事業所が上限額管理事業所になっている児童がこの月にはいません。
+            当事業所が上限額管理事業所になっている児童で、上限管理の入力が済んでいる児童がこの月にはいません。
           </div>
         )}
       </div>

@@ -3,7 +3,8 @@
 
 import type { createClient } from '@/lib/supabase/server'
 import { computeKokuhorenBilling } from './build'
-import { loadBillingChildren, loadUpperLimits } from './load'
+import { loadBillingChildren } from './load'
+import { resolveUpperLimitTargets } from './upper-limit-targets'
 import type { BillingScope } from './scope'
 
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
@@ -50,35 +51,8 @@ export async function loadCopayList(supabase: SupabaseLike, scope: BillingScope)
     childrenInput,
   )
 
-  // 受給者証番号 → 児童ID・管理事業所の指定
-  const { data: detailRows } = await supabase
-    .from('billing_details')
-    .select(`
-      child_id,
-      children (benefit_certificates (
-        certificate_number, is_upper_limit_manager, upper_limit_manager, upper_limit_manager_number
-      ))
-    `)
-    .in('billing_monthly_id', scope.billingMonthlyIds)
-
-  type Cert = {
-    certificate_number: string
-    is_upper_limit_manager: boolean | null
-    upper_limit_manager: string | null
-    upper_limit_manager_number: string | null
-  }
-  const byCert = new Map<string, { childId: string; cert: Cert }>()
-  for (const r of (detailRows ?? []) as unknown as Array<{
-    child_id: string
-    children: { benefit_certificates: Cert[] } | null
-  }>) {
-    for (const cert of r.children?.benefit_certificates ?? []) {
-      byCert.set(cert.certificate_number, { childId: r.child_id, cert })
-    }
-  }
-
-  const childIds = [...new Set([...byCert.values()].map((v) => v.childId))]
-  const records = await loadUpperLimits(supabase, scope.yearMonth, childIds)
+  const childIds = [...new Set(childrenInput.map((c) => c.childId).filter(Boolean) as string[])]
+  const targets = await resolveUpperLimitTargets(supabase, scope.yearMonth, childIds, facility)
 
   // 欠席回数（出席管理で「欠席」になっている日数）
   const absentByChild = new Map<string, number>()
@@ -105,27 +79,23 @@ export async function loadCopayList(supabase: SupabaseLike, scope: BillingScope)
 
   const groups = new Map<string, CopayListGroup>()
   for (const c of children) {
-    const hit = byCert.get(c.certificateNumber)
-    if (!hit) continue
-    const record = records.get(hit.childId)
-    if (record?.isSelfManaged) continue // 当事業所が管理する児童は結果票の対象
-    const managerNumber = record?.managerOfficeNumber ?? hit.cert.upper_limit_manager_number ?? ''
-    const managerName = hit.cert.upper_limit_manager ?? ''
-    const hasManager =
-      record != null || (!hit.cert.is_upper_limit_manager && (managerNumber !== '' || managerName !== ''))
-    if (!hasManager) continue
+    if (!c.childId) continue
+    const target = targets.get(c.childId)
+    // 当事業所が管理する児童は結果票の対象なので、一覧表には載せない
+    if (!target || target.isSelf) continue
+    const { managerNumber, managerName } = target
 
     const key = managerNumber || managerName
     const g = groups.get(key) ?? { managerNumber, managerName, children: [] }
     g.children.push({
-      childId: hit.childId,
+      childId: c.childId,
       municipalityCode: c.municipalityCode,
       certificateNumber: c.certificateNumber,
       childName: c.childName,
       totalCost: c.totalCost,
       copayAmount: c.capAdjusted,
       usedDays: c.totalDays,
-      absentDays: absentByChild.get(hit.childId) ?? 0,
+      absentDays: absentByChild.get(c.childId) ?? 0,
     })
     groups.set(key, g)
   }

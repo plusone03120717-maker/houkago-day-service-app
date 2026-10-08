@@ -270,6 +270,7 @@ export async function loadUpperLimitChildren(
     // 請求対象になっている児童だけを出す（在籍のみで実績がない児童は結果票に載せない）
     const billing = byCert.get(certNumber)
     out.push({
+      childId: r.child_id,
       childName: r.children?.name ?? '(不明)',
       childNameKana: r.children?.name_kana ?? null,
       certificateNumber: certNumber,

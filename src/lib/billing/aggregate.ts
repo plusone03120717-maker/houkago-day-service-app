@@ -19,6 +19,7 @@ import {
   type ServiceItemLike,
 } from './day-computation'
 import { participatedNamesByAttendance, type ActivityParticipationRow } from './default-activities'
+import { loadManagedCopays } from '@/lib/kokuhoren/upper-limit-targets'
 
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
 
@@ -197,14 +198,14 @@ export async function aggregateUnitMonth(
   // ── 施設（単位数単価） ────────────────────────────────────
   const { data: unitRow } = await supabase
     .from('units')
-    .select('id, facility_id, service_type, facilities (id, unit_price)')
+    .select('id, facility_id, service_type, facilities (id, unit_price, facility_number)')
     .eq('id', unitId)
     .maybeSingle()
   if (!unitRow) return empty('ユニットが見つかりません')
 
   const unitInfo = unitRow as unknown as {
     service_type: string
-    facilities: { id: string; unit_price: number } | null
+    facilities: { id: string; unit_price: number; facility_number: string | null } | null
   }
   const serviceType = unitInfo.service_type
   const facility = unitInfo.facilities
@@ -368,6 +369,8 @@ export async function aggregateUnitMonth(
   for (const c of ((certsRaw ?? []) as CertRow[]).sort((a, b) => a.start_date.localeCompare(b.start_date))) {
     certByChild.set(c.child_id, c)
   }
+
+  const managedCopays = await loadManagedCopays(supabase, yearMonth, childIds, facility?.facility_number ?? '')
 
   // ── 児童ごとに集計 ────────────────────────────────────────
   const attByChild = new Map<string, typeof attendances>()
@@ -595,7 +598,9 @@ export async function aggregateUnitMonth(
     const copayLimit = cert?.copay_limit ?? 0
     const totalCost = Math.floor(totalUnits * unitPrice)
     const tenPercent = Math.floor(totalCost / 10)
-    const copayAmount = Math.min(copayLimit, tenPercent)
+    // 上限額管理の結果が入力されていれば、その額（管理結果後利用者負担額）を負担額にする
+    const managedCopay = managedCopays.get(childId)
+    const copayAmount = managedCopay ?? Math.min(copayLimit, tenPercent)
     const billedAmount = totalCost - copayAmount
 
     if (!cert) {

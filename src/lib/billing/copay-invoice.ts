@@ -18,6 +18,7 @@ import {
   type ServiceItemLike,
 } from './day-computation'
 import { participatedNamesByAttendance, type ActivityParticipationRow } from './default-activities'
+import { loadManagedCopays } from '@/lib/kokuhoren/upper-limit-targets'
 
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
 
@@ -147,7 +148,7 @@ export async function buildMonthInvoices(
   // ── 施設・ユニット ────────────────────────────────────────
   const { data: unitRow } = await supabase
     .from('units')
-    .select('id, name, facility_id, facilities (id, unit_price, daytime_transport_fee)')
+    .select('id, name, facility_id, facilities (id, unit_price, daytime_transport_fee, facility_number)')
     .eq('id', unitId)
     .maybeSingle()
   if (!unitRow) return empty('ユニットが見つかりません')
@@ -156,7 +157,7 @@ export async function buildMonthInvoices(
     id: string
     name: string
     facility_id: string
-    facilities: { id: string; unit_price: number; daytime_transport_fee: number } | null
+    facilities: { id: string; unit_price: number; daytime_transport_fee: number; facility_number: string | null } | null
   }
   const facilityId = unit.facilities?.id ?? unit.facility_id
   const unitPrice = Number(unit.facilities?.unit_price ?? 10)
@@ -346,6 +347,11 @@ export async function buildMonthInvoices(
 
   const detailByChild = new Map(details.map((d) => [d.child_id, d]))
 
+  // 上限額管理の結果が入っている児童（billing_details.copay_amount は結果の額に置き換わっている）
+  const managedCopays = await loadManagedCopays(
+    supabase, yearMonth, details.map((d) => d.child_id), unit.facilities?.facility_number ?? '',
+  )
+
   // ── 児童ごとに組み立て ────────────────────────────────────
   const children: ChildInvoice[] = []
 
@@ -371,16 +377,20 @@ export async function buildMonthInvoices(
     } else if (totalUnits === 0 && totalDays > 0) {
       warnings.push('単位数が0です。設定 → 国保連サービスコード・単位数設定 で基本報酬の単位数を登録してください')
     }
-    if (benefitCopay > 0) {
+    const upperLimitManaged = managedCopays.has(childId)
+    // 上限額管理で0円になった月も、0円になった理由が分かるように行を残す
+    if (benefitCopay > 0 || (upperLimitManaged && totalDays > 0)) {
       lines.push({
         category: 'copay',
         name: '放課後等デイサービス 利用者負担（給付費の1割）',
         unitPrice: null,
         count: totalDays,
         amount: benefitCopay,
-        detail: copayCapped
-          ? `総費用額 ${totalCost.toLocaleString()}円 / 利用 ${totalDays}日 / 負担上限月額を適用`
-          : `総費用額 ${totalCost.toLocaleString()}円 / 利用 ${totalDays}日`,
+        detail: upperLimitManaged
+          ? `総費用額 ${totalCost.toLocaleString()}円 / 利用 ${totalDays}日 / 上限額管理の結果を適用`
+          : copayCapped
+            ? `総費用額 ${totalCost.toLocaleString()}円 / 利用 ${totalDays}日 / 負担上限月額を適用`
+            : `総費用額 ${totalCost.toLocaleString()}円 / 利用 ${totalDays}日`,
       })
     }
 

@@ -64,7 +64,7 @@ export default async function CopayListPrintPage({
           className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800"
         >
           <ArrowLeft className="h-4 w-4" />
-          上限額管理へ戻る
+          上限管理へ戻る
         </Link>
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -93,7 +93,7 @@ export default async function CopayListPrintPage({
         {pages.length === 0 && !filtered && (
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
             他事業所が上限額管理事業所になっている児童がこの月にはいません。
-            受給者証の「上限管理事業所」が入っていない場合は、児童詳細の受給者証編集で入力してください。
+            児童詳細の「上限管理事業所情報」か受給者証の「上限管理事業所名」に他事業所名を入れると、ここに載ります。
           </div>
         )}
       </div>

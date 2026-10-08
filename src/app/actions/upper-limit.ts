@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { loadManagedCopays } from '@/lib/kokuhoren/upper-limit-targets'
 
 export type UpperLimitOfficeInput = {
   lineNo: number
@@ -31,14 +32,16 @@ export async function saveUpperLimit(input: SaveUpperLimitInput): Promise<{ erro
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'ログインが必要です' }
 
-  if (!/^\d{10}$/.test(input.managerOfficeNumber)) {
+  // 事業所番号は国保連CSVには必須だが、FAXの結果を先に入れられるよう空欄は許す
+  // （空欄のままCSVを出そうとすると、CSV側でエラーになる）
+  if (input.managerOfficeNumber !== '' && !/^\d{10}$/.test(input.managerOfficeNumber)) {
     return { error: '上限額管理事業所の事業所番号は10桁の数字で入力してください' }
   }
   if (input.isSelfManaged && input.offices.length === 0) {
     return { error: '当事業所が管理事業所の場合、事業所ごとの内訳が必要です' }
   }
   for (const o of input.offices) {
-    if (!/^\d{10}$/.test(o.officeNumber)) {
+    if (o.officeNumber !== '' && !/^\d{10}$/.test(o.officeNumber)) {
       return { error: `項番${o.lineNo}の事業所番号は10桁の数字で入力してください` }
     }
   }
@@ -79,8 +82,19 @@ export async function saveUpperLimit(input: SaveUpperLimitInput): Promise<{ erro
     if (officeError) return { error: `内訳を保存できませんでした: ${officeError.message}` }
   }
 
-  revalidatePath(`/billing/${input.yearMonth}`)
-  revalidatePath(`/billing/${input.yearMonth}/upper-limit`)
+  // 他事業所の番号は毎月同じなので、受給者証に未登録なら覚えておく
+  if (!input.isSelfManaged && input.managerOfficeNumber !== '') {
+    await supabase
+      .from('benefit_certificates')
+      .update({ upper_limit_manager_number: input.managerOfficeNumber })
+      .eq('child_id', input.childId)
+      .is('upper_limit_manager_number', null)
+  }
+
+  const syncError = await syncBillingCopay(supabase, input.childId, input.yearMonth)
+  if (syncError) return { error: syncError }
+
+  revalidateUpperLimit(input.yearMonth)
   return {}
 }
 
@@ -100,7 +114,57 @@ export async function deleteUpperLimit(
 
   if (error) return { error: `削除できませんでした: ${error.message}` }
 
+  const syncError = await syncBillingCopay(supabase, childId, yearMonth)
+  if (syncError) return { error: syncError }
+
+  revalidateUpperLimit(yearMonth)
+  return {}
+}
+
+function revalidateUpperLimit(yearMonth: string) {
   revalidatePath(`/billing/${yearMonth}`)
   revalidatePath(`/billing/${yearMonth}/upper-limit`)
-  return {}
+  revalidatePath(`/billing/${yearMonth}/invoices`)
+}
+
+/**
+ * 請求明細（billing_details）の利用者負担額を、上限額管理の結果に合わせて直す。
+ * 再集計しなくても、保護者への請求額と国保連請求にすぐ反映されるようにするため。
+ * 結果がない（削除した）ときは、再集計と同じ min(負担上限月額, 1割) に戻す。
+ */
+async function syncBillingCopay(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  childId: string,
+  yearMonth: string,
+): Promise<string | null> {
+  const { data: rows } = await supabase
+    .from('billing_details')
+    .select(`
+      id, total_units, unit_price,
+      benefit_certificates (copay_limit),
+      billing_monthly!inner (year_month, units (facilities (facility_number)))
+    `)
+    .eq('child_id', childId)
+    .eq('billing_monthly.year_month', yearMonth)
+
+  type Row = {
+    id: string
+    total_units: number
+    unit_price: number
+    benefit_certificates: { copay_limit: number } | null
+    billing_monthly: { units: { facilities: { facility_number: string | null } | null } | null } | null
+  }
+
+  for (const r of (rows ?? []) as unknown as Row[]) {
+    const facilityNumber = r.billing_monthly?.units?.facilities?.facility_number ?? ''
+    const managed = await loadManagedCopays(supabase, yearMonth, [childId], facilityNumber)
+    const totalCost = Math.floor(r.total_units * Number(r.unit_price))
+    const copay = managed.get(childId) ?? Math.min(r.benefit_certificates?.copay_limit ?? 0, Math.floor(totalCost / 10))
+    const { error } = await supabase
+      .from('billing_details')
+      .update({ copay_amount: copay, billed_amount: totalCost - copay })
+      .eq('id', r.id)
+    if (error) return `請求明細の負担額を更新できませんでした: ${error.message}`
+  }
+  return null
 }

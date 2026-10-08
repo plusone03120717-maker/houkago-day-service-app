@@ -325,10 +325,10 @@ export default async function BillingDetailPage({
                   className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
                 >
                   <Receipt className="h-4 w-4" />
-                  利用者負担上限額管理
+                  上限管理（一覧表・結果票・結果の入力）
                 </Link>
                 <p className="text-xs text-gray-400 mt-1.5">
-                  他事業所とFAXでやり取りした金額を入力すると、明細書の上限額管理欄と上限額管理結果票に反映されます。
+                  サイドバーの「上限管理」からも開けます。戻ってきた結果を入力すると、保護者への請求額と明細書の利用者負担額に反映されます。
                 </p>
               </div>
 

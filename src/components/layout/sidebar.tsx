@@ -31,11 +31,20 @@ import {
   LifeBuoy,
   BookMarked,
   NotebookPen,
+  Scale,
 } from 'lucide-react'
 import { useState } from 'react'
 
+type NavItem = {
+  href: string
+  label: string
+  icon: typeof LayoutDashboard
+  /** href の前方一致では判定できないページを、このナビの選択中として扱う */
+  match?: RegExp
+}
+
 // 管理者・全スタッフ向けナビ
-const adminNav = [
+const adminNav: Array<{ group: string; items: NavItem[] }> = [
   {
     group: 'メイン',
     items: [
@@ -58,6 +67,8 @@ const adminNav = [
       { href: '/shifts/leave', label: '有給管理', icon: Umbrella },
       { href: '/timecard', label: 'タイムカード', icon: Clock },
       { href: '/billing', label: '国保連請求', icon: CreditCard },
+      // 月ごとの画面（/billing/202609/upper-limit）も「上限管理」として光らせる
+      { href: '/billing/upper-limit', label: '上限管理', icon: Scale, match: /^\/billing\/(\d{6}\/)?upper-limit(\/|$)/ },
       { href: '/staff-requests', label: 'スタッフ申請', icon: Inbox },
     ],
   },
@@ -90,7 +101,7 @@ const adminNav = [
 ]
 
 // staff ロール向け（シフト管理・設定ページを除く）
-const staffNav = [
+const staffNav: Array<{ group: string; items: NavItem[] }> = [
   {
     group: 'メイン',
     items: [
@@ -179,7 +190,10 @@ export function Sidebar({ role }: { role: string }) {
             )}
             {group.items.map((item) => {
               const Icon = item.icon
-              const active = pathname === item.href || pathname.startsWith(item.href + '/')
+              const active = item.match
+                ? item.match.test(pathname)
+                : (pathname === item.href || pathname.startsWith(item.href + '/')) &&
+                  !nav.some((g) => g.items.some((other) => other.match?.test(pathname)))
               return (
                 <Link
                   key={item.href}

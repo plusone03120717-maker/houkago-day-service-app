@@ -164,7 +164,12 @@ export function computeKokuhorenBilling(
       : null
     if (c.upperLimit && c.upperLimit.resultAmount == null) {
       errors.push(
-        `${label}: 上限額管理事業所が設定されていますが、管理結果額が未入力です（請求明細画面で入力してください）`,
+        `${label}: 上限額管理事業所が設定されていますが、管理結果額が未入力です（国保連請求 → 上限管理で入力してください）`,
+      )
+    }
+    if (c.upperLimit && !/^\d{10}$/.test(c.upperLimit.officeNumber)) {
+      errors.push(
+        `${label}: 上限額管理事業所の事業所番号（10桁）が未入力です（国保連請求 → 上限管理で入力してください）`,
       )
     }
     const decidedCopay = managedCopay ?? capAdjusted

@@ -19,6 +19,7 @@ export type UpperLimitOfficeLine = {
 }
 
 export type UpperLimitChild = {
+  childId?: string
   childName: string
   childNameKana: string | null
   certificateNumber: string
