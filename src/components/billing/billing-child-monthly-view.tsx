@@ -170,6 +170,8 @@ export function BillingChildMonthlyView({
   const supabase = createClient()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  /** ユニットのサービス種別。児童発達支援は提供形態（平日／休日）がなく、延長の基準も5時間 */
+  const [unitServiceType, setUnitServiceType] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [confirmDate, setConfirmDate] = useState<string | null>(null)
@@ -220,7 +222,7 @@ export function BillingChildMonthlyView({
       .map((a: { id: string }) => a.id)
 
     // Step 2: 残りを並列取得
-    const [{ data: holidayData }, { data: publicHolidayData }, { data: recordData }, { data: actData }, { data: cancelledData }, { data: childData }] = await Promise.all([
+    const [{ data: holidayData }, { data: publicHolidayData }, { data: recordData }, { data: actData }, { data: cancelledData }, { data: childData }, { data: unitData }] = await Promise.all([
       supabase
         .from('child_school_holidays')
         .select('start_date, end_date, label')
@@ -258,7 +260,9 @@ export function BillingChildMonthlyView({
         .lte('date', monthEnd)
         .eq('status', 'cancelled'),
       supabase.from('children').select('service_type').eq('id', childId).maybeSingle(),
+      supabase.from('units').select('service_type').eq('id', unitId).maybeSingle(),
     ])
+    setUnitServiceType((unitData as { service_type: string } | null)?.service_type ?? null)
 
     setAttendances((attData ?? []) as DailyAttendance[])
     setSchoolHolidays((holidayData ?? []) as SchoolHoliday[])
@@ -353,6 +357,7 @@ export function BillingChildMonthlyView({
       basicItemIds,
       isHoliday: isHolidayDate(dateStr, schoolHolidays, publicHolidays),
       participatedActivities: activityMap.get(dateStr) ?? new Set(),
+      serviceType: unitServiceType,
     })
     return {
       ...base,
@@ -1097,17 +1102,22 @@ export function BillingChildMonthlyView({
                         <td className="border border-gray-200 px-3 py-2 text-gray-700 font-medium">
                           {dayLabel}
                         </td>
-                        <td
-                          className="border border-gray-200 px-2 py-2 text-center cursor-pointer hover:bg-orange-50"
-                          onClick={() => toggleServiceForm(dateStr, d.serviceFormType, d.autoServiceFormType)}
-                          title="クリックで平日／休日を切替（算定時間数・延長加算の基準も変わります）"
-                        >
-                          <FormTypeCircle type={d.serviceFormType} />
-                          <div className="text-[9px] text-gray-400 mt-0.5">
-                            {d.serviceFormType === 1 ? '平日' : '休日'}
-                            {d.serviceFormType !== d.autoServiceFormType && <span className="text-orange-500">（変更）</span>}
-                          </div>
-                        </td>
+                        {unitServiceType === 'development_support' ? (
+                          // 児童発達支援には提供形態（平日／休日）の区別がない
+                          <td className="border border-gray-200 px-2 py-2 text-center text-[10px] text-gray-400">—</td>
+                        ) : (
+                          <td
+                            className="border border-gray-200 px-2 py-2 text-center cursor-pointer hover:bg-orange-50"
+                            onClick={() => toggleServiceForm(dateStr, d.serviceFormType, d.autoServiceFormType)}
+                            title="クリックで平日／休日を切替（算定時間数・延長加算の基準も変わります）"
+                          >
+                            <FormTypeCircle type={d.serviceFormType} />
+                            <div className="text-[9px] text-gray-400 mt-0.5">
+                              {d.serviceFormType === 1 ? '平日' : '休日'}
+                              {d.serviceFormType !== d.autoServiceFormType && <span className="text-orange-500">（変更）</span>}
+                            </div>
+                          </td>
+                        )}
                         <td className="border border-gray-200 px-2 py-2 text-center">
                           <input
                             type="time"

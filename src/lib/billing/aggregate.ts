@@ -445,6 +445,7 @@ export async function aggregateUnitMonth(
         basicItemIds,
         isHoliday: isHolidayDate(date, schoolHolidays, facilityHolidays),
         participatedActivities: activityMap.get(`${childId}|${date}`) ?? new Set(),
+        serviceType,
       })
 
       // 実績記録票に出力する当日のチェック状態

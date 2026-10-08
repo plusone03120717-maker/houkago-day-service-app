@@ -149,8 +149,12 @@ export function isHolidayDate(
   return isJapaneseNationalHoliday(dateStr)
 }
 
-/** 延長支援加算の算定基準時間（分）。平日は3時間、学校休業日は5時間を超えた分が延長時間 */
-export function extensionThresholdMinutes(serviceFormType: 1 | 2): number {
+/**
+ * 延長支援加算の算定基準時間（分）。
+ * 放デイは平日3時間・学校休業日5時間、児童発達支援は曜日に関係なく5時間を超えた分が延長時間
+ */
+export function extensionThresholdMinutes(serviceFormType: 1 | 2, serviceType?: string | null): number {
+  if (serviceType === 'development_support') return 300
   return serviceFormType === 1 ? 180 : 300
 }
 
@@ -163,8 +167,14 @@ export function computeBillingDay(params: {
   basicItemIds: Set<string>
   isHoliday: boolean
   participatedActivities: Set<string>
+  /**
+   * ユニットのサービス種別。児童発達支援は平日・休業日の区別（提供形態）がなく、
+   * 時間区分は区分3（3時間超5時間以下）まで・5時間を超えた分が延長支援加算になる
+   */
+  serviceType?: string | null
 }): ComputedDay {
-  const { date, attendance: att, dailyRecords, basicItemIds, isHoliday, participatedActivities } = params
+  const { date, attendance: att, dailyRecords, basicItemIds, isHoliday, participatedActivities, serviceType } = params
+  const isDevelopmentSupport = serviceType === 'development_support'
 
   const isAttended = att?.status === 'attended'
   const isAbsent = att?.status === 'absent'
@@ -173,9 +183,10 @@ export function computeBillingDay(params: {
   const basicRecord = dailyRecords.find(
     (r) => r.date === date && r.service_item_id != null && basicItemIds.has(r.service_item_id),
   )
-  const autoServiceFormType: 1 | 2 = isHoliday ? 2 : 1
+  const autoServiceFormType: 1 | 2 = isHoliday && !isDevelopmentSupport ? 2 : 1
   const override = att?.service_form_override
-  const serviceFormType: 1 | 2 = override === 1 || override === 2 ? override : autoServiceFormType
+  const serviceFormType: 1 | 2 =
+    !isDevelopmentSupport && (override === 1 || override === 2) ? override : autoServiceFormType
   const startTime = basicRecord?.billing_start_time ?? att?.service_start_time ?? att?.check_in_time ?? null
   const endTime = basicRecord?.billing_end_time ?? att?.service_end_time ?? att?.check_out_time ?? null
 
@@ -186,7 +197,7 @@ export function computeBillingDay(params: {
     serviceFormType,
   )
   const extensionMinutes = isAttended
-    ? Math.max(0, rawMinutes - extensionThresholdMinutes(serviceFormType))
+    ? Math.max(0, rawMinutes - extensionThresholdMinutes(serviceFormType, serviceType))
     : 0
   const extensionLevel = getExtensionLevel(extensionMinutes)
 
