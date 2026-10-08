@@ -1,8 +1,14 @@
-// 出席した日は「おやつ」「学習教材」を既定で参加（チェック済み）として扱う。
+// 放課後等デイサービスの児童が出席した日は「おやつ」「学習教材」を既定で参加（チェック済み）として扱う。
+// 児童発達支援の児童は対象外（日々の記録でチェックした日だけ参加になる）。
 // 日々の記録で外した日は daily_activities に participated=false の行が残るので、その日だけ参加なしになる。
 // 請求側（保護者請求書・請求明細・月次実績・国保連集計）はすべてこの関数で参加状況を決める。
 
 export const DEFAULT_PARTICIPATION_PROGRAM_NAMES: readonly string[] = ['おやつ', '学習教材']
+
+/** 既定の参加の対象になる児童か（児童の利用サービスが放課後等デイサービス） */
+export function isDefaultParticipationChild(serviceType: string | null | undefined): boolean {
+  return serviceType === 'afterschool'
+}
 
 export type ActivityParticipationRow = {
   attendance_id: string
@@ -13,6 +19,7 @@ export type ActivityParticipationRow = {
 /**
  * 出席ID → 参加した活動名の集合。
  * - attendedAttendanceIds: 出席（attended）の出席ID。ここに入っている日は既定の活動を参加済みとして始める
+ *   （既定の参加の対象外＝児童発達支援の児童の出席IDは渡さないこと）
  * - rows: daily_activities の全行（participated=true/false の両方を渡すこと）
  */
 export function participatedNamesByAttendance(

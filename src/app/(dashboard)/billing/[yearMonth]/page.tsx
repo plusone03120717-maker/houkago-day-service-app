@@ -10,7 +10,7 @@ import { AiCheckButton } from '@/components/billing/ai-check-button'
 import { RecalcBillingButton } from '@/components/billing/recalc-billing-button'
 import { ActualCostForm } from '@/components/billing/actual-cost-form'
 import { BillingDetailsTable } from '@/components/billing/billing-details-table'
-import { participatedNamesByAttendance, type ActivityParticipationRow } from '@/lib/billing/default-activities'
+import { isDefaultParticipationChild, participatedNamesByAttendance, type ActivityParticipationRow } from '@/lib/billing/default-activities'
 
 type BillingDetail = {
   id: string
@@ -119,11 +119,11 @@ export default async function BillingDetailPage({
   if (unitIds.length > 0) {
     const { data: attendancesRaw } = await supabase
       .from('daily_attendance')
-      .select('id, child_id, unit_id, status, children(name)')
+      .select('id, child_id, unit_id, status, children(name, service_type)')
       .in('unit_id', unitIds)
       .gte('date', dateStart)
       .lt('date', dateEnd)
-    const attendances = (attendancesRaw ?? []) as unknown as { id: string; child_id: string; unit_id: string; status: string; children: { name: string } | null }[]
+    const attendances = (attendancesRaw ?? []) as unknown as { id: string; child_id: string; unit_id: string; status: string; children: { name: string; service_type: string | null } | null }[]
 
     if (attendances.length > 0) {
       const attendanceIds = attendances.map((a) => a.id)
@@ -140,9 +140,11 @@ export default async function BillingDetailPage({
       const priceByProgram = new Map(
         ((chargedProgramsRaw ?? []) as { name: string; extra_charge: number }[]).map((p) => [p.name, p.extra_charge]),
       )
-      // 出席日は おやつ・学習教材 を既定で参加として数える（日々の記録で外した日を除く）
+      // 放デイの児童の出席日は おやつ・学習教材 を既定で参加として数える（日々の記録で外した日を除く）
       const participatedByAtt = participatedNamesByAttendance(
-        attendances.filter((a) => a.status === 'attended').map((a) => a.id),
+        attendances
+          .filter((a) => a.status === 'attended' && isDefaultParticipationChild(a.children?.service_type))
+          .map((a) => a.id),
         (activitiesRaw ?? []) as unknown as ActivityParticipationRow[],
       )
 

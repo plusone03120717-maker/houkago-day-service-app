@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Plus, Settings, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
-import { participatedNamesByAttendance, type ActivityParticipationRow } from '@/lib/billing/default-activities'
+import { isDefaultParticipationChild, participatedNamesByAttendance, type ActivityParticipationRow } from '@/lib/billing/default-activities'
 import {
   calcHours,
   computeBillingDay,
@@ -220,7 +220,7 @@ export function BillingChildMonthlyView({
       .map((a: { id: string }) => a.id)
 
     // Step 2: 残りを並列取得
-    const [{ data: holidayData }, { data: publicHolidayData }, { data: recordData }, { data: actData }, { data: cancelledData }] = await Promise.all([
+    const [{ data: holidayData }, { data: publicHolidayData }, { data: recordData }, { data: actData }, { data: cancelledData }, { data: childData }] = await Promise.all([
       supabase
         .from('child_school_holidays')
         .select('start_date, end_date, label')
@@ -257,6 +257,7 @@ export function BillingChildMonthlyView({
         .gte('date', monthStart)
         .lte('date', monthEnd)
         .eq('status', 'cancelled'),
+      supabase.from('children').select('service_type').eq('id', childId).maybeSingle(),
     ])
 
     setAttendances((attData ?? []) as DailyAttendance[])
@@ -268,8 +269,11 @@ export function BillingChildMonthlyView({
     // 日付ごとの参加活動名セットを構築
     const attIdToDate = new Map((attData ?? []).map((a: { id: string; date: string }) => [a.id, a.date]))
     const newActivityMap = new Map<string, Set<string>>()
-    // 出席日は おやつ・学習教材 を既定で参加として扱う（日々の記録で外した日を除く）
-    const participatedByAtt = participatedNamesByAttendance(attendanceIds, (actData ?? []) as unknown as ActivityParticipationRow[])
+    // 放デイの児童の出席日は おやつ・学習教材 を既定で参加として扱う（日々の記録で外した日を除く）
+    const defaultAttendanceIds = isDefaultParticipationChild((childData as { service_type: string | null } | null)?.service_type)
+      ? attendanceIds
+      : []
+    const participatedByAtt = participatedNamesByAttendance(defaultAttendanceIds, (actData ?? []) as unknown as ActivityParticipationRow[])
     for (const [attendanceId, names] of participatedByAtt) {
       const date = attIdToDate.get(attendanceId)
       if (date) newActivityMap.set(date, names)

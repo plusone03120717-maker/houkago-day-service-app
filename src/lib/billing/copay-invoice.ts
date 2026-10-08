@@ -17,7 +17,7 @@ import {
   type DailyRecordLike,
   type ServiceItemLike,
 } from './day-computation'
-import { participatedNamesByAttendance, type ActivityParticipationRow } from './default-activities'
+import { isDefaultParticipationChild, participatedNamesByAttendance, type ActivityParticipationRow } from './default-activities'
 import { loadManagedCopays } from '@/lib/kokuhoren/upper-limit-targets'
 
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
@@ -196,7 +196,7 @@ export async function buildMonthInvoices(
       ' pickup_arrival_time, dropoff_arrival_time, daytime_support,' +
       ' daytime_support_start_time, daytime_support_end_time,' +
       ' daytime_pickup_arrival_time, daytime_dropoff_arrival_time,' +
-      ' children (id, name)',
+      ' children (id, name, service_type)',
     )
     .eq('unit_id', unitId)
     .gte('date', start)
@@ -207,7 +207,7 @@ export async function buildMonthInvoices(
       child_id: string
       daytime_support_start_time: string | null
       daytime_support_end_time: string | null
-      children: { id: string; name: string } | null
+      children: { id: string; name: string; service_type: string | null } | null
     }
   >
 
@@ -300,9 +300,11 @@ export async function buildMonthInvoices(
   const priceByProgram = new Map(
     ((chargedProgramsRaw ?? []) as Array<{ name: string; extra_charge: number }>).map((p) => [p.name, p.extra_charge]),
   )
-  // 出席日は おやつ・学習教材 を既定で参加として数える（日々の記録で外した日を除く）
+  // 放デイの児童の出席日は おやつ・学習教材 を既定で参加として数える（日々の記録で外した日を除く）
   const participatedByAtt = participatedNamesByAttendance(
-    attendedIds,
+    attendances
+      .filter((a) => a.status === 'attended' && isDefaultParticipationChild(a.children?.service_type))
+      .map((a) => a.id),
     (activitiesRaw ?? []) as unknown as ActivityParticipationRow[],
   )
   for (const [attendanceId, names] of participatedByAtt) {

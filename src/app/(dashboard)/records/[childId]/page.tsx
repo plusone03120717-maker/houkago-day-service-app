@@ -30,7 +30,7 @@ export default async function RecordPage({
   ] = await Promise.all([
     supabase
       .from('children')
-      .select('id, name, name_kana, photo_url, allergy_info, medical_info, disability_type')
+      .select('id, name, name_kana, photo_url, allergy_info, medical_info, disability_type, service_type')
       .eq('id', childId)
       .single(),
     supabase

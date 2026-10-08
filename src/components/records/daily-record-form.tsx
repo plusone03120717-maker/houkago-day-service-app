@@ -22,7 +22,7 @@ import {
 import { MedicationLogForm } from '@/components/medications/medication-log-form'
 import { formatDate } from '@/lib/utils'
 import { AutoTextarea } from '@/components/ui/auto-textarea'
-import { DEFAULT_PARTICIPATION_PROGRAM_NAMES } from '@/lib/billing/default-activities'
+import { DEFAULT_PARTICIPATION_PROGRAM_NAMES, isDefaultParticipationChild } from '@/lib/billing/default-activities'
 
 type Child = {
   id: string
@@ -32,6 +32,7 @@ type Child = {
   allergy_info: string | null
   medical_info: string | null
   disability_type: string | null
+  service_type: string | null
 }
 
 type Attendance = {
@@ -144,10 +145,12 @@ export function DailyRecordForm({
   const [activityNotes, setActivityNotes] = useState<Record<string, string>>(
     Object.fromEntries(activities.map((a) => [a.program_id ?? '', a.evaluation_notes ?? '']))
   )
-  // 出席した日は おやつ・学習教材 を既定でチェック済みにする（記録済みの日は、その内容のまま）
+  // 放デイの児童が出席した日は おやつ・学習教材 を既定でチェック済みにする（記録済みの日は、その内容のまま）
+  // 児発の児童は既定のチェックなし
+  const usesDefaultPrograms = attendance?.status === 'attended' && isDefaultParticipationChild(child.service_type)
   const [selectedPrograms, setSelectedPrograms] = useState<string[]>(() => {
     const saved = activities.filter((a) => a.participated).map((a) => a.program_id ?? '').filter(Boolean)
-    if (attendance?.status !== 'attended') return saved
+    if (!usesDefaultPrograms) return saved
     const recorded = new Set(activities.map((a) => a.program_id))
     const defaults = programs
       .filter((p) => DEFAULT_PARTICIPATION_PROGRAM_NAMES.includes(p.name) && !recorded.has(p.id))
@@ -331,7 +334,7 @@ export function DailyRecordForm({
         if (existing.participated) {
           await supabase.from('daily_activities').update({ participated: false }).eq('id', existing.id)
         }
-      } else if (attendance.status === 'attended' && DEFAULT_PARTICIPATION_PROGRAM_NAMES.includes(prog.name)) {
+      } else if (usesDefaultPrograms && DEFAULT_PARTICIPATION_PROGRAM_NAMES.includes(prog.name)) {
         await supabase.from('daily_activities').insert({
           attendance_id: attendance.id,
           program_id: prog.id,

@@ -18,7 +18,7 @@ import {
   type DailyRecordLike,
   type ServiceItemLike,
 } from './day-computation'
-import { participatedNamesByAttendance, type ActivityParticipationRow } from './default-activities'
+import { isDefaultParticipationChild, participatedNamesByAttendance, type ActivityParticipationRow } from './default-activities'
 import { loadUpperLimitBillingInfo, UPPER_LIMIT_ADDITION } from '@/lib/kokuhoren/upper-limit-targets'
 
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
@@ -274,14 +274,14 @@ export async function aggregateUnitMonth(
       'id, child_id, date, status, check_in_time, check_out_time, service_start_time, service_end_time,' +
       ' pickup_arrival_time, dropoff_arrival_time, daytime_support,' +
       ' daytime_pickup_arrival_time, daytime_dropoff_arrival_time, service_form_override,' +
-      ' children (id, name)',
+      ' children (id, name, service_type)',
     )
     .eq('unit_id', unitId)
     .gte('date', start)
     .lte('date', end)
     .in('status', ['attended', 'absent'])
   const attendances = (attRaw ?? []) as unknown as Array<
-    AttendanceLike & { child_id: string; children: { id: string; name: string } | null }
+    AttendanceLike & { child_id: string; children: { id: string; name: string; service_type: string | null } | null }
   >
 
   if (attendances.length === 0) {
@@ -353,8 +353,11 @@ export async function aggregateUnitMonth(
   const attIdToDate = new Map(attendances.map((a) => [a.id, a.date]))
   const attIdToChild = new Map(attendances.map((a) => [a.id, a.child_id]))
   const activityMap = new Map<string, Set<string>>() // `${childId}|${date}` → 活動名
+  // おやつ・学習教材の既定の参加は放デイの児童のみ（児発の児童はチェックした日だけ）
   const participatedByAtt = participatedNamesByAttendance(
-    attendedIds,
+    attendances
+      .filter((a) => a.status === 'attended' && isDefaultParticipationChild(a.children?.service_type))
+      .map((a) => a.id),
     (activitiesRaw ?? []) as unknown as ActivityParticipationRow[],
   )
   for (const [attendanceId, names] of participatedByAtt) {
