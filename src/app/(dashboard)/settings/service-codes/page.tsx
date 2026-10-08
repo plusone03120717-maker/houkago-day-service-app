@@ -2,7 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ArrowRight } from 'lucide-react'
+import { FACILITY_ADDITION_MAP, additionGroup, additionLineName } from '@/lib/billing/facility-additions'
 import {
   ServiceCodeForm,
   type BasicRateRow,
@@ -39,6 +40,30 @@ export default async function ServiceCodesSettingsPage() {
     .select('unit_id, extension_level, unit_count, billing_code')
   const extensionRates = (extRatesRaw ?? []) as unknown as (ExtensionRateRow & { unit_id: string })[]
 
+  // 事業所につく加算・減算（児童指導員等加配加算など）は別画面で登録する。ここでは確認用に一覧だけ出す
+  const { data: additionsRaw } = await supabase
+    .from('unit_addition_settings')
+    .select('unit_id, addition_key, option_value, unit_count, rate, billing_code')
+  const facilityAdditions = ((additionsRaw ?? []) as Array<{
+    unit_id: string
+    addition_key: string
+    option_value: string | null
+    unit_count: number
+    rate: number | null
+    billing_code: string | null
+  }>).flatMap((a) => {
+    const def = FACILITY_ADDITION_MAP.get(a.addition_key)
+    if (!def || !a.option_value) return []
+    const isRate = additionGroup(def) !== '加算'
+    if (isRate ? !a.rate : a.unit_count <= 0) return []
+    return [{
+      unitId: a.unit_id,
+      name: additionLineName(def, a.option_value),
+      value: isRate ? `${a.rate}%` : `${a.unit_count}単位`,
+      code: a.billing_code,
+    }]
+  })
+
   return (
     <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-3">
@@ -68,6 +93,17 @@ export default async function ServiceCodesSettingsPage() {
         </CardContent>
       </Card>
 
+      <Link
+        href="/settings/facility-additions"
+        className="flex items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 hover:bg-indigo-100"
+      >
+        <span>
+          <strong>児童指導員等加配加算・専門的支援体制加算・福祉専門職員配置等加算・処遇改善加算・各種減算</strong>は、
+          この画面ではなく<strong>「事業所の加算・減算設定」</strong>で単位数・サービスコードを登録します
+        </span>
+        <ArrowRight className="h-4 w-4 shrink-0" />
+      </Link>
+
       {units.map((unit) => (
         <Card key={unit.id}>
           <CardHeader className="pb-3">
@@ -80,6 +116,29 @@ export default async function ServiceCodesSettingsPage() {
               rates={rates.filter((r) => r.unit_id === unit.id)}
               extensionRates={extensionRates.filter((r) => r.unit_id === unit.id)}
             />
+            {facilityAdditions.some((a) => a.unitId === unit.id) && (
+              <div className="mt-5 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-gray-900">事業所の加算・減算（確認用）</p>
+                  <Link href="/settings/facility-additions" className="text-xs text-indigo-600 hover:underline">
+                    変更は「事業所の加算・減算設定」で →
+                  </Link>
+                </div>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {facilityAdditions
+                      .filter((a) => a.unitId === unit.id)
+                      .map((a) => (
+                        <tr key={a.name} className="border-t border-gray-100">
+                          <td className="py-1.5 text-gray-700">{a.name}</td>
+                          <td className="py-1.5 text-right text-gray-700 w-20">{a.value}</td>
+                          <td className="py-1.5 text-right font-mono text-gray-700 w-24">{a.code ?? '未設定'}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       ))}
