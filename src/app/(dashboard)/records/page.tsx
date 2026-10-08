@@ -293,14 +293,15 @@ export default async function RecordsPage({
     if (plan) scheduleDefaultsByAttendanceId[a.id] = resolveDefaults(plan)
   }
 
-  // ユニットでグループ
-  const byUnit: Record<string, { unitName: string; items: AttendedChild[] }> = {}
-  attended.forEach((a) => {
-    const unitId = a.unit_id
-    const unitName = a.units?.name ?? 'ユニット不明'
-    if (!byUnit[unitId]) byUnit[unitId] = { unitName, items: [] }
-    byUnit[unitId].items.push(a)
-  })
+  // ユニット（放デイ・児発など）で分けず、全員を1つの一覧にして名前順に並べる
+  const byUnit: Record<string, { unitName: string; items: AttendedChild[] }> = {
+    all: {
+      unitName: '',
+      items: [...attended].sort((a, b) =>
+        (a.children?.name_kana ?? a.children?.name ?? '').localeCompare(b.children?.name_kana ?? b.children?.name ?? '', 'ja'),
+      ),
+    },
+  }
 
   // 前後日
   const d = new Date(targetDate)

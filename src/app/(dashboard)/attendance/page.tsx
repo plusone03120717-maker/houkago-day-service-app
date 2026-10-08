@@ -242,12 +242,15 @@ export default async function AttendancePage({
     restUnits.forEach((u, i) => {
       boards.push({ unitId: u.id, board: buildUnitBoard(restData[i], u.id, today) })
     })
-    // 同じユニットの児童がまとまって並ぶよう、ユニット名順に整える
-    const order = new Map(units.map((u, i) => [u.id, i]))
-    boards.sort((a, b) => (order.get(a.unitId) ?? 0) - (order.get(b.unitId) ?? 0))
   }
 
+  // 「すべて」表示はユニット（放デイ・児発など）で分けず、全員を名前順に並べる
   const reservations = boards.flatMap((b) => b.board.reservations)
+  if (showAllUnits) {
+    reservations.sort((a, b) =>
+      (a.children?.name_kana ?? a.children?.name ?? '').localeCompare(b.children?.name_kana ?? b.children?.name ?? '', 'ja'),
+    )
+  }
   const attendances = boards.flatMap((b) => b.board.attendances)
 
   // 同じ児童が複数ユニットに在籍していても取り違えないよう、

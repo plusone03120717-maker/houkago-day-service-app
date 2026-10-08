@@ -293,11 +293,12 @@ export default async function TransportPage({
             ? att?.daytime_dropoff_vehicle_id
             : att?.dropoff_vehicle_id) ?? null,
         sortOrder: d.sort_order,
-        // 手動で組み分けされていれば その ID、なければ 区分・時間・場所で自動判定
-        // 自動判定の便はユニットをまたがない（記録先が別のため）
+        // 手動で組み分けされていれば その ID、なければ 区分・時間・場所で自動判定。
+        // 放デイと児発の子が同じ車に乗るので、自動判定の便もユニットをまたいでまとめる
+        // （送迎の記録先は行ごとの出席記録なので、便がユニットをまたいでも困らない）
         groupKey:
           d.trip_group_id ??
-          `auto|${sched.unit_id}|${direction}|${(recorded ?? planned)?.slice(0, 5) ?? ''}|${d.pickup_location ?? ''}`,
+          `auto|${direction}|${(recorded ?? planned)?.slice(0, 5) ?? ''}|${d.pickup_location ?? ''}`,
         isManualGroup: !!d.trip_group_id,
         schoolName: d.children?.schools?.name ?? null,
         homeAddress: d.children?.address ?? null,

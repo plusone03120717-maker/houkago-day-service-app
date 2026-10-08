@@ -174,9 +174,9 @@ export function RecordsListBoard({
           この日の出席記録がありません
         </div>
       ) : (
-        Object.entries(byUnit).map(([unitId, { unitName, items }]) => (
-          <div key={unitId}>
-            <h2 className="text-sm font-semibold text-gray-500 mb-2 px-1">{unitName}</h2>
+        Object.entries(byUnit).map(([groupKey, { unitName, items }]) => (
+          <div key={groupKey}>
+            {unitName && <h2 className="text-sm font-semibold text-gray-500 mb-2 px-1">{unitName}</h2>}
             <div className="space-y-3">
               {items.map((a) => {
                 const record = recordByAttendanceId[a.id]
@@ -191,7 +191,7 @@ export function RecordsListBoard({
                   <div key={a.id}>
                     <Card className={`${isAbsent ? 'opacity-70' : ''} ${isExpanded ? 'rounded-b-none border-b-0' : ''} overflow-hidden`}>
                       {/* 名前・記録状態 → 詳細ページへのリンク */}
-                      <Link href={`/records/${a.child_id}?date=${targetDate}&unit=${unitId}`}>
+                      <Link href={`/records/${a.child_id}?date=${targetDate}&unit=${a.unit_id}`}>
                         <CardContent className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer">
                           <div className="flex items-center gap-3">
                             <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -203,8 +203,11 @@ export function RecordsListBoard({
                             </div>
                             <div>
                               <p className="font-medium text-gray-900">{a.children?.name ?? '—'}</p>
-                              {a.children?.name_kana && (
-                                <p className="text-xs text-gray-400">{a.children.name_kana}</p>
+                              {(a.children?.name_kana || a.units?.name) && (
+                                <p className="text-xs text-gray-400">
+                                  {a.children?.name_kana}
+                                  {a.units?.name && <span className="ml-1.5">（{a.units.name}）</span>}
+                                </p>
                               )}
                             </div>
                           </div>
