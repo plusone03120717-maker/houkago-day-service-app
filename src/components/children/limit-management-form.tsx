@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Save } from 'lucide-react'
+import { Save, Trash2 } from 'lucide-react'
 
 interface Props {
   childId: string
@@ -21,6 +21,7 @@ export function LimitManagementForm({ childId, initial }: Props) {
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
 
   const [form, setForm] = useState({
@@ -63,6 +64,30 @@ export function LimitManagementForm({ childId, initial }: Props) {
     startTransition(() => router.push(`/children/${childId}`))
   }
 
+  // 上限管理の対象から外れた・登録を間違えたときに消す。
+  // 月ごとに入力済みの上限管理（請求の上限管理画面）は消えない
+  const handleDelete = async () => {
+    if (!initial?.id) return
+    if (!confirm(`上限管理事業所「${initial.facility_name ?? ''}」の登録を削除しますか？`)) return
+    setDeleting(true)
+    setError('')
+    const { data, error: e } = await supabase
+      .from('child_limit_management')
+      .delete()
+      .eq('id', initial.id)
+      .select('id')
+    if (e || !data || data.length === 0) {
+      setError(e ? `削除できませんでした: ${e.message}` : '削除できませんでした（権限がないか、すでに削除されています）')
+      setDeleting(false)
+      return
+    }
+    setDeleting(false)
+    startTransition(() => {
+      router.push(`/children/${childId}`)
+      router.refresh()
+    })
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-5 max-w-2xl">
       {error && (
@@ -92,10 +117,24 @@ export function LimitManagementForm({ childId, initial }: Props) {
         />
       </div>
 
-      <Button type="submit" disabled={saving}>
-        <Save className="h-4 w-4" />
-        {saving ? '保存中...' : initial?.id ? '変更を保存' : '上限管理事業所を登録'}
-      </Button>
+      <div className="flex items-center justify-between gap-3">
+        <Button type="submit" disabled={saving || deleting}>
+          <Save className="h-4 w-4" />
+          {saving ? '保存中...' : initial?.id ? '変更を保存' : '上限管理事業所を登録'}
+        </Button>
+        {initial?.id && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleDelete}
+            disabled={saving || deleting}
+            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+          >
+            <Trash2 className="h-4 w-4" />
+            {deleting ? '削除中...' : 'この登録を削除'}
+          </Button>
+        )}
+      </div>
     </form>
   )
 }
