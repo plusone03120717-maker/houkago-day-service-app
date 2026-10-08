@@ -53,6 +53,7 @@ type DailyAttendance = {
   daytime_support_end_time: string | null
   daytime_pickup_arrival_time: string | null
   daytime_dropoff_arrival_time: string | null
+  service_form_override: number | null
 }
 
 type ActivityRecord = {
@@ -74,7 +75,6 @@ type BillingDailyRecord = {
   is_checked: boolean
   billing_start_time: string | null
   billing_end_time: string | null
-  service_form_override: number | null
   daytime_pickup: boolean
   daytime_dropoff: boolean
 }
@@ -99,7 +99,7 @@ function getDaysInMonth(yearMonth: string): string[] {
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 const ATTENDANCE_COLUMNS =
-  'id, date, status, check_in_time, check_out_time, service_start_time, service_end_time, pickup_type, pickup_arrival_time, dropoff_arrival_time, daytime_support, daytime_support_start_time, daytime_support_end_time, daytime_pickup_arrival_time, daytime_dropoff_arrival_time'
+  'id, date, status, check_in_time, check_out_time, service_start_time, service_end_time, pickup_type, pickup_arrival_time, dropoff_arrival_time, daytime_support, daytime_support_start_time, daytime_support_end_time, daytime_pickup_arrival_time, daytime_dropoff_arrival_time, service_form_override'
 const CATEGORY_COLORS: Record<ServiceItem['category'], string> = {
   '基本': 'bg-teal-100 text-teal-700',
   '加算': 'bg-indigo-100 text-indigo-700',
@@ -238,7 +238,7 @@ export function BillingChildMonthlyView({
         : { data: [] },
       supabase
         .from('billing_daily_records')
-        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, service_form_override, daytime_pickup, daytime_dropoff')
+        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, daytime_pickup, daytime_dropoff')
         .eq('child_id', childId)
         .eq('unit_id', unitId)
         .gte('date', monthStart)
@@ -452,7 +452,7 @@ export function BillingChildMonthlyView({
       const { data, error } = await supabase
         .from('billing_daily_records')
         .upsert(payload, { onConflict: 'child_id,unit_id,date,service_item_id' })
-        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, service_form_override, daytime_pickup, daytime_dropoff')
+        .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, daytime_pickup, daytime_dropoff')
         .single()
       if (!error && data) {
         setManualRecords((prev) => {
@@ -532,7 +532,7 @@ export function BillingChildMonthlyView({
     const { data, error } = await supabase
       .from('billing_daily_records')
       .upsert({ ...(existing ?? {}), ...payload }, { onConflict: 'child_id,unit_id,date,service_item_id' })
-      .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, service_form_override, daytime_pickup, daytime_dropoff')
+      .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, daytime_pickup, daytime_dropoff')
       .single()
     if (!error && data) {
       setManualRecords((prev) => {
@@ -550,34 +550,18 @@ export function BillingChildMonthlyView({
   }
 
   // ── 提供形態（平日／休日）の手動切替 ─────────────────────────
-  // 自動判定（土日祝・学校休日など）と同じ値に戻したら上書きを外す。基本報酬の行に保存する
-  const toggleServiceForm = async (itemId: string, dateStr: string, current: 1 | 2, auto: 1 | 2) => {
+  // 自動判定（土日祝・学校休日など）と同じ値に戻したら上書きを外す。出欠記録に保存する
+  const toggleServiceForm = async (dateStr: string, current: 1 | 2, auto: 1 | 2) => {
+    const att = attendances.find((a) => a.date === dateStr)
+    if (!att) return
     const next: 1 | 2 = current === 1 ? 2 : 1
-    const existing = getManualRecord(itemId, dateStr)
-    const payload = {
-      child_id: childId,
-      unit_id: unitId,
-      date: dateStr,
-      year_month: effYearMonth,
-      service_item_id: itemId,
-      is_checked: true,
-      service_form_override: next === auto ? null : next,
-    }
-    const { data, error } = await supabase
-      .from('billing_daily_records')
-      .upsert({ ...(existing ?? {}), ...payload }, { onConflict: 'child_id,unit_id,date,service_item_id' })
-      .select('id, date, service_item_id, is_checked, billing_start_time, billing_end_time, service_form_override, daytime_pickup, daytime_dropoff')
-      .single()
+    const value = next === auto ? null : next
+    const { error } = await supabase.from('daily_attendance').update({ service_form_override: value }).eq('id', att.id)
     if (error) {
       alert(`提供形態を変更できませんでした: ${error.message}`)
       return
     }
-    if (data) {
-      setManualRecords((prev) => {
-        const filtered = prev.filter((r) => !(r.date === dateStr && r.service_item_id === itemId))
-        return [...filtered, data as BillingDailyRecord]
-      })
-    }
+    setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, service_form_override: value } : a))
   }
 
   // ── Toggle transport in daily_attendance ────────────────────
@@ -1110,10 +1094,8 @@ export function BillingChildMonthlyView({
                           {dayLabel}
                         </td>
                         <td
-                          className={`border border-gray-200 px-2 py-2 text-center ${basicItem ? 'cursor-pointer hover:bg-orange-50' : ''}`}
-                          onClick={() => {
-                            if (basicItem) toggleServiceForm(basicItem.id, dateStr, d.serviceFormType, d.autoServiceFormType)
-                          }}
+                          className="border border-gray-200 px-2 py-2 text-center cursor-pointer hover:bg-orange-50"
+                          onClick={() => toggleServiceForm(dateStr, d.serviceFormType, d.autoServiceFormType)}
                           title="クリックで平日／休日を切替（算定時間数・延長加算の基準も変わります）"
                         >
                           <FormTypeCircle type={d.serviceFormType} />
