@@ -121,7 +121,7 @@ export function DaytimeRateForm({
       </div>
 
       <div>
-        <label className="mb-1 block text-sm font-medium text-gray-700">送迎費（片道あたり）</label>
+        <label className="mb-1 block text-sm font-medium text-gray-700">送迎加算額（片道あたり）</label>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -132,7 +132,7 @@ export function DaytimeRateForm({
           />
           <span className="text-sm text-gray-600">円</span>
         </div>
-        <p className="mt-1 text-xs text-gray-400">往復の場合は2回分（片道 × 2）を請求します。</p>
+        <p className="mt-1 text-xs text-gray-400">往復の場合は2回分（片道 × 2）。利用算定額に足して総額にし、その1割が利用者負担になります（例：総額2,350円＋送迎140円×2 → 自己負担263円）</p>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

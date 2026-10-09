@@ -37,8 +37,8 @@ const sections = [
   {
     href: '/settings/daytime-rates',
     icon: Clock,
-    label: '日中一時支援の単位数・送迎費',
-    description: '利用時間区分×児区分の単位数と送迎費（利用者負担額の計算に使用）',
+    label: '日中一時支援の単位数・送迎加算',
+    description: '利用時間区分×児区分の単位数と送迎加算額（利用者負担額の計算に使用）',
   },
   {
     href: '/settings/addition-requirements',

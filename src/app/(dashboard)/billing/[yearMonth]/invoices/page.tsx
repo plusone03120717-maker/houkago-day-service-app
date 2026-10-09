@@ -37,7 +37,7 @@ export default async function InvoicesPage({
     )
   }
 
-  // 単位数単価・日中一時の送迎費はユニットごとに違うので、ユニット単位で組み立てる
+  // 単位数単価・日中一時の送迎加算額はユニットごとに違うので、ユニット単位で組み立てる
   const results = await Promise.all(
     targetUnits.map((u) => buildMonthInvoices(supabase, u.id, yearMonth))
   )
@@ -109,7 +109,7 @@ export default async function InvoicesPage({
           )}
 
           <p className="text-xs text-gray-400">
-            単位数単価 {result.unitPrice}円 / 日中一時の送迎費 片道{result.daytimeTransportFee}円（
+            単位数単価 {result.unitPrice}円 / 日中一時の送迎加算 片道{result.daytimeTransportFee}円（
             <Link href="/settings/daytime-rates" className="text-indigo-600 hover:underline">
               設定を変更
             </Link>

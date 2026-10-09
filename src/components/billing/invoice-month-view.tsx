@@ -234,9 +234,9 @@ export function InvoiceMonthView({
                         放デイ {child.benefitCopay.toLocaleString()}
                       </span>
                     )}
-                    {child.daytimeCopay + child.daytimeTransportAmount > 0 && (
+                    {child.daytimeCopay > 0 && (
                       <span className="rounded px-1.5 py-0.5 text-xs bg-purple-50 text-purple-700">
-                        日中一時 {(child.daytimeCopay + child.daytimeTransportAmount).toLocaleString()}
+                        日中一時 {child.daytimeCopay.toLocaleString()}
                       </span>
                     )}
                     {child.extraTotal > 0 && (

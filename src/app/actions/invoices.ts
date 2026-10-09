@@ -19,7 +19,7 @@ function invoiceRow(child: ChildInvoice, unitId: string, billingMonthlyId: strin
     year_month: child.yearMonth,
     invoice_type: 'invoice' as const,
     copay_amount: child.benefitCopay,
-    daytime_copay_amount: child.daytimeCopay + child.daytimeTransportAmount,
+    daytime_copay_amount: child.daytimeCopay,
     extra_charge_total: child.extraTotal,
     actual_cost_total: child.actualTotal,
     total_cost: child.totalCost + child.daytimeCost,

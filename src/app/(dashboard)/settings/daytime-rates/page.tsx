@@ -36,7 +36,7 @@ export default async function DaytimeRatesSettingsPage() {
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">日中一時支援の単位数・送迎費</h1>
+          <h1 className="text-2xl font-bold text-gray-900">日中一時支援の単位数・送迎加算</h1>
           <p className="mt-0.5 text-sm text-gray-500">利用者負担額（1割）の計算に使います</p>
         </div>
       </div>

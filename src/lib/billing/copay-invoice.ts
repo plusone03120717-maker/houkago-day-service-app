@@ -1,8 +1,8 @@
 // 利用者（保護者）へ請求する負担金額を月次で組み立てる。
 //
 //   ① 放デイ給付費の1割 … billing_details.copay_amount（負担上限月額でキャップ済み）
-//   ② 日中一時支援の1割 … 利用時間区分 × 児区分 の単位数表から算出（上限額とは別枠）
-//   ③ 日中一時の送迎     … 片道あたり定額（facilities.daytime_transport_fee）
+//   ② 日中一時支援の1割 … （利用時間区分 × 児区分 の単位数 × 単価 ＋ ③）の1割（上限額とは別枠）
+//   ③ 日中一時の送迎加算 … 片道あたり定額（facilities.daytime_transport_fee）。②の総額に入れて1割を負担する
 //   ④ 活動プログラム加算 … activity_programs.extra_charge（日々の記録の参加チェック）
 //   ⑤ その他の実費       … billing_actual_costs
 //
@@ -66,10 +66,12 @@ export type ChildInvoice = {
   daytimeCategory: 1 | 2 | 3 | null
   daytimeDays: DaytimeDay[]
   daytimeUnits: number
+  /** 日中一時の総額（利用算定額＋送迎加算額） */
   daytimeCost: number
+  /** 日中一時の利用者負担（総額の1割）。保護者へ請求する日中一時の額はこれだけ */
   daytimeCopay: number
 
-  /** ③ 日中一時の送迎 */
+  /** ③ 日中一時の送迎加算（daytimeCost に含む） */
   daytimeTransportCount: number
   daytimeTransportAmount: number
 
@@ -460,9 +462,11 @@ export async function buildMonthInvoices(
       })
     }
 
-    const daytimeCost = Math.floor(daytimeUnits * unitPrice)
-    const daytimeCopay = Math.floor(daytimeCost / 10)
+    // 送迎加算額は利用算定額に足して総額にし、その1割を利用者が負担する
+    const daytimeUsageCost = Math.floor(daytimeUnits * unitPrice)
     const daytimeTransportAmount = transportCount * daytimeTransportFee
+    const daytimeCost = daytimeUsageCost + daytimeTransportAmount
+    const daytimeCopay = Math.floor(daytimeCost / 10)
 
     if (daytimeDays.length > 0 && !daytimeCategory) {
       warnings.push('日中一時支援を利用していますが、児区分（1〜3）が未設定です（児童詳細 → 基本情報）')
@@ -477,17 +481,12 @@ export async function buildMonthInvoices(
         unitPrice: null,
         count: daytimeDays.length,
         amount: daytimeCopay,
-        detail: `${daytimeUnits.toLocaleString()}単位 / 総額 ${daytimeCost.toLocaleString()}円 / 利用 ${daytimeDays.length}日`,
-      })
-    }
-    if (daytimeTransportAmount > 0) {
-      lines.push({
-        category: 'daytime_transport',
-        name: '日中一時支援 送迎費',
-        unitPrice: daytimeTransportFee,
-        count: transportCount,
-        amount: daytimeTransportAmount,
-        detail: `片道 ${transportCount}回`,
+        detail:
+          `${daytimeUnits.toLocaleString()}単位 ${daytimeUsageCost.toLocaleString()}円` +
+          (daytimeTransportAmount > 0
+            ? ` ＋ 送迎加算 ${daytimeTransportFee.toLocaleString()}円×${transportCount}回`
+            : '') +
+          ` / 総額 ${daytimeCost.toLocaleString()}円 / 利用 ${daytimeDays.length}日`,
       })
     }
 
