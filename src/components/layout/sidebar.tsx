@@ -25,7 +25,7 @@ import {
   Umbrella,
   CalendarRange,
   SmartphoneNfc,
-  KeyRound,
+  KeyRound, UserPlus,
   Inbox,
   ListChecks,
   LifeBuoy,
@@ -84,6 +84,7 @@ const adminNav: Array<{ group: string; items: NavItem[] }> = [
     group: '保護者ポータル',
     items: [
       { href: '/parent-contacts', label: '利用連絡', icon: SmartphoneNfc },
+      { href: '/settings/line-registrations', label: '保護者のLINE登録', icon: UserPlus },
       { href: '/settings/registration-codes', label: '登録コード発行', icon: KeyRound },
     ],
   },

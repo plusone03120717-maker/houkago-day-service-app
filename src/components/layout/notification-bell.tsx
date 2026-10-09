@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Bell, ClipboardList, CalendarCheck, LifeBuoy } from 'lucide-react'
+import { Bell, ClipboardList, CalendarCheck, LifeBuoy, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export type RecentContact = {
@@ -15,6 +15,8 @@ export type RecentContact = {
 interface Props {
   staffCount: number
   parentCount: number
+  /** 承認待ちの、保護者のLINE登録申請の件数 */
+  registrationCount: number
   /** 管理者にだけ渡される、未読のサポート問い合わせ件数 */
   supportCount: number
   recentContacts: RecentContact[]
@@ -28,12 +30,13 @@ function formatMonthDay(dateStr: string) {
 export function NotificationBell({
   staffCount,
   parentCount,
+  registrationCount,
   supportCount,
   recentContacts,
 }: Props) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const total = staffCount + parentCount + supportCount
+  const total = staffCount + parentCount + registrationCount + supportCount
 
   // メニュー外クリック・Escで閉じる
   useEffect(() => {
@@ -110,6 +113,26 @@ export function NotificationBell({
                       )}
                     </ul>
                   )}
+                </Link>
+              )}
+
+              {/* 保護者のLINE登録申請 */}
+              {registrationCount > 0 && (
+                <Link
+                  href="/settings/line-registrations"
+                  onClick={() => setOpen(false)}
+                  className="block px-4 py-3 hover:bg-gray-50"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-sm font-medium text-gray-800">
+                      <UserPlus className="h-4 w-4 text-green-600" />
+                      保護者のLINE登録申請
+                    </span>
+                    <span className="shrink-0 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                      {registrationCount}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 pl-6 text-xs text-gray-500">承認待ちの登録申請</p>
                 </Link>
               )}
 

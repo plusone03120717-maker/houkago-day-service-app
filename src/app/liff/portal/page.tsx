@@ -107,13 +107,13 @@ export default function LiffPortalPage() {
         <AlertCircle className="h-12 w-12 mx-auto mb-4 text-yellow-500" />
         <h1 className="text-lg font-bold text-gray-900 mb-2">登録が必要です</h1>
         <p className="text-sm text-gray-500 mb-6">
-          まずスタッフから登録コードを受け取り、初回登録を行ってください。
+          はじめての方は、お子さまのお名前と生年月日で登録の申請をしてください。
         </p>
         <a
           href="/liff/register"
           className="inline-block rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white"
         >
-          初回登録ページへ
+          登録の申請へ
         </a>
       </div>
     )
