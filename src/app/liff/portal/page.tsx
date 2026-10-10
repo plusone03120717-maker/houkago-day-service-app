@@ -127,12 +127,6 @@ export default function LiffPortalPage() {
         <p className="text-sm text-gray-500 mb-6">
           保護者ポータルの準備ができていません。お手数ですが施設のスタッフにお問い合わせください。
         </p>
-        <a
-          href="/liff/register?add=1"
-          className="inline-block rounded-xl border border-gray-300 bg-white px-6 py-3 text-sm font-semibold text-gray-700"
-        >
-          登録コードを入力する
-        </a>
       </div>
     )
   }

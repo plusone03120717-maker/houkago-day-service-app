@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useLiff } from '@/hooks/use-liff'
-import { Loader2, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
+import { Loader2, AlertCircle, Clock } from 'lucide-react'
 
-type Mode = 'request' | 'code'
 type Pending = { childNameKana: string; birthDate: string }
 
 /** 年の選択肢に添える和暦（平成31年＝令和元年は令和で表す） */
@@ -20,7 +19,6 @@ function formatBirthDate(iso: string): string {
 
 export default function LiffRegisterPage() {
   const liffState = useLiff()
-  const [mode, setMode] = useState<Mode>('request')
   // 登録済み判定が終わるまでフォームを出さない（登録済みなら利用連絡ページへ転送する）
   const [checking, setChecking] = useState(true)
   const [pending, setPending] = useState<Pending | null>(null)
@@ -32,22 +30,15 @@ export default function LiffRegisterPage() {
   const [month, setMonth] = useState('')
   const [day, setDay] = useState('')
 
-  // 登録コードフォーム（コードを受け取った保護者向けに残している）
-  const [code, setCode] = useState('')
-  const [codeSuccess, setCodeSuccess] = useState(false)
-
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
   // 登録済みかを確認し、済んでいれば保護者ポータルへ転送する。
-  // ?add=1 が付いている場合はコードでの追加登録なので転送せず、コード入力を開く。
+  // きょうだいの追加はスタッフが管理アプリで行うので、保護者側に追加登録の入口は無い。
   const checkRegistered = useCallback(async () => {
     if (liffState.status !== 'ready') return
     const accessToken = liffState.liff.getAccessToken()
     if (!accessToken) { setChecking(false); return }
-
-    const isAdding = new URLSearchParams(window.location.search).get('add') === '1'
-    if (isAdding) { setMode('code'); setChecking(false); return }
 
     try {
       const res = await fetch('/api/liff/guardian-status', {
@@ -105,43 +96,6 @@ export default function LiffRegisterPage() {
     }
   }
 
-  async function handleCode(e: React.FormEvent) {
-    e.preventDefault()
-    if (liffState.status !== 'ready') return
-    setSubmitting(true)
-    setErrorMessage('')
-    setCodeSuccess(false)
-
-    try {
-      const accessToken = liffState.liff.getAccessToken()
-      if (!accessToken) {
-        setErrorMessage('LINEの認証情報を取得できませんでした。LINEアプリから開き直してください')
-        return
-      }
-      const res = await fetch('/api/liff/verify-and-register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // LINEの表示名は、ポータルアカウントを自動で用意するときの名前に使う
-        body: JSON.stringify({
-          accessToken,
-          code: code.trim().toUpperCase(),
-          displayName: liffState.displayName,
-        }),
-      })
-      const json = await res.json() as { error?: string }
-      if (!res.ok) {
-        setErrorMessage(json.error ?? '登録に失敗しました')
-      } else {
-        setCodeSuccess(true)
-        setCode('')
-      }
-    } catch {
-      setErrorMessage('通信エラーが発生しました')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   if (liffState.status === 'loading' || (liffState.status === 'ready' && checking)) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -167,76 +121,6 @@ export default function LiffRegisterPage() {
       <p className="text-sm text-red-700">{errorMessage}</p>
     </div>
   )
-
-  // ── 登録コードで登録する ──
-  if (mode === 'code') {
-    return (
-      <div className="max-w-sm mx-auto px-6 pt-12 pb-8">
-        <div className="text-center mb-8">
-          <h1 className="text-xl font-bold text-gray-900 mb-1">登録コードで登録</h1>
-          <p className="text-sm text-gray-500">
-            スタッフから受け取った登録コードを入力してください
-          </p>
-        </div>
-
-        {codeSuccess && (
-          <div className="mb-4 rounded-xl bg-green-50 p-4 flex gap-3 items-start">
-            <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-green-800">登録完了しました</p>
-              <p className="text-xs text-green-600 mt-1">
-                別のお子さんの登録コードがある場合は続けて入力できます
-              </p>
-            </div>
-          </div>
-        )}
-        {errorBox}
-
-        <form onSubmit={handleCode} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              登録コード
-            </label>
-            <input
-              type="text"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="例: ABC123"
-              maxLength={20}
-              required
-              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-lg font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={submitting || !code.trim()}
-            className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            登録する
-          </button>
-        </form>
-
-        {codeSuccess ? (
-          <div className="mt-6 text-center">
-            <a href="/liff/portal" className="text-sm text-indigo-600 font-medium underline">
-              保護者ポータルへ進む →
-            </a>
-          </div>
-        ) : (
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => { setMode('request'); setErrorMessage('') }}
-              className="text-sm text-gray-500 underline"
-            >
-              登録コードをお持ちでない方はこちら
-            </button>
-          </div>
-        )}
-      </div>
-    )
-  }
 
   // ── 申請済み（施設の確認待ち） ──
   if (pending && !editing) {
@@ -374,19 +258,13 @@ export default function LiffRegisterPage() {
         </button>
       </form>
 
-      <div className="mt-6 text-center space-y-3">
-        {editing && (
-          <button onClick={() => setEditing(false)} className="block w-full text-sm text-gray-500 underline">
+      {editing && (
+        <div className="mt-6 text-center">
+          <button onClick={() => setEditing(false)} className="text-sm text-gray-500 underline">
             やめる
           </button>
-        )}
-        <button
-          onClick={() => { setMode('code'); setErrorMessage('') }}
-          className="text-sm text-gray-500 underline"
-        >
-          登録コードをお持ちの方はこちら
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   )
 }

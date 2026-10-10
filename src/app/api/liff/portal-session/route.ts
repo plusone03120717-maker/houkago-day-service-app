@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ポータルのアカウントをここでも必ず用意する。
-    // 登録コードを使うときだけ作る作りにしていたため、この機能より前に
+    // 以前は初回登録のときだけ作る作りにしていたため、この機能より前に
     // LINE登録を済ませていた保護者がどこからも入れなくなっていた。
     const userId =
       guardian.user_id ??

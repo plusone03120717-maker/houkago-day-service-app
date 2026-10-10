@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '紐付ける児童を選んでください' }, { status: 400 })
       }
 
-      // 同じLINEアカウントの保護者がすでにいれば（登録コードで登録済みなど）それを使う
+      // 同じLINEアカウントの保護者がすでにいれば（以前に登録済みなど）それを使う
       const { data: guardianRaw, error: guardianError } = await adminClient
         .from('guardians')
         .upsert(

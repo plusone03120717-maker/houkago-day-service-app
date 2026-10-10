@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { UserPlus, Users, Loader2, Check, X, Plus, Search } from 'lucide-react'
 
 type Candidate = {
@@ -347,7 +346,6 @@ export function LineRegistrationsManager({ requests, guardians, childList }: Pro
         <h1 className="text-xl font-bold text-gray-900">保護者のLINE登録</h1>
         <p className="text-sm text-gray-500 mt-1">
           保護者がLINEから送った登録の申請を承認します。登録済みの保護者には、ごきょうだいをここから追加できます。
-          登録コードで登録する場合は<Link href="/settings/registration-codes" className="text-indigo-600 underline">登録コード発行</Link>から。
         </p>
       </div>
 

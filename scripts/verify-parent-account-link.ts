@@ -133,7 +133,7 @@ async function main() {
     if (guardianError) throw new Error(`LINE保護者の作成に失敗: ${guardianError.message}`)
     guardianId = (guardian as { id: string }).id
 
-    // ── 1. LINE → ポータル（登録コードを使ったとき） ──
+    // ── 1. LINE → ポータル（登録申請を承認したとき） ──
     console.log('1. LINEで登録した保護者を、既存のポータルアカウントに結び付ける')
     {
       // 保護者はポータル側でテスト太郎が紐付いている状態

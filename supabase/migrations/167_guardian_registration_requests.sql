@@ -7,7 +7,6 @@
 -- 申請方式では、保護者は全員共通のURLから「お子さまの名前（ひらがな）＋生年月日」を送り、
 -- スタッフが児童を選んで承認する。入力は候補を探す手がかりにすぎず、
 -- 紐付ける児童はスタッフが決めるので、表記ゆれがあっても登録できる。
--- 登録コードの仕組みはそのまま残す（併用できる）。
 CREATE TABLE IF NOT EXISTS guardian_registration_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   line_user_id text NOT NULL,
