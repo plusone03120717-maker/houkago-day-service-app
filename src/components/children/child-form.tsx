@@ -37,6 +37,7 @@ interface ChildData {
   grade: string
   disability_type: string
   daytime_support_category: string
+  withdrawal_fee_enabled: boolean
   diagnosis: string
   allergy_info: string
   medical_info: string
@@ -135,6 +136,7 @@ export function ChildForm({ units, schools, initial, initialAddresses, initialPh
     grade: initial?.grade ?? '',
     disability_type: initial?.disability_type ?? '',
     daytime_support_category: initial?.daytime_support_category ?? '',
+    withdrawal_fee_enabled: initial?.withdrawal_fee_enabled ?? true,
     diagnosis: initial?.diagnosis ?? '',
     allergy_info: initial?.allergy_info ?? '',
     medical_info: initial?.medical_info ?? '',
@@ -338,6 +340,7 @@ export function ChildForm({ units, schools, initial, initialAddresses, initialPh
       grade: form.grade || null,
       disability_type: form.disability_type || null,
       daytime_support_category: form.daytime_support_category ? parseInt(form.daytime_support_category, 10) : null,
+      withdrawal_fee_enabled: form.withdrawal_fee_enabled,
       diagnosis: form.diagnosis || null,
       allergy_info: form.allergy_info || null,
       medical_info: form.medical_info || null,
@@ -798,6 +801,21 @@ export function ChildForm({ units, schools, initial, initialAddresses, initialPh
               </select>
               <p className="text-xs text-gray-400 mt-1">
                 日中一時支援の利用者負担額（1割）の計算に使います
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">引き落とし手数料</label>
+              <label className="flex items-center gap-2 py-2 text-sm text-gray-800">
+                <input
+                  type="checkbox"
+                  checked={form.withdrawal_fee_enabled}
+                  onChange={(e) => setForm((f) => ({ ...f, withdrawal_fee_enabled: e.target.checked }))}
+                  className="h-4 w-4 accent-indigo-600"
+                />
+                保護者請求書に110円を加える
+              </label>
+              <p className="text-xs text-gray-400 mt-1">
+                現金払いなど手数料をかけない場合はチェックを外してください
               </p>
             </div>
           </div>

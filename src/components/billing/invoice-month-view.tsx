@@ -24,6 +24,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   daytime_transport: '日中一時送迎',
   extra: '活動プログラム',
   actual: '実費',
+  withdrawal_fee: '手数料',
 }
 
 const CATEGORY_COLOR: Record<string, string> = {
@@ -32,6 +33,7 @@ const CATEGORY_COLOR: Record<string, string> = {
   daytime_transport: 'bg-purple-50 text-purple-700',
   extra: 'bg-amber-50 text-amber-700',
   actual: 'bg-gray-100 text-gray-600',
+  withdrawal_fee: 'bg-gray-100 text-gray-600',
 }
 
 export function InvoiceMonthView({

@@ -33,6 +33,7 @@ const CATEGORY_GROUP: Record<InvoiceLine['category'], string> = {
   daytime_transport: '日中一時支援 利用者負担分',
   extra: '保険適用外（実費）',
   actual: '保険適用外（実費）',
+  withdrawal_fee: '保険適用外（実費）',
 }
 
 const GROUP_ORDER = ['障害児通所給付費 利用者負担分', '日中一時支援 利用者負担分', '保険適用外（実費）']

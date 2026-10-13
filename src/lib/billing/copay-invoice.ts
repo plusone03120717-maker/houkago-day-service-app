@@ -5,6 +5,7 @@
 //   ③ 日中一時の送迎加算 … 片道あたり定額（facilities.daytime_transport_fee）。②の総額に入れて1割を負担する
 //   ④ 活動プログラム加算 … activity_programs.extra_charge（日々の記録の参加チェック）
 //   ⑤ その他の実費       … billing_actual_costs
+//   ⑥ 引き落とし手数料   … 1件110円。children.withdrawal_fee_enabled を外した児童にはかけない
 //
 // 請求書・領収書はこの結果をスナップショットして billing_invoices に保存する。
 
@@ -22,7 +23,10 @@ import { loadManagedCopays } from '@/lib/kokuhoren/upper-limit-targets'
 
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>
 
-export type InvoiceLineCategory = 'copay' | 'daytime' | 'daytime_transport' | 'extra' | 'actual'
+export type InvoiceLineCategory = 'copay' | 'daytime' | 'daytime_transport' | 'extra' | 'actual' | 'withdrawal_fee'
+
+/** 口座引き落とし手数料（円） */
+export const WITHDRAWAL_FEE = 110
 
 export type InvoiceLine = {
   category: InvoiceLineCategory
@@ -78,6 +82,8 @@ export type ChildInvoice = {
   /** ④⑤ */
   extraTotal: number
   actualTotal: number
+  /** ⑥ 引き落とし手数料（かけない児童・請求額0円の月は0） */
+  withdrawalFee: number
 
   lines: InvoiceLine[]
   total: number
@@ -243,7 +249,7 @@ export async function buildMonthInvoices(
       .lte('date', end),
     supabase
       .from('children')
-      .select('id, name, daytime_support_category')
+      .select('id, name, daytime_support_category, withdrawal_fee_enabled')
       .in('id', childIds),
     supabase
       .from('daytime_support_rates')
@@ -287,7 +293,12 @@ export async function buildMonthInvoices(
     recordsByChild.set(r.child_id, list)
   }
 
-  const childRows = (childrenRaw ?? []) as Array<{ id: string; name: string; daytime_support_category: number | null }>
+  const childRows = (childrenRaw ?? []) as Array<{
+    id: string
+    name: string
+    daytime_support_category: number | null
+    withdrawal_fee_enabled: boolean | null
+  }>
   const childMap = new Map(childRows.map((c) => [c.id, c]))
 
   const rateMap = new Map<string, number>()
@@ -519,7 +530,20 @@ export async function buildMonthInvoices(
       })
     }
 
-    const total = lines.reduce((s, l) => s + l.amount, 0)
+    // ⑥ 引き落とし手数料（請求するものがある月だけ）
+    const subtotal = lines.reduce((s, l) => s + l.amount, 0)
+    const withdrawalFee = subtotal > 0 && childRow?.withdrawal_fee_enabled !== false ? WITHDRAWAL_FEE : 0
+    if (withdrawalFee > 0) {
+      lines.push({
+        category: 'withdrawal_fee',
+        name: '引き落とし手数料',
+        unitPrice: withdrawalFee,
+        count: 1,
+        amount: withdrawalFee,
+      })
+    }
+
+    const total = subtotal + withdrawalFee
     const issued = invoiceByChild.get(childId) ?? null
 
     children.push({
@@ -542,6 +566,7 @@ export async function buildMonthInvoices(
       daytimeTransportAmount,
       extraTotal,
       actualTotal,
+      withdrawalFee,
       lines,
       total,
       warnings,
