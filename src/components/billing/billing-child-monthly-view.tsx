@@ -1239,16 +1239,20 @@ export function BillingChildMonthlyView({
                           </>
                         )}
                         {hasAbsentItems && renderAbsentAdditionCell(dateStr, d)}
-                        {hasExtensionItems && (
+                        {hasExtensionItems && extensionItem && (() => {
+                          // 上の月次表でチェックを外した日は、時間が延長に当たっても算定しない
+                          const extensionChecked = isItemChecked(extensionItem, dateStr, d)
+                          return (
                           <td
-                            className="border border-gray-200 px-1 py-1 text-center bg-green-50/30"
+                            className="border border-gray-200 px-1 py-1 text-center bg-green-50/30 cursor-pointer hover:bg-green-100/50"
+                            onClick={() => toggleItem(extensionItem, dateStr, !extensionChecked)}
                             title={
                               overriddenExtensionLevel > 0
-                                ? `延長 ${formatMinutes(overriddenExtensionMinutes)}（基準 ${d.serviceFormType === 1 ? '平日3時間' : '休業日5時間'}）`
-                                : undefined
+                                ? `延長 ${formatMinutes(overriddenExtensionMinutes)}（基準 ${d.serviceFormType === 1 ? '平日3時間' : '休業日5時間'}）${extensionChecked ? '' : ' / 算定しない設定'}・クリックで切替`
+                                : 'クリックで延長加算を切替'
                             }
                           >
-                            {overriddenExtensionLevel > 0 ? (
+                            {extensionChecked && overriddenExtensionLevel > 0 ? (
                               <div>
                                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-600 text-white text-[10px] font-bold">{overriddenExtensionLevel}</span>
                                 <div className="text-[9px] text-gray-400 mt-0.5">{formatMinutes(overriddenExtensionMinutes)}</div>
@@ -1257,7 +1261,8 @@ export function BillingChildMonthlyView({
                               <span className="text-gray-300 text-xs">—</span>
                             )}
                           </td>
-                        )}
+                          )
+                        })()}
                         {renderDeleteCell(dateStr)}
                       </tr>
                     )
