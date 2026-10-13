@@ -72,7 +72,7 @@ export type ComputedDay = {
   endTime: string | null
   durationMinutes: number
   hoursCalculated: number
-  /** 算定時間数。0=30分未満（算定対象外） 1〜4=実績記録票の入力番号（4は休業日のみ） / null=時刻未入力 */
+  /** 算定時間数。0=30分未満（算定対象外） 1〜3=実績記録票の入力番号（4は使用しない） / null=時刻未入力 */
   billingCategory: BillingCategory | null
   transportPickup: boolean
   transportDropoff: boolean
@@ -102,12 +102,11 @@ export function calcHours(startTime: string | null, endTime: string | null): num
  * 算定時間数（実績記録票の入力番号）。令和6年度改定の入力マニュアル準拠。
  *   1: 30分以上〜1時間30分以下（放デイ411）
  *   2: 1時間30分超〜3時間以下（放デイ412）
- *   3: 3時間超〜5時間以下（放デイ412）
- *   4: 5時間超（放デイ413）※学校休業日のみ
+ *   3: 3時間超（放デイ412）。平日・休業日とも5時間を超えても3
  *   0: 30分未満（算定対象外）
  *
- * 区分1〜3の区切りは平日・学校休業日で共通。区分4は休業日のみで、
- * 平日は5時間を超えても区分3のまま（超過分は延長支援加算で算定する）。
+ * 区分1〜3の区切りは平日・学校休業日で共通。区分4は使わない（国保連CSVで 0400 になり
+ * 延長支援加算との整合エラー PX15 になるため）。5時間超の分は延長支援加算で算定する。
  */
 export function getBillingCategory(
   minutes: number,
@@ -119,7 +118,7 @@ export function getBillingCategory(
   if (minutes <= 90) return 1
   if (minutes <= 180) return 2
   if (minutes <= 300) return 3
-  return serviceFormType === 2 ? 4 : 3
+  return 3
 }
 
 /**

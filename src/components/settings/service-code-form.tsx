@@ -38,18 +38,17 @@ interface Props {
 }
 
 /**
- * 基本報酬の入力欄。算定時間数は実績記録票の入力番号（1〜4）に対応する。
+ * 基本報酬の入力欄。算定時間数は実績記録票の入力番号（1〜3）に対応する。
  * 30分未満（区分0）は算定対象外なので持たない。
- * 算定4は学校休業日のみ（平日は5時間を超えても算定3のまま）なので平日の欄は持たない。
+ * 算定4は使わない（5時間を超えても算定3のまま。超過分は延長支援加算で算定する）。
  */
-const BASIC_SLOTS: { form: 1 | 2; category: 1 | 2 | 3 | 4; label: string; hint: string }[] = [
+const BASIC_SLOTS: { form: 1 | 2; category: 1 | 2 | 3; label: string; hint: string }[] = [
   { form: 1, category: 1, label: '平日・算定1', hint: '30分以上〜1時間30分以下' },
   { form: 1, category: 2, label: '平日・算定2', hint: '1時間30分超〜3時間以下' },
   { form: 1, category: 3, label: '平日・算定3', hint: '3時間超（5時間超も算定3）' },
   { form: 2, category: 1, label: '休業日・算定1', hint: '30分以上〜1時間30分以下' },
   { form: 2, category: 2, label: '休業日・算定2', hint: '1時間30分超〜3時間以下' },
-  { form: 2, category: 3, label: '休業日・算定3', hint: '3時間超〜5時間以下' },
-  { form: 2, category: 4, label: '休業日・算定4', hint: '5時間超（6〜7時間利用など）' },
+  { form: 2, category: 3, label: '休業日・算定3', hint: '3時間超（5時間超も算定3）' },
 ]
 
 /** 延長支援加算の入力欄。延長時間（平日3時間・休業日5時間の超過分）の区分ごと */
