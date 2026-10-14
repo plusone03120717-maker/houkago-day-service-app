@@ -1393,7 +1393,11 @@ export function BillingChildMonthlyView({
             </span>
             <span className="flex items-center gap-1">
               <BillingCircle value={3} small />
-              算定時間数3 3時間超（平日・休業日とも5時間を超えても3）
+              算定時間数3 3時間超〜5時間以下
+            </span>
+            <span className="flex items-center gap-1">
+              <BillingCircle value={4} small />
+              算定時間数4 5時間超（学校休業日のみ／平日は5時間を超えても3）
             </span>
             <span className="text-gray-400">
               ※ 延長加算欄の番号は延長時間の区分です（2: 1時間以上2時間未満／3: 2時間以上）。
