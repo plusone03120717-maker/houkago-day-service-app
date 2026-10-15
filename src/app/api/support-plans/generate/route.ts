@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
 import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic()
@@ -141,6 +142,11 @@ ${contactNotesText}
 アセスメントの「保護者の希望」はfamilyWishesに、「利用目標」はsupportPolicyに反映してください。
 日々の記録・活動記録から読み取れる現状を各支援領域の内容に具体的に反映してください。
 各項目は80〜200文字程度で具体的かつ実践的な内容にしてください。
+
+【必ず守ること】
+・本人の現状・様子・家族の意向など事実を書く部分は、上の情報に書かれていることだけを使う
+${NO_INVENTED_FACTS}
+・目標と支援内容は提案として書いてよいが、記録にない出来事や実績を事実のように書かない
 
 {
   "familyWishes": "家族の意向（保護者の希望・期待・心配していること）",

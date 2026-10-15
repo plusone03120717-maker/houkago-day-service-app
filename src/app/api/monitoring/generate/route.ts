@@ -2,6 +2,7 @@ import { getTodayJST } from '@/lib/utils'
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -120,6 +121,12 @@ export async function POST(request: NextRequest) {
 
 【対象期間の日々の記録（${startDate} 〜 ${endDate}）】
 ${dailyRecordsText}
+
+【必ず守ること】
+${NO_INVENTED_FACTS}
+・達成状況・課題・実施した専門的支援は、上の日々の記録に書かれていることだけを根拠にする
+・根拠になる記録がない項目は、推測で埋めずに「対象期間の記録からは読み取れません」と書く
+・個別支援計画に書かれた支援内容は、日々の記録に書かれていない限り「実施した」と書かない
 
 以下のJSON形式のみで出力してください（説明文は不要）：
 {

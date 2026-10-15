@@ -31,7 +31,8 @@ ${supportPolicy ? `【支援の方針】${supportPolicy}` : ''}
 ・どの専門職が・どのような支援を・どのような目的で行うかを含める
 ・具体的かつ実践的な内容
 ・専門的で簡潔な文体
-・支援内容の文章のみ出力（説明・見出し不要）`
+・支援内容の文章のみ出力（説明・見出し不要）
+・入力にない診断名・特性・これまでの実績を事実として書かない`
 
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
