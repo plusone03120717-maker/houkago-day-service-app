@@ -17,7 +17,7 @@
     },
     {
       "path": "/api/cron/punch-reminder",
-      "schedule": "0 13 * * *"
+      "schedule": "30 11 * * *"
     }
   ],
   "headers": [

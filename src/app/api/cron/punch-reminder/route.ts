@@ -10,7 +10,7 @@ const LINE_PUSH_API = 'https://api.line.me/v2/bot/message/push'
 /**
  * 打刻漏れの夜間通知。
  *
- * Vercel Cron（vercel.json の crons）から毎晩22時（JST）に呼ばれる。
+ * Vercel Cron（vercel.json の crons）から毎晩20時30分（JST）に呼ばれる。
  * その日に出勤だけ・退勤だけのスタッフへ、LINEで日付と時刻を送るよう知らせる。
  * 返信はLINE webhook が受け取り、タイムカードへ自動で反映する。
  */
