@@ -26,6 +26,8 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const MAX_MESSAGE_LENGTH = 2000
 /** 1つの問い合わせで続けられる往復の上限 */
 const MAX_TOTAL_MESSAGES = 60
+/** 履歴としてモデルへ送り直す1通の上限 */
+const MAX_HISTORY_MESSAGE_CHARS = 4000
 /**
  * データ確認に使ってよい時間。関数のタイムアウト（60秒）に当たって
  * 502 になるより、途中で切り上げて「分かったところまで」を返す方がよい。
@@ -125,7 +127,15 @@ export async function POST(request: NextRequest) {
 
   const messages: Anthropic.MessageParam[] = [
     // 履歴が伸びても入力が膨らみ続けないよう、直近だけを渡す
-    ...history.slice(-MAX_HISTORY_MESSAGES).map((m) => ({ role: m.role, content: m.content })),
+    // 全員分の日誌など長い回答をそのまま送り直すと、質問のたびに入力が膨らむので頭だけにする
+    ...history.slice(-MAX_HISTORY_MESSAGES).map((m) => ({
+      role: m.role,
+      content:
+        m.content.length > MAX_HISTORY_MESSAGE_CHARS
+          ? m.content.slice(0, MAX_HISTORY_MESSAGE_CHARS) +
+            '\n…（長いため以降は省略。必要ならツールで取得し直すこと）'
+          : m.content,
+    })),
     { role: 'user' as const, content: text },
   ]
 

@@ -68,19 +68,44 @@ export const SUPPORT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
-    name: 'get_child_journal',
+    name: 'get_journals',
     description:
-      'ある児童の日誌（日々の記録の「日常記録」「特記事項」と、参加した活動）を1か月分または1日分取得する。' +
-      '「○○くんの10月の日誌を見せて」「△日の記録に何て書いてある？」のように、' +
-      '記録の中身を読みたいときに使う。年月か日付のどちらかを必ず指定する。',
+      '日誌（日々の記録の「日常記録」「特記事項」と、参加した活動）を条件で取得する。' +
+      '児童を指定しなければ、その期間に日誌が書かれた全員分を返す。' +
+      '例：「○○くんの10月の日誌」→ child_ids=[○○] と10月1日〜31日／' +
+      '「昨日出席した子の日誌を全員分」→ child_ids なしで昨日1日／' +
+      '「今週の特記事項だけ」→ only_notable=true／「パソコンと書いてある日」→ keywords。' +
+      '「○○くんが昔けがをした日はいつ？」のような日付探しは、期間を広く（例：2020-01-01〜今日）' +
+      '取り、keywords に言い換え（怪我・けが・ケガ・負傷・打撲・擦り傷・すりむ など）を並べて display=false で呼ぶ。' +
+      '各日誌には「記録リンク」が付くので、答えるときは日付とあわせてそのまま載せる。',
     input_schema: {
       type: 'object',
       properties: {
-        child_id: { type: 'string', description: 'search_children で得た児童ID' },
-        year_month: { type: 'string', description: 'YYYY-MM 形式の年月（1か月分を見るとき）' },
-        date: {
+        date_from: {
           type: 'string',
-          description: '任意。YYYY-MM-DD。指定するとその日の日誌だけを返す（year_month より優先）',
+          description: 'YYYY-MM-DD。期間の初日（1日だけなら date_to と同じ日）',
+        },
+        date_to: { type: 'string', description: 'YYYY-MM-DD。期間の最終日' },
+        child_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            '任意。search_children で得た児童IDの一覧（複数可）。全員分を見たいときは指定しない',
+        },
+        attended_only: {
+          type: 'boolean',
+          description: '任意。true なら出席した日だけに絞る（「出席した子」と言われたとき）',
+        },
+        only_notable: {
+          type: 'boolean',
+          description: '任意。true なら特記事項が書かれている日だけに絞る',
+        },
+        keywords: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            '任意。日常記録・特記事項・活動に、このうちどれか1つでも含む日だけに絞る。' +
+            '表記ゆれ・言い換えを並べる（例：["怪我","けが","ケガ","負傷"]）',
         },
         display: {
           type: 'boolean',
@@ -90,7 +115,7 @@ export const SUPPORT_TOOLS: Anthropic.Tool[] = [
             'false: 中身を読んで質問に答えたいとき（「特記事項があった日は？」など）。本文があなたに渡される。',
         },
       },
-      required: ['child_id', 'display'],
+      required: ['date_from', 'date_to', 'display'],
     },
   },
   {
@@ -189,7 +214,7 @@ export async function runSupportTool(
   supabase: SupabaseClient
 ): Promise<{ content: string; display?: string }> {
   try {
-    if (name === 'get_child_journal') return await runJournalTool(input, supabase)
+    if (name === 'get_journals') return await runJournalTool(input, supabase)
 
     const result = await dispatch(name, input, supabase)
     return { content: truncate(JSON.stringify(result, null, 1), MAX_RESULT_CHARS) }
@@ -214,49 +239,91 @@ async function runJournalTool(
   input: Record<string, unknown>,
   supabase: SupabaseClient
 ): Promise<{ content: string; display?: string }> {
-  const result = await getChildJournal(
-    supabase,
-    String(input.child_id),
-    input.year_month ? String(input.year_month) : null,
-    input.date ? String(input.date) : null
-  )
+  const result = await getJournals(supabase, {
+    dateFrom: String(input.date_from ?? ''),
+    dateTo: String(input.date_to ?? input.date_from ?? ''),
+    childIds: Array.isArray(input.child_ids) ? input.child_ids.map(String) : [],
+    onlyNotable: input.only_notable === true,
+    attendedOnly: input.attended_only === true,
+    keywords: (Array.isArray(input.keywords)
+      ? input.keywords.map(String)
+      : input.keyword // 旧い引数名で呼ばれたときの保険
+        ? [String(input.keyword)]
+        : []
+    )
+      .map((k) => k.trim())
+      .filter(Boolean),
+  })
 
   if (!result.日誌 || input.display !== true) {
     return { content: truncate(JSON.stringify(result, null, 1), MAX_JOURNAL_RESULT_CHARS) }
   }
 
+  // 添え書きはこちらで決める。モデルに作らせると、指示の例文をそのまま写したり
+  // 「下に表示しました」とシステムの仕組みを説明したりする（実測で発生）
   return {
     content: JSON.stringify({
-      結果: `${result.児童}さんの日誌（${result.日誌.length}日分）を、あなたの回答の下にシステムが表示しました。`,
-      指示:
-        '本文は書き写さず、「○○さんの△月の日誌です（□日分）。」の一文だけを書いてください。' +
-        '「下に表示」などシステムの仕組みには触れないこと。',
+      結果: '日誌の本文は職員の画面に表示済みです。',
+      回答文: journalHeadline(result.日誌, result.条件),
+      指示: '返答は「回答文」の一文だけをそのまま書いてください。説明や注意書きは付けないこと。',
     }),
-    display: formatJournal({ ...result, 日誌: result.日誌 }),
+    display: formatJournals(result.日誌, result.条件),
   }
 }
 
-type JournalDay = {
+type JournalEntry = {
   日付: string
+  /** 日々の記録の詳細画面（会話画面ではリンクとして表示される） */
+  記録リンク: string
+  児童: string
   出席状況: string
   日常記録?: string
   特記事項?: string
   活動?: string[]
 }
 
-/** 日誌を職員向けの読みやすい文章に整える（会話画面はプレーンテキスト表示） */
-function formatJournal(result: { 児童: string; 対象: string; 日誌: JournalDay[] }) {
-  const [y, m, d] = result.対象.split('-').map(Number)
-  const period = d ? `${y}年${m}月${d}日` : `${y}年${m}月`
-  const lines = [`■ ${result.児童}さん ${period}の日誌（${result.日誌.length}日分）`]
+function jpDate(date: string): string {
+  const [, m, d] = date.split('-').map(Number)
+  return `${m}月${d}日（${WEEKDAY[weekdayOf(date)]}）`
+}
 
-  for (const day of result.日誌) {
-    const [, mm, dd] = day.日付.slice(0, 10).split('-').map(Number)
-    const dow = day.日付.slice(10) // 「（水）」
-    lines.push('', `【${mm}月${dd}日${dow}】`)
-    if (day.日常記録) lines.push(`日常記録：${day.日常記録}`)
-    if (day.特記事項) lines.push(`特記事項：${day.特記事項}`)
-    if (day.活動?.length) lines.push(`活動：${day.活動.join('、')}`)
+/**
+ * 日誌を職員向けの読みやすい文章に整える（会話画面はプレーンテキスト表示）。
+ * 1人分なら日付ごと、複数人なら日付ごとに児童を並べる。
+ */
+function journalHeadline(entries: JournalEntry[], condition: string): string {
+  const children = new Set(entries.map((e) => e.児童))
+  return children.size === 1
+    ? `${entries[0].児童}さんの日誌です（${condition}、${entries.length}日分）。`
+    : `${condition}の日誌です（${children.size}人・${entries.length}件）。`
+}
+
+function formatJournals(entries: JournalEntry[], condition: string): string {
+  const children = new Set(entries.map((e) => e.児童))
+  const single = children.size === 1
+  const lines = [
+    single
+      ? `■ ${entries[0].児童}さんの日誌　${condition}（${entries.length}日分）`
+      : `■ 日誌　${condition}（${children.size}人・${entries.length}件）`,
+  ]
+  // 出席以外（欠席など）の日にも記録があれば、見出しにその旨を添える
+  const mark = (e: JournalEntry) => (e.出席状況 === '出席' ? '' : `（${e.出席状況}）`)
+
+  let currentDate = ''
+  for (const e of entries) {
+    if (single) {
+      lines.push('', `【${jpDate(e.日付)}】${mark(e)}`)
+    } else {
+      if (e.日付 !== currentDate) {
+        currentDate = e.日付
+        lines.push('', `━━ ${jpDate(e.日付)} ━━`)
+      }
+      lines.push('', `【${e.児童}さん】${mark(e)}`)
+    }
+    if (e.日常記録) lines.push(`日常記録：${e.日常記録}`)
+    if (e.特記事項) lines.push(`特記事項：${e.特記事項}`)
+    if (e.活動?.length) lines.push(`活動：${e.活動.join('、')}`)
+    lines.push(`記録：${e.記録リンク}`)
   }
   return lines.join('\n')
 }
@@ -492,40 +559,58 @@ async function getChildMonth(supabase: SupabaseClient, childId: string, yearMont
   }
 }
 
-const RECORD_TYPE_LABELS: Record<string, string> = {
-  daily_record: '日常記録',
-  notable: '特記事項',
-}
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+/** 一度に取得する日誌の上限（全員×長い期間で画面が埋まり尽くすのを防ぐ） */
+const MAX_JOURNAL_ENTRIES = 300
+/** 1回に読む出席記録の行数（Supabase の1回あたりの上限に合わせる） */
+const PAGE_ROWS = 1000
+/** 全期間検索で読む行数の上限 */
+const MAX_JOURNAL_SCAN_ROWS = 20000
 
-async function getChildJournal(
+async function getJournals(
   supabase: SupabaseClient,
-  childId: string,
-  yearMonth: string | null,
-  date: string | null
-) {
-  if (!date && !yearMonth) {
-    return { 結果: '年月（YYYY-MM）か日付（YYYY-MM-DD）を指定してください' }
+  params: {
+    dateFrom: string
+    dateTo: string
+    childIds: string[]
+    onlyNotable: boolean
+    attendedOnly: boolean
+    keywords: string[]
   }
-  const { from, to } = date ? { from: date, to: date } : monthRange(yearMonth!)
+) {
+  const { dateFrom, dateTo, childIds, onlyNotable, attendedOnly, keywords } = params
+  if (!DATE_RE.test(dateFrom) || !DATE_RE.test(dateTo)) {
+    return { 結果: '期間（date_from・date_to）を YYYY-MM-DD 形式で指定してください' }
+  }
 
-  const [{ data: child }, { data: attendance }] = await Promise.all([
-    supabase.from('children').select('id, name').eq('id', childId).maybeSingle(),
-    supabase
+  // 「昔けがをした日」のように全期間を探すと1000行を超えるので、ページを分けて読む
+  const attendance: unknown[] = []
+  for (let offset = 0; offset < MAX_JOURNAL_SCAN_ROWS; offset += PAGE_ROWS) {
+    let query = supabase
       .from('daily_attendance')
       .select(
-        'date, status, daily_records(record_type, content), daily_activities(participated, evaluation_notes, activity_programs(name))'
+        'id, date, status, child_id, unit_id, children(name, name_kana), daily_records(record_type, content), daily_activities(participated, evaluation_notes, activity_programs(name))'
       )
-      .eq('child_id', childId)
-      .gte('date', from)
-      .lte('date', to)
-      .order('date'),
-  ])
+      .gte('date', dateFrom)
+      .lte('date', dateTo)
+      .order('date')
+      .order('id')
+      .range(offset, offset + PAGE_ROWS - 1)
+    if (childIds.length) query = query.in('child_id', childIds)
+    if (attendedOnly) query = query.eq('status', 'attended')
 
-  if (!child) return { 結果: '該当する児童が見つかりません（権限がない可能性もあります）' }
+    const { data, error } = await query
+    if (error) throw error
+    attendance.push(...(data ?? []))
+    if (!data || data.length < PAGE_ROWS) break
+  }
 
   type Row = {
     date: string
     status: string
+    child_id: string
+    unit_id: string
+    children: { name: string; name_kana: string | null } | null
     daily_records: { record_type: string; content: string }[] | null
     daily_activities:
       | {
@@ -536,35 +621,70 @@ async function getChildJournal(
       | null
   }
 
-  const days = ((attendance ?? []) as unknown as Row[])
+  const entries = (attendance as Row[])
     .map((r) => {
       const records = (r.daily_records ?? []).filter((d) => d.content?.trim())
-      const activities = (r.daily_activities ?? []).filter((a) => a.participated)
-      return {
-        日付: `${r.date}（${WEEKDAY[weekdayOf(r.date)]}）`,
+      const text = (type: string) =>
+        records.find((d) => d.record_type === type)?.content.trim() || undefined
+      const activities = (r.daily_activities ?? [])
+        .filter((a) => a.participated)
+        .map((a) =>
+          a.evaluation_notes?.trim()
+            ? `${a.activity_programs?.name ?? '不明'}（${a.evaluation_notes.trim()}）`
+            : (a.activity_programs?.name ?? '不明')
+        )
+      const entry: JournalEntry = {
+        日付: r.date,
+        記録リンク: `/records/${r.child_id}?date=${r.date}&unit=${r.unit_id}`,
+        児童: r.children?.name ?? '不明',
         出席状況: STATUS_LABELS[r.status] ?? r.status,
-        ...Object.fromEntries(
-          records.map((d) => [RECORD_TYPE_LABELS[d.record_type] ?? d.record_type, d.content.trim()])
-        ),
-        活動: activities.length
-          ? activities.map((a) =>
-              a.evaluation_notes?.trim()
-                ? `${a.activity_programs?.name ?? '不明'}（${a.evaluation_notes.trim()}）`
-                : (a.activity_programs?.name ?? '不明')
-            )
-          : undefined,
-        hasContent: records.length > 0 || activities.length > 0,
+        日常記録: text('daily_record'),
+        特記事項: text('notable'),
+        活動: activities.length ? activities : undefined,
       }
+      return { kana: r.children?.name_kana ?? r.children?.name ?? '', entry }
     })
     // 欠席日など、日誌が何も書かれていない日は省く
-    .filter((d) => d.hasContent)
-    .map(({ hasContent, ...rest }) => (void hasContent, rest as JournalDay))
+    .filter(({ entry: e }) => e.日常記録 || e.特記事項 || e.活動)
+    .filter(({ entry: e }) => !onlyNotable || e.特記事項)
+    .filter(
+      ({ entry: e }) =>
+        keywords.length === 0 ||
+        [e.日常記録, e.特記事項, ...(e.活動 ?? [])].some(
+          (t) => t && keywords.some((k) => t.includes(k))
+        )
+    )
+    // 日付順、同じ日は名前（かな）順
+    .sort((x, y) =>
+      x.entry.日付 === y.entry.日付
+        ? x.kana.localeCompare(y.kana, 'ja')
+        : x.entry.日付.localeCompare(y.entry.日付)
+    )
+    .map((x) => x.entry)
 
-  const period = (date ?? yearMonth)!
-  if (days.length === 0) {
-    return { 児童: child.name, 対象: period, 結果: 'この期間に書かれた日誌はありません' }
+  const condition = [
+    dateFrom === dateTo
+      ? `${dateFrom.slice(0, 4)}年${jpDate(dateFrom)}`
+      : `${dateFrom.slice(0, 4)}年${jpDate(dateFrom)}〜${
+          dateTo.slice(0, 4) === dateFrom.slice(0, 4) ? '' : `${dateTo.slice(0, 4)}年`
+        }${jpDate(dateTo)}`,
+    attendedOnly ? '出席者のみ' : '',
+    onlyNotable ? '特記事項のある日のみ' : '',
+    keywords.length ? `「${keywords.join('・')}」を含む日` : '',
+  ]
+    .filter(Boolean)
+    .join('・')
+
+  if (entries.length === 0) {
+    return { 条件: condition, 結果: '条件に合う日誌はありません（権限がない可能性もあります）' }
   }
-  return { 児童: child.name, 対象: period, 日数: days.length, 日誌: days }
+  if (entries.length > MAX_JOURNAL_ENTRIES) {
+    return {
+      条件: condition,
+      結果: `該当が${entries.length}件と多すぎます。期間を短くするか、児童を指定して取得し直してください`,
+    }
+  }
+  return { 条件: condition, 件数: entries.length, 日誌: entries }
 }
 
 async function getChangeHistory(

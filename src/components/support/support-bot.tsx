@@ -230,7 +230,14 @@ export function SupportBot() {
               <Bubble role="assistant" content={GREETING} />
 
               {messages.map((m, i) => (
-                <Bubble key={i} role={m.role} content={m.content} checked={m.checked} />
+                <Bubble
+                  key={i}
+                  role={m.role}
+                  content={m.content}
+                  checked={m.checked}
+                  // 記録を開いたら会話を小さく戻し、開いた画面が見えるようにする
+                  onNavigate={() => setExpanded(false)}
+                />
               ))}
 
               {sending && (
@@ -332,7 +339,42 @@ export function SupportBot() {
   )
 }
 
-function Bubble({ role, content, checked }: ChatMessage) {
+/**
+ * 日々の記録の詳細画面へのパス。ボットの回答（日誌の記録リンク）に含まれる。
+ * 形が完全に一致するものだけをリンクにし、崩れた文字列は文字のまま出す。
+ */
+const RECORD_LINK_RE =
+  /\/records\/[0-9a-f-]{36}\?date=\d{4}-\d{2}-\d{2}&unit=[0-9a-f-]{36}/g
+
+function renderContent(content: string, onNavigate?: () => void) {
+  const parts: React.ReactNode[] = []
+  let last = 0
+  for (const match of content.matchAll(RECORD_LINK_RE)) {
+    const index = match.index ?? 0
+    parts.push(content.slice(last, index))
+    const date = match[0].match(/date=(\d{4})-(\d{2})-(\d{2})/)
+    parts.push(
+      <Link
+        key={index}
+        href={match[0]}
+        onClick={onNavigate}
+        className="font-medium text-indigo-600 underline hover:text-indigo-800"
+      >
+        {date ? `${Number(date[2])}月${Number(date[3])}日の記録を開く` : '記録を開く'}
+      </Link>
+    )
+    last = index + match[0].length
+  }
+  parts.push(content.slice(last))
+  return parts
+}
+
+function Bubble({
+  role,
+  content,
+  checked,
+  onNavigate,
+}: ChatMessage & { onNavigate?: () => void }) {
   const isUser = role === 'user'
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
@@ -343,7 +385,7 @@ function Bubble({ role, content, checked }: ChatMessage) {
             isUser ? 'bg-indigo-600 text-white' : 'border border-gray-200 bg-white text-gray-800',
           )}
         >
-          {content}
+          {isUser ? content : renderContent(content, onNavigate)}
         </div>
         {/* 何を見て答えたのかを必ず示す。根拠の分からない指摘で記録を直させないため */}
         {!isUser && checked && checked.length > 0 && (
