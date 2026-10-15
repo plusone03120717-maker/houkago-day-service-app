@@ -22,6 +22,7 @@ export const TOOL_LABELS: Record<string, string> = {
   search_children: '児童の検索',
   get_child_day: 'その日の記録・利用計画',
   get_child_month: '月別の出席状況・受給者証',
+  get_child_journal: '日誌（日々の記録）',
   get_change_history: '変更履歴',
   get_check_findings: '入力チェックの指摘',
   get_transport_day: 'その日の送迎便',

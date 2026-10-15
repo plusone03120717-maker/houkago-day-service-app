@@ -16,6 +16,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 /** 1つのツール結果の上限。長大なJSONで入力トークンを食い潰さないため */
 const MAX_RESULT_CHARS = 6000
+/**
+ * 日誌だけは本文そのものを読ませるのが目的なので上限を広げる。
+ * 1日300字前後×月15日程度でも収まる大きさ。
+ */
+const MAX_JOURNAL_RESULT_CHARS = 20000
 
 export const SUPPORT_TOOLS: Anthropic.Tool[] = [
   {
@@ -60,6 +65,32 @@ export const SUPPORT_TOOLS: Anthropic.Tool[] = [
         year_month: { type: 'string', description: 'YYYY-MM 形式の年月' },
       },
       required: ['child_id', 'year_month'],
+    },
+  },
+  {
+    name: 'get_child_journal',
+    description:
+      'ある児童の日誌（日々の記録の「日常記録」「特記事項」と、参加した活動）を1か月分または1日分取得する。' +
+      '「○○くんの10月の日誌を見せて」「△日の記録に何て書いてある？」のように、' +
+      '記録の中身を読みたいときに使う。年月か日付のどちらかを必ず指定する。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        child_id: { type: 'string', description: 'search_children で得た児童ID' },
+        year_month: { type: 'string', description: 'YYYY-MM 形式の年月（1か月分を見るとき）' },
+        date: {
+          type: 'string',
+          description: '任意。YYYY-MM-DD。指定するとその日の日誌だけを返す（year_month より優先）',
+        },
+        display: {
+          type: 'boolean',
+          description:
+            'true: 職員が日誌そのものを見たいとき（「見せて」「表示して」）。本文はシステムが' +
+            'あなたの回答の下にそのまま表示するので、あなたは本文を書き写さない。' +
+            'false: 中身を読んで質問に答えたいとき（「特記事項があった日は？」など）。本文があなたに渡される。',
+        },
+      },
+      required: ['child_id', 'display'],
     },
   },
   {
@@ -147,25 +178,87 @@ function monthRange(yearMonth: string): { from: string; to: string } {
  *
  * 例外は投げずに、必ず文字列として返す（ツール実行が落ちると会話全体が
  * 止まってしまうため）。データが無い場合も「無い」と分かる形で返す。
+ *
+ * display は「職員の画面にそのまま出す文章」。日誌の表示のように本文が長いものを
+ * モデルに書き写させると、時間切れ（60秒）になるうえ言い換えが混ざるので、
+ * サーバー側で整形して回答の下に付ける。
  */
 export async function runSupportTool(
   name: string,
   input: Record<string, unknown>,
   supabase: SupabaseClient
-): Promise<string> {
+): Promise<{ content: string; display?: string }> {
   try {
+    if (name === 'get_child_journal') return await runJournalTool(input, supabase)
+
     const result = await dispatch(name, input, supabase)
-    const json = JSON.stringify(result, null, 1)
-    return json.length > MAX_RESULT_CHARS
-      ? json.slice(0, MAX_RESULT_CHARS) +
-          '\n…（結果が長いため省略しました。日付や児童を絞って取得し直してください）'
-      : json
+    return { content: truncate(JSON.stringify(result, null, 1), MAX_RESULT_CHARS) }
   } catch (error) {
     console.error(`support tool ${name} failed:`, error)
-    return JSON.stringify({
-      エラー: 'データを取得できませんでした。職員に画面での確認をお願いしてください。',
-    })
+    return {
+      content: JSON.stringify({
+        エラー: 'データを取得できませんでした。職員に画面での確認をお願いしてください。',
+      }),
+    }
   }
+}
+
+function truncate(json: string, limit: number): string {
+  return json.length > limit
+    ? json.slice(0, limit) +
+        '\n…（結果が長いため省略しました。日付や児童を絞って取得し直してください）'
+    : json
+}
+
+async function runJournalTool(
+  input: Record<string, unknown>,
+  supabase: SupabaseClient
+): Promise<{ content: string; display?: string }> {
+  const result = await getChildJournal(
+    supabase,
+    String(input.child_id),
+    input.year_month ? String(input.year_month) : null,
+    input.date ? String(input.date) : null
+  )
+
+  if (!result.日誌 || input.display !== true) {
+    return { content: truncate(JSON.stringify(result, null, 1), MAX_JOURNAL_RESULT_CHARS) }
+  }
+
+  return {
+    content: JSON.stringify({
+      結果: `${result.児童}さんの日誌（${result.日誌.length}日分）を、あなたの回答の下にシステムが表示しました。`,
+      指示:
+        '本文は書き写さず、「○○さんの△月の日誌です（□日分）。」の一文だけを書いてください。' +
+        '「下に表示」などシステムの仕組みには触れないこと。',
+    }),
+    display: formatJournal({ ...result, 日誌: result.日誌 }),
+  }
+}
+
+type JournalDay = {
+  日付: string
+  出席状況: string
+  日常記録?: string
+  特記事項?: string
+  活動?: string[]
+}
+
+/** 日誌を職員向けの読みやすい文章に整える（会話画面はプレーンテキスト表示） */
+function formatJournal(result: { 児童: string; 対象: string; 日誌: JournalDay[] }) {
+  const [y, m, d] = result.対象.split('-').map(Number)
+  const period = d ? `${y}年${m}月${d}日` : `${y}年${m}月`
+  const lines = [`■ ${result.児童}さん ${period}の日誌（${result.日誌.length}日分）`]
+
+  for (const day of result.日誌) {
+    const [, mm, dd] = day.日付.slice(0, 10).split('-').map(Number)
+    const dow = day.日付.slice(10) // 「（水）」
+    lines.push('', `【${mm}月${dd}日${dow}】`)
+    if (day.日常記録) lines.push(`日常記録：${day.日常記録}`)
+    if (day.特記事項) lines.push(`特記事項：${day.特記事項}`)
+    if (day.活動?.length) lines.push(`活動：${day.活動.join('、')}`)
+  }
+  return lines.join('\n')
 }
 
 async function dispatch(
@@ -397,6 +490,81 @@ async function getChildMonth(supabase: SupabaseClient, childId: string, yearMont
       日中一時: r.daytime_support ? 'あり' : '',
     })),
   }
+}
+
+const RECORD_TYPE_LABELS: Record<string, string> = {
+  daily_record: '日常記録',
+  notable: '特記事項',
+}
+
+async function getChildJournal(
+  supabase: SupabaseClient,
+  childId: string,
+  yearMonth: string | null,
+  date: string | null
+) {
+  if (!date && !yearMonth) {
+    return { 結果: '年月（YYYY-MM）か日付（YYYY-MM-DD）を指定してください' }
+  }
+  const { from, to } = date ? { from: date, to: date } : monthRange(yearMonth!)
+
+  const [{ data: child }, { data: attendance }] = await Promise.all([
+    supabase.from('children').select('id, name').eq('id', childId).maybeSingle(),
+    supabase
+      .from('daily_attendance')
+      .select(
+        'date, status, daily_records(record_type, content), daily_activities(participated, evaluation_notes, activity_programs(name))'
+      )
+      .eq('child_id', childId)
+      .gte('date', from)
+      .lte('date', to)
+      .order('date'),
+  ])
+
+  if (!child) return { 結果: '該当する児童が見つかりません（権限がない可能性もあります）' }
+
+  type Row = {
+    date: string
+    status: string
+    daily_records: { record_type: string; content: string }[] | null
+    daily_activities:
+      | {
+          participated: boolean
+          evaluation_notes: string | null
+          activity_programs: { name: string } | null
+        }[]
+      | null
+  }
+
+  const days = ((attendance ?? []) as unknown as Row[])
+    .map((r) => {
+      const records = (r.daily_records ?? []).filter((d) => d.content?.trim())
+      const activities = (r.daily_activities ?? []).filter((a) => a.participated)
+      return {
+        日付: `${r.date}（${WEEKDAY[weekdayOf(r.date)]}）`,
+        出席状況: STATUS_LABELS[r.status] ?? r.status,
+        ...Object.fromEntries(
+          records.map((d) => [RECORD_TYPE_LABELS[d.record_type] ?? d.record_type, d.content.trim()])
+        ),
+        活動: activities.length
+          ? activities.map((a) =>
+              a.evaluation_notes?.trim()
+                ? `${a.activity_programs?.name ?? '不明'}（${a.evaluation_notes.trim()}）`
+                : (a.activity_programs?.name ?? '不明')
+            )
+          : undefined,
+        hasContent: records.length > 0 || activities.length > 0,
+      }
+    })
+    // 欠席日など、日誌が何も書かれていない日は省く
+    .filter((d) => d.hasContent)
+    .map(({ hasContent, ...rest }) => (void hasContent, rest as JournalDay))
+
+  const period = (date ?? yearMonth)!
+  if (days.length === 0) {
+    return { 児童: child.name, 対象: period, 結果: 'この期間に書かれた日誌はありません' }
+  }
+  return { 児童: child.name, 対象: period, 日数: days.length, 日誌: days }
 }
 
 async function getChangeHistory(

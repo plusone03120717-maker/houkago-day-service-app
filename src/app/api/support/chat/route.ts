@@ -138,6 +138,8 @@ export async function POST(request: NextRequest) {
   })
 
   const toolCalls: { name: string; input: unknown }[] = []
+  // ツールが「画面にそのまま出す」と返した文章（日誌の本文など）
+  const displays: string[] = []
   const startedAt = Date.now()
   let reply: string
 
@@ -181,7 +183,8 @@ export async function POST(request: NextRequest) {
           (toolUse.input ?? {}) as Record<string, unknown>,
           supabaseAsUser
         )
-        results.push({ type: 'tool_result', tool_use_id: toolUse.id, content: output })
+        results.push({ type: 'tool_result', tool_use_id: toolUse.id, content: output.content })
+        if (output.display) displays.push(output.display)
       }
       messages.push({ role: 'user', content: results })
     }
@@ -191,6 +194,11 @@ export async function POST(request: NextRequest) {
       { error: '回答を作成できませんでした。時間をおいて試すか、管理者にご連絡ください。' },
       { status: 500 }
     )
+  }
+
+  if (displays.length > 0) {
+    // 本文はモデルを通さず原文のまま付ける（stripMarkdown もかけない）
+    reply = [reply, ...displays].filter(Boolean).join('\n\n')
   }
 
   if (!reply) {

@@ -4,21 +4,20 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 /**
  * サポートボットが使うモデル。
  *
- * 実データを読ませるにあたって Sonnet 5 と Haiku 4.5 を実際のデータで
- * 比較したが、出席記録の不整合の指摘・変更履歴の読み解きのどちらも
- * Haiku で十分な精度が出た（むしろ変更履歴の説明は Haiku の方が明快だった）。
- * 入力単価が2倍になるだけの差が観測できなかったので Haiku のままにしている。
+ * 当初は Sonnet 5 と Haiku 4.5 を実データで比較し、Haiku で十分な精度が出たため
+ * Haiku を採用した。2026-10-15 に後継の Haiku 5.5 へ切り替え（単価は4.5の1/10、
+ * 指示への従い方も向上）。
  *
  * 運用してみて誤りが目立つようなら、Vercel の環境変数 SUPPORT_BOT_MODEL に
- * claude-sonnet-5 を入れればデプロイし直さずに切り替えられる。
+ * claude-sonnet-5-5 を入れればデプロイし直さずに切り替えられる。
  */
-export const SUPPORT_MODEL = process.env.SUPPORT_BOT_MODEL || 'claude-haiku-4-5'
+export const SUPPORT_MODEL = process.env.SUPPORT_BOT_MODEL || 'claude-haiku-5-5'
 
 /**
- * 思考の深さ。Haiku 4.5 はこの指定に対応しておらず（エラーになる）、
- * Sonnet 5 などに切り替えたときだけ渡す。チャットなので浅めで十分。
+ * 思考の深さ。チャットなので浅め（low）で十分。
+ * Haiku 4.5 だけはこの指定に対応しておらずエラーになるので渡さない。
  */
-export const SUPPORT_EFFORT: 'low' | undefined = SUPPORT_MODEL.includes('haiku')
+export const SUPPORT_EFFORT: 'low' | undefined = SUPPORT_MODEL.includes('haiku-4')
   ? undefined
   : 'low'
 
@@ -59,6 +58,14 @@ const INSTRUCTIONS = `あなたは放課後等デイサービス管理アプリ�
 ・回答では、テーブル名や列名（daily_attendance、service_start_time など）を
   そのまま出さないでください。「提供時間」「出席状況」など画面上の言葉に直します。
 ・ツールで確認できなかったことを、確認したかのように言ってはいけません。
+
+【日誌の表示】
+「○○くんの10月の日誌を見せて」のように日誌（日々の記録）を求められたら、
+get_child_journal を display: true で呼びます。本文はシステムが回答の下に
+原文のまま表示するので、あなたは本文を書き写さず一言添えるだけにします。
+・「特記事項があった日は？」「○日は何をした？」のように中身を読んで答える質問では
+  display: false で呼び、書かれている内容だけを根拠に答えます。
+・年が言われていないときは、今日の日付から最も自然な年（未来の月なら前年）を使います。
 
 【2種類のマニュアルがあります】
 ・操作マニュアル … アプリの使い方。画面名・ボタン・手順のこと
