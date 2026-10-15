@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/require-admin'
 import { TimecardBoard } from '@/components/timecard/timecard-board'
-import type { StaffMember, TimeRecord, ShiftEntry, OvertimeRequest } from '@/components/timecard/timecard-board'
+import type { StaffMember, TimeRecord, ShiftEntry, OvertimeRequest, TimeRecordCorrection } from '@/components/timecard/timecard-board'
 
 function currentMonth(): string {
   const now = new Date()
@@ -39,7 +39,7 @@ export default async function TimecardPage({
   const selectedMember = members.find((s) => s.id === selectedStaffId)
   const userId = selectedMember?.user_id ?? null
 
-  const [{ data: ratesRaw }, { data: recordsRaw }, { data: shiftsRaw }, { data: overtimeRaw }] = await Promise.all([
+  const [{ data: ratesRaw }, { data: recordsRaw }, { data: shiftsRaw }, { data: overtimeRaw }, { data: correctionsRaw }] = await Promise.all([
     // 選択月に有効な時給を取得
     memberIds.length > 0
       ? supabase
@@ -79,6 +79,16 @@ export default async function TimecardPage({
           .gte('date', rateMonthStart)
           .lte('date', rateMonthEnd)
       : Promise.resolve({ data: [] }),
+    // 選択スタッフの当月分の、LINEからの自動修正の履歴
+    selectedStaffId
+      ? supabase
+          .from('time_record_corrections')
+          .select('id, time_record_id, type, target_date, before_recorded_at, after_recorded_at, message, created_at')
+          .eq('staff_member_id', selectedStaffId)
+          .gte('target_date', rateMonthStart)
+          .lte('target_date', rateMonthEnd)
+          .order('created_at', { ascending: false })
+      : Promise.resolve({ data: [] }),
   ])
 
   type RateRow = { id: string; staff_member_id: string; hourly_rate: number }
@@ -113,6 +123,7 @@ export default async function TimecardPage({
         staffId={selectedStaffId}
         initialShifts={shifts}
         initialOvertimeRequests={overtimeRequests}
+        initialCorrections={(correctionsRaw ?? []) as TimeRecordCorrection[]}
       />
     </div>
   )

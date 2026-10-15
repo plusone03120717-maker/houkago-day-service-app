@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
+import { handlePunchReport } from '@/lib/line/timecard-correction'
 
 const LINE_REPLY_API = 'https://api.line.me/v2/bot/message/reply'
 
@@ -68,7 +69,6 @@ export async function POST(req: NextRequest) {
     if (!lineUserId || !replyToken) continue
 
     const action = text === '出勤' ? 'clock_in' : text === '退勤' ? 'clock_out' : null
-    if (!action) continue
 
     // LINE User IDでスタッフを検索
     const { data: staff } = await adminClient
@@ -76,6 +76,14 @@ export async function POST(req: NextRequest) {
       .select('id, name')
       .eq('line_user_id', lineUserId)
       .maybeSingle()
+
+    // 付け忘れの報告（「昨日 退勤 17:30」など）は承認なしでタイムカードへ反映する
+    if (!action) {
+      if (!staff) continue
+      const reply = await handlePunchReport(adminClient, staff, text)
+      if (reply) await replyMessage(replyToken, reply)
+      continue
+    }
 
     if (!staff) {
       await replyMessage(replyToken, 'アカウントが登録されていません。管理者にお問い合わせください。')

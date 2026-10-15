@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
+import { handlePunchReport } from '@/lib/line/timecard-correction'
 
 const LINE_REPLY_API = 'https://api.line.me/v2/bot/message/reply'
 
@@ -199,7 +200,7 @@ export async function POST(request: NextRequest) {
           })
           await replyMessage(
             replyToken,
-            `⚠️ ${y}年${m}月${d}日の退勤が記録されていません。\n\n管理者にご連絡ください。\n\n出勤は引き続き記録されました。\n⏰ ${nowJST()}`,
+            `⚠️ ${y}年${m}月${d}日の退勤が記録されていません。\n\n出勤は引き続き記録されました。\n⏰ ${nowJST()}\n\n退勤した時刻をこのトークに送ると自動で反映されます。\n例：「${m}/${d} 退勤 17:30」`,
             channelToken
           )
           continue
@@ -216,7 +217,7 @@ export async function POST(request: NextRequest) {
           })
           await replyMessage(
             replyToken,
-            `⚠️ 本日の出勤が記録されていません。\n\n出勤時間を管理者にご連絡ください。\n\n退勤は引き続き記録されました。\n⏰ ${nowJST()}`,
+            `⚠️ 本日の出勤が記録されていません。\n\n退勤は引き続き記録されました。\n⏰ ${nowJST()}\n\n出勤した時刻をこのトークに送ると自動で反映されます。\n例：「出勤 9:00」`,
             channelToken
           )
           continue
@@ -236,6 +237,16 @@ export async function POST(request: NextRequest) {
         channelToken
       )
       continue
+    }
+
+    // 付け忘れの報告（「昨日 退勤 17:30」など）は承認なしでタイムカードへ反映する
+    const reporter = await findStaffByLineUserId(adminClient, userId)
+    if (reporter) {
+      const reply = await handlePunchReport(adminClient, reporter, text)
+      if (reply) {
+        await replyMessage(replyToken, reply, channelToken)
+        continue
+      }
     }
 
     // その他: LINE User ID ＋ 申請ページ案内

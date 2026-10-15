@@ -26,6 +26,17 @@ export type TimeRecord = {
   edited_at: string | null
 }
 
+export type TimeRecordCorrection = {
+  id: string
+  time_record_id: string | null
+  type: 'clock_in' | 'clock_out'
+  target_date: string
+  before_recorded_at: string | null
+  after_recorded_at: string
+  message: string | null
+  created_at: string
+}
+
 export type ShiftEntry = {
   id: string
   date: string
@@ -178,6 +189,7 @@ interface Props {
   staffId: string
   initialShifts: ShiftEntry[]
   initialOvertimeRequests: OvertimeRequest[]
+  initialCorrections: TimeRecordCorrection[]
 }
 
 export function TimecardBoard({
@@ -187,6 +199,7 @@ export function TimecardBoard({
   staffId,
   initialShifts,
   initialOvertimeRequests,
+  initialCorrections,
 }: Props) {
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -195,6 +208,7 @@ export function TimecardBoard({
   const [selectedStaffId, setSelectedStaffId] = useState(staffId || (initialStaffMembers[0]?.id ?? ''))
   const [month, setMonth] = useState(initialMonth)
   const [records, setRecords] = useState<TimeRecord[]>(initialRecords)
+  const [corrections, setCorrections] = useState<TimeRecordCorrection[]>(initialCorrections)
   const [shifts, setShifts] = useState<ShiftEntry[]>(initialShifts)
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>(initialOvertimeRequests)
   const [loading, setLoading] = useState(false)
@@ -217,6 +231,7 @@ export function TimecardBoard({
   const [savingPreOT, setSavingPreOT] = useState(false)
 
   const selectedStaff = staffMembers.find((s) => s.id === selectedStaffId)
+  const lineCorrectedIds = new Set(corrections.map((c) => c.time_record_id).filter(Boolean))
 
   // derived maps
   const shiftsMap = new Map(shifts.map((s) => [s.date, s]))
@@ -241,6 +256,14 @@ export function TimecardBoard({
       .lt('recorded_at', end)
       .order('recorded_at')
     setRecords((data ?? []) as TimeRecord[])
+    const { data: cData } = await supabase
+      .from('time_record_corrections')
+      .select('id, time_record_id, type, target_date, before_recorded_at, after_recorded_at, message, created_at')
+      .eq('staff_member_id', sId)
+      .gte('target_date', `${ym}-01`)
+      .lte('target_date', getLastDayOfMonth(ym))
+      .order('created_at', { ascending: false })
+    setCorrections((cData ?? []) as TimeRecordCorrection[])
     setLoading(false)
   }
 
@@ -712,6 +735,7 @@ export function TimecardBoard({
                           ) : clockInTime ? (
                             <div className="flex items-center gap-2">
                               <span className="text-green-700">{clockInTime}</span>
+                              {lineCorrectedIds.has(day.clock_in!.id) && <LineBadge />}
                               <button onClick={() => setEditing({ recordId: day.clock_in!.id, field: 'clock_in', value: clockInTime })} className="text-gray-400 hover:text-indigo-600"><Edit2 className="h-3.5 w-3.5" /></button>
                               <button onClick={() => void handleDeleteRecord(day.clock_in!.id)} className="text-gray-300 hover:text-red-500"><X className="h-3.5 w-3.5" /></button>
                             </div>
@@ -732,6 +756,7 @@ export function TimecardBoard({
                           ) : clockOutTime ? (
                             <div className="flex items-center gap-2">
                               <span className="text-red-600">{clockOutTime}</span>
+                              {lineCorrectedIds.has(day.clock_out!.id) && <LineBadge />}
                               <button onClick={() => setEditing({ recordId: day.clock_out!.id, field: 'clock_out', value: clockOutTime })} className="text-gray-400 hover:text-indigo-600"><Edit2 className="h-3.5 w-3.5" /></button>
                               <button onClick={() => void handleDeleteRecord(day.clock_out!.id)} className="text-gray-300 hover:text-red-500"><X className="h-3.5 w-3.5" /></button>
                             </div>
@@ -821,8 +846,57 @@ export function TimecardBoard({
         </CardContent>
       </Card>
 
-      <p className="text-xs text-gray-400">* は管理者が修正した記録です</p>
+      <p className="text-xs text-gray-400">* は修正された記録です（<LineBadge /> はスタッフがLINEで送った時刻で自動修正したもの）</p>
+
+      {/* LINEからの自動修正の履歴 */}
+      {corrections.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">LINEからの修正履歴</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="text-left px-4 py-2 font-medium text-gray-600 whitespace-nowrap">受信日時</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600 whitespace-nowrap">対象日</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600 whitespace-nowrap">修正内容</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600">送られた文</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {corrections.map((c) => {
+                    const received = toJSTDatetime(c.created_at)
+                    return (
+                      <tr key={c.id} className="border-b border-gray-50">
+                        <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{received.date.slice(5).replace('-', '/')} {received.time}</td>
+                        <td className="px-4 py-2 whitespace-nowrap">{c.target_date.slice(5).replace('-', '/')}</td>
+                        <td className="px-4 py-2 whitespace-nowrap">
+                          {c.type === 'clock_in' ? '出勤' : '退勤'}{' '}
+                          {c.before_recorded_at
+                            ? <>{toJSTDatetime(c.before_recorded_at).time} → <span className="font-medium">{toJSTDatetime(c.after_recorded_at).time}</span></>
+                            : <><span className="font-medium">{toJSTDatetime(c.after_recorded_at).time}</span> <span className="text-xs text-gray-400">（追加）</span></>}
+                        </td>
+                        <td className="px-4 py-2 text-gray-600 break-all">{c.message}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
+  )
+}
+
+function LineBadge() {
+  return (
+    <span className="rounded bg-green-100 px-1 text-[10px] font-medium text-green-700" title="LINEで送られた時刻で自動修正">
+      LINE
+    </span>
   )
 }
 
