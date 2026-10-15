@@ -18,6 +18,10 @@
     {
       "path": "/api/cron/punch-reminder",
       "schedule": "30 11 * * *"
+    },
+    {
+      "path": "/api/cron/billing-month-start",
+      "schedule": "0 22 28-31 * *"
     }
   ],
   "headers": [

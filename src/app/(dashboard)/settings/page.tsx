@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash, Clock, Smartphone, Calculator } from 'lucide-react'
+import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash, Clock, Smartphone, Calculator, Send } from 'lucide-react'
 import { requireAdmin } from '@/lib/require-admin'
 
 const sections = [
@@ -27,6 +27,12 @@ const sections = [
     icon: PlusCircle,
     label: '処遇改善加算の要件メモ',
     description: '加算区分と算定率の控え（請求の計算には使いません）',
+  },
+  {
+    href: '/settings/billing-notice',
+    icon: Send,
+    label: '国保連請求の月初お知らせ',
+    description: '毎月1日の朝に前月分を集計し、要確認を LINE で受け取る請求担当を選ぶ',
   },
   {
     href: '/settings/service-codes',
