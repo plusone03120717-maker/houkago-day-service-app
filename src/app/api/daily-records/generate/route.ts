@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -57,6 +58,7 @@ ${bulletPoints}
 
 【出力ルール】
 ・箇条書きメモの内容を自然な日常記録の文章（2〜4文程度）に変換してください
+${NO_INVENTED_FACTS}
 ・支援計画の目標と今日の様子を照らし合わせ、関連する場合は文章の最後に1文で「（支援計画との照合：○○）」という形で補足してください
 ・支援計画が未設定または照合できない場合は補足なしで文章のみ出力してください
 ・専門的かつ自然な文体で記述してください

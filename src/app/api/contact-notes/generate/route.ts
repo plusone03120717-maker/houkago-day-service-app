@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -100,8 +101,9 @@ ${notableRecord ? `【特記事項】\n${notableRecord}` : ''}
 【作成ルール】
 ・保護者に温かく丁寧に伝える文体
 ・200〜350字程度
-・具体的なエピソードや子どもの様子を交えて
+・活動記録や日常記録に書かれているエピソード・様子を交えて
 ・活動記録や日常記録の内容を積極的に取り込む
+${NO_INVENTED_FACTS}
 ・特記事項がある場合は適切に伝える（深刻になりすぎず、次回の対応なども添える）
 ・「本日も〜」「今日は〜」で書き始める
 ・署名・挨拶文は不要

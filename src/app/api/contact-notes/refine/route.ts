@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -25,6 +26,7 @@ ${content}
 【作成ルール】
 ・保護者に温かく丁寧に伝える文体
 ・入力内容のすべての情報を漏れなく盛り込む
+${NO_INVENTED_FACTS}
 ・200〜350字程度
 ・「本日も〜」「今日は〜」などで書き始める
 ・署名・挨拶文は不要

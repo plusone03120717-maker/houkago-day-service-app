@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -29,6 +30,7 @@ ${recordsText}
 
 【出力ルール】
 ・繰り返し出現している問題・傾向を優先的にまとめる
+${NO_INVENTED_FACTS}
 ・今後の支援に向けた議題候補を箇条書きで3〜5点挙げる
 ・支援員・保護者・関係者が共有しやすい専門的な文体
 ・200〜350字程度

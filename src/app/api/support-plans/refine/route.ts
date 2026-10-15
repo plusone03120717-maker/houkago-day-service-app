@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -235,6 +236,9 @@ export async function POST(request: NextRequest) {
   }
 
   const prompt = `${systemPrompt}
+
+【必ず守ること】
+${NO_INVENTED_FACTS}
 
 【入力された内容】
 ${content}`
