@@ -85,6 +85,17 @@ function findTimes(t: string): TimeHit[] {
     const minute = m[3] ? 30 : m[4] ? Number(m[4]) : 0
     hits.push({ index: m.index! + m[0].search(/\d/), end: m.index! + m[0].length, hour: Number(m[2]), minute, meridiem: meridiemOf(m[1]) })
   }
+  // 1730 / 17.30 — 日付や他の数字と紛れやすいので、「出勤」「退勤」のすぐ前後にあるときだけ時刻とみなす
+  const words = [...CLOCK_IN_WORDS, ...CLOCK_OUT_WORDS]
+  for (const m of t.matchAll(/(?<![\d/月:.])(?:(\d{1,2})\.(\d{2})|(\d{1,2})(\d{2}))(?![\d.:])/g)) {
+    const start = m.index!
+    const end = start + m[0].length
+    if (hits.some((h) => start < h.end && end > h.index)) continue
+    const before = t.slice(0, start).trimEnd()
+    const after = t.slice(end).trimStart()
+    if (!words.some((w) => before.endsWith(w) || after.startsWith(w))) continue
+    hits.push({ index: start, end, hour: Number(m[1] ?? m[3]), minute: Number(m[2] ?? m[4]), meridiem: null })
+  }
   return hits.sort((a, b) => a.index - b.index)
 }
 
@@ -138,8 +149,11 @@ export function parsePunchReport(text: string, today: string): ParseResult {
   if (keywords.length === 0) {
     // 「9:00〜17:30」のように2つ並んでいれば早い方が出勤
     types = times.length === 1 ? [null] : ['clock_in', 'clock_out']
+  } else if (times.length === 2 && keywords.length === 2 && keywords[0].type !== keywords[1].type) {
+    // 時刻2つ・言葉2つなら現れた順に組にする（「9時出勤18時退勤」「出勤9:00退勤18:00」）
+    types = [...keywords].sort((a, b) => a.index - b.index).map((k) => k.type)
   } else {
-    // 時刻との間の文字数がいちばん少ない言葉を採る（「9時出勤 18時退勤」「出勤9:00 退勤18:00」）
+    // 時刻との間の文字数がいちばん少ない言葉を採る（「退勤 17:30」「17時半に退勤」）
     const gap = (k: { index: number; end: number }, h: TimeHit) =>
       k.index >= h.end ? k.index - h.end : Math.max(0, h.index - k.end)
     types = times.map((h) => {
