@@ -42,7 +42,16 @@ export type ServiceAssignment = {
   /** 日中一時の時間。放デイだけの日は null */
   daytimeStartTime: string | null
   daytimeEndTime: string | null
+  /**
+   * 予定を入れる教室（ユニット）。承認画面で「英会話」か「放デイ」かを選んだときだけ入る。
+   * 未指定なら、その日の予定・利用計画・所属から自動で決める（resolveUnitId）。
+   * 英会話も請求上は放デイだが、承認画面で「放デイ」を押すと紛らわしいため分けて選ばせる
+   */
+  unitId?: string | null
 }
+
+/** 承認画面で「英会話」として別に選ばせる教室の名前（units.name） */
+export const ENGLISH_UNIT_NAME = '英会話'
 
 /** 割り振りを読み出すのに必要な列。連絡の行をそのまま渡せる */
 export type AssignmentSource = {
@@ -195,6 +204,9 @@ export function validateAssignment(a: ServiceAssignment): string | null {
   }
 
   const times = [a.serviceStartTime, a.serviceEndTime, a.daytimeStartTime, a.daytimeEndTime]
+  if (a.unitId != null && typeof a.unitId !== 'string') {
+    return '教室の指定が正しくありません'
+  }
   if (times.some((t) => t !== null && !TIME_RE.test(t))) {
     return '時刻の形式が正しくありません'
   }

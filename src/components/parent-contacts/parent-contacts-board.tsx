@@ -219,6 +219,38 @@ type Props = {
   transportPlaces: ChildTransportPlaces[]
   /** 連絡IDごとの「いまその日に入っている予定」。入っていない日は載らない */
   currentPlans: Record<string, CurrentPlan>
+  /** 英会話に所属する児童（児童IDごと）。この児童だけ区分に「英会話」を出す */
+  englishChoices: Record<string, EnglishUnitChoice>
+}
+
+/**
+ * 英会話に所属する児童の教室の選択肢。
+ *
+ * 英会話も請求上は放デイなので、区分だけで見ると「放デイ」を押すことになり紛らわしい。
+ * 承認画面では「英会話」を別のボタンにして、押すと英会話の教室に予定が入るようにする。
+ */
+export type EnglishUnitChoice = {
+  englishUnitId: string
+  /** 英会話のほかに所属している教室。英会話だけの児童は null */
+  otherUnitId: string | null
+  /** 連絡IDごとの、何もしなければ入る教室（その日の予定・利用計画・所属から） */
+  defaultUnitIds: Record<string, string>
+}
+
+/** 英会話として割り振られているか */
+function isEnglish(a: ServiceAssignment, english: EnglishUnitChoice | undefined) {
+  return !!english && a.serviceType === 'regular' && a.unitId === english.englishUnitId
+}
+
+/** 区分の表示名。英会話の教室に入れる放デイは「英会話」と出す */
+function assignmentLabel(a: ServiceAssignment, english: EnglishUnitChoice | undefined) {
+  return isEnglish(a, english) ? '英会話' : SERVICE_ASSIGNMENT_LABELS[a.serviceType]
+}
+
+/** 割り振りの1行表示。英会話は「英会話 15:00〜16:00」と出す */
+function assignmentSummary(a: ServiceAssignment, english: EnglishUnitChoice | undefined) {
+  const text = describeAssignment(a)
+  return isEnglish(a, english) ? text.replace(/^放デイ/, '英会話') : text
 }
 
 /** 割り振りの時刻欄。空欄は「指定なし」として扱う */
@@ -267,15 +299,25 @@ function TimeRange({
 function AssignmentEditor({
   contact,
   value,
+  english,
   onChange,
 }: {
   contact: Contact
   value: ServiceAssignment
+  /** 英会話に所属する児童のときだけ渡す */
+  english?: EnglishUnitChoice
   onChange: (next: ServiceAssignment) => void
 }) {
   const showBasic = value.serviceType !== 'daytime_support'
   const showDaytime = value.serviceType !== 'regular'
   const invalid = validateAssignment(value)
+  const englishSelected = isEnglish(value, english)
+
+  // 英会話の児童は、放デイ系のボタンを押したら英会話以外の教室に入れる。
+  // 英会話だけに所属する児童には「英会話」だけを出す（放デイを押しても英会話に入るため）
+  const types: ServiceAssignmentType[] = english
+    ? english.otherUnitId ? SERVICE_ASSIGNMENT_TYPES : []
+    : SERVICE_ASSIGNMENT_TYPES
 
   function setTime(key: keyof Omit<ServiceAssignment, 'serviceType'>, v: string) {
     const next: ServiceAssignment = { ...value, [key]: v || null }
@@ -292,12 +334,18 @@ function AssignmentEditor({
     <div className="mt-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
       <p className="text-[11px] font-semibold text-gray-600">サービス区分を決める</p>
       <div className="flex flex-wrap gap-1.5 mt-1.5">
-        {SERVICE_ASSIGNMENT_TYPES.map((t) => (
+        {types.map((t) => (
           <button
             key={t}
-            onClick={() => onChange(defaultAssignment(contact, t))}
+            onClick={() =>
+              onChange(
+                english
+                  ? { ...defaultAssignment(contact, t), unitId: english.otherUnitId }
+                  : defaultAssignment(contact, t)
+              )
+            }
             className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-              value.serviceType === t
+              value.serviceType === t && !englishSelected
                 ? 'bg-indigo-600 text-white'
                 : 'border border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
             }`}
@@ -305,6 +353,20 @@ function AssignmentEditor({
             {SERVICE_ASSIGNMENT_LABELS[t]}
           </button>
         ))}
+        {english && (
+          <button
+            onClick={() =>
+              onChange({ ...defaultAssignment(contact, 'regular'), unitId: english.englishUnitId })
+            }
+            className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+              englishSelected
+                ? 'bg-indigo-600 text-white'
+                : 'border border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            英会話
+          </button>
+        )}
       </div>
 
       {/* 通しで使う日は日中一時が先に来ることが多いので、その順で並べる */}
@@ -319,7 +381,7 @@ function AssignmentEditor({
       )}
       {showBasic && (
         <TimeRange
-          label="放デイ"
+          label={englishSelected ? '英会話' : '放デイ'}
           start={value.serviceStartTime}
           end={value.serviceEndTime}
           onStart={(v) => setTime('serviceStartTime', v)}
@@ -350,6 +412,7 @@ function ContactCard({
   today,
   reviewing,
   assignment,
+  english,
   places,
   onAssignmentChange,
   onReviewed,
@@ -367,6 +430,8 @@ function ContactCard({
   reviewing: boolean
   /** 施設が決めるサービス区分と時間 */
   assignment: ServiceAssignment
+  /** 英会話に所属する児童のときだけ渡す */
+  english: EnglishUnitChoice | undefined
   /** 送迎の場所を名前で出すための選択肢 */
   places: ChildTransportPlaces | undefined
   onAssignmentChange: (next: ServiceAssignment) => void
@@ -406,7 +471,7 @@ function ContactCard({
               ? 'キャンセル'
               : editable
                 ? '区分未定'
-                : SERVICE_ASSIGNMENT_LABELS[assignment.serviceType]}
+                : assignmentLabel(assignment, english)}
           </span>
           {hasTransport(c) && (
             <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
@@ -541,7 +606,12 @@ function ContactCard({
         {/* 承認前は区分を決める欄、承認後は決まった内容を出す */}
         {editable ? (
           <>
-            <AssignmentEditor contact={c} value={assignment} onChange={onAssignmentChange} />
+            <AssignmentEditor
+              contact={c}
+              value={assignment}
+              english={english}
+              onChange={onAssignmentChange}
+            />
             {/* 割り振りの初期値は「いま出席管理に入っている時間」なので、
                 変更の希望はスタッフが取り込まないと反映されない。1タップで入るようにする */}
             {change?.changed && assignment.serviceType !== 'both' && (
@@ -571,7 +641,7 @@ function ContactCard({
         ) : (
           needsApproval(c) &&
           approval === 'approved' && (
-            <p className="mt-1 text-xs text-gray-500">{describeAssignment(assignment)}</p>
+            <p className="mt-1 text-xs text-gray-500">{assignmentSummary(assignment, english)}</p>
           )
         )}
       </div>
@@ -653,6 +723,7 @@ export function ParentContactsBoard({
   initialAssignments,
   transportPlaces,
   currentPlans,
+  englishChoices,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -687,8 +758,15 @@ export function ParentContactsBoard({
     handlingOverrides[c.id] ?? c.absent_handling
   // 初期値は「その日の出席記録に入っている予定」→「保存済みの割り振り」→
   // 「保護者の希望時間をそのまま放デイとして」の順に決める
-  const assignmentOf = (c: Contact): ServiceAssignment =>
-    assignments[c.id] ?? initialAssignments[c.id] ?? resolveAssignment(c)
+  //
+  // 英会話の児童は、教室を選んでいなければ自動で入る教室を初期値にする
+  // （英会話に入る日は最初から「英会話」が選ばれた状態で出る）
+  const assignmentOf = (c: Contact): ServiceAssignment => {
+    const a = assignments[c.id] ?? initialAssignments[c.id] ?? resolveAssignment(c)
+    const english = englishChoices[c.child_id]
+    if (!english || a.unitId !== undefined) return a
+    return { ...a, unitId: english.defaultUnitIds[c.id] ?? english.englishUnitId }
+  }
   // 承認待ちに戻した行は再び未処理として扱う
   const isPending = (c: Contact) =>
     approvalOverrides[c.id] === 'pending' || !handledIds.has(c.id)
@@ -883,7 +961,8 @@ export function ParentContactsBoard({
         <h1 className="text-xl font-bold text-gray-900">保護者からの利用連絡</h1>
         <p className="text-xs text-gray-500 mt-1">
           保護者が送るのは「利用したい時間」と「送迎の希望」だけです。
-          放デイ・日中一時のどちらでお預かりするかは、承認するときにここで決めてください。
+          放デイ・日中一時のどちらでお預かりするかは、承認するときにここで決めてください
+          （英会話の子は「英会話」を選ぶと英会話の予定に入ります）。
           送迎の時刻は聞いていません（承認した利用時間から決まります）。行き先・帰り先だけ保護者が選びます。
           承認した利用連絡はそのまま利用状況・出席管理の利用予定になります。
           同じ内容でまとめて届いた連絡は1枚のカードにまとめています（承認も1回で済みます）。
@@ -1022,6 +1101,7 @@ export function ParentContactsBoard({
                   <AssignmentEditor
                     contact={c}
                     value={assignment}
+                    english={englishChoices[c.child_id]}
                     onChange={(next) => setGroupAssignments((prev) => ({ ...prev, [g.key]: next }))}
                   />
 
@@ -1091,6 +1171,7 @@ export function ParentContactsBoard({
                         today={today}
                         reviewing={reviewing}
                         assignment={assignmentOf(c)}
+                        english={englishChoices[c.child_id]}
                         places={placesFor(c.child_id)}
                         onAssignmentChange={(next) =>
                           setAssignments((prev) => ({ ...prev, [c.id]: next }))

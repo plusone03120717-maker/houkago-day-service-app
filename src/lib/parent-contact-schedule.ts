@@ -145,53 +145,105 @@ export async function resolveUnitId(
   childId: string,
   date: string
 ): Promise<string | null> {
-  // 1) その日にすでに予約があればそのユニット
-  const { data: reservation } = await supabase
-    .from('usage_reservations')
-    .select('unit_id')
-    .eq('child_id', childId)
-    .eq('date', date)
-    .limit(1)
-    .maybeSingle()
-  if (reservation?.unit_id) return reservation.unit_id as string
+  const resolved = await resolveUnitIds(supabase, [{ childId, date }])
+  return resolved.get(`${childId}|${date}`) ?? null
+}
 
-  // 2) その日に出欠記録があればそのユニット
-  const { data: attendance } = await supabase
-    .from('daily_attendance')
-    .select('unit_id')
-    .eq('child_id', childId)
-    .eq('date', date)
-    .limit(1)
-    .maybeSingle()
-  if (attendance?.unit_id) return attendance.unit_id as string
+/**
+ * resolveUnitId を複数の (児童, 日付) についてまとめて引く。
+ * 承認画面で連絡ごとの反映先（英会話かどうか）を初期表示するのに使う。
+ * 戻り値のキーは `${childId}|${date}`。決められなかった組は載らない。
+ */
+export async function resolveUnitIds(
+  supabase: Client,
+  pairs: { childId: string; date: string }[]
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>()
+  if (pairs.length === 0) return result
+  const childIds = [...new Set(pairs.map((p) => p.childId))]
+  const dates = [...new Set(pairs.map((p) => p.date))]
 
-  // 3) その日に有効な利用計画があればそのユニット
-  const dow = new Date(date + 'T00:00:00').getDay()
-  const { data: plans } = await supabase
-    .from('usage_plans')
-    .select('unit_id, day_of_week, start_date, end_date')
-    .eq('child_id', childId)
-    .eq('is_active', true)
-  for (const plan of (plans ?? []) as {
+  const [{ data: reservations }, { data: attendances }, { data: plans }, { data: childUnits }] =
+    await Promise.all([
+      supabase.from('usage_reservations').select('child_id, date, unit_id')
+        .in('child_id', childIds).in('date', dates),
+      supabase.from('daily_attendance').select('child_id, date, unit_id')
+        .in('child_id', childIds).in('date', dates),
+      supabase.from('usage_plans').select('child_id, unit_id, day_of_week, start_date, end_date')
+        .in('child_id', childIds).eq('is_active', true),
+      supabase.from('children_units').select('child_id, unit_id').in('child_id', childIds),
+    ])
+
+  type DayRow = { child_id: string; date: string; unit_id: string | null }
+  const firstByKey = (rows: DayRow[] | null) => {
+    const m = new Map<string, string>()
+    for (const r of rows ?? []) {
+      const k = `${r.child_id}|${r.date}`
+      if (r.unit_id && !m.has(k)) m.set(k, r.unit_id)
+    }
+    return m
+  }
+  const reservationUnit = firstByKey(reservations as DayRow[] | null)
+  const attendanceUnit = firstByKey(attendances as DayRow[] | null)
+  const planRows = (plans ?? []) as {
+    child_id: string
     unit_id: string
     day_of_week: number[] | null
     start_date: string
     end_date: string | null
-  }[]) {
-    if (!(plan.day_of_week ?? []).includes(dow)) continue
-    if (date < plan.start_date) continue
-    if (plan.end_date && date > plan.end_date) continue
-    return plan.unit_id
+  }[]
+  const firstUnitOfChild = new Map<string, string>()
+  for (const r of (childUnits ?? []) as { child_id: string; unit_id: string }[]) {
+    if (!firstUnitOfChild.has(r.child_id)) firstUnitOfChild.set(r.child_id, r.unit_id)
   }
 
-  // 4) 児童の所属ユニット（複数所属なら先頭。月次集計など他画面と同じ選び方）
-  const { data: childUnit } = await supabase
-    .from('children_units')
-    .select('unit_id')
-    .eq('child_id', childId)
-    .limit(1)
-    .maybeSingle()
-  return (childUnit?.unit_id as string | undefined) ?? null
+  for (const { childId, date } of pairs) {
+    const key = `${childId}|${date}`
+    // 1) その日にすでに予約があればそのユニット
+    // 2) その日に出欠記録があればそのユニット
+    let unitId = reservationUnit.get(key) ?? attendanceUnit.get(key)
+    // 3) その日に有効な利用計画があればそのユニット
+    if (!unitId) {
+      const dow = new Date(date + 'T00:00:00').getDay()
+      unitId = planRows.find(
+        (plan) =>
+          plan.child_id === childId &&
+          (plan.day_of_week ?? []).includes(dow) &&
+          date >= plan.start_date &&
+          (!plan.end_date || date <= plan.end_date)
+      )?.unit_id
+    }
+    // 4) 児童の所属ユニット（複数所属なら先頭。月次集計など他画面と同じ選び方）
+    unitId ??= firstUnitOfChild.get(childId)
+    if (unitId) result.set(key, unitId)
+  }
+  return result
+}
+
+/**
+ * 承認画面で選んだ教室に、その日の予定を入れてよいかを確かめる。
+ *
+ * usage_reservations / daily_attendance は (児童, ユニット, 日付) が一意なので、
+ * すでに別の教室で予定が入っている日に違う教室を選ぶと、同じ日の予定が二重にできる。
+ * 問題があればその理由を返す。
+ */
+export async function checkUnitChoice(
+  supabase: Client,
+  childId: string,
+  date: string,
+  unitId: string
+): Promise<string | null> {
+  const [{ data: reservation }, { data: attendance }] = await Promise.all([
+    supabase.from('usage_reservations').select('unit_id, units (name)')
+      .eq('child_id', childId).eq('date', date).neq('unit_id', unitId).limit(1).maybeSingle(),
+    supabase.from('daily_attendance').select('unit_id, units (name)')
+      .eq('child_id', childId).eq('date', date).neq('unit_id', unitId).limit(1).maybeSingle(),
+  ])
+  const other = (reservation ?? attendance) as unknown as { units: { name: string } | null } | null
+  if (other) {
+    return `${date} はすでに${other.units?.name ?? '別の教室'}の予定が入っています。利用状況ページで直してください`
+  }
+  return null
 }
 
 /**
@@ -785,8 +837,12 @@ export async function applyParentContact(
   /** 欠席として記録するときの欠席理由。省略時は保護者のメモを使う */
   absenceReason?: string
 ): Promise<ApplyResult> {
+  // 承認画面で教室（英会話など）を選んだ利用連絡は、その教室に入れる
+  const chosenUnitId = contact.status === 'attending' ? assignment?.unitId : null
   const unitId =
-    contact.applied_unit_id ?? (await resolveUnitId(supabase, contact.child_id, contact.date))
+    chosenUnitId ??
+    contact.applied_unit_id ??
+    (await resolveUnitId(supabase, contact.child_id, contact.date))
   if (!unitId) {
     return { error: 'この児童にユニットが設定されていないため、予定に反映できませんでした' }
   }

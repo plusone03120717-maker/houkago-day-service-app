@@ -5,6 +5,7 @@ import {
   PARENT_CONTACT_COLUMNS,
   applyParentContact,
   revertParentContact,
+  checkUnitChoice,
   type ParentContact,
 } from '@/lib/parent-contact-schedule'
 import {
@@ -55,6 +56,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '連絡が見つかりません' }, { status: 404 })
     }
     const contact = contactRaw as unknown as ParentContact
+
+    // 教室（英会話など）を選んで承認するときは、先にその教室へ入れられるかを確かめる。
+    // 別の教室で予定が入っている日だと二重になるため、承認ごと止める
+    if (approvalStatus === 'approved' && assignment?.unitId && contact.status === 'attending') {
+      const problem = await checkUnitChoice(supabase, contact.child_id, contact.date, assignment.unitId)
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 })
+    }
 
     const { error } = await supabase
       .from('parent_attendance_contacts')

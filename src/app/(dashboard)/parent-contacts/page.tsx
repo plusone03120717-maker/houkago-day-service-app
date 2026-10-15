@@ -2,15 +2,17 @@ import { createClient } from '@/lib/supabase/server'
 import {
   ParentContactsBoard,
   type CurrentPlan,
+  type EnglishUnitChoice,
 } from '@/components/parent-contacts/parent-contacts-board'
 import {
   attendanceToAssignment,
+  ENGLISH_UNIT_NAME,
   type AttendanceAssignmentSource,
   type ServiceAssignment,
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
 import { loadTransportPlaces, loadFacilitySchedule } from '@/lib/parent-usage-contact'
-import type { AbsentHandling } from '@/lib/parent-contact-schedule'
+import { resolveUnitIds, type AbsentHandling } from '@/lib/parent-contact-schedule'
 import type { LocationType } from '@/lib/transport-place'
 
 export default async function ParentContactsPage() {
@@ -111,12 +113,51 @@ export default async function ParentContactsPage() {
     }
   }
 
+  // 英会話に所属する児童は、承認画面で「英会話」を区分として選べるようにする。
+  // 何もしなければ自動で決まる教室（resolveUnitIds）を初期値にする
+  const { data: childUnitsRaw } = childIds.length > 0
+    ? await supabase
+        .from('children_units')
+        .select('child_id, unit_id, units (name)')
+        .in('child_id', childIds)
+    : { data: [] }
+  const childUnits = (childUnitsRaw ?? []) as unknown as {
+    child_id: string
+    unit_id: string
+    units: { name: string } | null
+  }[]
+  const englishChoices: Record<string, EnglishUnitChoice> = {}
+  for (const row of childUnits) {
+    if (row.units?.name !== ENGLISH_UNIT_NAME) continue
+    const other = childUnits.find((r) => r.child_id === row.child_id && r.unit_id !== row.unit_id)
+    englishChoices[row.child_id] = {
+      englishUnitId: row.unit_id,
+      otherUnitId: other?.unit_id ?? null,
+      defaultUnitIds: {},
+    }
+  }
+  const englishContacts = unconfirmedContacts.filter((c) => englishChoices[c.child_id])
+  const resolvedUnits = await resolveUnitIds(
+    supabase,
+    englishContacts.map((c) => ({ childId: c.child_id, date: c.date }))
+  )
+  for (const c of englishContacts) {
+    const unitId = resolvedUnits.get(`${c.child_id}|${c.date}`)
+    if (!unitId) continue
+    const choice = englishChoices[c.child_id]
+    choice.defaultUnitIds[c.id] = unitId
+    // 所属は英会話だけでも、利用計画で別の教室に通う曜日がある児童がいる。
+    // その教室も「放デイ」として選べるようにする
+    if (!choice.otherUnitId && unitId !== choice.englishUnitId) choice.otherUnitId = unitId
+  }
+
   return (
     <ParentContactsBoard
       unconfirmedContacts={unconfirmedContacts}
       initialAssignments={initialAssignments}
       transportPlaces={transportPlaces}
       currentPlans={currentPlans}
+      englishChoices={englishChoices}
     />
   )
 }
