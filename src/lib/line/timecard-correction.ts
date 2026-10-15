@@ -113,6 +113,17 @@ function toHour24(hit: TimeHit, type: PunchType | null): number {
   return hit.hour
 }
 
+/** 文中の日付（無ければ null、読めなければ 'invalid'） */
+export function parseReportDate(text: string, today: string): string | null | 'invalid' {
+  return parseDate(text.normalize('NFKC'), today)
+}
+
+/** 文中に「出勤」「退勤」のどちらか一方だけが書かれていればそれを返す */
+export function parseReportType(text: string): PunchType | null {
+  const types = new Set(findKeywords(text.normalize('NFKC')).map((k) => k.type))
+  return types.size === 1 ? [...types][0] : null
+}
+
 export function parsePunchReport(text: string, today: string): ParseResult {
   const t = text.normalize('NFKC')
   const times = findTimes(t)
@@ -179,56 +190,23 @@ function missingType(day: DayPunches): PunchType | null {
 export type ResolvedEntry = { date: string; type: PunchType; hour: number; minute: number }
 
 /**
- * 日付が書かれていない報告をどの日の分とみなすか決める。
- * 今日・昨日のうち、抜けている方を優先する（「昨日の退勤が未記録」と言われた翌朝に
- * 「17:30です」とだけ返信されたケースを昨日の退勤として扱うため）。
+ * 日付つきの報告を、その日の出勤・退勤に割り当てる。
+ * 「出勤」「退勤」が書かれていなければ、その日に抜けている方とみなす。
  */
 export function resolveEntries(
-  report: ParsedReport,
-  today: string,
+  date: string,
+  entries: ParsedEntry[],
   nowIso: string,
-  days: { today: DayPunches; yesterday: DayPunches; target?: DayPunches },
+  day: DayPunches,
 ): ResolvedEntry[] | { error: 'unknown_type' | 'future' } {
-  const isFuture = (date: string, e: ParsedEntry) =>
-    new Date(jstIso(date, e.hour, e.minute)).getTime() > new Date(nowIso).getTime() + 10 * 60 * 1000
-
-  if (report.date) {
-    const day = report.date === today ? days.today : report.date === addDays(today, -1) ? days.yesterday : days.target ?? null
-    const out: ResolvedEntry[] = []
-    for (const e of report.entries) {
-      const type = e.type ?? (day ? missingType(day) : null)
-      if (!type) return { error: 'unknown_type' }
-      if (isFuture(report.date, e)) return { error: 'future' }
-      out.push({ date: report.date, type, hour: e.hour, minute: e.minute })
-    }
-    return out
-  }
-
-  const yesterday = addDays(today, -1)
   const out: ResolvedEntry[] = []
-  for (const e of report.entries) {
-    const todayOk = !isFuture(today, e)
-    const pick = (): { date: string; type: PunchType } | null => {
-      if (e.type) {
-        if (todayOk && missingType(days.today) === e.type) return { date: today, type: e.type }
-        if (missingType(days.yesterday) === e.type) return { date: yesterday, type: e.type }
-        if (todayOk) return { date: today, type: e.type }
-        return null
-      }
-      const tMiss = missingType(days.today)
-      if (todayOk && tMiss) return { date: today, type: tMiss }
-      const yMiss = missingType(days.yesterday)
-      if (yMiss) return { date: yesterday, type: yMiss }
-      return null
+  for (const e of entries) {
+    const type = e.type ?? missingType(day)
+    if (!type) return { error: 'unknown_type' }
+    if (new Date(jstIso(date, e.hour, e.minute)).getTime() > new Date(nowIso).getTime() + 10 * 60 * 1000) {
+      return { error: 'future' }
     }
-    const p = pick()
-    if (!p) return { error: e.type && !todayOk ? 'future' : 'unknown_type' }
-    out.push({ ...p, hour: e.hour, minute: e.minute })
-  }
-  // 出勤・退勤を一緒に書いた報告は同じ日の分として揃える
-  if (out.length === 2 && out[0].date !== out[1].date) {
-    const date = out.some((o) => o.date === yesterday) ? yesterday : today
-    for (const o of out) o.date = date
+    out.push({ date, type, hour: e.hour, minute: e.minute })
   }
   return out
 }
@@ -252,6 +230,42 @@ export async function loadDayPunches(admin: AdminClient, staffId: string, date: 
     clock_in: rows.find((r) => r.type === 'clock_in') ?? null,
     clock_out: [...rows].reverse().find((r) => r.type === 'clock_out') ?? null,
   }
+}
+
+export type MissingPunch = { staff_member_id: string; date: string; type: PunchType }
+
+/**
+ * from〜to（JSTの日付）の間で、出勤だけ・退勤だけの日を探す（新しい日付順）。
+ * staffIds を省くと全スタッフが対象。
+ */
+export async function findMissingPunches(
+  admin: AdminClient,
+  from: string,
+  to: string,
+  staffIds?: string[],
+): Promise<MissingPunch[]> {
+  let q = admin
+    .from('time_records')
+    .select('staff_member_id, type, recorded_at')
+    .in('type', ['clock_in', 'clock_out'])
+    .gte('recorded_at', new Date(`${from}T00:00:00+09:00`).toISOString())
+    .lt('recorded_at', new Date(`${addDays(to, 1)}T00:00:00+09:00`).toISOString())
+  if (staffIds) q = q.in('staff_member_id', staffIds)
+  const { data } = await q
+  const days = new Map<string, Set<PunchType>>()
+  for (const r of (data ?? []) as { staff_member_id: string; type: PunchType; recorded_at: string }[]) {
+    const date = new Date(new Date(r.recorded_at).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const key = `${r.staff_member_id}|${date}`
+    if (!days.has(key)) days.set(key, new Set())
+    days.get(key)!.add(r.type)
+  }
+  const out: MissingPunch[] = []
+  for (const [key, types] of days) {
+    if (types.size !== 1) continue
+    const [staff_member_id, date] = key.split('|')
+    out.push({ staff_member_id, date, type: types.has('clock_in') ? 'clock_out' : 'clock_in' })
+  }
+  return out.sort((x, y) => y.date.localeCompare(x.date))
 }
 
 export type AppliedChange = ResolvedEntry & { before: string | null }
@@ -327,7 +341,7 @@ function hhmmJst(iso: string): string {
 }
 
 export const HOW_TO_REPORT =
-  '付け忘れは、このトークに日付と時刻を送ると自動で反映されます。\n例：「昨日 退勤 17:30」「10/14 出勤 9:00」「今日 9時出勤 18時退勤」'
+  '付け忘れは、このトークに日付と時刻を送ると自動で反映されます。\n例：「10/14 退勤 17:30」「昨日 出勤 9:00」「今日 9時出勤 18時退勤」'
 
 export function changesReply(name: string, changes: AppliedChange[]): string {
   const lines = changes.map((c) => {
@@ -336,6 +350,47 @@ export function changesReply(name: string, changes: AppliedChange[]): string {
     return `・${md(c.date)} ${LABEL[c.type]} ${time}${before}`
   })
   return `✏️ ${name}さんのタイムカードに反映しました\n${lines.join('\n')}\n\n違っていたら、正しい日付と時刻をもう一度送ってください。`
+}
+
+function slashDate(date: string): string {
+  const [, m, d] = date.split('-').map(Number)
+  return `${m}/${d}`
+}
+
+function exampleLine(date: string, type: PunchType, time?: string): string {
+  return `例：「${slashDate(date)} ${LABEL[type]} ${time ?? (type === 'clock_in' ? '9:00' : '17:30')}」`
+}
+
+/**
+ * 日付か時刻が欠けている報告への聞き返し。
+ * 記録が抜けている日が分かっていれば、その日と出勤/退勤を例に入れる。
+ */
+export function askAgainReply(opts: {
+  today: string
+  date: string | null
+  type: PunchType | null
+  time: string | null
+  missing: MissingPunch | null
+}): string {
+  const { today, date, type, time, missing } = opts
+  const exDate = date ?? missing?.date ?? today
+  const exType = type ?? (missing && missing.date === exDate ? missing.type : null) ?? 'clock_out'
+  const label = LABEL[exType]
+  const hint = !date && missing ? `\n（記録されていないのは ${md(missing.date)}の${LABEL[missing.type]} です）` : ''
+  if (!date && !time) {
+    return `📅⏰ 日付と時刻が入っていません。\n${label}した日付と時刻を入れて、もう一度送ってください。${hint}\n\n${exampleLine(exDate, exType)}`
+  }
+  if (!date) {
+    return `📅 日付が入っていません。\n何日の${label}か、日付を入れてもう一度送ってください。${hint}\n\n${exampleLine(exDate, exType, time ?? undefined)}`
+  }
+  return `⏰ 時刻が入っていません。\n${md(date)}の${label}の時刻を入れて、もう一度送ってください。\n\n${exampleLine(exDate, exType)}`
+}
+
+/** 夜の確認で打刻の抜けが見つかったときに本人へ送る文 */
+export function missingPunchNotice(name: string, missing: MissingPunch[]): string {
+  const lines = missing.map((m) => `・${md(m.date)}の${LABEL[m.type]}`)
+  const first = missing[0]
+  return `⚠️ ${name}さん、次の打刻が記録されていません。\n${lines.join('\n')}\n\n${LABEL[first.type]}した時刻を、日付と一緒にこのトークに送ってください。自動でタイムカードに反映されます。\n${exampleLine(first.date, first.type)}`
 }
 
 export function errorReply(reason: string): string {
@@ -347,9 +402,9 @@ export function errorReply(reason: string): string {
     case 'invalid_time':
       return `時刻を読み取れませんでした。\n\n${HOW_TO_REPORT}`
     case 'unknown_type':
-      return `出勤と退勤のどちらの時刻か分かりませんでした。「出勤」か「退勤」を添えて送ってください。\n\n${HOW_TO_REPORT}`
+      return `出勤と退勤のどちらの時刻か分かりませんでした。「出勤」か「退勤」を添えて、もう一度送ってください。\n\n${HOW_TO_REPORT}`
     case 'future':
-      return 'これから先の時刻は反映できません。日付が違う場合は「昨日」や「10/14」を添えて送ってください。'
+      return 'これから先の時刻は反映できません。日付と時刻を確かめて、もう一度送ってください。'
     case 'too_old':
       return '1か月より前の分はLINEから直せません。管理者に連絡してください。'
     case 'order':
@@ -361,7 +416,7 @@ export function errorReply(reason: string): string {
 
 /**
  * スタッフから届いた文を報告として処理する。処理した（返信すべき文を返した）ら文字列、
- * 報告ではなさそうなら null を返す。
+ * 報告ではなさそうなら null を返す。日付か時刻が欠けていれば反映せず、入れ直すよう促す。
  */
 export async function handlePunchReport(
   admin: AdminClient,
@@ -370,25 +425,34 @@ export async function handlePunchReport(
   now: Date = new Date(),
 ): Promise<string | null> {
   const today = new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const date = parseReportDate(text, today)
   const parsed = parsePunchReport(text, today)
-  if (!parsed.ok) {
-    if (parsed.reason === 'no_time') return looksLikePunchReport(text) ? HOW_TO_REPORT : null
-    return errorReply(parsed.reason)
-  }
-  if (parsed.report.date && parsed.report.date < addDays(today, -31)) return errorReply('too_old')
 
-  const yesterday = addDays(today, -1)
-  const target = parsed.report.date
-  const [todayPunches, yesterdayPunches, targetPunches] = await Promise.all([
-    loadDayPunches(admin, staff.id, today),
-    loadDayPunches(admin, staff.id, yesterday),
-    target && target !== today && target !== yesterday ? loadDayPunches(admin, staff.id, target) : undefined,
-  ])
-  const resolved = resolveEntries(parsed.report, today, now.toISOString(), {
-    today: todayPunches,
-    yesterday: yesterdayPunches,
-    target: targetPunches,
-  })
+  const latestMissing = async () =>
+    (await findMissingPunches(admin, addDays(today, -7), today, [staff.id]))[0] ?? null
+
+  if (!parsed.ok) {
+    if (parsed.reason !== 'no_time') return errorReply(parsed.reason)
+    if (date === null && !looksLikePunchReport(text)) return null
+    if (date === 'invalid') return errorReply('invalid_date')
+    return askAgainReply({ today, date, type: parseReportType(text), time: null, missing: await latestMissing() })
+  }
+
+  const report = parsed.report
+  if (!report.date) {
+    const first = report.entries[0]
+    return askAgainReply({
+      today,
+      date: null,
+      type: first.type,
+      time: report.entries.length === 1 ? `${first.hour}:${String(first.minute).padStart(2, '0')}` : null,
+      missing: await latestMissing(),
+    })
+  }
+  if (report.date < addDays(today, -31)) return errorReply('too_old')
+
+  const day = await loadDayPunches(admin, staff.id, report.date)
+  const resolved = resolveEntries(report.date, report.entries, now.toISOString(), day)
   if ('error' in resolved) return errorReply(resolved.error)
 
   // 履歴を残せない状態（テーブル未作成など）では書き換えない

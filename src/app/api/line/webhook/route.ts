@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
           })
           await replyMessage(
             replyToken,
-            `⚠️ ${y}年${m}月${d}日の退勤が記録されていません。\n\n出勤は引き続き記録されました。\n⏰ ${nowJST()}\n\n退勤した時刻をこのトークに送ると自動で反映されます。\n例：「${m}/${d} 退勤 17:30」`,
+            `⚠️ ${y}年${m}月${d}日の退勤が記録されていません。\n\n出勤は引き続き記録されました。\n⏰ ${nowJST()}\n\n退勤した時刻を、日付と一緒にこのトークに送ってください。自動でタイムカードに反映されます。\n例：「${m}/${d} 退勤 17:30」`,
             channelToken
           )
           continue
@@ -217,7 +217,7 @@ export async function POST(request: NextRequest) {
           })
           await replyMessage(
             replyToken,
-            `⚠️ 本日の出勤が記録されていません。\n\n退勤は引き続き記録されました。\n⏰ ${nowJST()}\n\n出勤した時刻をこのトークに送ると自動で反映されます。\n例：「出勤 9:00」`,
+            `⚠️ 本日の出勤が記録されていません。\n\n退勤は引き続き記録されました。\n⏰ ${nowJST()}\n\n出勤した時刻を、日付と一緒にこのトークに送ってください。自動でタイムカードに反映されます。\n例：「${Number(todayJST().slice(5, 7))}/${Number(todayJST().slice(8, 10))} 出勤 9:00」`,
             channelToken
           )
           continue
