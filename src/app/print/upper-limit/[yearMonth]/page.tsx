@@ -8,6 +8,9 @@ import { childrenFileLabel, parseChildrenParam } from '@/lib/print-children'
 import { UpperLimitDocument } from '@/components/documents/upper-limit-document'
 import { loadUpperLimitChildren } from '@/lib/kokuhoren/load'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
+import { FaxSendButton } from '@/components/fax/fax-send-button'
+import { loadFaxSendContext } from '@/lib/fax/context'
+import { findPartnerOffice } from '@/lib/fax/partner-offices'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,6 +55,28 @@ export default async function UpperLimitPrintPage({
     ? allChildren.filter((c) => c.childId && selectedIds.includes(c.childId))
     : allChildren
 
+  // 結果票は児童ごとに、その児童が使っている他の事業所それぞれへ送る。
+  // 別の児童の結果票を一緒に送らないよう、児童を1人に絞ったときだけ送れる
+  const faxChild = children.length === 1 && children[0].childId ? children[0] : null
+  const fax = faxChild ? await loadFaxSendContext(supabase, yearMonth, 'result') : null
+  const faxTargets = faxChild && fax
+    ? faxChild.offices
+        .filter((o) => o.officeNumber !== scope.facilityNumber)
+        .map((o) => ({ line: o, office: findPartnerOffice(fax.offices, { officeNumber: o.officeNumber, name: o.officeName }) }))
+    : []
+  const faxBody = faxChild
+    ? [
+        'お世話になります。',
+        '',
+        `${faxChild.childName}さまの${parseInt(month)}月分の利用者負担上限額管理結果票をお送りします。`,
+        '',
+        'お忙しいところ恐縮ですがご確認いただければと思います。',
+        '以上となります。',
+        '',
+        `放課後等デイサービス ${facility.name}`,
+      ].join('\n')
+    : ''
+
   return (
     <div className="p-4 sm:p-8">
       <div className="print:hidden mb-5 max-w-4xl mx-auto space-y-3">
@@ -85,6 +110,33 @@ export default async function UpperLimitPrintPage({
             <PrintButton />
           </div>
         </div>
+        {faxChild && fax && faxTargets.length > 0 && (
+          <div className="flex flex-wrap justify-end gap-2">
+            {faxTargets.map(({ line, office }) => (
+              <FaxSendButton
+                key={line.lineNo}
+                label={`${line.officeName || line.officeNumber}へ jFax で送る`}
+                pageSelector=".upper-limit-page"
+                fileName={`利用者負担上限額管理結果票_${yearMonth}.pdf`}
+                yearMonth={yearMonth}
+                kind="result"
+                childIds={[faxChild.childId!]}
+                offices={fax.offices}
+                defaultOfficeId={office?.id ?? null}
+                targetLabel={line.officeName}
+                defaultSubject={`${parseInt(month)}月分利用者負担上限額管理結果票`}
+                defaultBody={faxBody}
+                history={fax.history}
+                senderConfigured={fax.senderConfigured}
+              />
+            ))}
+          </div>
+        )}
+        {children.length > 1 && (
+          <p className="text-xs text-gray-500 text-right">
+            jFax で送るときは、児童を1人に絞ってください（結果票は児童ごとに、その児童が使っている事業所へ送ります）
+          </p>
+        )}
         <PrintChildFilter options={childOptions} selectedIds={selectedIds} />
         {children.length === 0 && !filtered && (
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash, Clock, Smartphone, Calculator, Send } from 'lucide-react'
+import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash, Clock, Smartphone, Calculator, Send, Printer } from 'lucide-react'
 import { requireAdmin } from '@/lib/require-admin'
 
 const sections = [
@@ -33,6 +33,12 @@ const sections = [
     icon: Send,
     label: '国保連請求の月初お知らせ',
     description: '毎月1日の朝に前月分を集計し、要確認を LINE で受け取る請求担当を選ぶ',
+  },
+  {
+    href: '/settings/partner-offices',
+    icon: Printer,
+    label: '他事業所の FAX 番号',
+    description: '上限管理の一覧表・結果票を jFax で送るときの宛先（事業所番号・FAX 番号・別名）',
   },
   {
     href: '/settings/service-codes',

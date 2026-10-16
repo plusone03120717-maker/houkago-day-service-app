@@ -8,6 +8,9 @@ import { childrenFileLabel, parseChildrenParam } from '@/lib/print-children'
 import { COPAY_LIST_ROWS, CopayListDocument } from '@/components/documents/copay-list-document'
 import { loadCopayList } from '@/lib/kokuhoren/copay-list'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
+import { FaxSendButton } from '@/components/fax/fax-send-button'
+import { loadFaxSendContext } from '@/lib/fax/context'
+import { findPartnerOffice } from '@/lib/fax/partner-offices'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,6 +49,26 @@ export default async function CopayListPrintPage({
         .map((g) => ({ ...g, children: g.children.filter((c) => selectedIds.includes(c.childId)) }))
         .filter((g) => g.children.length > 0)
     : allGroups
+
+  // 送り先が1つに決まっているときだけ jFax で送れる（違う事業所の分を1通にまとめて送らないため）
+  const faxGroup = groups.length === 1 ? groups[0] : null
+  const fax = faxGroup ? await loadFaxSendContext(supabase, yearMonth, 'copay_list') : null
+  const faxOffice = faxGroup && fax
+    ? findPartnerOffice(fax.offices, { officeNumber: faxGroup.managerNumber, name: faxGroup.managerName })
+    : null
+  const faxBody = faxGroup
+    ? [
+        'お世話になります。',
+        '',
+        ...faxGroup.children.map((c) => `${c.childName}さま 利用回数${c.usedDays}日 欠席回数${c.absentDays}日`),
+        '',
+        'お忙しいところ恐縮ですがご確認いただければと思います。',
+        '以上となります。',
+        '',
+        `放課後等デイサービス ${facility.name}`,
+        ...(facility.phone ? [`TEL：${facility.phone}`] : []),
+      ].join('\n')
+    : ''
 
   // 提供先ごとに、1枚10名ずつに分ける
   const pages = groups.flatMap((g) => {
@@ -89,6 +112,29 @@ export default async function CopayListPrintPage({
             <PrintButton />
           </div>
         </div>
+        {faxGroup && fax && (
+          <div className="flex justify-end">
+            <FaxSendButton
+              pageSelector=".copay-list-page"
+              fileName={`利用者負担額一覧表_${yearMonth}.pdf`}
+              yearMonth={yearMonth}
+              kind="copay_list"
+              childIds={faxGroup.children.map((c) => c.childId)}
+              offices={fax.offices}
+              defaultOfficeId={faxOffice?.id ?? null}
+              targetLabel={faxGroup.managerName}
+              defaultSubject={`${parseInt(month)}月分利用者負担額一覧表について`}
+              defaultBody={faxBody}
+              history={fax.history}
+              senderConfigured={fax.senderConfigured}
+            />
+          </div>
+        )}
+        {groups.length > 1 && (
+          <p className="text-xs text-gray-500 text-right">
+            jFax で送るときは、上限管理の画面で事業所ごとの「上限管理一覧表」から開いてください（1通に1事業所分ずつ送ります）
+          </p>
+        )}
         <PrintChildFilter options={childOptions} selectedIds={selectedIds} />
         {pages.length === 0 && !filtered && (
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">

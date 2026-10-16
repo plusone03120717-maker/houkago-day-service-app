@@ -201,7 +201,10 @@ export default async function UpperLimitPage({
             {waitingCount > 0 && <span className="text-amber-600">・結果待ち {waitingCount}名</span>}）
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            ①「上限管理一覧表」をPDFにして管理事業所へFAX → ② 戻ってきた結果の「管理結果後の利用者負担額」を入力して保存
+            ①「上限管理一覧表」を開いて「jFax で送る」（またはPDFにしてFAX）→ ② 戻ってきた結果の「管理結果後の利用者負担額」を入力して保存
+            <Link href="/settings/partner-offices" className="ml-2 text-indigo-600 hover:underline">
+              他事業所の FAX 番号
+            </Link>
           </p>
         </div>
         {groups.length === 0 && (
@@ -254,7 +257,7 @@ export default async function UpperLimitPage({
             {facility.name || '当事業所'}が上限管理（{selfForms.length}名）
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            ① 他事業所から届いた上限管理一覧表の金額を内訳に入力 →「管理結果を自動計算」→ 保存 → ②「上限管理結果票」をPDFにして各事業所へFAX
+            ① 他事業所から届いた上限管理一覧表の金額を内訳に入力 →「管理結果を自動計算」→ 保存 → ②「上限管理結果票」を開いて、事業所ごとに「jFax で送る」（またはPDFにしてFAX）
           </p>
         </div>
         {selfForms.length === 0 && (
