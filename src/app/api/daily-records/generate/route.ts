@@ -59,19 +59,24 @@ ${bulletPoints}
 【出力ルール】
 ・箇条書きメモの内容を自然な日常記録の文章（2〜4文程度）に変換してください
 ${NO_INVENTED_FACTS}
-・支援計画の目標と今日の様子を照らし合わせ、関連する場合は文章の最後に1文で「（支援計画との照合：○○）」という形で補足してください
+・支援計画の目標と今日の様子を照らし合わせ、メモに書かれた様子が目標とはっきり関係する場合だけ、文章の最後に1文で「（支援計画との照合：○○）」という形で補足してください
+・関係があいまいなとき、迷うときは補足を付けないでください。補足がない日誌でかまいません
 ・支援計画が未設定または照合できない場合は補足なしで文章のみ出力してください
-・専門的かつ自然な文体で記述してください
+・専門的かつ自然な文体で、文末は「です・ます」でそろえてください
 ・文章のみ出力し、余計な説明は不要です`
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
+      model: 'claude-haiku-5-5',
+      // Haiku 5.5 は書く前に考えるので、考える深さを浅めにし、上限も広めにとる
+      // （512 のままだと考えるだけで上限に達し、空の文章が返ることがあった）
+      max_tokens: 2048,
+      output_config: { effort: 'low' },
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const content = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
+    const textBlock = message.content.find((b) => b.type === 'text')
+    const content = textBlock?.type === 'text' ? textBlock.text.trim() : ''
     return NextResponse.json({ content })
   } catch (error) {
     console.error('AI generate error:', error)
