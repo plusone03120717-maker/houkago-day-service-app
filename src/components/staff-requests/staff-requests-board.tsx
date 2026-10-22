@@ -28,21 +28,49 @@ export type LeaveUsage = {
 export type BreakRecord = {
   id: string
   recorded_at: string
+  /** 対になる終了（break_end）の時刻。古い記録で見つからなければ null */
+  end_at: string | null
   staff_members: { name: string } | null
+}
+
+/** 同じスタッフ・同じ時間帯の中抜け申請（曜日・期間でまとめて申請した分）を1行にまとめる */
+type BreakGroup = {
+  key: string
+  ids: string[]
+  staffName: string
+  start: string
+  end: string | null
+  dates: string[]
+}
+
+function toJST(isoStr: string): { date: string; time: string } {
+  const jst = new Date(new Date(isoStr).getTime() + 9 * 60 * 60 * 1000).toISOString()
+  return { date: jst.slice(0, 10), time: jst.slice(11, 16) }
+}
+
+function groupBreaks(records: BreakRecord[]): BreakGroup[] {
+  const groups = new Map<string, BreakGroup>()
+  for (const r of records) {
+    const staffName = r.staff_members?.name ?? '—'
+    const { date, time: start } = toJST(r.recorded_at)
+    const end = r.end_at ? toJST(r.end_at).time : null
+    const key = `${staffName}|${start}|${end ?? ''}`
+    if (!groups.has(key)) groups.set(key, { key, ids: [], staffName, start, end, dates: [] })
+    const g = groups.get(key)!
+    g.ids.push(r.id)
+    g.dates.push(date)
+  }
+  return Array.from(groups.values()).map((g) => ({ ...g, dates: g.dates.sort() }))
+}
+
+function formatShortDate(date: string): string {
+  const dow = ['日', '月', '火', '水', '木', '金', '土'][new Date(`${date}T00:00:00Z`).getUTCDay()]
+  return `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}(${dow})`
 }
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr)
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
-}
-
-function formatDateTime(isoStr: string) {
-  const jst = new Date(new Date(isoStr).getTime() + 9 * 60 * 60 * 1000)
-  const m = jst.getUTCMonth() + 1
-  const day = jst.getUTCDate()
-  const hh = String(jst.getUTCHours()).padStart(2, '0')
-  const mm = String(jst.getUTCMinutes()).padStart(2, '0')
-  return `${jst.getUTCFullYear()}年${m}月${day}日 ${hh}:${mm}`
 }
 
 interface Props {
@@ -96,17 +124,18 @@ export function StaffRequestsBoard({ overtimeRequests: init_ot, leaveUsages: ini
     }
   }
 
-  const handleBreakReviewed = async (id: string) => {
-    setLoading(id)
+  const handleBreakReviewed = async (group: BreakGroup) => {
+    setLoading(group.key)
     await fetch('/api/staff-requests/break-reviewed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ ids: group.ids }),
     })
-    setBreaks((prev) => prev.filter((r) => r.id !== id))
+    setBreaks((prev) => prev.filter((r) => !group.ids.includes(r.id)))
     setLoading(null)
   }
 
+  const breakGroups = groupBreaks(breaks)
   const total = overtimes.length + leaves.length + breaks.length
 
   if (total === 0) {
@@ -204,29 +233,36 @@ export function StaffRequestsBoard({ overtimeRequests: init_ot, leaveUsages: ini
       )}
 
       {/* 中抜け申請 */}
-      {breaks.length > 0 && (
+      {breakGroups.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Coffee className="h-4 w-4 text-purple-500" />
               中抜け申請
-              <Badge variant="secondary">{breaks.length}件</Badge>
+              <Badge variant="secondary">{breakGroups.length}件</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {breaks.map((br) => (
-              <div key={br.id} className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
-                <div>
-                  <p className="font-medium text-gray-900">{br.staff_members?.name ?? '—'}</p>
-                  <p className="text-sm text-gray-500">{formatDateTime(br.recorded_at)}</p>
+            {breakGroups.map((g) => (
+              <div key={g.key} className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900">{g.staffName}</p>
+                  <p className="text-sm text-gray-500">
+                    中抜け {g.start}〜{g.end ?? '?'}
+                    {g.dates.length > 1 && <span className="ml-2 text-xs text-indigo-600">{g.dates.length}日分</span>}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                    {g.dates.length === 1 ? formatDate(g.dates[0]) : g.dates.map(formatShortDate).join('　')}
+                  </p>
                 </div>
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={loading === br.id}
-                  onClick={() => handleBreakReviewed(br.id)}
+                  disabled={loading === g.key}
+                  onClick={() => handleBreakReviewed(g)}
+                  className="shrink-0"
                 >
-                  確認済み
+                  {g.dates.length > 1 ? 'まとめて確認済み' : '確認済み'}
                 </Button>
               </div>
             ))}

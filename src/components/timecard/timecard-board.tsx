@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
+import { calcWorkedMinutes, pairBreakRecords } from '@/lib/work-time'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Edit2, Check, X, ChevronLeft, ChevronRight, Plus, Pencil, AlertTriangle, CheckCircle, CalendarClock, Trash2 } from 'lucide-react'
@@ -20,7 +21,7 @@ export type StaffMember = {
 export type TimeRecord = {
   id: string
   staff_member_id: string
-  type: 'clock_in' | 'clock_out'
+  type: 'clock_in' | 'clock_out' | 'break_start' | 'break_end'
   recorded_at: string
   note: string | null
   edited_at: string | null
@@ -138,8 +139,11 @@ function getFirstDayOfNextMonth(ym: string): string {
 
 function buildDayRecords(records: TimeRecord[], shiftsMap: Map<string, ShiftEntry> = new Map()): DayRecord[] {
   const byDate = new Map<string, { clock_in: TimeRecord | null; clock_out: TimeRecord | null }>()
+  // LINE の中抜け申請（break_start / break_end）は行を作らず、勤務時間から差し引くだけ
+  const breaksByDate = pairBreakRecords(records)
 
   for (const r of records) {
+    if (r.type !== 'clock_in' && r.type !== 'clock_out') continue
     const { date } = toJSTDatetime(r.recorded_at)
     if (!byDate.has(date)) byDate.set(date, { clock_in: null, clock_out: null })
     const day = byDate.get(date)!
@@ -158,23 +162,15 @@ function buildDayRecords(records: TimeRecord[], shiftsMap: Map<string, ShiftEntr
       if (clock_in) rounded_in = roundInUp30(clock_in.recorded_at).time
       if (clock_out) rounded_out = roundOutDown30(clock_out.recorded_at).time
       if (clock_in && clock_out) {
-        const inM = roundInUp30(clock_in.recorded_at).minutes
-        const outM = roundOutDown30(clock_out.recorded_at).minutes
-        const diff = outM - inM
+        const dayStart = toJSTEpochMinutes(`${date}T00:00:00+09:00`)
+        const inM = roundInUp30(clock_in.recorded_at).minutes - dayStart
+        const outM = roundOutDown30(clock_out.recorded_at).minutes - dayStart
 
-        // シフトに中抜けが設定されていれば差し引く
-        const shift = shiftsMap.get(date)
-        if (shift?.break_start_time && shift?.break_end_time) {
-          const [bsH, bsM] = shift.break_start_time.slice(0, 5).split(':').map(Number)
-          const [beH, beM] = shift.break_end_time.slice(0, 5).split(':').map(Number)
-          break_minutes = Math.max(0, (beH * 60 + beM) - (bsH * 60 + bsM))
-        }
-
-        // 中抜け控除後に5時間以上なら休憩1時間を自動控除
-        const afterBreak = Math.max(0, diff - break_minutes)
-        lunch_deduction = afterBreak >= 300 ? 60 : 0
-        const netDiff = Math.max(0, afterBreak - lunch_deduction)
-        hours = diff > 0 ? Math.round((netDiff / 60) * 100) / 100 : 0
+        // シフトの中抜けと中抜け申請を差し引き、残りが5時間以上なら休憩1時間を自動控除
+        const worked = calcWorkedMinutes(inM, outM, shiftsMap.get(date), breaksByDate.get(date) ?? [])
+        break_minutes = worked.breakMinutes
+        lunch_deduction = worked.lunchDeduction
+        hours = Math.round((worked.net / 60) * 100) / 100
       }
       return { date, clock_in, clock_out, rounded_in, rounded_out, hours, break_minutes, lunch_deduction }
     })

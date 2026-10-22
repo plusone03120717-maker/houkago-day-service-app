@@ -84,14 +84,25 @@ export default async function ShiftSummaryPage({
           .lte('date', monthEnd)
       : Promise.resolve({ data: [] }),
     memberIds.length > 0
-      ? supabase
-          .from('time_records')
-          .select('id, staff_member_id, type, recorded_at')
-          .in('staff_member_id', memberIds)
-          .gte('recorded_at', recordsStart)
-          .lt('recorded_at', recordsEnd)
-          .in('type', ['clock_in', 'clock_out'])
-          .order('recorded_at')
+      ? (async () => {
+          // 打刻＋中抜け申請は全員分で1000件を超えうるので、足りなくなるまで続けて読む
+          const rows: unknown[] = []
+          for (let from = 0; ; from += 1000) {
+            const { data } = await supabase
+              .from('time_records')
+              .select('id, staff_member_id, type, recorded_at')
+              .in('staff_member_id', memberIds)
+              .gte('recorded_at', recordsStart)
+              .lt('recorded_at', recordsEnd)
+              .in('type', ['clock_in', 'clock_out', 'break_start', 'break_end'])
+              .order('recorded_at')
+              .order('id')
+              .range(from, from + 999)
+            rows.push(...(data ?? []))
+            if (!data || data.length < 1000) break
+          }
+          return { data: rows }
+        })()
       : Promise.resolve({ data: [] }),
     memberIds.length > 0
       ? supabase

@@ -7,6 +7,7 @@ import { useLiff } from '@/hooks/use-liff'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { Loader2, AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { DEFAULT_HOURS_PER_DAY, usageLabel } from '@/lib/paid-leave'
+import { listBreakDates, dayOfWeek, MAX_BREAK_DAYS } from '@/lib/break-requests'
 
 type StaffInfo = {
   staffMemberId: string
@@ -105,7 +106,17 @@ function StaffLiffContent() {
   const [submitting, setSubmitting] = useState(false)
   const [cancellingLeave, setCancellingLeave] = useState(false)
   const [confirmLeaveCancelId, setConfirmLeaveCancelId] = useState<string | null>(null)
+  const [confirmBreakCancelKey, setConfirmBreakCancelKey] = useState<string | null>(null)
+  const [cancellingBreak, setCancellingBreak] = useState(false)
   const [toast, setToast] = useState<{ ok: boolean; message: string } | null>(null)
+
+  // 中抜けのまとめて申請（曜日・期間）
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkFrom, setBulkFrom] = useState('')
+  const [bulkTo, setBulkTo] = useState('')
+  const [bulkWeekdays, setBulkWeekdays] = useState<number[]>([1, 2, 3, 4, 5])
+  const [bulkSkipHolidays, setBulkSkipHolidays] = useState(true)
+  const [bulkConfirmCancel, setBulkConfirmCancel] = useState(false)
 
   // スタッフ特定
   useEffect(() => {
@@ -193,10 +204,87 @@ function StaffLiffContent() {
   }
 
   function openDate(dateStr: string) {
-    setSelectedDate(dateStr); setActiveForm(null); setToast(null); setConfirmLeaveCancelId(null)
+    setSelectedDate(dateStr); setActiveForm(null); setToast(null); setConfirmLeaveCancelId(null); setConfirmBreakCancelKey(null)
   }
   function closeSheet() {
-    setSelectedDate(null); setActiveForm(null); setToast(null); setConfirmLeaveCancelId(null)
+    setSelectedDate(null); setActiveForm(null); setToast(null); setConfirmLeaveCancelId(null); setConfirmBreakCancelKey(null)
+  }
+
+  // まとめて申請は、表示中の月の「今日（過去の月なら1日）〜月末」を初期値にする
+  function openBulk() {
+    const first = toDateStr(year, month, 1)
+    const last = toDateStr(year, month, new Date(year, month, 0).getDate())
+    const t = todayStr()
+    setBulkFrom(t > first && t <= last ? t : first)
+    setBulkTo(last)
+    setBulkConfirmCancel(false)
+    setToast(null)
+    setBulkOpen(true)
+  }
+  function closeBulk() {
+    setBulkOpen(false); setBulkConfirmCancel(false); setToast(null)
+  }
+  function toggleBulkWeekday(d: number) {
+    setBulkWeekdays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d])
+    setBulkConfirmCancel(false)
+  }
+
+  // 中抜けの申請・取り消し（1日・まとめて共通）
+  async function postBreak(
+    endpoint: '/api/liff/staff/break' | '/api/liff/staff/break/cancel',
+    body: Record<string, unknown>,
+  ): Promise<{ ok: boolean; json: { error?: string; created?: number; skipped?: string[]; cancelled?: number } } | null> {
+    if (liffState.status !== 'ready') return null
+    const accessToken = liffState.liff.getAccessToken()
+    if (!accessToken) return null
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken, ...body }),
+      })
+      return { ok: res.ok, json: await res.json() }
+    } catch {
+      setToast({ ok: false, message: '通信エラーが発生しました' })
+      return null
+    }
+  }
+
+  async function submitBulkBreak() {
+    setSubmitting(true)
+    const r = await postBreak('/api/liff/staff/break', { dates: bulkDates, startTime: breakStart, endTime: breakEnd })
+    setSubmitting(false)
+    if (!r) return
+    if (!r.ok) { setToast({ ok: false, message: r.json.error ?? '登録に失敗しました' }); return }
+    const skipped = r.json.skipped?.length ?? 0
+    setToast({
+      ok: true,
+      message: `${r.json.created}日分の中抜けを申請しました` + (skipped > 0 ? `（${skipped}日はすでに申請済みのため飛ばしました）` : ''),
+    })
+    loadMonth(year, month)
+  }
+
+  async function cancelBulkBreak() {
+    setCancellingBreak(true)
+    const r = await postBreak('/api/liff/staff/break/cancel', { dates: bulkDates, startTime: breakStart, endTime: breakEnd })
+    setCancellingBreak(false)
+    setBulkConfirmCancel(false)
+    if (!r) return
+    if (!r.ok) { setToast({ ok: false, message: r.json.error ?? '取り消しに失敗しました' }); return }
+    setToast({ ok: true, message: `${r.json.cancelled}日分の中抜けを取り消しました` })
+    loadMonth(year, month)
+  }
+
+  async function cancelBreak(b: BreakRecord) {
+    if (!b.break_start || !b.break_end) return
+    setCancellingBreak(true)
+    const r = await postBreak('/api/liff/staff/break/cancel', { dates: [b.date], startTime: b.break_start, endTime: b.break_end })
+    setCancellingBreak(false)
+    if (!r) return
+    if (!r.ok) { setToast({ ok: false, message: r.json.error ?? '取り消しに失敗しました' }); return }
+    setToast({ ok: true, message: '中抜け申請を取り消しました' })
+    setConfirmBreakCancelKey(null)
+    loadMonth(year, month)
   }
 
   // 申請送信
@@ -257,6 +345,10 @@ function StaffLiffContent() {
 
   const cells = buildCells()
   const today = todayStr()
+  const bulkDates = bulkOpen
+    ? listBreakDates({ from: bulkFrom, to: bulkTo, weekdays: bulkWeekdays, skipHolidays: bulkSkipHolidays })
+    : []
+  const bulkTimeOk = breakStart < breakEnd
 
   // ローディング
   if (liffState.status === 'loading' || (liffState.status === 'ready' && pageStatus === 'loading')) {
@@ -461,7 +553,186 @@ function StaffLiffContent() {
         </div>
       </div>
 
-      <p className="text-center text-xs text-gray-400 mt-3 mb-6">日付をタップして申請</p>
+      <p className="text-center text-xs text-gray-400 mt-3">日付をタップして申請</p>
+
+      {/* 中抜けのまとめて申請 */}
+      <div className="mx-3 mt-4 mb-8">
+        <button
+          onClick={openBulk}
+          className="w-full bg-white border border-sky-200 text-sky-700 rounded-2xl py-3.5 text-sm font-semibold shadow-sm active:opacity-80"
+        >
+          中抜けを曜日・期間でまとめて申請
+        </button>
+        <p className="text-center text-[11px] text-gray-400 mt-1.5">毎日・毎週決まった時間に中抜けする方向け</p>
+      </div>
+
+      {/* まとめて申請シート */}
+      {bulkOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/40" onClick={closeBulk} />
+          <div
+            className="relative bg-white rounded-t-3xl shadow-2xl max-h-[88vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full bg-gray-200" />
+            </div>
+            <div className="flex items-center justify-between px-5 pb-3 border-b border-gray-100">
+              <p className="font-bold text-gray-900">中抜けをまとめて申請</p>
+              <button onClick={closeBulk} className="p-1.5 text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="px-4 pt-3 pb-6 space-y-4">
+              {toast && (
+                <div className={`rounded-2xl px-4 py-3 text-sm font-medium ${
+                  toast.ok ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'
+                }`}>
+                  {toast.message}
+                </div>
+              )}
+
+              {/* 期間 */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-1.5">期間</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={bulkFrom}
+                    onChange={e => { setBulkFrom(e.target.value); setBulkConfirmCancel(false) }}
+                    className="flex-1 min-w-0 rounded-xl border border-gray-200 px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-sky-300"
+                  />
+                  <span className="text-gray-400 text-sm">〜</span>
+                  <input
+                    type="date"
+                    value={bulkTo}
+                    onChange={e => { setBulkTo(e.target.value); setBulkConfirmCancel(false) }}
+                    className="flex-1 min-w-0 rounded-xl border border-gray-200 px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-sky-300"
+                  />
+                </div>
+              </div>
+
+              {/* 曜日 */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-1.5">曜日</p>
+                <div className="grid grid-cols-7 gap-1.5">
+                  {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+                    const on = bulkWeekdays.includes(d)
+                    return (
+                      <button
+                        key={d}
+                        onClick={() => toggleBulkWeekday(d)}
+                        className={`rounded-xl py-2.5 text-sm font-medium transition-colors ${
+                          on
+                            ? 'bg-sky-500 text-white shadow-sm'
+                            : `bg-white border border-gray-200 ${d === 0 ? 'text-red-500' : d === 6 ? 'text-blue-500' : 'text-gray-700'}`
+                        }`}
+                      >
+                        {DOW[d]}
+                      </button>
+                    )
+                  })}
+                </div>
+                <label className="flex items-center gap-2 mt-2.5 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={bulkSkipHolidays}
+                    onChange={e => { setBulkSkipHolidays(e.target.checked); setBulkConfirmCancel(false) }}
+                    className="h-4 w-4 accent-sky-500"
+                  />
+                  祝日を除く
+                </label>
+              </div>
+
+              {/* 時刻 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1.5 block">中抜けの開始</label>
+                  <input
+                    type="time"
+                    value={breakStart}
+                    onChange={e => { setBreakStart(e.target.value); setBulkConfirmCancel(false) }}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-sky-300"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1.5 block">中抜けの終了</label>
+                  <input
+                    type="time"
+                    value={breakEnd}
+                    onChange={e => { setBreakEnd(e.target.value); setBulkConfirmCancel(false) }}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-sky-300"
+                  />
+                </div>
+              </div>
+              {!bulkTimeOk && (
+                <p className="text-[11px] text-red-500 -mt-2">開始は終了より前の時刻にしてください</p>
+              )}
+
+              {/* 対象日の確認 */}
+              <div className="bg-sky-50 rounded-2xl px-4 py-3 border border-sky-100">
+                <p className="text-sm font-semibold text-sky-800">
+                  対象 {bulkDates.length}日
+                  {bulkDates.length >= MAX_BREAK_DAYS && (
+                    <span className="ml-1 text-xs font-normal text-red-500">（一度に{MAX_BREAK_DAYS}日まで）</span>
+                  )}
+                </p>
+                {bulkDates.length > 0 ? (
+                  <p className="text-xs text-sky-700 mt-1 leading-relaxed">
+                    {bulkDates.map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}(${DOW[dayOfWeek(d)]})`).join('　')}
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-1">期間と曜日を選んでください</p>
+                )}
+              </div>
+
+              <button
+                onClick={submitBulkBreak}
+                disabled={submitting || cancellingBreak || bulkDates.length === 0 || !bulkTimeOk}
+                className="w-full rounded-2xl py-3.5 text-sm font-semibold text-white bg-sky-500 disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm"
+              >
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {bulkDates.length}日分をまとめて申請する
+              </button>
+
+              {/* まとめて取り消し（同じ期間・曜日・時刻の申請だけ） */}
+              {bulkConfirmCancel ? (
+                <div className="rounded-2xl border border-red-100 bg-red-50 p-3">
+                  <p className="text-xs text-gray-600 mb-2">
+                    上の期間・曜日で、{breakStart}〜{breakEnd} の中抜け申請を削除します。元に戻せません。
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setBulkConfirmCancel(false)}
+                      disabled={cancellingBreak}
+                      className="flex-1 rounded-xl py-2.5 text-sm text-gray-500 bg-white border border-gray-200 disabled:opacity-50"
+                    >
+                      やめる
+                    </button>
+                    <button
+                      onClick={cancelBulkBreak}
+                      disabled={cancellingBreak}
+                      className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white bg-red-500 disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm"
+                    >
+                      {cancellingBreak && <Loader2 className="h-4 w-4 animate-spin" />}
+                      取り消す
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setBulkConfirmCancel(true); setToast(null) }}
+                  disabled={submitting || bulkDates.length === 0 || !bulkTimeOk}
+                  className="w-full text-center text-xs text-red-500 py-1 disabled:opacity-40"
+                >
+                  この条件の中抜け申請をまとめて取り消す
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 日付詳細シート */}
       {selectedDate && selectedDateObj && dateInfo && (
@@ -569,14 +840,52 @@ function StaffLiffContent() {
                   </div>
                 </div>
               )}
-              {dateInfo.breaks.map((b, i) => (
-                <div key={i} className="flex items-center gap-2.5 bg-sky-50 rounded-2xl px-4 py-3 border border-sky-100">
-                  <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0" />
-                  <span className="text-sm text-sky-800 font-medium">
-                    中抜け {b.break_start ?? '?'}〜{b.break_end ?? '?'}
-                  </span>
-                </div>
-              ))}
+              {dateInfo.breaks.map((b, i) => {
+                const key = `${b.date}-${i}`
+                const cancellable = !!(b.break_start && b.break_end)
+                return (
+                  <div key={key} className="bg-sky-50 rounded-2xl px-4 py-3 border border-sky-100">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0" />
+                      <span className="text-sm text-sky-800 font-medium flex-1">
+                        中抜け {b.break_start ?? '?'}〜{b.break_end ?? '?'}
+                      </span>
+                      {cancellable && confirmBreakCancelKey !== key && (
+                        <button
+                          onClick={() => { setConfirmBreakCancelKey(key); setToast(null) }}
+                          className="shrink-0 rounded-full border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium text-red-500 active:opacity-70"
+                        >
+                          取り消す
+                        </button>
+                      )}
+                    </div>
+                    {confirmBreakCancelKey === key && (
+                      <div className="mt-3">
+                        <p className="text-xs text-gray-600 mb-2">
+                          この日の中抜け申請を削除します。元に戻せません。
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setConfirmBreakCancelKey(null)}
+                            disabled={cancellingBreak}
+                            className="flex-1 rounded-xl py-2.5 text-sm text-gray-500 bg-white border border-gray-200 disabled:opacity-50"
+                          >
+                            やめる
+                          </button>
+                          <button
+                            onClick={() => cancelBreak(b)}
+                            disabled={cancellingBreak}
+                            className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white bg-red-500 disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm"
+                          >
+                            {cancellingBreak && <Loader2 className="h-4 w-4 animate-spin" />}
+                            取り消す
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
 
               {/* 申請フォーム群 */}
 

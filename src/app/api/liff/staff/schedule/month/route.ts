@@ -3,22 +3,12 @@ import { createClient } from '@supabase/supabase-js'
 import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
 import { sumDayUnitDays, sumHourUnitHours } from '@/lib/paid-leave'
 import { findStaffByLineUserId } from '@/lib/line/liff-staff'
-import { calcShiftMinutes, buildTCDays } from '@/lib/work-time'
+import { calcShiftMinutes, buildTCDays, pairBreakRecords } from '@/lib/work-time'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
-
-function toJSTDate(isoStr: string): string {
-  const jst = new Date(new Date(isoStr).getTime() + 9 * 60 * 60 * 1000)
-  return jst.toISOString().slice(0, 10)
-}
-
-function toJSTTime(isoStr: string): string {
-  const jst = new Date(new Date(isoStr).getTime() + 9 * 60 * 60 * 1000)
-  return jst.toISOString().slice(11, 16)
-}
 
 type AttendanceRow = {
   date: string
@@ -186,20 +176,7 @@ export async function POST(req: NextRequest) {
 
     // --- 中抜け記録を日付ごとにペアリング ---
     const timeRecords = (breakRes.data ?? []) as unknown as { type: string; recorded_at: string }[]
-    const rawBreaks = timeRecords.filter((r) => r.type === 'break_start' || r.type === 'break_end')
-    const breaksByDate = new Map<string, { start: string | null; end: string | null }[]>()
-    for (const r of rawBreaks) {
-      const date = toJSTDate(r.recorded_at)
-      if (!breaksByDate.has(date)) breaksByDate.set(date, [])
-      const entry = breaksByDate.get(date)!
-      if (r.type === 'break_start') {
-        entry.push({ start: toJSTTime(r.recorded_at), end: null })
-      } else {
-        const open = [...entry].reverse().find((e) => e.start !== null && e.end === null)
-        if (open) open.end = toJSTTime(r.recorded_at)
-        else entry.push({ start: null, end: toJSTTime(r.recorded_at) })
-      }
-    }
+    const breaksByDate = pairBreakRecords(timeRecords)
     const breakRecords: { date: string; break_start: string | null; break_end: string | null }[] = []
     for (const [date, pairs] of breaksByDate) {
       for (const pair of pairs) {

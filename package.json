@@ -16,7 +16,8 @@
     "verify:parent-link": "tsx scripts/verify-parent-account-link.ts",
     "verify:parent-schedule": "tsx scripts/verify-parent-schedule-read.ts",
     "verify:parent-deadline": "tsx scripts/verify-parent-deadline.ts",
-    "verify:line-punch": "tsx scripts/verify-line-punch-report.ts"
+    "verify:line-punch": "tsx scripts/verify-line-punch-report.ts",
+    "verify:break": "tsx scripts/verify-break-requests.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
