@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { requireSessionUser } from '@/lib/auth'
+import { getStaffAccess } from '@/lib/require-admin'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 import { PendingRequestsBadge } from '@/components/layout/pending-requests-badge'
@@ -23,17 +24,19 @@ export default async function DashboardLayout({
   }
 
   const role = user.role ?? 'staff'
+  // 施設長（お金まわりを外した管理者）は JWT に載らないので、管理者のときだけ DB を引く
+  const canManageMoney = role === 'staff' ? false : (await getStaffAccess())?.canManageMoney ?? false
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
-      <Sidebar role={role} />
+      <Sidebar role={role} canManageMoney={canManageMoney} />
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* お知らせベルはページ表示をブロックせず後から流し込む */}
         <Header
           userName={user.name ?? undefined}
           pendingBadge={
             <Suspense fallback={null}>
-              <PendingRequestsBadge role={role} />
+              <PendingRequestsBadge role={role} canManageMoney={canManageMoney} />
             </Suspense>
           }
         />

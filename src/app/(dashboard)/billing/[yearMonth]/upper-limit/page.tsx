@@ -7,6 +7,7 @@ import { computeKokuhorenBilling } from '@/lib/kokuhoren/build'
 import { loadBillingChildren, loadUpperLimits } from '@/lib/kokuhoren/load'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
 import { loadSelfCostBases, resolveUpperLimitTargets } from '@/lib/kokuhoren/upper-limit-targets'
+import { requireMoneyAccess } from '@/lib/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +23,7 @@ export default async function UpperLimitPage({
   params: Promise<{ yearMonth: string }>
   searchParams: Promise<{ billing?: string }>
 }) {
+  await requireMoneyAccess()
   const { yearMonth } = await params
   const { billing: billingMonthlyId } = await searchParams
   const year = yearMonth.slice(0, 4)

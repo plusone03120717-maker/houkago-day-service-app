@@ -3,10 +3,14 @@ import { createClient } from '@/lib/supabase/server'
 import { buildKokuhorenCsv } from '@/lib/kokuhoren/build'
 import { loadBillingChildren } from '@/lib/kokuhoren/load'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
+import { hasMoneyAccess } from '@/lib/require-admin'
 
 // 国保連取込用CSV（インタフェース仕様準拠: K112請求書 + K122明細書）を生成する。
 // 請求書は事業所番号ごとに1枚なので、同じ施設の請求対象ユニットをまとめて出力する。
 export async function GET(request: NextRequest) {
+  if (!(await hasMoneyAccess())) {
+    return NextResponse.json({ error: '請求・給与はシステム管理者だけが扱えます' }, { status: 403 })
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { hasMoneyAccess } from '@/lib/require-admin'
 
 export async function PATCH(req: NextRequest) {
+  if (!(await hasMoneyAccess())) {
+    return NextResponse.json({ error: '請求・給与はシステム管理者だけが扱えます' }, { status: 403 })
+  }
   try {
     const { id, status } = await req.json() as { id?: string; status?: string }
     if (!id || !['approved', 'rejected'].includes(status ?? '')) {

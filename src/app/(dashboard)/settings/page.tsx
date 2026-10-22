@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Building2, Users, Bell, PlusCircle, ClipboardCheck, CalendarDays, Car, BookOpen, Hash, Clock, Smartphone, Calculator, Send, Printer } from 'lucide-react'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireAdmin, getStaffAccess } from '@/lib/require-admin'
 
-const sections = [
+// money: お金まわり（請求）の設定。システム管理者にだけ出す（施設長には出さない）
+const sections: Array<{ href: string; icon: typeof Building2; label: string; description: string; money?: boolean }> = [
   {
     href: '/settings/facilities',
     icon: Building2,
@@ -18,36 +19,42 @@ const sections = [
   },
   {
     href: '/settings/facility-additions',
+    money: true,
     icon: Calculator,
     label: '事業所の加算・減算設定',
     description: '体制届の区分（加配加算・処遇改善加算・各種減算）を登録。再集計で全児童の明細に自動反映',
   },
   {
     href: '/settings/additions',
+    money: true,
     icon: PlusCircle,
     label: '処遇改善加算の要件メモ',
     description: '加算区分と算定率の控え（請求の計算には使いません）',
   },
   {
     href: '/settings/billing-notice',
+    money: true,
     icon: Send,
     label: '国保連請求の月初お知らせ',
     description: '毎月1日の朝に前月分を集計し、要確認を LINE で受け取る請求担当を選ぶ',
   },
   {
     href: '/settings/partner-offices',
+    money: true,
     icon: Printer,
     label: '他事業所の FAX 番号',
     description: '上限管理の一覧表・結果票を jFax で送るときの宛先（事業所番号・FAX 番号・別名）',
   },
   {
     href: '/settings/service-codes',
+    money: true,
     icon: Hash,
     label: '国保連サービスコード・単位数設定',
     description: 'サービス項目ごとの6桁コードと単位数（請求の自動計算に必須）',
   },
   {
     href: '/settings/daytime-rates',
+    money: true,
     icon: Clock,
     label: '日中一時支援の単位数・送迎加算',
     description: '利用時間区分×児区分の単位数と送迎加算額（利用者負担額の計算に使用）',
@@ -92,6 +99,8 @@ const sections = [
 
 export default async function SettingsPage() {
   await requireAdmin()
+  const canManageMoney = (await getStaffAccess())?.canManageMoney ?? false
+  const visible = canManageMoney ? sections : sections.filter((s) => !s.money)
   return (
     <div className="space-y-5 max-w-2xl">
       <div>
@@ -99,7 +108,7 @@ export default async function SettingsPage() {
         <p className="text-sm text-gray-500 mt-0.5">施設・スタッフ・システム設定</p>
       </div>
       <div className="space-y-3">
-        {sections.map((s) => {
+        {visible.map((s) => {
           const Icon = s.icon
           return (
             <Link key={s.href} href={s.href}>

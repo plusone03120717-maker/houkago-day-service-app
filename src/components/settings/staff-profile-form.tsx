@@ -7,6 +7,15 @@ import { Button } from '@/components/ui/button'
 import { Save, CheckCircle } from 'lucide-react'
 import { SERVICE_MANAGER } from '@/lib/roles'
 
+type Access = 'staff' | 'facility_manager' | 'admin'
+
+// ログイン権限。お金まわり（請求・給与）を扱えるのはシステム管理者だけ
+const ACCESS_OPTIONS: Array<{ value: Access; label: string; description: string }> = [
+  { value: 'staff', label: 'スタッフ', description: '出席・記録・支援計画・送迎・帳票。設定・請求・シフト管理は開けない' },
+  { value: 'facility_manager', label: '施設長', description: '請求（国保連・上限管理・保護者請求）と給与まわり（タイムカード・勤務時間集計・有給・残業・スタッフ申請）以外のすべて' },
+  { value: 'admin', label: 'システム管理者', description: 'すべての機能（請求・給与を含む）' },
+]
+
 // 放デイで一般的な資格一覧
 const QUALIFICATION_OPTIONS = [
   { value: '児童指導員', label: '児童指導員' },
@@ -46,6 +55,9 @@ interface Props {
   facilityId: string
   initialLineUserId: string
   initialJobTitles: string[]
+  initialAccess: Access
+  /** ログイン権限を変えられるか（システム管理者が、自分以外を見ているとき） */
+  canChangeAccess: boolean
 }
 
 export function StaffProfileForm({
@@ -59,6 +71,8 @@ export function StaffProfileForm({
   facilityId,
   initialLineUserId,
   initialJobTitles,
+  initialAccess,
+  canChangeAccess,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -70,8 +84,10 @@ export function StaffProfileForm({
   const [hireDate, setHireDate] = useState('')
   const [lineUserId, setLineUserId] = useState(initialLineUserId || '')
   const [jobTitles, setJobTitles] = useState<Set<string>>(new Set(initialJobTitles))
+  const [access, setAccess] = useState<Access>(initialAccess)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const toggleJobTitle = (value: string) => {
     setJobTitles((prev) => {
@@ -96,6 +112,7 @@ export function StaffProfileForm({
   const handleSave = async () => {
     setSaving(true)
     setSaved(false)
+    setSaveError('')
 
     let currentProfileId = profileId
 
@@ -144,11 +161,21 @@ export function StaffProfileForm({
       }
     }
 
-    // LINE User ID と役職を更新
-    await supabase
-      .from('users')
-      .update({ line_user_id: lineUserId || null, job_titles: [...jobTitles] })
-      .eq('id', userId)
+    // LINE User ID・ログイン権限・役職を更新（役職は本人が書き換えられないよう、サーバーで権限を確かめて保存する）
+    const res = await fetch('/api/staff/access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        access: canChangeAccess ? access : undefined,
+        jobTitles: [...jobTitles],
+        lineUserId: lineUserId || null,
+      }),
+    })
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      setSaveError(json.error ?? '役職の保存に失敗しました')
+    }
 
     // staff_members の LINE User ID も同期（タイムカード・LINE打刻用）
     const { data: existingMember } = await supabase
@@ -174,7 +201,7 @@ export function StaffProfileForm({
     }
 
     setSaving(false)
-    setSaved(true)
+    if (res.ok) setSaved(true)
     startTransition(() => router.refresh())
   }
 
@@ -258,6 +285,32 @@ export function StaffProfileForm({
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
       </div>
+
+      {/* ログイン権限（システム管理者だけが変えられる） */}
+      {canChangeAccess && (
+        <div>
+          <label className="text-xs font-medium text-gray-700 mb-2 block">ログイン権限</label>
+          <div className="flex flex-wrap gap-2">
+            {ACCESS_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { setAccess(opt.value); setSaved(false) }}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                  access === opt.value
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 mt-1.5">
+            {ACCESS_OPTIONS.find((o) => o.value === access)?.description}
+          </p>
+        </div>
+      )}
 
       {/* 役職（追加） */}
       <div>
@@ -345,6 +398,7 @@ export function StaffProfileForm({
             保存しました
           </span>
         )}
+        {saveError && <span className="text-xs text-red-600">{saveError}</span>}
       </div>
     </div>
   )

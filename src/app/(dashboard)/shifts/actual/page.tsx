@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import { ActualAttendanceTable } from '@/components/shifts/actual-attendance-table'
+import { requireMoneyAccess } from '@/lib/require-admin'
 
 type Staff = { id: string; name: string }
 
@@ -25,6 +26,7 @@ export default async function ActualAttendancePage({
 }: {
   searchParams: Promise<{ date?: string }>
 }) {
+  await requireMoneyAccess()
   const params = await searchParams
   const today = getTodayJST()
   const date = params.date ?? today

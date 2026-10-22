@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireMoneyAccess } from '@/lib/require-admin'
 import { PaidLeaveBoard } from '@/components/shifts/paid-leave-board'
 import type { StaffUser, LeaveGrant, LeaveUsage } from '@/components/shifts/paid-leave-board'
 import { currentFiscalYear, fiscalYearRange } from '@/lib/paid-leave'
@@ -9,7 +9,7 @@ export default async function PaidLeavePage({
 }: {
   searchParams: Promise<{ year?: string }>
 }) {
-  await requireAdmin()
+  await requireMoneyAccess()
   const params = await searchParams
   const supabase = await createClient()
 

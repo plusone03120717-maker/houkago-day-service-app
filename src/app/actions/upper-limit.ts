@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { hasMoneyAccess } from '@/lib/require-admin'
 import { revalidatePath } from 'next/cache'
 import { loadManagedCopays } from '@/lib/kokuhoren/upper-limit-targets'
 import { aggregateUnitMonth } from '@/lib/billing/aggregate'
@@ -34,6 +35,7 @@ export async function saveUpperLimit(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'ログインが必要です' }
+  if (!(await hasMoneyAccess())) return { error: '請求はシステム管理者だけが扱えます' }
 
   // 事業所番号は国保連CSVには必須だが、FAXの結果を先に入れられるよう空欄は許す
   // （空欄のままCSVを出そうとすると、CSV側でエラーになる）
@@ -108,6 +110,7 @@ export async function deleteUpperLimit(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'ログインが必要です' }
+  if (!(await hasMoneyAccess())) return { error: '請求はシステム管理者だけが扱えます' }
 
   const { error } = await supabase
     .from('upper_limit_managements')

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { hasMoneyAccess } from '@/lib/require-admin'
 
 export async function POST(req: NextRequest) {
+  if (!(await hasMoneyAccess())) {
+    return NextResponse.json({ error: '請求・給与はシステム管理者だけが扱えます' }, { status: 403 })
+  }
   try {
     const { id } = await req.json() as { id?: string }
     if (!id) return NextResponse.json({ error: 'id が必要です' }, { status: 400 })

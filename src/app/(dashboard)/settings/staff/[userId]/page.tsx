@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireAdmin, getStaffAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { ArrowLeft, User } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,7 +8,7 @@ import { StaffProfileForm } from '@/components/settings/staff-profile-form'
 import { TrainingRecordForm } from '@/components/settings/training-record-form'
 import { DeleteStaffButton } from '@/components/settings/delete-staff-button'
 import { ResetStaffPasswordButton } from '@/components/settings/reset-staff-password-button'
-import { roleLabel } from '@/lib/roles'
+import { roleLabel, accessKey, otherJobTitles, canManageAccountOf } from '@/lib/roles'
 
 type StaffProfile = {
   id: string
@@ -44,12 +44,13 @@ export default async function StaffProfilePage({
   const { userId } = await params
   const supabase = await createClient()
 
-  // ユーザー・プロファイル・ユニット一覧・施設は互いに独立しているため並列取得
+  // ユーザー・プロファイル・ユニット一覧・施設・見ている人の役職は互いに独立しているため並列取得
   const [
     { data: userRaw },
     { data: profileRaw },
     { data: unitsRaw },
     { data: facilityRaw },
+    viewer,
   ] = await Promise.all([
     supabase
       .from('users')
@@ -70,11 +71,18 @@ export default async function StaffProfilePage({
       .select('id')
       .limit(1)
       .single(),
+    getStaffAccess(),
   ])
 
   const user = userRaw as { id: string; name: string; email: string; role: string; line_user_id: string | null; job_titles: string[] | null } | null
 
   if (!user) return <div className="p-4 text-gray-500">スタッフが見つかりません</div>
+
+  // 施設長は、システム管理者・ほかの施設長のアカウントを変えられない
+  const canManage = canManageAccountOf(viewer?.role ?? null, viewer?.jobTitles ?? null, user.role)
+  // ログイン権限（スタッフ／施設長／システム管理者）を変えられるのはシステム管理者だけ。自分自身は変えない
+  const canChangeAccess = (viewer?.canManageMoney ?? false) && viewer?.userId !== user.id
+  const targetAccess = accessKey(user.role, user.job_titles) as 'staff' | 'facility_manager' | 'admin'
 
   const profile = profileRaw as unknown as StaffProfile | null
   const units = (unitsRaw ?? []) as unknown as Unit[]
@@ -123,8 +131,8 @@ export default async function StaffProfilePage({
             <p className="text-sm text-gray-400">{user.email}</p>
           </div>
           <div className="flex gap-1 flex-wrap justify-end">
-            <Badge variant="secondary">{roleLabel(user.role)}</Badge>
-            {user.job_titles?.map((jt) => (
+            <Badge variant="secondary">{roleLabel(targetAccess)}</Badge>
+            {otherJobTitles(user.job_titles).map((jt) => (
               <Badge key={jt} variant="secondary">{roleLabel(jt)}</Badge>
             ))}
           </div>
@@ -137,18 +145,26 @@ export default async function StaffProfilePage({
           <CardTitle className="text-base">勤務情報・資格</CardTitle>
         </CardHeader>
         <CardContent>
-          <StaffProfileForm
-            userId={userId}
-            staffName={user.name}
-            profileId={profile?.id ?? null}
-            initialEmploymentType={profile?.employment_type ?? 'full_time'}
-            initialQualification={profile?.qualification ?? ''}
-            initialUnitIds={assignedUnitIds}
-            units={units}
-            facilityId={facilityId}
-            initialLineUserId={user?.line_user_id ?? ''}
-            initialJobTitles={user?.job_titles ?? []}
-          />
+          {canManage ? (
+            <StaffProfileForm
+              userId={userId}
+              staffName={user.name}
+              profileId={profile?.id ?? null}
+              initialEmploymentType={profile?.employment_type ?? 'full_time'}
+              initialQualification={profile?.qualification ?? ''}
+              initialUnitIds={assignedUnitIds}
+              units={units}
+              facilityId={facilityId}
+              initialLineUserId={user?.line_user_id ?? ''}
+              initialJobTitles={otherJobTitles(user?.job_titles ?? [])}
+              initialAccess={targetAccess}
+              canChangeAccess={canChangeAccess}
+            />
+          ) : (
+            <p className="text-sm text-gray-500">
+              システム管理者・施設長のアカウントは、システム管理者だけが変更できます。
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -172,10 +188,12 @@ export default async function StaffProfilePage({
       </Card>
 
       {/* パスワード再発行・削除 */}
-      <div className="pt-2 border-t border-gray-200 space-y-3">
-        <ResetStaffPasswordButton userId={userId} staffName={user.name} email={user.email} />
-        <DeleteStaffButton userId={userId} staffName={user.name} />
-      </div>
+      {canManage && (
+        <div className="pt-2 border-t border-gray-200 space-y-3">
+          <ResetStaffPasswordButton userId={userId} staffName={user.name} email={user.email} />
+          <DeleteStaffButton userId={userId} staffName={user.name} />
+        </div>
+      )}
     </div>
   )
 }

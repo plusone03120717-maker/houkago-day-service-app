@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { FileText, AlertCircle, User } from 'lucide-react'
 import { BillingChildrenUnitList } from '@/components/billing/billing-children-unit-list'
 import { RecalcBillingButton } from '@/components/billing/recalc-billing-button'
+import { requireMoneyAccess } from '@/lib/require-admin'
 
 type BillingDetail = {
   id: string
@@ -67,6 +68,7 @@ export default async function BillingPage({
 }: {
   searchParams: Promise<{ year?: string; month?: string; tab?: string }>
 }) {
+  await requireMoneyAccess()
   const params = await searchParams
   const supabase = await createClient()
   const now = new Date()

@@ -7,6 +7,7 @@ import {
   type ServiceRecordChild,
 } from '@/lib/kokuhoren/service-record'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
+import { hasMoneyAccess } from '@/lib/require-admin'
 
 // サービス提供実績記録票CSV（インタフェース仕様準拠: K611）を生成する。
 // 請求明細（billing_details）ではなく、出席実績から直接組み立てるため、
@@ -14,6 +15,9 @@ import { resolveBillingScope } from '@/lib/kokuhoren/scope'
 // 同じ事業所番号の請求対象ユニットをまとめ、様式種別番号は児発(0301)/放デイ(0501)で
 // ユニットごとに切り替える。
 export async function GET(request: NextRequest) {
+  if (!(await hasMoneyAccess())) {
+    return NextResponse.json({ error: '請求・給与はシステム管理者だけが扱えます' }, { status: 403 })
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -11,6 +11,7 @@ import { RecalcBillingButton } from '@/components/billing/recalc-billing-button'
 import { ActualCostForm } from '@/components/billing/actual-cost-form'
 import { BillingDetailsTable } from '@/components/billing/billing-details-table'
 import { isDefaultParticipationChild, participatedNamesByAttendance, type ActivityParticipationRow } from '@/lib/billing/default-activities'
+import { requireMoneyAccess } from '@/lib/require-admin'
 
 type BillingDetail = {
   id: string
@@ -76,6 +77,7 @@ export default async function BillingDetailPage({
   params: Promise<{ yearMonth: string }>
   searchParams: Promise<{ unit?: string }>
 }) {
+  await requireMoneyAccess()
   const { yearMonth } = await params
   const { unit: unitId } = await searchParams
   const supabase = await createClient()

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { ClipboardCheck } from 'lucide-react'
 import { ShiftCalendar } from '@/components/shifts/shift-calendar'
+import { getStaffAccess } from '@/lib/require-admin'
 
 type StaffUser = {
   id: string
@@ -43,6 +44,7 @@ export default async function ShiftsPage({
 }) {
   const params = await searchParams
   const supabase = await createClient()
+  const canManageMoneyPromise = getStaffAccess().then((a) => a?.canManageMoney ?? false)
 
   const now = new Date()
   const year = parseInt(params.year ?? String(now.getFullYear()))
@@ -87,18 +89,22 @@ export default async function ShiftsPage({
   const overtimeRequests = (overtimeRaw ?? []) as OvertimeRequest[]
 
   const today = getTodayJST()
+  // 出勤実績・残業は給与まわりなので、施設長には出さない
+  const canManageMoney = await canManageMoneyPromise
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Link
-          href={`/shifts/actual?date=${today}`}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm text-gray-600"
-        >
-          <ClipboardCheck className="h-4 w-4 text-indigo-500" />
-          出勤実績を入力
-        </Link>
-      </div>
+      {canManageMoney && (
+        <div className="flex justify-end">
+          <Link
+            href={`/shifts/actual?date=${today}`}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm text-gray-600"
+          >
+            <ClipboardCheck className="h-4 w-4 text-indigo-500" />
+            出勤実績を入力
+          </Link>
+        </div>
+      )}
       <ShiftCalendar
         year={year}
         month={month}
@@ -106,6 +112,7 @@ export default async function ShiftsPage({
         shifts={shifts}
         units={units}
         overtimeRequests={overtimeRequests}
+        canManageMoney={canManageMoney}
       />
     </div>
   )

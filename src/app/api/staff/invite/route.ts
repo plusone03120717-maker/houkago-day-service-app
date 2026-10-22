@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { FACILITY_MANAGER, isFacilityManager } from '@/lib/roles'
 
 function generateTempPassword(): string {
   const upper = 'ABCDEFGHJKMNPQRSTUVWXYZ'
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
 
   const { data: currentUser } = await supabase
     .from('users')
-    .select('role')
+    .select('role, job_titles')
     .eq('id', user.id)
     .single()
   if (!currentUser || currentUser.role !== 'admin') {
@@ -101,9 +102,25 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { phone, name, role, jobTitles, overwrite } = body
+  const { phone, name, overwrite } = body
   if (!phone || !name) {
     return NextResponse.json({ error: 'phone と name は必須です' }, { status: 400 })
+  }
+  if (body.role != null && body.role !== 'admin' && body.role !== 'staff') {
+    return NextResponse.json({ error: '権限の指定が正しくありません' }, { status: 400 })
+  }
+  const jobTitles: string[] = Array.isArray(body.jobTitles)
+    ? (body.jobTitles as unknown[]).filter((t): t is string => typeof t === 'string')
+    : []
+  // 施設長はログイン権限としては管理者（お金まわりだけ外す）
+  const role: 'admin' | 'staff' = jobTitles.includes(FACILITY_MANAGER) ? 'admin' : (body.role ?? 'staff')
+
+  // 施設長が登録できるのはスタッフまで。システム管理者・施設長を作れるのはシステム管理者だけ
+  if (isFacilityManager(currentUser.role, currentUser.job_titles) && role === 'admin') {
+    return NextResponse.json(
+      { error: 'システム管理者・施設長を登録できるのは、システム管理者だけです' },
+      { status: 403 }
+    )
   }
 
   const normalizedPhone = normalizePhone(phone)

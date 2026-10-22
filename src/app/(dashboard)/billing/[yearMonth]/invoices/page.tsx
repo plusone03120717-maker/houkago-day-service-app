@@ -4,6 +4,7 @@ import { ArrowLeft, AlertCircle } from 'lucide-react'
 import { buildMonthInvoices } from '@/lib/billing/copay-invoice'
 import { InvoiceMonthView } from '@/components/billing/invoice-month-view'
 import { ALL_UNITS } from '@/lib/attendance-board-data'
+import { requireMoneyAccess } from '@/lib/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +15,7 @@ export default async function InvoicesPage({
   params: Promise<{ yearMonth: string }>
   searchParams: Promise<{ unit?: string }>
 }) {
+  await requireMoneyAccess()
   const { yearMonth } = await params
   const { unit: unitParam } = await searchParams
   const supabase = await createClient()

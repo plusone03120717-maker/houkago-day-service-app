@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { hasMoneyAccess } from '@/lib/require-admin'
 import { revalidatePath } from 'next/cache'
 import { buildMonthInvoices, type ChildInvoice } from '@/lib/billing/copay-invoice'
 
@@ -41,6 +42,7 @@ export async function issueInvoices(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'ログインが必要です', issuedCount: 0, totalAmount: 0, skipped: [] }
+  if (!(await hasMoneyAccess())) return { error: '請求はシステム管理者だけが扱えます', issuedCount: 0, totalAmount: 0, skipped: [] }
 
   const result = await buildMonthInvoices(supabase, unitId, yearMonth)
   if (result.fatal) return { error: result.fatal, issuedCount: 0, totalAmount: 0, skipped: [] }
@@ -91,6 +93,7 @@ export async function recordPayment(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'ログインが必要です' }
+  if (!(await hasMoneyAccess())) return { error: '請求はシステム管理者だけが扱えます' }
 
   const { error } = await supabase
     .from('billing_invoices')
@@ -114,6 +117,7 @@ export async function deleteInvoice(invoiceId: string, yearMonth: string): Promi
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'ログインが必要です' }
+  if (!(await hasMoneyAccess())) return { error: '請求はシステム管理者だけが扱えます' }
 
   const { error } = await supabase.from('billing_invoices').delete().eq('id', invoiceId)
   if (error) return { error: error.message }

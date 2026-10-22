@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireMoneyAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -17,7 +17,7 @@ const SERVICE_TYPE_LABEL: Record<string, string> = {
 }
 
 export default async function FacilityAdditionsSettingsPage() {
-  await requireAdmin()
+  await requireMoneyAccess()
   const supabase = await createClient()
 
   const { data: unitsRaw } = await supabase

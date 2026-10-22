@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { hasMoneyAccess } from '@/lib/require-admin'
 
 type BillingDetail = {
   id: string
@@ -24,6 +25,9 @@ type BillingMonthly = {
 }
 
 export async function POST(request: NextRequest) {
+  if (!(await hasMoneyAccess())) {
+    return NextResponse.json({ error: '請求・給与はシステム管理者だけが扱えます' }, { status: 403 })
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

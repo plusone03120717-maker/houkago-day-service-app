@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { getSessionUser } from '@/lib/auth'
 import { Card, CardContent } from '@/components/ui/card'
 import { PartnerOfficesForm, type PartnerOfficeRow } from '@/components/settings/partner-offices-form'
+import { requireMoneyAccess } from '@/lib/require-admin'
 
 /**
  * 上限管理でやり取りする他事業所の FAX 番号。
@@ -12,6 +13,7 @@ import { PartnerOfficesForm, type PartnerOfficeRow } from '@/components/settings
  * 請求をする職員（スタッフ）も直せるよう、管理者だけに絞らない。
  */
 export default async function PartnerOfficesSettingsPage() {
+  await requireMoneyAccess()
   const user = await getSessionUser()
   if (!user) redirect('/login')
   if (user.role !== 'admin' && user.role !== 'staff' && user.role !== null) redirect('/')

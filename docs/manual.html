@@ -138,6 +138,7 @@
     }
     .badge-admin { background: #fce7f3; color: #9d174d; }
     .badge-svcmgr { background: #ede9fe; color: #5b21b6; }
+    .badge-facmgr { background: #e0f2fe; color: #0369a1; }
     .badge-staff { background: #e0f2fe; color: #0369a1; }
     .badge-parent { background: #f0fdf4; color: #166534; }
     .nav-grid {
@@ -382,8 +383,13 @@
     <tr><th>種別</th><th>説明</th><th>主な機能</th></tr>
     <tr>
       <td><span class="badge badge-admin">システム管理者</span></td>
-      <td>施設管理者・管理職</td>
-      <td>全機能へのアクセス、設定変更、スタッフ管理</td>
+      <td>経営者・請求担当</td>
+      <td>全機能へのアクセス、設定変更、スタッフ管理、国保連請求・給与まわり</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-facmgr">施設長</span></td>
+      <td>事業所の運営を任された人</td>
+      <td>システム管理者と同じ。ただし請求（国保連請求・上限管理・保護者請求）と給与まわり（タイムカード・勤務時間集計・有給・残業・スタッフ申請）は除く</td>
     </tr>
     <tr>
       <td><span class="badge badge-svcmgr">サービス管理者</span></td>
@@ -420,7 +426,7 @@
   <div class="step"><span class="step-num">3</span> 「ログイン」ボタンをクリック</div>
   <div class="step"><span class="step-num">4</span> ダッシュボードが表示されればログイン成功</div>
 
-  <div class="tip"><strong>💡 ヒント：</strong> スタッフ・サービス管理者・システム管理者はダッシュボード画面へ、保護者は保護者ポータル画面へ自動的に遷移します。</div>
+  <div class="tip"><strong>💡 ヒント：</strong> スタッフ・サービス管理者・施設長・システム管理者はダッシュボード画面へ、保護者は保護者ポータル画面へ自動的に遷移します。</div>
   <p class="note">以前「管理者」と呼んでいた種別は、サービス管理者と区別しやすくするため <strong>「システム管理者」</strong> に名称を変更しました。権限の内容はこれまでと同じです。</p>
 </div>
 
@@ -2855,6 +2861,11 @@
       <td>全機能。設定・国保連請求・シフト管理・有給管理・スタッフ管理を含む</td>
     </tr>
     <tr>
+      <td><span class="badge badge-facmgr">施設長</span></td>
+      <td>必要</td>
+      <td>システム管理者と同じ（設定・スタッフ管理・シフト作成・児童管理など）。ただし<strong>お金まわりは開けない</strong>：国保連請求・上限管理・保護者請求、請求の設定（サービスコード・加算・日中一時の単位数・月初お知らせ・他事業所の FAX 番号）、タイムカード・勤務時間集計・有給管理・出勤実績・残業の登録・スタッフ申請</td>
+    </tr>
+    <tr>
       <td><span class="badge badge-svcmgr">サービス管理者</span></td>
       <td>必要</td>
       <td>スタッフと同じ画面に加えて、<strong>児童管理の「利用スケジュール」を編集できる</strong></td>
@@ -2878,6 +2889,21 @@
   <div class="step"><span class="step-num">4</span> 一覧のバッジに <span class="badge badge-svcmgr">サービス管理者</span> が表示されれば設定完了</div>
 
   <p class="note">サービス管理者はログイン権限としてはスタッフと同じです。設定・国保連請求・シフト管理・有給管理には入れません。追加でできるのは「児童管理 → 利用スケジュール」の編集だけです。</p>
+
+  <h4>施設長を設定する</h4>
+  <p>事業所の運営を任せたい人に付けます。<strong>施設長を付けたり外したりできるのはシステム管理者だけ</strong>です。</p>
+  <div class="step"><span class="step-num">1</span> 「設定」→「スタッフ管理」をクリック</div>
+  <div class="step"><span class="step-num">2</span> 新規なら「スタッフを追加」で役職の<strong>「施設長」</strong>を選択（電話番号が必須。システム管理者とはどちらか一方）</div>
+  <div class="step"><span class="step-num">3</span> 登録済みのスタッフなら一覧から本人を開き、「勤務情報・資格」の<strong>ログイン権限</strong>で「施設長」を選んで「保存」</div>
+  <div class="step"><span class="step-num">4</span> 一覧のバッジに <span class="badge badge-facmgr">施設長</span> が表示されれば設定完了</div>
+  <ul>
+    <li>施設長のメニューには、国保連請求・上限管理・タイムカード・勤務時間集計・有給管理・スタッフ申請が出ません。アドレスを直接入れて開こうとしても、ダッシュボードに戻ります</li>
+    <li>シフト管理は使えます（シフトの作成・編集）。ただし「残業申請」ボタンと「出勤実績を入力」は出ません</li>
+    <li>お知らせベルに、スタッフ申請（残業・有給・中抜け）の件数は出ません</li>
+    <li>施設長がスタッフ管理でできるのは<strong>スタッフまで</strong>です。システム管理者・施設長の登録、システム管理者・ほかの施設長の役職変更・パスワード再発行・削除はできません</li>
+    <li>自分自身のログイン権限は、システム管理者でも変えられません（ほかのシステム管理者に頼みます）</li>
+  </ul>
+  <p class="note">役職・ログイン権限は、スタッフ管理の画面からだけ変えられます（本人がほかの方法で自分の権限を書き換えることはできません）。権限を変えたとき、メニューの出し分けは相手が次にログインし直したとき（遅くとも約1時間後）に切り替わります。お金まわりの画面の制限は、保存した直後から効きます。</p>
   <p class="note">以前の「管理者」は、サービス管理者と紛らわしいため <strong>「システム管理者」</strong> に名称を変更しました。名前が変わっただけで、権限やアカウントの設定はこれまでどおりです。</p>
 
   <h3>事業所番号・地域区分・単位数単価</h3>

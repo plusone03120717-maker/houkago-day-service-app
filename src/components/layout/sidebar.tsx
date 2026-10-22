@@ -41,6 +41,8 @@ type NavItem = {
   icon: typeof LayoutDashboard
   /** href の前方一致では判定できないページを、このナビの選択中として扱う */
   match?: RegExp
+  /** お金まわり（請求・給与）。システム管理者にだけ出す（施設長には出さない） */
+  money?: boolean
 }
 
 // 管理者・全スタッフ向けナビ
@@ -63,13 +65,13 @@ const adminNav: Array<{ group: string; items: NavItem[] }> = [
       { href: '/support-plans', label: '個別支援計画', icon: ClipboardCheck },
       { href: '/transport', label: '送迎管理', icon: Car },
       { href: '/shifts', label: 'シフト管理', icon: CalendarDays },
-      { href: '/shifts/summary', label: '勤務時間集計', icon: BarChart2 },
-      { href: '/shifts/leave', label: '有給管理', icon: Umbrella },
-      { href: '/timecard', label: 'タイムカード', icon: Clock },
-      { href: '/billing', label: '国保連請求', icon: CreditCard },
+      { href: '/shifts/summary', label: '勤務時間集計', icon: BarChart2, money: true },
+      { href: '/shifts/leave', label: '有給管理', icon: Umbrella, money: true },
+      { href: '/timecard', label: 'タイムカード', icon: Clock, money: true },
+      { href: '/billing', label: '国保連請求', icon: CreditCard, money: true },
       // 月ごとの画面（/billing/202609/upper-limit）も「上限管理」として光らせる
-      { href: '/billing/upper-limit', label: '上限管理', icon: Scale, match: /^\/billing\/(\d{6}\/)?upper-limit(\/|$)/ },
-      { href: '/staff-requests', label: 'スタッフ申請', icon: Inbox },
+      { href: '/billing/upper-limit', label: '上限管理', icon: Scale, match: /^\/billing\/(\d{6}\/)?upper-limit(\/|$)/, money: true },
+      { href: '/staff-requests', label: 'スタッフ申請', icon: Inbox, money: true },
     ],
   },
   {
@@ -147,10 +149,14 @@ const staffNav: Array<{ group: string; items: NavItem[] }> = [
   },
 ]
 
-export function Sidebar({ role }: { role: string }) {
+export function Sidebar({ role, canManageMoney }: { role: string; canManageMoney: boolean }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
-  const nav = role === 'staff' ? staffNav : adminNav
+  const nav = role === 'staff'
+    ? staffNav
+    : canManageMoney
+      ? adminNav
+      : adminNav.map((g) => ({ ...g, items: g.items.filter((item) => !item.money) }))
 
   return (
     <div

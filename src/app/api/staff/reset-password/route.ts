@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { canManageAccountOf } from '@/lib/roles'
 
 function generateTempPassword(): string {
   const upper = 'ABCDEFGHJKMNPQRSTUVWXYZ'
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
 
   const { data: currentUser } = await supabase
     .from('users')
-    .select('role')
+    .select('role, job_titles')
     .eq('id', user.id)
     .single()
   if (!currentUser || currentUser.role !== 'admin') {
@@ -38,6 +39,15 @@ export async function POST(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
+
+  const { data: target } = await adminClient
+    .from('users')
+    .select('role')
+    .eq('id', userId)
+    .maybeSingle()
+  if (!canManageAccountOf(currentUser.role, currentUser.job_titles, target?.role ?? null)) {
+    return NextResponse.json({ error: 'システム管理者・施設長のパスワードは、システム管理者だけが再発行できます' }, { status: 403 })
+  }
 
   const tempPassword = generateTempPassword()
 

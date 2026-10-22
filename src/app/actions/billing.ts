@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { hasMoneyAccess } from '@/lib/require-admin'
 import { revalidatePath } from 'next/cache'
 import { recalcUnitMonth, type RecalcResult } from '@/lib/billing/recalc'
 
@@ -18,6 +19,7 @@ export async function updateBillingDetail(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'ログインが必要です' }
+  if (!(await hasMoneyAccess())) return { error: '請求はシステム管理者だけが扱えます' }
 
   // 手入力した時点で、再集計で作られたサービスコード別内訳は実態と合わなくなる。
   // 古い内訳のままCSVに出力されないよう、あわせて破棄する。
@@ -47,6 +49,12 @@ export async function recalcBillingFromRecords(
     return {
       childCount: 0, totalDays: 0, totalUnits: 0, billedAmount: 0, childErrors: [], warnings: [],
       error: 'ログインが必要です',
+    }
+  }
+  if (!(await hasMoneyAccess())) {
+    return {
+      childCount: 0, totalDays: 0, totalUnits: 0, billedAmount: 0, childErrors: [], warnings: [],
+      error: '請求はシステム管理者だけが扱えます',
     }
   }
 

@@ -4,7 +4,8 @@ import { NotificationBell } from '@/components/layout/notification-bell'
 // ヘッダーのお知らせベル。未確認のスタッフ申請・保護者利用連絡・保護者のLINE登録申請・
 // サポート問い合わせを集計する。
 // layout の表示をブロックしないよう Suspense 配下でストリーミング取得する。
-export async function PendingRequestsBadge({ role }: { role: string }) {
+// スタッフ申請（残業・有給・中抜け）は給与まわりなので、システム管理者にだけ数える。
+export async function PendingRequestsBadge({ role, canManageMoney }: { role: string; canManageMoney: boolean }) {
   const supabase = await createClient()
 
   const [
@@ -40,7 +41,7 @@ export async function PendingRequestsBadge({ role }: { role: string }) {
           .eq('is_new', true)
       : { count: 0 }
 
-  const staffCount = (overtimeCount ?? 0) + (leaveCount ?? 0) + (breakCount ?? 0)
+  const staffCount = canManageMoney ? (overtimeCount ?? 0) + (leaveCount ?? 0) + (breakCount ?? 0) : 0
   const parentCount = parentContactCount ?? 0
   const supportCount = supportCountRaw ?? 0
 

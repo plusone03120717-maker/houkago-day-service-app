@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { canManageAccountOf } from '@/lib/roles'
 
 export async function DELETE(request: NextRequest) {
   const supabase = await createClient()
@@ -10,7 +11,7 @@ export async function DELETE(request: NextRequest) {
   // 管理者権限チェック
   const { data: currentUser } = await supabase
     .from('users')
-    .select('role')
+    .select('role, job_titles')
     .eq('id', user.id)
     .single()
   if (!currentUser || currentUser.role !== 'admin') {
@@ -29,6 +30,15 @@ export async function DELETE(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
+
+  const { data: target } = await adminClient
+    .from('users')
+    .select('role')
+    .eq('id', userId)
+    .maybeSingle()
+  if (!canManageAccountOf(currentUser.role, currentUser.job_titles, target?.role ?? null)) {
+    return NextResponse.json({ error: 'システム管理者・施設長のアカウントは、システム管理者だけが削除できます' }, { status: 403 })
+  }
 
   // users テーブルから削除（CASCADE で staff_profiles 等も削除される）
   const { error: deleteError } = await adminClient

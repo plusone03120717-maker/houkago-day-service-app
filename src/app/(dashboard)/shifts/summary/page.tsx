@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireMoneyAccess } from '@/lib/require-admin'
 import { sumDayUnitDays, sumHourUnitHours } from '@/lib/paid-leave'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -51,7 +51,7 @@ export default async function ShiftSummaryPage({
 }: {
   searchParams: Promise<{ year?: string; month?: string }>
 }) {
-  await requireAdmin()
+  await requireMoneyAccess()
   const params = await searchParams
   const supabase = await createClient()
   const now = new Date()

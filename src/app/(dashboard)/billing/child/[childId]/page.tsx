@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
+import { requireMoneyAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { BillingChildMonthlyView } from '@/components/billing/billing-child-monthly-view'
@@ -24,6 +25,7 @@ export default async function BillingChildPage({
   params: Promise<{ childId: string }>
   searchParams: Promise<{ month?: string; unit?: string }>
 }) {
+  await requireMoneyAccess()
   const { childId } = await params
   const sp = await searchParams
   const supabase = await createClient()

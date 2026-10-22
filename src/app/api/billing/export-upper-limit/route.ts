@@ -3,10 +3,14 @@ import { createClient } from '@/lib/supabase/server'
 import { buildUpperLimitCsv } from '@/lib/kokuhoren/upper-limit'
 import { loadUpperLimitChildren } from '@/lib/kokuhoren/load'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
+import { hasMoneyAccess } from '@/lib/require-admin'
 
 // 利用者負担上限額管理結果票CSV（インタフェース仕様準拠: K411）を生成する。
 // 当事業所が上限額管理事業所になっている児童だけが対象。
 export async function GET(request: NextRequest) {
+  if (!(await hasMoneyAccess())) {
+    return NextResponse.json({ error: '請求・給与はシステム管理者だけが扱えます' }, { status: 403 })
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

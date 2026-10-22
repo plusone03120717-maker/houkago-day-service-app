@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireMoneyAccess } from '@/lib/require-admin'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft } from 'lucide-react'
 import {
@@ -13,7 +13,7 @@ import {
  * 毎月1日の朝、前月分の集計結果と要確認をここで選んだスタッフへ LINE で送る。
  */
 export default async function BillingNoticeSettingsPage() {
-  await requireAdmin()
+  await requireMoneyAccess()
   const supabase = await createClient()
 
   const { data } = await supabase

@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireMoneyAccess } from '@/lib/require-admin'
 import { StaffRequestsBoard } from '@/components/staff-requests/staff-requests-board'
 import type { OvertimeRequest, LeaveUsage, BreakRecord } from '@/components/staff-requests/staff-requests-board'
 
 export default async function StaffRequestsPage() {
-  await requireAdmin()
+  await requireMoneyAccess()
   const supabase = await createClient()
 
   const [overtimeRes, leaveRes, breakRes] = await Promise.all([

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getSessionUser } from '@/lib/auth'
 import { jfaxAddress } from '@/lib/fax/partner-offices'
 import { sendJfaxMail } from '@/lib/fax/send-jfax'
+import { hasMoneyAccess } from '@/lib/require-admin'
 
 // PDF をメールに添付して送るので、少し長めに待つ
 export const maxDuration = 60
@@ -16,6 +17,9 @@ const MAX_PDF_BYTES = 10 * 1024 * 1024
  * 宛先の FAX 番号は画面から受け取らず、他事業所の登録（partner_offices）から引く。
  */
 export async function POST(request: NextRequest) {
+  if (!(await hasMoneyAccess())) {
+    return NextResponse.json({ error: '請求・給与はシステム管理者だけが扱えます' }, { status: 403 })
+  }
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 })
   // role が未設定なのは初期の管理者アカウント（require-admin と同じ扱い）

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireMoneyAccess } from '@/lib/require-admin'
 import { TimecardBoard } from '@/components/timecard/timecard-board'
 import type { StaffMember, TimeRecord, ShiftEntry, OvertimeRequest, TimeRecordCorrection } from '@/components/timecard/timecard-board'
 
@@ -14,7 +14,7 @@ export default async function TimecardPage({
 }: {
   searchParams: Promise<{ staff?: string; month?: string }>
 }) {
-  await requireAdmin()
+  await requireMoneyAccess()
   const params = await searchParams
   const supabase = await createClient()
 

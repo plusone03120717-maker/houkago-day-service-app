@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireAdmin, getStaffAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, User, Phone, Car } from 'lucide-react'
 import { StaffInviteForm } from '@/components/settings/staff-invite-form'
-import { roleLabel, roleBadgeClass } from '@/lib/roles'
+import { roleLabel, roleBadgeClass, accessKey, otherJobTitles } from '@/lib/roles'
 
 type StaffUser = {
   id: string
@@ -33,6 +33,8 @@ type StaffMember = {
 export default async function SettingsStaffPage() {
   await requireAdmin()
   const supabase = await createClient()
+  // システム管理者・施設長を登録できるのはシステム管理者だけ
+  const access = await getStaffAccess()
 
   const { data: staffRaw } = await supabase
     .from('users')
@@ -59,7 +61,7 @@ export default async function SettingsStaffPage() {
         </div>
       </div>
 
-      <StaffInviteForm />
+      <StaffInviteForm canAssignAdmin={access?.canManageMoney ?? false} />
 
       {/* ログインアカウントあり（管理者・スタッフ） */}
       <Card>
@@ -84,10 +86,10 @@ export default async function SettingsStaffPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass(s.role)}`}>
-                      {roleLabel(s.role)}
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass(accessKey(s.role, s.job_titles))}`}>
+                      {roleLabel(accessKey(s.role, s.job_titles))}
                     </span>
-                    {s.job_titles?.map((jt) => (
+                    {otherJobTitles(s.job_titles).map((jt) => (
                       <span key={jt} className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeClass(jt)}`}>
                         {roleLabel(jt)}
                       </span>

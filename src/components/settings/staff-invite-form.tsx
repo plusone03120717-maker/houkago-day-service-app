@@ -6,21 +6,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { UserPlus, Copy, Check, KeyRound, AlertTriangle } from 'lucide-react'
-import { SERVICE_MANAGER } from '@/lib/roles'
+import { SERVICE_MANAGER, FACILITY_MANAGER } from '@/lib/roles'
 
 // 役職オプション（needsAuth=trueはアプリログイン・電話番号が必要）
 // サービス管理者はログイン権限としてはスタッフと同じで、
 // 追加で「児童管理 → 利用スケジュール」を編集できる。
+// 施設長はシステム管理者からお金まわり（請求・給与）を外したもの。
+// adminOnly の役職は、システム管理者だけが付けられる。
 const ROLE_OPTIONS = [
   { value: 'staff',           label: 'スタッフ',       needsAuth: true },
   { value: SERVICE_MANAGER,   label: 'サービス管理者',  needsAuth: true },
-  { value: 'admin',           label: 'システム管理者',  needsAuth: true },
+  { value: FACILITY_MANAGER,  label: '施設長',         needsAuth: true, adminOnly: true },
+  { value: 'admin',           label: 'システム管理者',  needsAuth: true, adminOnly: true },
   { value: 'driver',          label: 'ドライバー',      needsAuth: false },
   { value: 'therapist',       label: '療育士',         needsAuth: false },
 ]
 
 function getAuthRole(selected: Set<string>): 'admin' | 'staff' | null {
-  if (selected.has('admin')) return 'admin'
+  if (selected.has('admin') || selected.has(FACILITY_MANAGER)) return 'admin'
   if (selected.has('staff') || selected.has(SERVICE_MANAGER)) return 'staff'
   return null
 }
@@ -32,7 +35,8 @@ type InviteResult = {
   overwrittenName: string | null
 }
 
-export function StaffInviteForm() {
+/** canAssignAdmin: システム管理者・施設長を登録できるか（システム管理者だけ true） */
+export function StaffInviteForm({ canAssignAdmin }: { canAssignAdmin: boolean }) {
   const supabase = createClient()
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
@@ -51,7 +55,12 @@ export function StaffInviteForm() {
     setSelectedRoles((prev) => {
       const next = new Set(prev)
       if (next.has(value)) next.delete(value)
-      else next.add(value)
+      else {
+        next.add(value)
+        // 施設長とシステム管理者はどちらか一方
+        if (value === 'admin') next.delete(FACILITY_MANAGER)
+        if (value === FACILITY_MANAGER) next.delete('admin')
+      }
       return next
     })
     setError('')
@@ -183,7 +192,7 @@ export function StaffInviteForm() {
               <span className="ml-1 text-gray-400 font-normal">（複数選択可）</span>
             </label>
             <div className="flex gap-2 flex-wrap">
-              {ROLE_OPTIONS.map((opt) => (
+              {ROLE_OPTIONS.filter((opt) => canAssignAdmin || !opt.adminOnly).map((opt) => (
                 <button
                   key={opt.value}
                   type="button"
@@ -201,6 +210,11 @@ export function StaffInviteForm() {
             {selectedRoles.has(SERVICE_MANAGER) && (
               <p className="text-xs text-violet-600 mt-1.5">
                 サービス管理者は、スタッフの権限に加えて「児童管理 → 利用スケジュール」を編集できます。
+              </p>
+            )}
+            {selectedRoles.has(FACILITY_MANAGER) && (
+              <p className="text-xs text-sky-700 mt-1.5">
+                施設長は、国保連請求・上限管理・保護者請求と、タイムカード・勤務時間集計・有給・残業・スタッフ申請を除く、すべての機能を使えます。
               </p>
             )}
             {!needsPhone && selectedRoles.size > 0 && (

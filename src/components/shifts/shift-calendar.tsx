@@ -47,6 +47,8 @@ interface Props {
   shifts: ShiftEntry[]
   units: Unit[]
   overtimeRequests?: OvertimeRequest[]
+  /** 残業の登録は給与まわりなので、システム管理者だけ（施設長には出さない） */
+  canManageMoney?: boolean
 }
 
 const SHIFT_TYPES = [
@@ -211,7 +213,7 @@ function ShiftFields({
   )
 }
 
-export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeRequests = [] }: Props) {
+export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeRequests = [], canManageMoney = false }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -605,15 +607,17 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
             <Repeat className="h-4 w-4" />
             曜日で一括登録
           </button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={openOTForm}
-            className="text-orange-700 border-orange-300 hover:bg-orange-50"
-          >
-            <CalendarClock className="h-3.5 w-3.5 mr-1" />
-            残業申請
-          </Button>
+          {canManageMoney && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={openOTForm}
+              className="text-orange-700 border-orange-300 hover:bg-orange-50"
+            >
+              <CalendarClock className="h-3.5 w-3.5 mr-1" />
+              残業申請
+            </Button>
+          )}
           <button onClick={() => changeMonth(-1)} className="p-2 rounded-lg hover:bg-gray-100">
             <ChevronLeft className="h-4 w-4" />
           </button>

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getStaffAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { FileText, Calendar, ClipboardList, Receipt, BookOpen, BarChart3, Wallet, ScrollText } from 'lucide-react'
@@ -21,11 +22,15 @@ export default async function DocumentsPage({
 
   const supabase = await createClient()
 
-  const { data: unitsRaw } = await supabase
-    .from('units')
-    .select('id, name')
-    .order('name')
+  const [{ data: unitsRaw }, access] = await Promise.all([
+    supabase
+      .from('units')
+      .select('id, name')
+      .order('name'),
+    getStaffAccess(),
+  ])
   const units = (unitsRaw ?? []) as unknown as Unit[]
+  const canManageMoney = access?.canManageMoney ?? false
 
   const prevDate = new Date(year, month - 2, 1)
   const nextDate = new Date(year, month, 1)
@@ -55,14 +60,17 @@ export default async function DocumentsPage({
       bg: 'bg-purple-100',
       href: `/documents/support-plan`,
     },
-    {
-      icon: Receipt,
-      label: '請求書・領収書',
-      description: '保護者向け請求書・領収書の発行',
-      color: 'text-orange-600',
-      bg: 'bg-orange-100',
-      href: `/billing/${ym}`,
-    },
+    // 国保連請求の画面を開くので、請求を扱えるシステム管理者にだけ出す
+    ...(canManageMoney
+      ? [{
+          icon: Receipt,
+          label: '請求書・領収書',
+          description: '保護者向け請求書・領収書の発行',
+          color: 'text-orange-600',
+          bg: 'bg-orange-100',
+          href: `/billing/${ym}`,
+        }]
+      : []),
     {
       icon: BookOpen,
       label: '業務日報',
