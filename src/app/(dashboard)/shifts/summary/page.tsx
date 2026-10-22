@@ -337,7 +337,15 @@ export default async function ShiftSummaryPage({
                 {staffStats.map(({ member, hasShifts, shiftWorkDays, plannedMinutes, offDays, typeCounts, tcWorkDays, tcTotalHours, totalBreakMinutes, confirmedDays, unconfirmedCount, approvedOvertimeMinutes, paidLeaveDays, paidLeaveHours }) => (
                   <tr key={member.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{member.name}</p>
+                      {/* 氏名からその月のタイムカードへ移る（給与確認で行き来することが多いため） */}
+                      <Link
+                        href={`/timecard?staff=${member.id}&month=${year}-${String(month).padStart(2, '0')}`}
+                        className="inline-flex items-center gap-1 font-medium text-indigo-700 hover:text-indigo-900 hover:underline"
+                        title={`${member.name}さんのタイムカードを開く`}
+                      >
+                        {member.name}
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </Link>
                       {hasShifts ? (
                         <p className="text-xs text-gray-400">
                           {Object.entries(typeCounts)
