@@ -60,10 +60,11 @@ export default async function ShiftSummaryPage({
 
   const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
   const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
-  const recordsStart = new Date(year, month - 1, 1).toISOString()
-  const recordsEnd = new Date(year, month, 1).toISOString()
   const prevDate = new Date(year, month - 2, 1)
   const nextDate = new Date(year, month, 1)
+  // 月の区切りは日本時間の0時（サーバーは UTC なので new Date(年, 月, 1) だと 9時区切りになり、1日朝の打刻が前月に落ちる）
+  const recordsStart = new Date(`${monthStart}T00:00:00+09:00`).toISOString()
+  const recordsEnd = new Date(`${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-01T00:00:00+09:00`).toISOString()
 
   // スタッフ一覧（全員）
   const { data: membersRaw } = await supabase

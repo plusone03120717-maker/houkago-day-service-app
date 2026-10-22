@@ -242,8 +242,9 @@ export function TimecardBoard({
   async function fetchRecords(sId: string, ym: string) {
     setLoading(true)
     const [y, m] = ym.split('-').map(Number)
-    const start = new Date(y, m - 1, 1).toISOString()
-    const end = new Date(y, m, 1).toISOString()
+    // 月の区切りは日本時間の0時（端末の時刻設定に左右されないよう +09:00 で指定）
+    const start = new Date(`${ym}-01T00:00:00+09:00`).toISOString()
+    const end = new Date(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01T00:00:00+09:00`).toISOString()
     const { data } = await supabase
       .from('time_records')
       .select('id, staff_member_id, type, recorded_at, note, edited_at')

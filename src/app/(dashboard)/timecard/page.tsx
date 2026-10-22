@@ -20,8 +20,9 @@ export default async function TimecardPage({
 
   const month = params.month ?? currentMonth()
   const [y, m] = month.split('-').map(Number)
-  const recordsStart = new Date(y, m - 1, 1).toISOString()
-  const recordsEnd = new Date(y, m, 1).toISOString()
+  // 月の区切りは日本時間の0時（サーバーは UTC なので new Date(y, m, 1) だと 9時区切りになり、1日朝の打刻が前月に落ちる）
+  const recordsStart = new Date(`${month}-01T00:00:00+09:00`).toISOString()
+  const recordsEnd = new Date(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01T00:00:00+09:00`).toISOString()
   const rateMonthStart = `${month}-01`
   const rateMonthEnd = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
 
