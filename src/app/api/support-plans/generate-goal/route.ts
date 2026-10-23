@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { WRITING_EFFORT, WRITING_MODEL } from '@/lib/ai/models'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -28,11 +29,13 @@ export async function POST(request: NextRequest) {
 ${supportContent.trim()}`
 
   const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 150,
+    model: WRITING_MODEL,
+    max_tokens: 2048,
+    output_config: { effort: WRITING_EFFORT },
     messages: [{ role: 'user', content: prompt }],
   })
 
-  const goal = (message.content[0] as { type: string; text: string }).text?.trim() ?? ''
+  const textBlock = message.content.find((b) => b.type === 'text')
+  const goal = textBlock?.type === 'text' ? textBlock.text.trim() : ''
   return NextResponse.json({ goal })
 }

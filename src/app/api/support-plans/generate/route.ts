@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { WRITING_EFFORT, WRITING_MODEL } from '@/lib/ai/models'
 import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
 import Anthropic from '@anthropic-ai/sdk'
 
@@ -166,13 +167,14 @@ ${NO_INVENTED_FACTS}
 JSONのみを出力し、説明文は不要です。`
 
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 2000,
+      model: WRITING_MODEL,
+      max_tokens: 2048,
+      output_config: { effort: WRITING_EFFORT },
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const content = message.content[0]
-    if (content.type !== 'text') {
+    const content = message.content.find((b) => b.type === 'text')
+    if (content?.type !== 'text') {
       return NextResponse.json({ error: 'AI generation failed' }, { status: 500 })
     }
 

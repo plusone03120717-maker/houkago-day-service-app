@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { WRITING_EFFORT, WRITING_MODEL } from '@/lib/ai/models'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -35,11 +36,13 @@ ${supportPolicy ? `【支援の方針】${supportPolicy}` : ''}
 ・入力にない診断名・特性・これまでの実績を事実として書かない`
 
   const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 400,
+    model: WRITING_MODEL,
+    max_tokens: 2048,
+    output_config: { effort: WRITING_EFFORT },
     messages: [{ role: 'user', content: prompt }],
   })
 
-  const content = (message.content[0] as { type: string; text: string }).text?.trim() ?? ''
+  const textBlock = message.content.find((b) => b.type === 'text')
+  const content = textBlock?.type === 'text' ? textBlock.text.trim() : ''
   return NextResponse.json({ content })
 }

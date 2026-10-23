@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { WRITING_EFFORT, WRITING_MODEL } from '@/lib/ai/models'
 import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
 
 const anthropic = new Anthropic({
@@ -112,12 +113,14 @@ ${NO_INVENTED_FACTS}
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      model: WRITING_MODEL,
+      max_tokens: 2048,
+      output_config: { effort: WRITING_EFFORT },
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const draft = message.content[0].type === 'text' ? message.content[0].text : ''
+    const textBlock = message.content.find((b) => b.type === 'text')
+    const draft = textBlock?.type === 'text' ? textBlock.text.trim() : ''
     return NextResponse.json({ draft })
   } catch (error) {
     console.error('AI generation error:', error)

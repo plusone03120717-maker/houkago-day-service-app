@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
-import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
+import { NO_ADDED_PLANS, NO_INVENTED_FACTS, POLISH_EVEN_IF_CLEAN } from '@/lib/ai/fact-rules'
+import { WRITING_EFFORT, WRITING_MODEL } from '@/lib/ai/models'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -57,16 +58,11 @@ ${activitiesSection}
 ${bulletPoints}
 
 【出力ルール】
-・メモは箇条書きのこともあれば、すでに文章になっていることもあります。どちらの場合も、運営指導で読まれる支援記録として整え直してください
-・すでに文章になっているメモも、ほぼそのまま返すことはしないでください。次の点を必ず見直してください
-  - 出来事の順に並べ、「〜しました。〜しました。」と短く途切れた文は、つながりがわかる文にまとめる（「〜したところ」「〜ため」「また、」など）。長すぎる一文は区切る
-  - 職員の関わり（声かけ・付き添いなど）と、それに対する本児の様子がわかる書き方にする
-  - 話し言葉やくだけた言い方は、記録の言葉に置き換える（例：「理解するのが難しい様子でした」→「理解に難しさが見られました」）
-  - 同じ言葉のくり返しや、なくても意味が変わらない言葉は省く
-  - 文末が切れている・句点がないなどの崩れを直す
+${POLISH_EVEN_IF_CLEAN}
+・出来事の順に並べ、職員の関わり（声かけ・付き添いなど）と、それに対する本児の様子がわかる書き方にしてください
 ・分量はメモと同じくらい（2〜5文程度）にしてください
 ${NO_INVENTED_FACTS}
-・メモにない理由・結果（「転倒など」「けがにつながる」など）や、「今後も〜が必要です」「〜していきます」などの今後の方針・課題・見立てを足さない
+${NO_ADDED_PLANS}
 ・支援計画の目標と今日の様子を照らし合わせ、メモに書かれた様子が目標とはっきり関係する場合だけ、文章の最後に1文で「（支援計画との照合：○○）」という形で補足してください
 ・関係があいまいなとき、迷うときは補足を付けないでください。補足がない日誌でかまいません
 ・支援計画が未設定または照合できない場合は補足なしで文章のみ出力してください
@@ -75,12 +71,9 @@ ${NO_INVENTED_FACTS}
 
   try {
     const message = await anthropic.messages.create({
-      // Haiku ではきれいな文を入れるとほぼそのまま返り「AI が弱い」と言われたため Sonnet にする
-      model: 'claude-sonnet-5-5',
-      // 書く前に考えるので、考える深さを浅めにし、上限も広めにとる
-      // （512 のままだと考えるだけで上限に達し、空の文章が返ることがあった）
+      model: WRITING_MODEL,
       max_tokens: 2048,
-      output_config: { effort: 'low' },
+      output_config: { effort: WRITING_EFFORT },
       messages: [{ role: 'user', content: prompt }],
     })
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { WRITING_EFFORT, WRITING_MODEL } from '@/lib/ai/models'
 import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -38,12 +39,14 @@ ${NO_INVENTED_FACTS}
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
+      model: WRITING_MODEL,
+      max_tokens: 2048,
+      output_config: { effort: WRITING_EFFORT },
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const summary = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
+    const textBlock = message.content.find((b) => b.type === 'text')
+    const summary = textBlock?.type === 'text' ? textBlock.text.trim() : ''
     return NextResponse.json({ summary })
   } catch (error) {
     console.error('AI summarize error:', error)

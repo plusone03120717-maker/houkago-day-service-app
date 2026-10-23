@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
-import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
+import { WRITING_EFFORT, WRITING_MODEL } from '@/lib/ai/models'
+import { NO_ADDED_PLANS, NO_INVENTED_FACTS, POLISH_EVEN_IF_CLEAN } from '@/lib/ai/fact-rules'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -26,7 +27,9 @@ ${content}
 【作成ルール】
 ・保護者に温かく丁寧に伝える文体
 ・入力内容のすべての情報を漏れなく盛り込む
+${POLISH_EVEN_IF_CLEAN}
 ${NO_INVENTED_FACTS}
+${NO_ADDED_PLANS}
 ・200〜350字程度
 ・「本日も〜」「今日は〜」などで書き始める
 ・署名・挨拶文は不要
@@ -34,12 +37,14 @@ ${NO_INVENTED_FACTS}
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      model: WRITING_MODEL,
+      max_tokens: 2048,
+      output_config: { effort: WRITING_EFFORT },
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const refined = message.content[0].type === 'text' ? message.content[0].text : ''
+    const textBlock = message.content.find((b) => b.type === 'text')
+    const refined = textBlock?.type === 'text' ? textBlock.text.trim() : ''
     return NextResponse.json({ refined })
   } catch (error) {
     console.error('AI refine error:', error)

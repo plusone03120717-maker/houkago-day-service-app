@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
-import { NO_INVENTED_FACTS } from '@/lib/ai/fact-rules'
+import { WRITING_EFFORT, WRITING_MODEL } from '@/lib/ai/models'
+import { NO_ADDED_PLANS, NO_INVENTED_FACTS, POLISH_EVEN_IF_CLEAN } from '@/lib/ai/fact-rules'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -219,6 +220,9 @@ PT（理学療法士）・OT（作業療法士）・ST（言語聴覚士）・�
 ・整えた文章のみ出力（説明不要）`,
 }
 
+// その日・その期間の様子を書く欄。方針を書く欄（next_actions など）と違い、今後の方針を足させない
+const RECORD_FIELDS = new Set(['notable_record', 'long_term_progress', 'short_term_progress', 'issues'])
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -235,22 +239,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid fieldType' }, { status: 400 })
   }
 
+  const rules = [POLISH_EVEN_IF_CLEAN, NO_INVENTED_FACTS]
+  if (RECORD_FIELDS.has(fieldType)) rules.push(NO_ADDED_PLANS)
+
   const prompt = `${systemPrompt}
 
 【必ず守ること】
-${NO_INVENTED_FACTS}
+${rules.join('\n')}
 
 【入力された内容】
 ${content}`
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
+      model: WRITING_MODEL,
+      max_tokens: 2048,
+      output_config: { effort: WRITING_EFFORT },
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const refined = message.content[0].type === 'text' ? message.content[0].text : ''
+    const textBlock = message.content.find((b) => b.type === 'text')
+    const refined = textBlock?.type === 'text' ? textBlock.text.trim() : ''
     return NextResponse.json({ refined })
   } catch (error) {
     console.error('AI refine error:', error)
