@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Building2, Loader2 } from 'lucide-react'
 
 type Mode = 'staff' | 'parent'
+
+// Cloudflare Turnstile（保護者ログインのロボット対策）。サイトキーがなければ出さない
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
+
+type Turnstile = {
+  render: (el: HTMLElement, opts: { sitekey: string; callback: (token: string) => void; 'expired-callback': () => void; language?: string }) => string
+  reset: (widgetId: string) => void
+  remove: (widgetId: string) => void
+}
+
+declare global {
+  interface Window { turnstile?: Turnstile }
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -20,11 +33,72 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const turnstileRef = useRef<HTMLDivElement>(null)
+  const turnstileWidgetId = useRef<string | null>(null)
+
+  // 保護者モードのときだけ Turnstile を読み込んで表示する
+  useEffect(() => {
+    if (mode !== 'parent' || !TURNSTILE_SITE_KEY) return
+    let cancelled = false
+
+    const render = () => {
+      if (cancelled || !turnstileRef.current || !window.turnstile) return
+      turnstileWidgetId.current = window.turnstile.render(turnstileRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (token) => setTurnstileToken(token),
+        'expired-callback': () => setTurnstileToken(''),
+        language: 'ja',
+      })
+    }
+
+    if (window.turnstile) {
+      render()
+    } else {
+      const src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+      let script = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`)
+      if (!script) {
+        script = document.createElement('script')
+        script.src = src
+        script.async = true
+        document.head.appendChild(script)
+      }
+      script.addEventListener('load', render)
+    }
+
+    return () => {
+      cancelled = true
+      if (turnstileWidgetId.current && window.turnstile) window.turnstile.remove(turnstileWidgetId.current)
+      turnstileWidgetId.current = null
+      setTurnstileToken('')
+    }
+  }, [mode])
 
   const handleLogin = async (e: React.SyntheticEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
+
+    // 保護者モード：名前の照合からパスワードの確認までサーバーで行う
+    if (mode === 'parent') {
+      const res = await fetch('/api/auth/parent-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ childName: childName.trim(), password, turnstileToken }),
+      })
+      const json = await res.json().catch(() => ({})) as { needsPasswordChange?: boolean; error?: string }
+      if (!res.ok) {
+        setError(json.error ?? 'ログインできませんでした。時間をおいてもう一度お試しください')
+        setLoading(false)
+        // Turnstile の印は1回しか使えないので取り直す
+        if (turnstileWidgetId.current && window.turnstile) window.turnstile.reset(turnstileWidgetId.current)
+        setTurnstileToken('')
+        return
+      }
+      router.push(json.needsPasswordChange ? '/set-password' : '/parent')
+      router.refresh()
+      return
+    }
 
     let loginEmail = ''
 
@@ -38,29 +112,10 @@ export default function LoginPage() {
       }
     }
 
-    // 保護者モード：児童名から保護者のメールを検索
-    if (mode === 'parent') {
-      const res = await fetch('/api/auth/parent-lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ childName: childName.trim() }),
-      })
-      const json = await res.json() as { email?: string; error?: string }
-      if (!res.ok || !json.email) {
-        setError(json.error ?? 'お子さんの名前が見つかりません')
-        setLoading(false)
-        return
-      }
-      loginEmail = json.email
-    }
-
     const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password })
 
     if (error) {
-      setError(mode === 'parent'
-        ? 'パスワードが正しくありません。管理者に再設定を依頼してください'
-        : '電話番号またはパスワードが正しくありません'
-      )
+      setError('電話番号またはパスワードが正しくありません')
       setLoading(false)
       return
     }
@@ -171,13 +226,21 @@ export default function LoginPage() {
                 />
               </div>
 
+              {mode === 'parent' && TURNSTILE_SITE_KEY && (
+                <div ref={turnstileRef} className="flex justify-center" />
+              )}
+
               {error && (
                 <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
                   {error}
                 </div>
               )}
 
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading || (mode === 'parent' && !!TURNSTILE_SITE_KEY && !turnstileToken)}
+              >
                 {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                 ログイン
               </Button>
