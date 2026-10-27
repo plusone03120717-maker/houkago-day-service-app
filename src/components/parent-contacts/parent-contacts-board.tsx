@@ -128,6 +128,36 @@ function planChange(c: Contact, current: CurrentPlan | undefined) {
   return { current, changed: !same }
 }
 
+/**
+ * いまの予定の割り振りに、保護者が希望した時刻を当てはめる。
+ *
+ * 予定の変更の連絡で、いまの予定の時刻を初期値にしたままだと、
+ * そのまま承認したとき希望が反映されず元の時刻が残る（2026-10 に実際に起きた）。
+ * 区分は施設が決めたものを引き継ぎ、時刻だけ希望に替える。
+ * 'both' は切り替え時刻を施設が決めるものなので触らない。
+ */
+function withRequestedTimes(c: Contact, a: ServiceAssignment): ServiceAssignment {
+  const start = fmtTime(c.service_start_time)
+  const end = fmtTime(c.service_end_time)
+  if (a.serviceType === 'daytime_support') {
+    return { ...a, daytimeStartTime: start ?? a.daytimeStartTime, daytimeEndTime: end ?? a.daytimeEndTime }
+  }
+  if (a.serviceType === 'regular') {
+    return { ...a, serviceStartTime: start ?? a.serviceStartTime, serviceEndTime: end ?? a.serviceEndTime }
+  }
+  return a
+}
+
+/** 割り振りの時刻が同じか（区分の時間だけを比べる） */
+function sameTimes(a: ServiceAssignment, b: ServiceAssignment) {
+  return (
+    a.serviceStartTime === b.serviceStartTime &&
+    a.serviceEndTime === b.serviceEndTime &&
+    a.daytimeStartTime === b.daytimeStartTime &&
+    a.daytimeEndTime === b.daytimeEndTime
+  )
+}
+
 /** 「14:00〜17:30／送り迎え」のように予定の中身を1行にする */
 function describePlan(p: {
   serviceStartTime: string | null
@@ -407,6 +437,7 @@ function ContactCard({
   contact: c,
   approval,
   current,
+  planned,
   applied,
   handling,
   today,
@@ -422,6 +453,8 @@ function ContactCard({
   approval: ApprovalStatus
   /** いまその日に入っている予定。無ければ undefined（新しい申し込み） */
   current: CurrentPlan | undefined
+  /** 出席管理にいま入っている割り振り。希望の時刻から元に戻すときに使う */
+  planned: ServiceAssignment | undefined
   /** 予定へ反映済みか */
   applied: boolean
   /** キャンセル連絡をどう処理したか。null＝未処理 */
@@ -612,31 +645,29 @@ function ContactCard({
               english={english}
               onChange={onAssignmentChange}
             />
-            {/* 割り振りの初期値は「いま出席管理に入っている時間」なので、
-                変更の希望はスタッフが取り込まないと反映されない。1タップで入るようにする */}
-            {change?.changed && assignment.serviceType !== 'both' && (
-              <button
-                onClick={() =>
-                  onAssignmentChange(
-                    assignment.serviceType === 'daytime_support'
-                      ? {
-                          ...assignment,
-                          daytimeStartTime: fmtTime(c.service_start_time),
-                          daytimeEndTime: fmtTime(c.service_end_time),
-                        }
-                      : {
-                          ...assignment,
-                          serviceStartTime: fmtTime(c.service_start_time),
-                          serviceEndTime: fmtTime(c.service_end_time),
-                        }
-                  )
-                }
-                title="保護者が希望した時刻を入れます（お迎えがある日は、承認時に10分後が利用開始になります）"
-                className="mt-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
-              >
-                ご希望の時間を割り振りに入れる
-              </button>
-            )}
+            {/* 予定の変更は、ご希望の時刻が最初から入っている（withRequestedTimes）。
+                希望を受けずにいまの時間のまま承認したいときは1タップで戻せるようにする */}
+            {change?.changed && assignment.serviceType !== 'both' && (() => {
+              const requested = withRequestedTimes(c, assignment)
+              const usingRequested = sameTimes(assignment, requested)
+              const keep = planned && planned.serviceType === assignment.serviceType ? planned : undefined
+              if (usingRequested && !keep) return null
+              return (
+                <button
+                  onClick={() =>
+                    onAssignmentChange(usingRequested && keep ? { ...assignment, ...keep, unitId: assignment.unitId } : requested)
+                  }
+                  title={
+                    usingRequested
+                      ? 'ご希望ではなく、いま出席管理に入っている時刻のまま承認します'
+                      : '保護者が希望した時刻を入れます（お迎えがある日は、承認時に10分後が利用開始になります）'
+                  }
+                  className="mt-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
+                >
+                  {usingRequested ? 'いまの予定の時間に戻す' : 'ご希望の時間を割り振りに入れる'}
+                </button>
+              )
+            })()}
           </>
         ) : (
           needsApproval(c) &&
@@ -757,12 +788,17 @@ export function ParentContactsBoard({
   const handlingOf = (c: Contact): AbsentHandling | null =>
     handlingOverrides[c.id] ?? c.absent_handling
   // 初期値は「その日の出席記録に入っている予定」→「保存済みの割り振り」→
-  // 「保護者の希望時間をそのまま放デイとして」の順に決める
+  // 「保護者の希望時間をそのまま放デイとして」の順に決める。
+  // ただし予定の変更（時間・送迎がいまと違う連絡）は、区分はいまの予定のまま、
+  // 時刻だけご希望にする。いまの時刻のままだと、そのまま承認して希望が消える
   //
   // 英会話の児童は、教室を選んでいなければ自動で入る教室を初期値にする
   // （英会話に入る日は最初から「英会話」が選ばれた状態で出る）
   const assignmentOf = (c: Contact): ServiceAssignment => {
-    const a = assignments[c.id] ?? initialAssignments[c.id] ?? resolveAssignment(c)
+    const planned = initialAssignments[c.id]
+    const initial =
+      planned && planChange(c, currentPlans[c.id])?.changed ? withRequestedTimes(c, planned) : planned
+    const a = assignments[c.id] ?? initial ?? resolveAssignment(c)
     const english = englishChoices[c.child_id]
     if (!english || a.unitId !== undefined) return a
     return { ...a, unitId: english.defaultUnitIds[c.id] ?? english.englishUnitId }
@@ -1166,6 +1202,7 @@ export function ParentContactsBoard({
                         contact={c}
                         approval={approvalOf(c)}
                         current={currentPlans[c.id]}
+                        planned={initialAssignments[c.id]}
                         applied={appliedOf(c)}
                         handling={handlingOf(c)}
                         today={today}
