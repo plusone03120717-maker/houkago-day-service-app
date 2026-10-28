@@ -177,4 +177,30 @@ for (const x of pac) inc(pacBy, x.child_id.slice(0, 8))
 p(`- 保護者の利用連絡（今期）: ${pac.length}件 児童別 ${JSON.stringify(pacBy)}`)
 p(`- 連絡帳（今期）: ${notes.length}件（保護者コメントあり ${notes.filter((n) => n.parent_comment).length}）／メッセージ: ${messages.length}件`)
 
+// --- 8. スタッフ LINE のマイスケジュール閲覧（staff_page_views。記録を始めた日以降） ---
+p('\n## 8. スタッフ LINE のマイスケジュール閲覧')
+const viewsRes = await fetch(`${URL_}/rest/v1/staff_page_views?select=staff_member_id,page,viewed_at&viewed_at=gte.${prevSince}&order=viewed_at`, { headers: H })
+if (!viewsRes.ok) {
+  p(`- 取得できず（${viewsRes.status}）：migration 176 が未適用の可能性`)
+} else {
+  const views = await viewsRes.json()
+  const vBy = {}
+  for (const v of views) {
+    const b = (vBy[v.staff_member_id] ??= { cur: 0, prev: 0, days: new Set(), month: 0, last: '' })
+    if (!cur(v.viewed_at)) { b.prev++; continue }
+    b.cur++
+    b.days.add(jst(v.viewed_at).slice(0, 10))
+    if (v.page === 'staff-schedule-month') b.month++
+    if (v.viewed_at > b.last) b.last = v.viewed_at
+  }
+  p('| 人 | 今期 | 前期 | 開いた日数 | 月表示 | 最後に開いた日時 |')
+  p('|---|---|---|---|---|---|')
+  for (const [id, b] of Object.entries(vBy).sort((a, c) => c[1].cur - a[1].cur)) {
+    p(`| ${staffName[id] || id.slice(0, 8)} | ${b.cur} | ${b.prev} | ${b.days.size} | ${b.month} | ${b.last ? jst(b.last) : '-'} |`)
+  }
+  const never = staff.filter((s) => s.line_user_id && !vBy[s.id]).map((s) => s.name)
+  p(`- LINE連携済みで一度も開いていない人: ${never.join('、') || 'なし'}`)
+  p(`- 最初の記録: ${views[0] ? jst(views[0].viewed_at) : 'まだなし'}（これより前は記録がない）`)
+}
+
 console.log(out.join('\n'))

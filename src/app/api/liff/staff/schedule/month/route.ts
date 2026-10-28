@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
 import { sumDayUnitDays, sumHourUnitHours } from '@/lib/paid-leave'
 import { findStaffByLineUserId } from '@/lib/line/liff-staff'
+import { logStaffView } from '@/lib/line/log-staff-view'
 import { calcShiftMinutes, buildTCDays, pairBreakRecords } from '@/lib/work-time'
 
 const adminClient = createClient(
@@ -48,6 +49,8 @@ export async function POST(req: NextRequest) {
     if (!staff) {
       return NextResponse.json({ error: 'スタッフが見つかりません' }, { status: 404 })
     }
+
+    await logStaffView(adminClient, staff.staffMemberId, 'staff-schedule-month', null)
 
     const lastDay = new Date(year, month, 0).getDate()
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`

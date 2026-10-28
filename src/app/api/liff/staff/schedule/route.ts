@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
 import { findStaffByLineUserId } from '@/lib/line/liff-staff'
+import { logStaffView } from '@/lib/line/log-staff-view'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -104,6 +105,8 @@ export async function POST(req: NextRequest) {
     if (!staff) {
       return NextResponse.json({ error: 'スタッフが見つかりません' }, { status: 404 })
     }
+
+    await logStaffView(adminClient, staff.staffMemberId, 'staff-schedule', date)
 
     const dayStart = new Date(`${date}T00:00:00+09:00`).toISOString()
     const dayEnd = new Date(`${date}T23:59:59+09:00`).toISOString()
