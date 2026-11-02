@@ -47,6 +47,15 @@ export function serviceStartFromPickupArrival(schoolArrival: string): string {
 }
 
 /**
+ * serviceStartFromPickupArrival の逆。記録されている利用開始（事業所に着いた時刻）を、
+ * 保護者が連絡してくる形（学校に着く時刻）に戻す。保護者の画面に予定を出すときに使う。
+ * 戻さずに見せると 10 分遅れて見え、そのまま送り直されると承認でさらに 10 分ずれる。
+ */
+export function pickupArrivalFromServiceStart(serviceStart: string): string {
+  return addMinutes(serviceStart, -TRANSPORT_TRAVEL_MINUTES)
+}
+
+/**
  * その日の利用時間から、送迎の時刻を組み立てる。
  *
  * serviceStart … その日いちばん早い**利用開始**（＝事業所に着いた時刻）

@@ -17,6 +17,7 @@ import {
   type TransportPlace,
   type LocationType,
 } from '@/lib/transport-place'
+import { pickupArrivalFromServiceStart } from '@/lib/transport-timing'
 
 /**
  * 保護者が利用する日を連絡するカレンダー。
@@ -388,9 +389,22 @@ const TRANSPORT_TEXT: Record<TransportType, string> = {
   dropoff_only: '帰りの送迎',
 }
 
+/**
+ * 予定の開始時刻を、保護者が連絡するときの形で出す。
+ *
+ * 施設の記録は「事業所に着いた時刻」が利用開始で、行きの送迎がある日は
+ * 保護者の言う開始（学校に着く時刻）より 10 分遅い（@/lib/transport-timing）。
+ * そのまま見せると希望より遅れて見え、そのまま送り直されると承認でさらに 10 分ずれる。
+ */
+function requestStartOf(sched: FacilityScheduleDay): string | null {
+  const start = sched.service_start_time ?? null
+  const usesPickup = sched.transport_type === 'pickup_only' || sched.transport_type === 'both'
+  return start && usesPickup ? pickupArrivalFromServiceStart(start) : start
+}
+
 /** 「14:00〜17:30／行き帰りの送迎」のように、その日の予定の中身を1行で表す */
 function describeScheduleDay(sched: FacilityScheduleDay): string | null {
-  const start = sched.service_start_time ?? null
+  const start = requestStartOf(sched)
   const end = sched.service_end_time ?? null
   const time = start || end ? `${start ?? '—'}〜${end ?? '—'}` : null
   const transport = sched.transport_type ? TRANSPORT_TEXT[sched.transport_type] : null
@@ -644,7 +658,7 @@ export function UsageContactCalendar({
     const transport = sched.transport_type ?? 'none'
     return {
       attending: false,
-      serviceStart: sched.service_start_time ?? '',
+      serviceStart: requestStartOf(sched) ?? '',
       serviceEnd: sched.service_end_time ?? '',
       goPickup: transport === 'pickup_only' || transport === 'both',
       goDropoff: transport === 'dropoff_only' || transport === 'both',
