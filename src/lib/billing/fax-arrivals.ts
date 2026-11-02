@@ -6,6 +6,7 @@
 //   ・届いた分と突き合わせて、そろった／未着を出し
 //   ・おかしな点（違和感）を拾う
 // 金額は下書き。上限管理の記録（upper_limit_managements）には書き込まない。
+// 上限管理の画面が入力欄へ先に入れ（fax-drafts.ts）、職員が「この内容で確定」で保存する。
 
 import type { createClient } from '@/lib/supabase/server'
 import { resolveUpperLimitTargets } from '@/lib/kokuhoren/upper-limit-targets'
@@ -445,7 +446,7 @@ export function faxCompleteNotice(status: ArrivalStatus, appUrl: string): string
     '',
     ...groupByOffice(status.arrived),
     '',
-    'FAX の画像（You First の Gmail）と見比べて、上限管理の画面で金額を入れて確定してください。読み取った内容は下書きです。',
+    '上限管理の画面に、FAX から読み取った額を入れてあります。FAX（You First の Gmail）と見比べて、合っていれば児童ごとに「この内容で確定」を押してください。押すまでは請求に入りません。',
     `${appUrl}/billing/${status.yearMonth}/upper-limit`,
   ].join('\n')
 }
