@@ -134,7 +134,11 @@ function planChange(c: Contact, current: CurrentPlan | undefined) {
  * 予定の変更の連絡で、いまの予定の時刻を初期値にしたままだと、
  * そのまま承認したとき希望が反映されず元の時刻が残る（2026-10 に実際に起きた）。
  * 区分は施設が決めたものを引き継ぎ、時刻だけ希望に替える。
- * 'both' は切り替え時刻を施設が決めるものなので触らない。
+ *
+ * 'both' は切り替え時刻を施設が決めるものなので、切り替え時刻はいまのまま残し、
+ * 先のサービスの開始と後のサービスの終了だけを希望に替える
+ * （11/5 森田歩くん：希望 14:30〜17:30 → 15:10〜17:45 のまま承認された）。
+ * 切り替え時刻が希望の時間の外に出てしまう場合は、どう分けるかを決められないので触らない。
  */
 function withRequestedTimes(c: Contact, a: ServiceAssignment): ServiceAssignment {
   const start = fmtTime(c.service_start_time)
@@ -145,7 +149,15 @@ function withRequestedTimes(c: Contact, a: ServiceAssignment): ServiceAssignment
   if (a.serviceType === 'regular') {
     return { ...a, serviceStartTime: start ?? a.serviceStartTime, serviceEndTime: end ?? a.serviceEndTime }
   }
-  return a
+  if (!a.serviceStartTime || !a.serviceEndTime || !a.daytimeStartTime || !a.daytimeEndTime) return a
+  const basicFirst = a.serviceStartTime <= a.daytimeStartTime
+  const switchTime = basicFirst ? a.serviceEndTime : a.daytimeEndTime
+  const newStart = start ?? (basicFirst ? a.serviceStartTime : a.daytimeStartTime)
+  const newEnd = end ?? (basicFirst ? a.daytimeEndTime : a.serviceEndTime)
+  if (!(newStart < switchTime && switchTime < newEnd)) return a
+  return basicFirst
+    ? { ...a, serviceStartTime: newStart, daytimeEndTime: newEnd }
+    : { ...a, daytimeStartTime: newStart, serviceEndTime: newEnd }
 }
 
 /** 割り振りの時刻が同じか（区分の時間だけを比べる） */
@@ -647,11 +659,20 @@ function ContactCard({
             />
             {/* 予定の変更は、ご希望の時刻が最初から入っている（withRequestedTimes）。
                 希望を受けずにいまの時間のまま承認したいときは1タップで戻せるようにする */}
-            {change?.changed && assignment.serviceType !== 'both' && (() => {
+            {change?.changed && (() => {
               const requested = withRequestedTimes(c, assignment)
               const usingRequested = sameTimes(assignment, requested)
               const keep = planned && planned.serviceType === assignment.serviceType ? planned : undefined
-              if (usingRequested && !keep) return null
+              // 放デイ＋日中一時で、いまの切り替え時刻がご希望の時間の外にある日は
+              // 自動では分けられない。黙っているとそのまま承認されてしまうので知らせる
+              if (assignment.serviceType === 'both' && keep && sameTimes(keep, requested)) {
+                return (
+                  <p className="mt-1.5 text-[11px] text-amber-700">
+                    ご希望の時間（{fmtTime(c.service_start_time) ?? '—'}〜{fmtTime(c.service_end_time) ?? '—'}）は自動で割り振れません。放デイと日中一時の時刻を入れ直してから承認してください
+                  </p>
+                )
+              }
+              if (usingRequested && (!keep || sameTimes(keep, requested))) return null
               return (
                 <button
                   onClick={() =>
