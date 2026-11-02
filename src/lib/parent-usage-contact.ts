@@ -503,7 +503,9 @@ export async function loadFacilitySchedule(
       .from('daily_attendance')
       .select(
         'child_id, date, status, check_in_time, check_out_time, ' +
-        'service_start_time, service_end_time, pickup_type, units (name)'
+        'basic_service, service_start_time, service_end_time, ' +
+        'daytime_support, daytime_support_start_time, daytime_support_end_time, ' +
+        'pickup_type, units (name)'
       )
       .in('child_id', childIds)
       .gte('date', startDate)
@@ -581,8 +583,12 @@ export async function loadFacilitySchedule(
   type AttendanceTimes = {
     child_id: string
     date: string
+    basic_service: boolean | null
     service_start_time: string | null
     service_end_time: string | null
+    daytime_support: boolean | null
+    daytime_support_start_time: string | null
+    daytime_support_end_time: string | null
     pickup_type: TransportType | null
   }
 
@@ -649,6 +655,18 @@ export async function loadFacilitySchedule(
       const planned = scheduleDefaultsOn(e.date)[e.childId]
       const res = reservationByKey.get(`${e.childId}|${e.date}`)
       const places = placesOn(e.childId, e.date, e.planId)
+      const attSpan = att
+        ? usageSpan([
+            att.basic_service !== false ? [att.service_start_time, att.service_end_time] : null,
+            att.daytime_support ? [att.daytime_support_start_time, att.daytime_support_end_time] : null,
+          ])
+        : undefined
+      const plannedSpan = planned
+        ? usageSpan([
+            [planned.serviceStartTime, planned.serviceEndTime],
+            planned.daytimeSupport ? [planned.daytimeSupportStartTime, planned.daytimeSupportEndTime] : null,
+          ])
+        : undefined
 
       out.push({
         child_id: e.childId,
@@ -658,10 +676,8 @@ export async function loadFacilitySchedule(
         check_out_time: detail?.check_out_time ?? null,
         unit_name: detail?.units?.name ?? null,
         // その日の記録があればそれが最新。無ければ利用スケジュールから引く
-        service_start_time:
-          att?.service_start_time?.slice(0, 5) ?? planned?.serviceStartTime?.slice(0, 5) ?? null,
-        service_end_time:
-          att?.service_end_time?.slice(0, 5) ?? planned?.serviceEndTime?.slice(0, 5) ?? null,
+        service_start_time: attSpan?.start ?? plannedSpan?.start ?? null,
+        service_end_time: attSpan?.end ?? plannedSpan?.end ?? null,
         transport_type:
           (res?.transport_type ?? att?.pickup_type ?? planned?.transportType ?? null) as
             | TransportType
@@ -672,6 +688,31 @@ export async function loadFacilitySchedule(
     }
   }
   return out
+}
+
+/**
+ * その日の利用時間を「いちばん早い開始〜いちばん遅い終了」の1つにまとめる。
+ *
+ * 放デイと日中一時を続けて使う日は、時間を2つの欄に分けて記録している
+ * （例：放デイ 14:40〜16:30 ＋ 日中一時 16:30〜17:30）。保護者は区分を選ばず
+ * 「14:30〜17:30」のように1つの時間で連絡してくるので、見せるときも1つにする。
+ * 放デイの欄だけを見ていると、17:30 までの日が 16:30 までに見えてしまう
+ * （11/5 の連絡で保護者から「希望と違う」と言われた）。
+ * 使わない区分は null を渡す。
+ */
+function usageSpan(
+  parts: ([string | null | undefined, string | null | undefined] | null)[]
+): { start: string | null; end: string | null } {
+  const starts: string[] = []
+  const ends: string[] = []
+  for (const part of parts) {
+    if (!part) continue
+    if (part[0]) starts.push(part[0].slice(0, 5))
+    if (part[1]) ends.push(part[1].slice(0, 5))
+  }
+  starts.sort()
+  ends.sort()
+  return { start: starts[0] ?? null, end: ends[ends.length - 1] ?? null }
 }
 
 /**
