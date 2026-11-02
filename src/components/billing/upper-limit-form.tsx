@@ -4,9 +4,10 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { AlertTriangle, Calculator, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
+import { AlertTriangle, Calculator, Check, FileText, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
 import { saveUpperLimit, deleteUpperLimit, type UpperLimitOfficeInput } from '@/app/actions/upper-limit'
 import { projectSelfCost, type SelfCostProjection } from '@/lib/billing/units'
+import type { FaxDraft } from '@/lib/billing/fax-drafts'
 
 export type UpperLimitFormChild = {
   childId: string
@@ -42,6 +43,8 @@ export type UpperLimitFormChild = {
     copayLimit: number
     offices: UpperLimitOfficeInput[]
   } | null
+  /** 月初の FAX チェックが読み取った FAX（下書き）。まだ保存していなければ入力欄へ先に入れる */
+  faxDraft: FaxDraft | null
 }
 
 const RESULT_OPTIONS: Array<{ value: '1' | '2' | '3'; label: string; short: string }> = [
@@ -64,6 +67,35 @@ const RESULT_OPTIONS: Array<{ value: '1' | '2' | '3'; label: string; short: stri
 
 const yen = (n: number) => `${n.toLocaleString()}円`
 
+const digits = (s: string) => s.replace(/\D/g, '')
+
+const receivedLabel = (iso: string | null) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+/**
+ * 管理結果と「管理結果後利用者負担額」を、利用者負担額から計算する。
+ * 管理事業所（当事業所）の負担額を先に充当し、残りの上限額を他事業所へ項番順に割り当てる。
+ */
+function calcManaged(copays: number[], limit: number, selfIdx: number): { result: '1' | '2' | '3'; managed: number[] } {
+  const total = copays.reduce((a, b) => a + b, 0)
+  if (total <= limit) return { result: '2', managed: [...copays] }
+  let remaining = limit
+  const managed = copays.map(() => 0)
+  if (selfIdx >= 0) {
+    managed[selfIdx] = Math.min(copays[selfIdx], remaining)
+    remaining -= managed[selfIdx]
+  }
+  copays.forEach((c, i) => {
+    if (i === selfIdx) return
+    managed[i] = Math.min(c, remaining)
+    remaining -= managed[i]
+  })
+  return { result: selfIdx >= 0 && managed[selfIdx] >= limit ? '1' : '3', managed }
+}
+
 export function UpperLimitForm({
   child,
   yearMonth,
@@ -82,14 +114,23 @@ export function UpperLimitForm({
   const [error, setError] = useState('')
 
   const [isSelfManaged, setIsSelfManaged] = useState(child.saved?.isSelfManaged ?? child.isSelf)
+
+  // ── FAX の読み取り（下書き）。保存前だけ入力欄へ先に入れ、職員が「この内容で確定」で保存する ──
+  const resultDraft =
+    !child.saved && child.faxDraft?.result && child.faxDraft.result.managedCopayAmount != null
+      ? child.faxDraft.result
+      : null
+  const copayDrafts = child.saved
+    ? []
+    : (child.faxDraft?.copayLists ?? []).filter((d) => digits(d.officeNumber) !== facilityNumber)
+
   const [managerNumber, setManagerNumber] = useState(
     child.saved && !child.saved.isSelfManaged
       ? child.saved.managerOfficeNumber
       : child.managerNumber ||
+          resultDraft?.officeNumber ||
           (child.previous && !child.previous.isSelfManaged ? child.previous.managerOfficeNumber : ''),
   )
-  const [result, setResult] = useState<'1' | '2' | '3'>(child.saved?.result ?? '3')
-  const [resultTouched, setResultTouched] = useState(child.saved != null)
   const [copayLimit, setCopayLimit] = useState(String(child.saved?.copayLimit ?? child.copayLimit))
 
   const selfRow = (managed: number): UpperLimitOfficeInput => ({
@@ -104,29 +145,113 @@ export function UpperLimitForm({
   // ── 他事業所が管理事業所: 戻ってきた結果の額だけ入れる ──
   const savedSelfLine = child.saved?.offices.find((o) => o.officeNumber === facilityNumber) ?? null
   const [resultAmount, setResultAmount] = useState(
-    child.saved && !child.saved.isSelfManaged && savedSelfLine ? String(savedSelfLine.managedCopayAmount) : '',
+    child.saved && !child.saved.isSelfManaged && savedSelfLine
+      ? String(savedSelfLine.managedCopayAmount)
+      : resultDraft
+        ? String(resultDraft.managedCopayAmount)
+        : '',
   )
+  // FAX から入れた額を職員が書き換えたら、「FAX から」の色を外す
+  const [resultAmountFromFax, setResultAmountFromFax] = useState(resultDraft != null)
 
   // ── 当事業所が管理事業所: 事業所ごとの内訳 ──
   // 前の月に調整した他事業所は、番号・名称だけ引き継ぐ（金額は毎月届く一覧表を見て入れ直す）
   const carriedOffices = child.saved
     ? []
     : (child.previous?.isSelfManaged ? child.previous.offices : []).filter((o) => o.officeNumber !== facilityNumber)
-  const [offices, setOffices] = useState<UpperLimitOfficeInput[]>(
-    child.saved?.isSelfManaged
-      ? child.saved.offices
-      : [
-          selfRow(Math.min(child.selfCopayAmount, child.copayLimit)),
-          ...carriedOffices.map((o, i) => ({
-            lineNo: i + 2,
-            officeNumber: o.officeNumber,
-            officeName: o.officeName,
-            totalCost: 0,
-            copayAmount: 0,
-            managedCopayAmount: 0,
-          })),
-        ],
+  const buildInitialOffices = (): UpperLimitOfficeInput[] => {
+    if (child.saved?.isSelfManaged) return child.saved.offices
+    let rows: UpperLimitOfficeInput[] = [
+      selfRow(Math.min(child.selfCopayAmount, child.copayLimit)),
+      ...carriedOffices.map((o, i) => ({
+        lineNo: i + 2,
+        officeNumber: o.officeNumber,
+        officeName: o.officeName,
+        totalCost: 0,
+        copayAmount: 0,
+        managedCopayAmount: 0,
+      })),
+    ]
+    if (copayDrafts.length === 0) return rows
+    // 届いた一覧表の金額を、引き継いだ事業所の行へ入れる（ない事業所は行を足す）
+    for (const d of copayDrafts) {
+      const i = rows.findIndex(
+        (r, idx) =>
+          idx > 0 &&
+          (d.officeNumber
+            ? digits(r.officeNumber) === digits(d.officeNumber)
+            : d.officeName !== '' && r.officeName === d.officeName),
+      )
+      const patch = { totalCost: d.totalCost ?? 0, copayAmount: d.copayAmount ?? 0 }
+      rows =
+        i >= 0
+          ? rows.map((r, idx) => (idx === i ? { ...r, ...patch, officeName: r.officeName || d.officeName } : r))
+          : [
+              ...rows,
+              { lineNo: rows.length + 1, officeNumber: d.officeNumber, officeName: d.officeName, managedCopayAmount: 0, ...patch },
+            ]
+    }
+    // 他事業所の総費用額が入ると上限額管理加算が付くので、当事業所の行も加算込みの見込み額にする
+    if (child.selfProjection && rows.some((r, idx) => idx > 0 && r.totalCost > 0)) {
+      const p = projectSelfCost(child.selfProjection, true, child.copayLimit)
+      rows = rows.map((r, idx) => (idx === 0 ? { ...r, totalCost: p.totalCost, copayAmount: p.copayAmount } : r))
+    }
+    const { managed } = calcManaged(rows.map((r) => r.copayAmount), child.copayLimit, 0)
+    return rows.map((r, i) => ({ ...r, managedCopayAmount: managed[i] }))
+  }
+  const [offices, setOffices] = useState<UpperLimitOfficeInput[]>(buildInitialOffices)
+
+  const [result, setResult] = useState<'1' | '2' | '3'>(() => {
+    if (child.saved) return child.saved.result
+    if (isSelfManaged && copayDrafts.length > 0) {
+      const rows = buildInitialOffices()
+      return calcManaged(rows.map((r) => r.copayAmount), child.copayLimit, 0).result
+    }
+    if (!isSelfManaged && resultDraft?.result) return resultDraft.result
+    return '3'
+  })
+  const [resultTouched, setResultTouched] = useState(
+    child.saved != null || resultDraft?.result != null || (isSelfManaged && copayDrafts.length > 0),
   )
+
+  // FAX から金額を入れた事業所（行に「FAX」の印を付ける）
+  const faxOfficeKeys = new Set(copayDrafts.map((d) => digits(d.officeNumber) || d.officeName))
+  const isFaxRow = (o: UpperLimitOfficeInput) => faxOfficeKeys.has(digits(o.officeNumber) || o.officeName)
+  // 引き継いだのに、まだ一覧表の FAX が届いていない事業所
+  const waitingFaxOffices =
+    copayDrafts.length > 0
+      ? carriedOffices.filter((o) => !faxOfficeKeys.has(digits(o.officeNumber) || o.officeName))
+      : []
+  // 画面に出す「FAX から入れた」の知らせ（保存前だけ）
+  const usingFax = !child.saved && (isSelfManaged ? copayDrafts.length > 0 : resultDraft != null)
+  const faxSources = isSelfManaged
+    ? copayDrafts.map((d) => `${d.officeName || d.officeNumber}（${receivedLabel(d.receivedAt)} 受信）`)
+    : resultDraft
+      ? [`${resultDraft.officeName || resultDraft.officeNumber}（${receivedLabel(resultDraft.receivedAt)} 受信）`]
+      : []
+
+  // 保存済みの額が、FAX の読み取りと違うとき（訂正の FAX が届いた・入力違いなど）
+  const savedFaxMismatch: string[] = []
+  if (child.saved && child.faxDraft) {
+    const savedSelf = child.saved.offices.find((o) => o.officeNumber === facilityNumber)
+    const r = child.faxDraft.result
+    if (!child.saved.isSelfManaged && r?.managedCopayAmount != null && savedSelf && savedSelf.managedCopayAmount !== r.managedCopayAmount) {
+      savedFaxMismatch.push(`結果票の負担額 ${yen(r.managedCopayAmount)}（保存は ${yen(savedSelf.managedCopayAmount)}）`)
+    }
+    if (child.saved.isSelfManaged) {
+      for (const d of child.faxDraft.copayLists) {
+        const o = child.saved.offices.find((x) =>
+          d.officeNumber ? digits(x.officeNumber) === digits(d.officeNumber) : x.officeName === d.officeName,
+        )
+        if (!o) savedFaxMismatch.push(`${d.officeName || d.officeNumber}の行がありません`)
+        else if ((d.totalCost != null && o.totalCost !== d.totalCost) || (d.copayAmount != null && o.copayAmount !== d.copayAmount)) {
+          savedFaxMismatch.push(
+            `${d.officeName || d.officeNumber}：FAX は総費用額 ${yen(d.totalCost ?? 0)}・負担額 ${yen(d.copayAmount ?? 0)}`,
+          )
+        }
+      }
+    }
+  }
 
   const setOffice = (i: number, patch: Partial<UpperLimitOfficeInput>) =>
     setOffices((prev) => prev.map((o, idx) => (idx === i ? { ...o, ...patch } : o)))
@@ -153,32 +278,11 @@ export function UpperLimitForm({
     selfIdx >= 0 &&
     (offices[selfIdx].totalCost !== expectedSelf.totalCost || offices[selfIdx].copayAmount !== expectedSelf.copayAmount)
 
-  /**
-   * 管理結果と「管理結果後利用者負担額」を、入力済みの利用者負担額から計算する。
-   * 管理事業所（当事業所）の負担額を先に充当し、残りの上限額を他事業所へ項番順に割り当てる。
-   */
+  /** 内訳の利用者負担額から、管理結果と「管理結果後利用者負担額」を計算する */
   const handleAutoCalc = () => {
-    const limit = parseInt(copayLimit) || 0
     const copays = offices.map((o) => Number(o.copayAmount) || 0)
-    const total = copays.reduce((a, b) => a + b, 0)
-
-    if (total <= limit) {
-      setResult('2')
-      setOffices((prev) => prev.map((o, i) => ({ ...o, managedCopayAmount: copays[i] })))
-      return
-    }
-    let remaining = limit
-    const managed = copays.map(() => 0)
-    if (selfIdx >= 0) {
-      managed[selfIdx] = Math.min(copays[selfIdx], remaining)
-      remaining -= managed[selfIdx]
-    }
-    copays.forEach((c, i) => {
-      if (i === selfIdx) return
-      managed[i] = Math.min(c, remaining)
-      remaining -= managed[i]
-    })
-    setResult(selfIdx >= 0 && managed[selfIdx] >= limit ? '1' : '3')
+    const { result: r, managed } = calcManaged(copays, parseInt(copayLimit) || 0, selfIdx)
+    setResult(r)
     setOffices((prev) => prev.map((o, i) => ({ ...o, managedCopayAmount: managed[i] })))
   }
 
@@ -188,6 +292,7 @@ export function UpperLimitForm({
   /** 結果の額から管理結果の番号を推測する（手で選び直したら以後は触らない） */
   const handleResultAmount = (value: string) => {
     setResultAmount(value)
+    setResultAmountFromFax(false)
     if (resultTouched || value === '') return
     const amount = parseInt(value) || 0
     if (amount === 0) setResult('1')
@@ -281,6 +386,10 @@ export function UpperLimitForm({
               <span className="text-[11px] px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-200">
                 入力済み{savedAmount != null ? `（負担額 ${yen(savedAmount)}）` : ''}
               </span>
+            ) : usingFax ? (
+              <span className="text-[11px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">
+                FAX 読み取り済み・未確定
+              </span>
             ) : (
               <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
                 {isSelfManaged ? '未入力' : '結果待ち'}
@@ -298,8 +407,8 @@ export function UpperLimitForm({
             </Button>
           )}
           <Button size="sm" onClick={handleSave} disabled={saving}>
-            <Save className="h-4 w-4" />
-            {saving ? '保存中...' : '保存'}
+            {usingFax ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+            {saving ? '保存中...' : usingFax ? 'この内容で確定' : '保存'}
           </Button>
         </div>
       </div>
@@ -308,6 +417,31 @@ export function UpperLimitForm({
         <p className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5">
           <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
           {child.conflict}
+        </p>
+      )}
+
+      {usingFax && (
+        <div className="flex items-start gap-1.5 text-xs text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-2">
+          <FileText className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <div className="space-y-0.5">
+            <p>
+              FAX から読み取った額を入れてあります（<span className="font-semibold">まだ確定していません</span>）。
+              {faxSources.join('・')}の FAX（You First の Gmail）と見比べて、合っていれば「この内容で確定」を押してください。
+              押すまでは請求に入りません。
+            </p>
+            {waitingFaxOffices.length > 0 && (
+              <p className="text-amber-700">
+                まだ一覧表の FAX が届いていない事業所：{waitingFaxOffices.map((o) => o.officeName || o.officeNumber).join('・')}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {savedFaxMismatch.length > 0 && (
+        <p className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5">
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          保存した内容が、届いた FAX の読み取りと違います（{savedFaxMismatch.join('／')}）。訂正の FAX でないか確かめてください
         </p>
       )}
 
@@ -364,9 +498,11 @@ export function UpperLimitForm({
                     min={0}
                     placeholder={String(child.selfCopayAmount)}
                     inputMode="numeric"
+                    className={resultAmountFromFax ? 'bg-sky-50 border-sky-300' : undefined}
                   />
                   <span className="text-sm text-gray-500">円</span>
                 </div>
+                {resultAmountFromFax && <p className="text-[11px] text-sky-700 mt-0.5">FAX から読み取り（未確認）</p>}
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">管理結果</label>
@@ -485,11 +621,18 @@ export function UpperLimitForm({
                         />
                       </td>
                       <td className="pr-1">
-                        <Input
-                          value={o.officeName}
-                          onChange={(e) => setOffice(i, { officeName: e.target.value })}
-                          className="h-8"
-                        />
+                        <div className="flex items-center gap-1">
+                          <Input
+                            value={o.officeName}
+                            onChange={(e) => setOffice(i, { officeName: e.target.value })}
+                            className="h-8"
+                          />
+                          {usingFax && isFaxRow(o) && (
+                            <span className="shrink-0 text-[10px] px-1 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">
+                              FAX
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="pr-1">
                         <Input

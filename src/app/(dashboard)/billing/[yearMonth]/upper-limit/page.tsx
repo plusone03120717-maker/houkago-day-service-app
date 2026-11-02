@@ -8,6 +8,7 @@ import { loadBillingChildren, loadUpperLimits } from '@/lib/kokuhoren/load'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
 import { loadSelfCostBases, resolveUpperLimitTargets } from '@/lib/kokuhoren/upper-limit-targets'
 import { requireMoneyAccess } from '@/lib/require-admin'
+import { loadFaxDrafts } from '@/lib/billing/fax-drafts'
 
 export const dynamic = 'force-dynamic'
 
@@ -115,11 +116,12 @@ export default async function UpperLimitPage({
   )
 
   const childIds = [...new Set(children.map((c) => c.childId).filter(Boolean) as string[])]
-  const [saved, previous, targets, costBases] = await Promise.all([
+  const [saved, previous, targets, costBases, faxDrafts] = await Promise.all([
     loadUpperLimits(supabase, yearMonth, childIds),
     loadUpperLimits(supabase, yearMonth, childIds, true),
     resolveUpperLimitTargets(supabase, yearMonth, childIds, facility),
     loadSelfCostBases(supabase, scope.billingMonthlyIds, childIds),
+    loadFaxDrafts(supabase, yearMonth, childIds),
   ])
 
   const selfForms: UpperLimitFormChild[] = []
@@ -163,6 +165,7 @@ export default async function UpperLimitPage({
             offices: record.offices,
           }
         : null,
+      faxDraft: faxDrafts.get(c.childId) ?? null,
     }
     if (!target) {
       others.push(form)
@@ -203,7 +206,8 @@ export default async function UpperLimitPage({
             {waitingCount > 0 && <span className="text-amber-600">・結果待ち {waitingCount}名</span>}）
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            ①「上限管理一覧表」を開いて「jFax で送る」（またはPDFにしてFAX）→ ② 戻ってきた結果の「管理結果後の利用者負担額」を入力して保存
+            ①「上限管理一覧表」を開いて「jFax で送る」（またはPDFにしてFAX）→ ② 戻ってきた結果票の額を入れて保存
+            （月初の FAX チェックが読み取った額は先に入っています。FAX と見比べて「この内容で確定」を押してください）
             <Link href="/settings/partner-offices" className="ml-2 text-indigo-600 hover:underline">
               他事業所の FAX 番号
             </Link>
@@ -260,6 +264,7 @@ export default async function UpperLimitPage({
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
             ① 他事業所から届いた上限管理一覧表の金額を内訳に入力 →「管理結果を自動計算」→ 保存 → ②「上限管理結果票」を開いて、事業所ごとに「jFax で送る」（またはPDFにしてFAX）
+            （月初の FAX チェックが読み取った一覧表の金額は先に入っています。FAX と見比べて「この内容で確定」を押してください）
           </p>
         </div>
         {selfForms.length === 0 && (
