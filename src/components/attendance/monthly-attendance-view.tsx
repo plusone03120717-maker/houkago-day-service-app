@@ -41,6 +41,10 @@ type MonthAttendance = {
   service_end_time: string | null
   check_in_time: string | null
   check_out_time: string | null
+  basic_service: boolean | null
+  daytime_support: boolean | null
+  daytime_support_start_time: string | null
+  daytime_support_end_time: string | null
   children: { id: string; name: string; name_kana: string | null } | null
 }
 
@@ -52,6 +56,9 @@ type PlanInfo = {
   dropoff_time: string | null
   service_start_time: string | null
   service_end_time: string | null
+  daytime_support: boolean | null
+  daytime_support_start_time: string | null
+  daytime_support_end_time: string | null
   day_of_week: number[]
   start_date: string
   end_date: string | null
@@ -115,12 +122,12 @@ export function MonthlyAttendanceView({
       .in('status', ['confirmed', 'reserved', 'cancel_waiting'])
     const attQuery = supabase
       .from('daily_attendance')
-      .select('child_id, unit_id, date, status, service_start_time, service_end_time, check_in_time, check_out_time, children(id, name, name_kana)')
+      .select('child_id, unit_id, date, status, service_start_time, service_end_time, check_in_time, check_out_time, basic_service, daytime_support, daytime_support_start_time, daytime_support_end_time, children(id, name, name_kana)')
       .gte('date', monthStart)
       .lte('date', monthEnd)
     const planQuery = supabase
       .from('usage_plans')
-      .select('id, child_id, unit_id, pickup_time, dropoff_time, service_start_time, service_end_time, day_of_week, start_date, end_date, children(id, name, name_kana)')
+      .select('id, child_id, unit_id, pickup_time, dropoff_time, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time, day_of_week, start_date, end_date, children(id, name, name_kana)')
       .eq('is_active', true)
       .lte('start_date', monthEnd)
       .or(`end_date.is.null,end_date.gte.${monthStart}`)
@@ -170,10 +177,15 @@ export function MonthlyAttendanceView({
         p.start_date <= dateStr &&
         (p.end_date === null || p.end_date >= dateStr)
     )
-    if (!plan) return { start: null, end: null }
+    if (!plan) {
+      return { start: null, end: null, daytime: false, daytimeStart: null, daytimeEnd: null }
+    }
     return {
       start: fmtTime(plan.service_start_time ?? plan.pickup_time),
       end: fmtTime(plan.service_end_time ?? plan.dropoff_time),
+      daytime: plan.daytime_support ?? false,
+      daytimeStart: fmtTime(plan.daytime_support_start_time),
+      daytimeEnd: fmtTime(plan.daytime_support_end_time),
     }
   }
 
@@ -184,8 +196,16 @@ export function MonthlyAttendanceView({
     unitId: string | null
     name: string
     absent: boolean
+    /** 放デイ（児発）を使うか。日中一時だけの日は false */
+    basic: boolean
     start: string | null
     end: string | null
+    /** 日中一時を使うか（時間は未入力のこともある） */
+    daytime: boolean
+    daytimeStart: string | null
+    daytimeEnd: string | null
+    /** 並べ替え用：その日いちばん早い開始時刻 */
+    sortKey: string
   }
   const dayMap = new Map<string, { entries: DayEntry[]; count: number; absentCount: number }>()
 
@@ -214,6 +234,20 @@ export function MonthlyAttendanceView({
       // 利用時間は service_* を正とし、旧データは check_*_time、記録がなければ予定にフォールバック
       const att = attMap.get(`${e.childId}|${date}`)
       const planned = getPlannedTime(e.childId, date)
+      const start = fmtTime(att?.service_start_time) ?? fmtTime(att?.check_in_time) ?? planned.start
+      const end = fmtTime(att?.service_end_time) ?? fmtTime(att?.check_out_time) ?? planned.end
+      // 日中一時は出席記録を正とし、記録がなければ利用計画の設定を使う（送迎の振り分けと同じ考え方）
+      const basic = att?.basic_service ?? true
+      const daytime = att?.daytime_support ?? planned.daytime
+      const daytimeStart = daytime
+        ? fmtTime(att?.daytime_support_start_time) ?? planned.daytimeStart
+        : null
+      const daytimeEnd = daytime
+        ? fmtTime(att?.daytime_support_end_time) ?? planned.daytimeEnd
+        : null
+      const starts = [basic ? start : null, daytime ? daytimeStart : null].filter(
+        (t): t is string => !!t
+      )
       day.entries.push({
         id: e.reservation?.id ?? `roster-${e.childId}-${date}`,
         childId: e.childId,
@@ -223,15 +257,19 @@ export function MonthlyAttendanceView({
           null,
         name: childNameById.get(e.childId) ?? '',
         absent: e.absent,
-        start: fmtTime(att?.service_start_time) ?? fmtTime(att?.check_in_time) ?? planned.start,
-        end: fmtTime(att?.service_end_time) ?? fmtTime(att?.check_out_time) ?? planned.end,
+        basic,
+        start,
+        end,
+        daytime,
+        daytimeStart,
+        daytimeEnd,
+        sortKey: starts.sort()[0] ?? '99:99',
       })
     }
   }
   for (const day of dayMap.values()) {
     day.entries.sort(
-      (a, b) =>
-        (a.start ?? '99:99').localeCompare(b.start ?? '99:99') || a.name.localeCompare(b.name, 'ja')
+      (a, b) => a.sortKey.localeCompare(b.sortKey) || a.name.localeCompare(b.name, 'ja')
     )
   }
 
@@ -382,6 +420,21 @@ export function MonthlyAttendanceView({
                     >
                       {(day?.entries ?? []).map((entry) => {
                         const badge = serviceBadge(entry.unitId)
+                        // 放デイと日中一時を時間の早い順に1行ずつ。名前は1行目だけに付ける
+                        const segments = [
+                          ...(entry.basic || !entry.daytime
+                            ? [{ key: 'basic', ...badge, start: entry.start, end: entry.end }]
+                            : []),
+                          ...(entry.daytime
+                            ? [{
+                                key: 'daytime',
+                                label: '日',
+                                className: 'bg-purple-100 text-purple-700',
+                                start: entry.daytimeStart,
+                                end: entry.daytimeEnd,
+                              }]
+                            : []),
+                        ].sort((a, b) => (a.start ?? '99:99').localeCompare(b.start ?? '99:99'))
                         return (
                         <div
                           key={entry.id}
@@ -393,17 +446,25 @@ export function MonthlyAttendanceView({
                             entry.absent ? 'opacity-40' : ''
                           }`}
                         >
-                          <span className={`inline-block px-0.5 rounded text-[9px] mr-0.5 font-medium ${badge.className}`}>
-                            {badge.label}
-                          </span>
-                          {(entry.start || entry.end) && (
-                            <span className="text-gray-500">
-                              {entry.start ?? '—'}-{entry.end ?? '—'}{' '}
-                            </span>
-                          )}
-                          <span className={entry.absent ? 'text-gray-400 line-through' : 'text-gray-700'}>
-                            {entry.name}
-                          </span>
+                          {segments.map((seg, idx) => (
+                            <div key={seg.key} className={idx > 0 ? 'pl-2' : ''}>
+                              <span className={`inline-block px-0.5 rounded text-[9px] mr-0.5 font-medium ${seg.className}`}>
+                                {seg.label}
+                              </span>
+                              {seg.start || seg.end ? (
+                                <span className="text-gray-500">
+                                  {seg.start ?? '—'}-{seg.end ?? '—'}{' '}
+                                </span>
+                              ) : seg.key === 'daytime' ? (
+                                <span className="text-gray-400">時間未入力 </span>
+                              ) : null}
+                              {idx === 0 && (
+                                <span className={entry.absent ? 'text-gray-400 line-through' : 'text-gray-700'}>
+                                  {entry.name}
+                                </span>
+                              )}
+                            </div>
+                          ))}
                         </div>
                         )
                       })}
