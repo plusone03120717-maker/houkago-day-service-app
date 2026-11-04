@@ -128,7 +128,9 @@ export default async function UpperLimitPage({
   const otherGroups = new Map<string, { managerName: string; managerNumber: string; children: UpperLimitFormChild[] }>()
   const others: UpperLimitFormChild[] = []
 
-  for (const c of [...children].sort((a, b) => a.childName.localeCompare(b.childName, 'ja'))) {
+  for (const c of [...children].sort((a, b) =>
+    (a.childNameKana || a.childName).localeCompare(b.childNameKana || b.childName, 'ja'),
+  )) {
     if (!c.childId) continue
     const target = targets.get(c.childId)
     const record = saved.get(c.childId)

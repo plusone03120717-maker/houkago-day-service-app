@@ -49,6 +49,7 @@ type ActualCost = {
 type ExtraChargeRow = {
   child_id: string
   child_name: string
+  child_kana: string
   program_name: string
   extra_charge: number
   unit_id: string
@@ -121,11 +122,11 @@ export default async function BillingDetailPage({
   if (unitIds.length > 0) {
     const { data: attendancesRaw } = await supabase
       .from('daily_attendance')
-      .select('id, child_id, unit_id, status, children(name, service_type)')
+      .select('id, child_id, unit_id, status, children(name, name_kana, service_type)')
       .in('unit_id', unitIds)
       .gte('date', dateStart)
       .lt('date', dateEnd)
-    const attendances = (attendancesRaw ?? []) as unknown as { id: string; child_id: string; unit_id: string; status: string; children: { name: string; service_type: string | null } | null }[]
+    const attendances = (attendancesRaw ?? []) as unknown as { id: string; child_id: string; unit_id: string; status: string; children: { name: string; name_kana: string | null; service_type: string | null } | null }[]
 
     if (attendances.length > 0) {
       const attendanceIds = attendances.map((a) => a.id)
@@ -159,6 +160,7 @@ export default async function BillingDetailPage({
           extraChargeRows.push({
             child_id: att.child_id,
             child_name: att.children?.name ?? '—',
+            child_kana: att.children?.name_kana ?? att.children?.name ?? '',
             program_name: name,
             extra_charge: price,
             unit_id: att.unit_id,
@@ -182,13 +184,18 @@ export default async function BillingDetailPage({
 
       {billings.map((billing) => {
         const unit = billing.units
-        const details = billing.billing_details ?? []
+        // 利用者は50音順（よみがな未登録は氏名で代用）
+        const details = [...(billing.billing_details ?? [])].sort((a, b) =>
+          (a.children?.name_kana ?? a.children?.name ?? '').localeCompare(b.children?.name_kana ?? b.children?.name ?? '', 'ja'),
+        )
         const totalBilled = details.reduce((s, d) => s + d.billed_amount, 0)
         const totalCopay = details.reduce((s, d) => s + d.copay_amount, 0)
         const errorDetails = details.filter((d) => Array.isArray(d.errors) && d.errors.length > 0)
 
         const billCosts = actualCosts.filter((c) => c.billing_monthly_id === billing.id)
-        const unitExtraCharges = extraChargeRows.filter((r) => r.unit_id === billing.unit_id)
+        const unitExtraCharges = extraChargeRows
+          .filter((r) => r.unit_id === billing.unit_id)
+          .sort((a, b) => a.child_kana.localeCompare(b.child_kana, 'ja'))
         // 児童ごとに集計
         const extraByChild = unitExtraCharges.reduce<Record<string, { name: string; items: { program: string; amount: number }[]; total: number }>>((acc, r) => {
           if (!acc[r.child_id]) acc[r.child_id] = { name: r.child_name, items: [], total: 0 }
