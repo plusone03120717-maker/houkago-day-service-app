@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useChildBillingAutoRecalc } from './use-child-billing-auto-recalc'
 import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Plus, Settings, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
@@ -199,6 +200,12 @@ export function BillingChildMonthlyView({
     const nextYearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     router.replace(`/billing/child/${childId}?month=${nextYearMonth}&unit=${unitId}`, { scroll: false })
   }
+
+  // ── 請求明細への自動反映 ─────────────────────────────────────
+  // この画面で実績を変えたら、この児童の請求明細だけを自動で作り直す
+  const autoRecalc = useChildBillingAutoRecalc({ unitId, yearMonth: effYearMonth, childId, disabled: readOnly })
+  const scheduleRecalc = autoRecalc.schedule
+  const recalcState = autoRecalc.state
 
   // ── Fetch data ──────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -401,6 +408,7 @@ export function BillingChildMonthlyView({
       next.delete(dateStr)
       return next
     })
+    scheduleRecalc()
     return att
   }
 
@@ -476,6 +484,7 @@ export function BillingChildMonthlyView({
       await syncActivityParticipation(item.name, dateStr, newChecked)
     }
     setSaving(null)
+    scheduleRecalc()
   }
 
   // 請求側のチェックを、日々の記録（活動の参加）に反映する。同名の活動プログラムがなければ何もしない
@@ -555,6 +564,7 @@ export function BillingChildMonthlyView({
           setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, [attendanceField]: value || null } : a))
         }
       }
+      scheduleRecalc()
     }
   }
 
@@ -571,6 +581,7 @@ export function BillingChildMonthlyView({
       return
     }
     setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, service_form_override: value } : a))
+    scheduleRecalc()
   }
 
   // ── Toggle transport in daily_attendance ────────────────────
@@ -581,6 +592,7 @@ export function BillingChildMonthlyView({
     const newValue = currentlyOn ? null : '09:00:00'
     await supabase.from('daily_attendance').update({ [field]: newValue }).eq('id', att.id)
     setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, [field]: newValue } : a))
+    scheduleRecalc()
   }
 
   // ── Toggle daytime support in daily_attendance ─────────────
@@ -590,6 +602,7 @@ export function BillingChildMonthlyView({
     const newValue = !att.daytime_support
     await supabase.from('daily_attendance').update({ daytime_support: newValue }).eq('id', att.id)
     setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, daytime_support: newValue } : a))
+    scheduleRecalc()
   }
 
   // ── Toggle daytime transport in daily_attendance ───────────
@@ -601,6 +614,7 @@ export function BillingChildMonthlyView({
     const newValue = (current != null && current > '00:00:00') ? null : '09:00:00'
     await supabase.from('daily_attendance').update({ [field]: newValue }).eq('id', att.id)
     setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, [field]: newValue } : a))
+    scheduleRecalc()
   }
 
   // ── Update daytime support times in daily_attendance ────────
@@ -609,6 +623,7 @@ export function BillingChildMonthlyView({
     if (!att) return
     await supabase.from('daily_attendance').update({ [field]: value || null }).eq('id', att.id)
     setAttendances((prev) => prev.map((a) => a.id === att.id ? { ...a, [field]: value || null } : a))
+    scheduleRecalc()
   }
 
   // ── Delete a day's record (誤登録した実績を未記録に戻す) ────
@@ -653,6 +668,7 @@ export function BillingChildMonthlyView({
     })
     setConfirmDate(null)
     setDeleting(null)
+    scheduleRecalc()
     router.refresh()
   }
 
@@ -816,6 +832,37 @@ export function BillingChildMonthlyView({
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>}
+
+      {/* 請求明細への自動反映の状態（画面のどこを触っていても見えるよう右下に出す） */}
+      {!readOnly && recalcState.status !== 'idle' && (
+        <div
+          role="status"
+          className={`fixed bottom-4 right-4 z-40 max-w-sm rounded-lg border px-3 py-2 text-xs shadow-md ${
+            recalcState.status === 'error'
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : recalcState.status === 'notice'
+                ? 'border-amber-200 bg-amber-50 text-amber-800'
+                : recalcState.status === 'done'
+                  ? 'border-green-200 bg-green-50 text-green-700'
+                  : 'border-gray-200 bg-white text-gray-600'
+          }`}
+        >
+          <div className="flex items-start gap-2">
+            {recalcState.status === 'pending' && <Loader2 className="h-3.5 w-3.5 mt-0.5 animate-spin shrink-0" />}
+            <span>{recalcState.message}</span>
+            {recalcState.status !== 'pending' && (
+              <button
+                type="button"
+                onClick={autoRecalc.dismiss}
+                className="ml-1 shrink-0 text-gray-400 hover:text-gray-600"
+                aria-label="閉じる"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12">
