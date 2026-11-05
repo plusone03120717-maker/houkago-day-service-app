@@ -64,3 +64,70 @@ export async function recalcBillingFromRecords(
   revalidatePath(`/billing/${yearMonth}`)
   return result
 }
+
+/**
+ * 児童別の実績画面で変更したあと、その児童の請求明細だけを自動で作り直す。
+ * 請求データがまだない月と、明細を手入力で直した児童は触らない（skipped で理由を返す）。
+ * yearMonth は YYYYMM。
+ */
+export async function recalcChildBilling(
+  unitId: string,
+  yearMonth: string,
+  childId: string,
+): Promise<RecalcResult> {
+  const empty = { childCount: 0, totalDays: 0, totalUnits: 0, billedAmount: 0, childErrors: [], warnings: [] }
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ...empty, error: 'ログインが必要です' }
+  if (!(await hasMoneyAccess())) return { ...empty, skipped: 'no_access' }
+
+  const result = await recalcUnitMonth(supabase, unitId, yearMonth, { childId })
+
+  // うちが上限管理の児童は、結果票の当事業所の総費用額も作り直した明細にそろえる
+  // （上限管理の画面で保存したときと同じ。そろえないと結果票と国保連の明細書がずれる）
+  if (!result.error && !result.skipped) {
+    await syncSelfUpperLimitTotal(supabase, unitId, yearMonth, childId)
+  }
+
+  revalidatePath('/billing')
+  revalidatePath(`/billing/${yearMonth}`)
+  revalidatePath(`/billing/${yearMonth}/upper-limit`)
+  return result
+}
+
+async function syncSelfUpperLimitTotal(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  unitId: string,
+  yearMonth: string,
+  childId: string,
+) {
+  const { data: record } = await supabase
+    .from('upper_limit_managements')
+    .select('id')
+    .eq('child_id', childId)
+    .eq('year_month', yearMonth)
+    .eq('is_self_managed', true)
+    .maybeSingle()
+  if (!record) return
+
+  const { data: detail } = await supabase
+    .from('billing_details')
+    .select('total_units, unit_price, billing_monthly!inner (unit_id, year_month, units (facilities (facility_number)))')
+    .eq('child_id', childId)
+    .eq('billing_monthly.unit_id', unitId)
+    .eq('billing_monthly.year_month', yearMonth)
+    .maybeSingle()
+  const d = detail as unknown as {
+    total_units: number
+    unit_price: number
+    billing_monthly: { units: { facilities: { facility_number: string | null } | null } | null } | null
+  } | null
+  const facilityNumber = d?.billing_monthly?.units?.facilities?.facility_number ?? ''
+  if (!d || !facilityNumber) return
+
+  await supabase
+    .from('upper_limit_management_offices')
+    .update({ total_cost: Math.floor(d.total_units * Number(d.unit_price)) })
+    .eq('management_id', (record as { id: string }).id)
+    .eq('office_number', facilityNumber)
+}

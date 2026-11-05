@@ -19,6 +19,16 @@ export type RecalcResult = {
   /** 児童名つきのエラー（出力前に直す必要があるもの） */
   childErrors: string[]
   warnings: string[]
+  /** 児童ひとりだけの自動再集計で、作り直さなかった理由 */
+  skipped?: string
+}
+
+export type RecalcOptions = {
+  /**
+   * この児童の明細だけを作り直す（児童別の実績画面で変更したときの自動再集計）。
+   * 請求データがまだない月と、明細を手入力で直した児童は触らない。
+   */
+  childId?: string
 }
 
 /**
@@ -30,7 +40,25 @@ export async function recalcUnitMonth(
   supabase: SupabaseLike,
   unitId: string,
   yearMonth: string,
+  options: RecalcOptions = {},
 ): Promise<RecalcResult> {
+  const onlyChildId = options.childId ?? null
+
+  // 児童ひとりだけのときは、請求データがまだない月は作らない（最初は「出席実績から再集計」で全員分を作る）
+  if (onlyChildId) {
+    const { data: existing } = await supabase
+      .from('billing_monthly')
+      .select('id, status')
+      .eq('unit_id', unitId)
+      .eq('year_month', yearMonth)
+      .maybeSingle()
+    if (!existing) return { ...emptyResult, skipped: 'no_billing' }
+    // 提出済み・確定の月は、出した内容と食い違わないよう自動では書き換えない
+    if (['submitted', 'finalized'].includes((existing as { status: string }).status)) {
+      return { ...emptyResult, skipped: 'locked' }
+    }
+  }
+
   const result = await aggregateUnitMonth(supabase, unitId, yearMonth)
   if (result.fatal) return { ...emptyResult, error: result.fatal }
 
@@ -65,14 +93,24 @@ export async function recalcUnitMonth(
   // 確定チェックを引き継ぐ
   const { data: prevDetails } = await supabase
     .from('billing_details')
-    .select('id, child_id, is_confirmed, total_days')
+    .select('id, child_id, is_confirmed, total_days, recalculated_at')
     .eq('billing_monthly_id', billingMonthlyId)
   const prevByChild = new Map(
-    ((prevDetails ?? []) as Array<{ id: string; child_id: string; is_confirmed: boolean; total_days: number }>)
+    ((prevDetails ?? []) as Array<{ id: string; child_id: string; is_confirmed: boolean; total_days: number; recalculated_at: string | null }>)
       .map((d) => [d.child_id, d]),
   )
 
-  const rows = result.children.map((c) => ({
+  // 手入力で直した明細（recalculated_at が空）は、自動では上書きしない
+  if (onlyChildId) {
+    const prev = prevByChild.get(onlyChildId)
+    if (prev && !prev.recalculated_at) return { ...emptyResult, skipped: 'manual_edit' }
+  }
+
+  const targetChildren = onlyChildId
+    ? result.children.filter((c) => c.childId === onlyChildId)
+    : result.children
+
+  const rows = targetChildren.map((c) => ({
     billing_monthly_id: billingMonthlyId,
     child_id: c.childId,
     certificate_id: c.certificateId,
@@ -100,8 +138,9 @@ export async function recalcUnitMonth(
   // 出席実績が1日もない児童の空行は残しておいても混乱するので削除する
   // （確定済みの行は利用者の判断を尊重して残す）
   const aggregatedIds = new Set(result.children.map((c) => c.childId))
+  const inScope = (d: { child_id: string }) => !onlyChildId || d.child_id === onlyChildId
   const stale = (prevDetails ?? []).filter(
-    (d: { child_id: string; is_confirmed: boolean }) => !aggregatedIds.has(d.child_id) && !d.is_confirmed,
+    (d: { child_id: string; is_confirmed: boolean }) => inScope(d) && !aggregatedIds.has(d.child_id) && !d.is_confirmed,
   )
   if (stale.length > 0) {
     await supabase
@@ -110,19 +149,19 @@ export async function recalcUnitMonth(
       .in('id', stale.map((d: { id: string }) => d.id))
   }
   const staleConfirmed = (prevDetails ?? []).filter(
-    (d: { child_id: string; is_confirmed: boolean }) => !aggregatedIds.has(d.child_id) && d.is_confirmed,
+    (d: { child_id: string; is_confirmed: boolean }) => inScope(d) && !aggregatedIds.has(d.child_id) && d.is_confirmed,
   )
   if (staleConfirmed.length > 0) {
     warnings.push(`出席実績がないのに確定済みの明細が${staleConfirmed.length}件あります（手動で確認してください）`)
   }
 
-  const childErrors = result.children.flatMap((c) => c.errors.map((e) => `${c.childName}: ${e}`))
+  const childErrors = targetChildren.flatMap((c) => c.errors.map((e) => `${c.childName}: ${e}`))
 
   return {
-    childCount: result.children.length,
-    totalDays: result.children.reduce((s, c) => s + c.totalDays, 0),
-    totalUnits: result.children.reduce((s, c) => s + c.totalUnits, 0),
-    billedAmount: result.children.reduce((s, c) => s + c.billedAmount, 0),
+    childCount: targetChildren.length,
+    totalDays: targetChildren.reduce((s, c) => s + c.totalDays, 0),
+    totalUnits: targetChildren.reduce((s, c) => s + c.totalUnits, 0),
+    billedAmount: targetChildren.reduce((s, c) => s + c.billedAmount, 0),
     childErrors,
     warnings,
   }
