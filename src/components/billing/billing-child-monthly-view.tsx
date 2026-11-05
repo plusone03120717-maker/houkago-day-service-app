@@ -738,6 +738,8 @@ export function BillingChildMonthlyView({
     }
     setNewItemName('')
     setShowAddItem(false)
+    // 「出席時（自動）」などの項目は、足すだけで請求額が変わる
+    if (data && (data as ServiceItem).trigger_field !== 'manual') scheduleRecalc()
   }
 
   // ── Month label ─────────────────────────────────────────────
