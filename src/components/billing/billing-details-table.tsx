@@ -19,6 +19,13 @@ type Detail = {
 
 export function BillingDetailsTable({ initial }: { initial: Detail[] }) {
   const [details, setDetails] = useState<Detail[]>(initial)
+  // 再集計・上限管理の保存などでサーバーから新しい明細が届いたら、表もそれに入れ替える
+  // （入れ替えないと、ページを読み込み直すまで古い明細＝加算が付く前の額が出続ける）
+  const [prevInitial, setPrevInitial] = useState(initial)
+  if (initial !== prevInitial) {
+    setPrevInitial(initial)
+    setDetails(initial)
+  }
 
   const totalDays = details.reduce((s, d) => s + d.total_days, 0)
   const totalUnits = details.reduce((s, d) => s + d.total_units, 0)
