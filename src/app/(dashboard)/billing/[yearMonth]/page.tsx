@@ -10,6 +10,7 @@ import { AiCheckButton } from '@/components/billing/ai-check-button'
 import { RecalcBillingButton } from '@/components/billing/recalc-billing-button'
 import { ActualCostForm } from '@/components/billing/actual-cost-form'
 import { BillingDetailsTable } from '@/components/billing/billing-details-table'
+import { RefreshOnFocus } from '@/components/refresh-on-focus'
 import { isDefaultParticipationChild, participatedNamesByAttendance, type ActivityParticipationRow } from '@/lib/billing/default-activities'
 import { requireMoneyAccess } from '@/lib/require-admin'
 
@@ -172,6 +173,7 @@ export default async function BillingDetailPage({
 
   return (
     <div className="space-y-5">
+      <RefreshOnFocus />
       <div className="flex items-center gap-3">
         <Link href={`/billing?year=${year}&month=${parseInt(month)}`} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
           <ArrowLeft className="h-4 w-4" />

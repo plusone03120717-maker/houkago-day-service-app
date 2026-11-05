@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowLeft, ChevronLeft, ChevronRight, Printer } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Printer, XCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { UpperLimitForm, type UpperLimitFormChild } from '@/components/billing/upper-limit-form'
 import { KokuhorenExportButton } from '@/components/billing/kokuhoren-export-button'
@@ -9,6 +9,64 @@ import { resolveBillingScope } from '@/lib/kokuhoren/scope'
 import { loadSelfCostBases, resolveUpperLimitTargets } from '@/lib/kokuhoren/upper-limit-targets'
 import { requireMoneyAccess } from '@/lib/require-admin'
 import { loadFaxDrafts } from '@/lib/billing/fax-drafts'
+import { loadFaxSendContext, type FaxSendHistory } from '@/lib/fax/context'
+import { RefreshOnFocus } from '@/components/refresh-on-focus'
+
+/** jFax で送った記録（同じ事業所へ何度か送っていれば新しいほうだけ） */
+function latestByOffice(history: FaxSendHistory[], childIds: string[]): FaxSendHistory[] {
+  const ids = new Set(childIds)
+  const seen = new Set<string>()
+  const out: FaxSendHistory[] = []
+  // history は新しい順
+  for (const h of history) {
+    if (!h.childIds.some((id) => ids.has(id))) continue
+    const key = h.faxNumber || h.officeName
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(h)
+  }
+  return out
+}
+
+function sentAtLabel(iso: string): string {
+  const d = new Date(iso)
+  const p = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d)
+  const v = (t: string) => p.find((x) => x.type === t)?.value ?? ''
+  return `${v('month')}/${v('day')} ${v('hour')}:${v('minute')}`
+}
+
+/** 「jFax で送信済み」の印。送っていなければ何も出さない */
+function FaxSentMarks({ history, childIds }: { history: FaxSendHistory[]; childIds: string[] }) {
+  const logs = latestByOffice(history, childIds)
+  if (logs.length === 0) return null
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      {logs.map((h) =>
+        h.status === 'sent' ? (
+          <span
+            key={h.faxNumber || h.officeName}
+            className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
+            title={`${h.sentByName} が送信（届いたかは You First の Gmail で確認）`}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            jFax 送信済み{h.officeName ? `（${h.officeName}）` : ''} {sentAtLabel(h.sentAt)}
+          </span>
+        ) : (
+          <span
+            key={h.faxNumber || h.officeName}
+            className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-medium text-red-700"
+            title={`${h.sentByName} が送信しようとして失敗`}
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            jFax 送信失敗{h.officeName ? `（${h.officeName}）` : ''} {sentAtLabel(h.sentAt)}
+          </span>
+        ),
+      )}
+    </span>
+  )
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -116,12 +174,14 @@ export default async function UpperLimitPage({
   )
 
   const childIds = [...new Set(children.map((c) => c.childId).filter(Boolean) as string[])]
-  const [saved, previous, targets, costBases, faxDrafts] = await Promise.all([
+  const [saved, previous, targets, costBases, faxDrafts, copayListFax, resultFax] = await Promise.all([
     loadUpperLimits(supabase, yearMonth, childIds),
     loadUpperLimits(supabase, yearMonth, childIds, true),
     resolveUpperLimitTargets(supabase, yearMonth, childIds, facility),
     loadSelfCostBases(supabase, scope.billingMonthlyIds, childIds),
     loadFaxDrafts(supabase, yearMonth, childIds),
+    loadFaxSendContext(supabase, yearMonth, 'copay_list'),
+    loadFaxSendContext(supabase, yearMonth, 'result'),
   ])
 
   const selfForms: UpperLimitFormChild[] = []
@@ -192,6 +252,7 @@ export default async function UpperLimitPage({
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-4xl">
+      <RefreshOnFocus />
       <div className="space-y-2">
         {header}
         <p className="text-sm text-gray-500">
@@ -226,6 +287,8 @@ export default async function UpperLimitPage({
                 {g.managerNumber && <span className="ml-2 text-xs font-normal text-gray-500">{g.managerNumber}</span>}
                 <span className="ml-2 text-xs font-normal text-gray-500">{g.children.length}名</span>
               </p>
+              <div className="flex items-center gap-2 flex-wrap">
+              <FaxSentMarks history={copayListFax.history} childIds={g.children.map((c) => c.childId)} />
               <Link
                 href={`/print/copay-list/${yearMonth}?billing=${targetId}&children=${g.children.map((c) => c.childId).join(',')}`}
                 target="_blank"
@@ -234,15 +297,20 @@ export default async function UpperLimitPage({
                 <Printer className="h-3.5 w-3.5" />
                 上限管理一覧表（PDF）
               </Link>
+              </div>
             </div>
             {g.children.map((child) => (
-              <UpperLimitForm
-                key={child.childId}
-                child={child}
-                yearMonth={yearMonth}
-                facilityNumber={scope.facilityNumber}
-                facilityName={facility.name}
-              />
+              <div key={child.childId} className="space-y-1.5">
+                <UpperLimitForm
+                  child={child}
+                  yearMonth={yearMonth}
+                  facilityNumber={scope.facilityNumber}
+                  facilityName={facility.name}
+                />
+                <div className="ml-1">
+                  <FaxSentMarks history={copayListFax.history} childIds={[child.childId]} />
+                </div>
+              </div>
             ))}
           </div>
         ))}
@@ -281,14 +349,17 @@ export default async function UpperLimitPage({
               facilityName={facility.name}
             />
             {child.saved?.isSelfManaged && (
-              <Link
-                href={`/print/upper-limit/${yearMonth}?billing=${targetId}&children=${child.childId}`}
-                target="_blank"
-                className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:underline ml-1"
-              >
-                <Printer className="h-3.5 w-3.5" />
-                {child.childName}さんの上限管理結果票（PDF）
-              </Link>
+              <div className="flex items-center gap-2 flex-wrap ml-1">
+                <Link
+                  href={`/print/upper-limit/${yearMonth}?billing=${targetId}&children=${child.childId}`}
+                  target="_blank"
+                  className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:underline"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  {child.childName}さんの上限管理結果票（PDF）
+                </Link>
+                <FaxSentMarks history={resultFax.history} childIds={[child.childId]} />
+              </div>
             )}
           </div>
         ))}
