@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { getSessionClaims } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
@@ -31,8 +32,9 @@ export type StaffAccess = {
  * ログイン中の職員の役職を users テーブルから読む。
  * 施設長かどうかは JWT に載らず、user_metadata は本人が書き換えられるため、
  * お金まわりの判定には必ずこちらを使う。未ログインなら null。
+ * レイアウトとページの両方から呼ばれるので、1回の表示につき DB を読むのは1回だけにする（React の cache）。
  */
-export async function getStaffAccess(): Promise<StaffAccess | null> {
+export const getStaffAccess = cache(async (): Promise<StaffAccess | null> => {
   const claims = await getSessionClaims()
   if (!claims) return null
 
@@ -53,7 +55,7 @@ export async function getStaffAccess(): Promise<StaffAccess | null> {
     canManageMoney: canManageMoney(role, jobTitles),
     isFacilityManager: isFacilityManager(role, jobTitles),
   }
-}
+})
 
 /**
  * お金まわりのページ（国保連請求・上限管理・保護者請求・請求の設定、

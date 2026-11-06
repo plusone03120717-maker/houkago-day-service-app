@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getBrowserUserId } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 
@@ -38,7 +38,7 @@ export function FacilityEventForm({ facilityId, defaultYear, defaultMonth }: Pro
     if (!title.trim() || !eventDate) return
     setSaving(true)
 
-    const { data: userData } = await supabase.auth.getUser()
+    const userId = await getBrowserUserId(supabase)
     await supabase.from('facility_events').insert({
       facility_id: facilityId || null,
       event_date: eventDate,
@@ -46,7 +46,7 @@ export function FacilityEventForm({ facilityId, defaultYear, defaultMonth }: Pro
       title: title.trim(),
       description: description.trim() || null,
       affects_reservation: eventType === 'closed' ? true : affectsReservation,
-      created_by: userData.user?.id ?? null,
+      created_by: userId,
     })
 
     setSaving(false)

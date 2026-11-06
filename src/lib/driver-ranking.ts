@@ -76,25 +76,39 @@ export async function fetchDriverRanking(
   date: string
 ): Promise<DriverRanking> {
   const cols = Object.values(SLOT_COLUMNS)
-  const rows: Record<string, string | null>[] = []
-  // 1回の取得は最大1000件までなので、足りなくなるまで続けて読む
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase
+  const PAGE = 1000
+  const page = (from: number, withCount: boolean) =>
+    supabase
       .from('daily_attendance')
-      .select(`child_id, date, ${cols.join(', ')}`)
+      .select(`id, child_id, date, ${cols.join(', ')}`, withCount ? { count: 'exact' } : undefined)
       .gte('date', addDays(date, -LOOKBACK_DAYS))
       .lt('date', date)
       .neq('status', 'absent')
       .or(cols.map((c) => `${c}.not.is.null`).join(','))
       .order('date')
-      .range(from, from + 999)
-    if (error) {
-      // 並び順の補助なので、取れなくても画面は通常の名前順で動かす
-      console.error('[driver-ranking] 送迎記録の取得に失敗しました', error)
-      break
+      .order('id')
+      .range(from, from + PAGE - 1)
+
+  // 1回の取得は最大1000件まで。1ページ目で全件数を知り、残りのページは
+  // 1枚ずつ待たずに同時に読む（120日分で数ページになり、順番に読むと往復が重なるため）
+  const rows: Record<string, string | null>[] = []
+  const first = await page(0, true)
+  if (first.error) {
+    // 並び順の補助なので、取れなくても画面は通常の名前順で動かす
+    console.error('[driver-ranking] 送迎記録の取得に失敗しました', first.error)
+  } else {
+    rows.push(...((first.data ?? []) as unknown as Record<string, string | null>[]))
+    const total = first.count ?? rows.length
+    const rest = await Promise.all(
+      Array.from({ length: Math.max(0, Math.ceil(total / PAGE) - 1) }, (_, i) => page((i + 1) * PAGE, false))
+    )
+    for (const r of rest) {
+      if (r.error) {
+        console.error('[driver-ranking] 送迎記録の取得に失敗しました', r.error)
+        break
+      }
+      rows.push(...((r.data ?? []) as unknown as Record<string, string | null>[]))
     }
-    rows.push(...((data ?? []) as unknown as Record<string, string | null>[]))
-    if (!data || data.length < 1000) break
   }
 
   const bySlot = new Map<string, Tally>()

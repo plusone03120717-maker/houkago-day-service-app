@@ -4,7 +4,7 @@ import { getTodayJST } from '@/lib/utils'
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getBrowserUserId } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Save } from 'lucide-react'
 import { AutoTextarea } from '@/components/ui/auto-textarea'
@@ -60,7 +60,7 @@ export function IncidentForm({ children, facilityId }: Props) {
     if (!description.trim()) return
     setSaving(true)
 
-    const { data: userData } = await supabase.auth.getUser()
+    const userId = await getBrowserUserId(supabase)
     await supabase.from('incident_reports').insert({
       facility_id: facilityId || null,
       child_id: childId || null,
@@ -77,7 +77,7 @@ export function IncidentForm({ children, facilityId }: Props) {
       reported_to_municipality: reportedToMunicipality,
       follow_up_required: followUpRequired,
       status: 'open',
-      created_by: userData.user?.id ?? null,
+      created_by: userId,
     })
 
     setSaving(false)

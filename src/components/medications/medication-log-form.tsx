@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getBrowserUserId } from '@/lib/supabase/client'
 
 type Medication = {
   id: string
@@ -54,7 +54,7 @@ export function MedicationLogForm({
 
   const handleRecord = async (medicationId: string, status: string) => {
     setSaving(medicationId)
-    const { data: userData } = await supabase.auth.getUser()
+    const userId = await getBrowserUserId(supabase)
     const existingLog = logMap.get(medicationId)
 
     if (existingLog) {
@@ -73,7 +73,7 @@ export function MedicationLogForm({
         medication_id: medicationId,
         log_date: today,
         status,
-        staff_id: userData.user?.id ?? null,
+        staff_id: userId,
         administered_at: status === 'given' ? new Date().toISOString() : null,
       })
     }
