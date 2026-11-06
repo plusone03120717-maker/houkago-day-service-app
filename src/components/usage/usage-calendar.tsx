@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getBrowserUserId } from '@/lib/supabase/client'
 import { confirmReservation, confirmAllReservations } from '@/app/actions/reservation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -251,13 +251,13 @@ export function UsageCalendar({
     // requested_by を入れて「手動で追加した予約」と分かるようにする。
     // 出席管理は計画のない自動生成予約（requested_by=null）を除外するため、
     // これがないと追加しても出席管理に出てこない。
-    const { data: { user } } = await supabase.auth.getUser()
+    const userId = await getBrowserUserId(supabase)
     const { error } = await supabase.from('usage_reservations').insert({
       child_id: addChildId,
       unit_id: addUnitId,
       date: selectedDate,
       status: addStatus,
-      requested_by: user?.id ?? null,
+      requested_by: userId,
       requested_at: new Date().toISOString(),
     })
     if (error) {

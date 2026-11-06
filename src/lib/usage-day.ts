@@ -1,4 +1,4 @@
-import type { createClient } from '@/lib/supabase/client'
+import { getBrowserUserId, type createClient } from '@/lib/supabase/client'
 
 type Client = ReturnType<typeof createClient>
 
@@ -80,14 +80,14 @@ export async function markUsageDayAbsent(
       .eq('id', existing.id)
     if (error) return { error: error.message }
   } else {
-    const { data: { user } } = await supabase.auth.getUser()
+    const userId = await getBrowserUserId(supabase)
     const { error } = await supabase.from('daily_attendance').insert({
       child_id: childId,
       unit_id: unitId,
       date,
       status: 'absent',
       pickup_type: 'none',
-      created_by: user?.id ?? null,
+      created_by: userId,
     })
     if (error) return { error: error.message }
   }

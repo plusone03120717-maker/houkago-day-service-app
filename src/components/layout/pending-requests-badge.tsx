@@ -7,22 +7,29 @@ import { NotificationBell } from '@/components/layout/notification-bell'
 // スタッフ申請（残業・有給・中抜け）は給与まわりなので、システム管理者にだけ数える。
 export async function PendingRequestsBadge({ role, canManageMoney }: { role: string; canManageMoney: boolean }) {
   const supabase = await createClient()
+  // 数えても表示しない分は問い合わせない（DB への往復を減らす）。
+  // スタッフ申請はシステム管理者だけ、サポート問い合わせは管理者だけに出す。
+  const zero = Promise.resolve({ count: 0 })
+  const countNew = (table: 'overtime_requests' | 'paid_leave_usages' | 'support_inquiries') =>
+    supabase.from(table).select('id', { count: 'exact', head: true }).eq('is_new', true).then((r) => r)
 
   const [
     { count: overtimeCount },
     { count: leaveCount },
     { count: breakCount },
-    { count: parentContactCount },
-    { data: recentContactsRaw },
+    { count: parentContactCount, data: recentContactsRaw },
     { count: registrationCountRaw },
+    { count: supportCountRaw },
   ] = await Promise.all([
-    supabase.from('overtime_requests').select('id', { count: 'exact', head: true }).eq('is_new', true),
-    supabase.from('paid_leave_usages').select('id', { count: 'exact', head: true }).eq('is_new', true),
-    supabase.from('time_records').select('id', { count: 'exact', head: true }).eq('type', 'break_start').eq('is_new', true),
-    supabase.from('parent_attendance_contacts').select('id', { count: 'exact', head: true }).eq('is_new', true),
+    canManageMoney ? countNew('overtime_requests') : zero,
+    canManageMoney ? countNew('paid_leave_usages') : zero,
+    canManageMoney
+      ? supabase.from('time_records').select('id', { count: 'exact', head: true }).eq('type', 'break_start').eq('is_new', true).then((r) => r)
+      : zero,
+    // 未確認の件数と新しい5件を1回で取る（count は limit をかける前の全件数）
     supabase
       .from('parent_attendance_contacts')
-      .select('id, date, status, children (name)')
+      .select('id, date, status, children (name)', { count: 'exact' })
       .eq('is_new', true)
       .order('reported_at', { ascending: false })
       .limit(5),
@@ -30,16 +37,9 @@ export async function PendingRequestsBadge({ role, canManageMoney }: { role: str
       .from('guardian_registration_requests')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'pending'),
+    // サポート問い合わせは管理者だけの対応待ち行列なので、管理者にだけ出す
+    role === 'admin' ? countNew('support_inquiries') : zero,
   ])
-
-  // サポート問い合わせは管理者だけの対応待ち行列なので、管理者にだけ出す
-  const { count: supportCountRaw } =
-    role === 'admin'
-      ? await supabase
-          .from('support_inquiries')
-          .select('id', { count: 'exact', head: true })
-          .eq('is_new', true)
-      : { count: 0 }
 
   const staffCount = canManageMoney ? (overtimeCount ?? 0) + (leaveCount ?? 0) + (breakCount ?? 0) : 0
   const parentCount = parentContactCount ?? 0

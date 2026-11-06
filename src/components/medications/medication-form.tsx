@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getBrowserUserId } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 
@@ -31,7 +31,7 @@ export function MedicationForm({ childId }: { childId: string }) {
     if (!name.trim() || !dosage.trim()) return
     setSaving(true)
 
-    const { data: userData } = await supabase.auth.getUser()
+    const userId = await getBrowserUserId(supabase)
     await supabase.from('child_medications').insert({
       child_id: childId,
       medication_name: name.trim(),
@@ -40,7 +40,7 @@ export function MedicationForm({ childId }: { childId: string }) {
       instructions: instructions.trim() || null,
       parent_consent_date: consentDate || null,
       is_active: true,
-      created_by: userData.user?.id ?? null,
+      created_by: userId,
     })
 
     setSaving(false)

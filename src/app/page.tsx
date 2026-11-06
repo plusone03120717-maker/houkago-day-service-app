@@ -1,11 +1,11 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getSessionUserId } from '@/lib/auth'
 
 export default async function RootPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Auth サーバーへ聞きに行かず、JWT を手元で確かめるだけにする（proxy.ts と同じ）
+  const userId = await getSessionUserId()
 
-  if (!user) {
+  if (!userId) {
     redirect('/login')
   }
 
