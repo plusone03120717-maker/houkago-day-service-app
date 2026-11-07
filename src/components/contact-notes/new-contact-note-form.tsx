@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Sparkles, Send, Save, ArrowRight } from 'lucide-react'
-import { PhotoManager } from '@/components/contact-notes/photo-manager'
+import { Sparkles, Send, Save } from 'lucide-react'
 import { AutoTextarea } from '@/components/ui/auto-textarea'
 
 type AttendedChild = {
@@ -32,7 +31,6 @@ export function NewContactNoteForm({ date, attended, defaultChildId, staffId }: 
   const [content, setContent] = useState('')
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [createdNoteId, setCreatedNoteId] = useState<string | null>(null)
 
   const selectedChild = attended.find((a) => a.child_id === selectedChildId)
 
@@ -66,14 +64,7 @@ export function NewContactNoteForm({ date, attended, defaultChildId, staffId }: 
 
     setSaving(false)
     if (data) {
-      // 保存後は写真添付ステップを表示（リダイレクトしない）
-      setCreatedNoteId(data.id)
-    }
-  }
-
-  const handleDone = () => {
-    if (createdNoteId) {
-      startTransition(() => router.push(`/contact-notes/${createdNoteId}`))
+      startTransition(() => router.push(`/contact-notes/${data.id}`))
     }
   }
 
@@ -81,26 +72,6 @@ export function NewContactNoteForm({ date, attended, defaultChildId, staffId }: 
     return (
       <div className="text-center py-12 text-gray-400 text-sm">
         この日の出席記録がありません
-      </div>
-    )
-  }
-
-  // 保存後：写真添付ステップ
-  if (createdNoteId) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-green-700 font-medium bg-green-50 border border-green-200 px-3 py-2 rounded-lg">
-            連絡帳を保存しました。写真を添付できます（任意）
-          </p>
-        </div>
-
-        <PhotoManager noteId={createdNoteId} />
-
-        <Button onClick={handleDone} className="w-full" size="sm">
-          <ArrowRight className="h-4 w-4" />
-          完了して連絡帳を開く
-        </Button>
       </div>
     )
   }
