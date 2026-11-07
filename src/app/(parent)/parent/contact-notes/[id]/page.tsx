@@ -2,8 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getSessionUserId } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
-import { ChevronLeft, Camera } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatDate } from '@/lib/utils'
 import { ContactNoteCommentForm } from '@/components/parent/contact-note-comment-form'
@@ -19,12 +18,6 @@ type ContactNote = {
   children: { name: string } | null
   units: { name: string } | null
   users: { name: string } | null
-}
-
-type PhotoMeta = {
-  id: string
-  storage_path: string
-  file_name: string
 }
 
 export default async function ContactNoteDetailPage({
@@ -51,26 +44,6 @@ export default async function ContactNoteDetailPage({
 
   if (!noteRaw) notFound()
   const note = noteRaw as unknown as ContactNote
-
-  // Storage 写真取得 + 署名付きURL生成（1時間有効）
-  const { data: photosRaw } = await supabase
-    .from('contact_note_photos')
-    .select('id, storage_path, file_name')
-    .eq('note_id', id)
-    .order('created_at', { ascending: true })
-  const photos = (photosRaw ?? []) as unknown as PhotoMeta[]
-
-  const signedUrlResults = photos.length > 0
-    ? await supabase.storage
-        .from('contact-photos')
-        .createSignedUrls(photos.map((p) => p.storage_path), 3600)
-    : { data: [] }
-
-  const photoUrls = photos.map((p, i) => ({
-    id: p.id,
-    url: signedUrlResults.data?.[i]?.signedUrl ?? null,
-    alt: p.file_name,
-  })).filter((p) => p.url !== null) as { id: string; url: string; alt: string }[]
 
   return (
     <div className="space-y-4 pb-20 sm:pb-5">
@@ -102,29 +75,6 @@ export default async function ContactNoteDetailPage({
           <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{note.content}</p>
         </CardContent>
       </Card>
-
-      {/* 添付写真（Supabase Storage） */}
-      {photoUrls.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
-            <Camera className="h-4 w-4 text-indigo-500" />
-            今日の活動写真 ({photoUrls.length}枚)
-          </h2>
-          <div className="grid grid-cols-2 gap-2">
-            {photoUrls.map((photo) => (
-              <div key={photo.id} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
-                <Image
-                  src={photo.url}
-                  alt={photo.alt}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 640px) 50vw, 33vw"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* 保護者コメント */}
       <div>
