@@ -8,6 +8,7 @@ import {
 } from '@/lib/kokuhoren/service-record'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
 import { daytimeOnlyWarnings, findDaytimeOnlyChildren } from '@/lib/kokuhoren/daytime-only'
+import { findMultiUnitChildren, multiUnitErrors } from '@/lib/kokuhoren/multi-unit'
 import { hasMoneyAccess } from '@/lib/require-admin'
 
 // サービス提供実績記録票CSV（インタフェース仕様準拠: K611）を生成する。
@@ -50,6 +51,12 @@ export async function GET(request: NextRequest) {
   const daytimeOnly = await findDaytimeOnlyChildren(supabase, scope)
   const warnings: string[] = daytimeOnlyWarnings(daytimeOnly)
   const children: ServiceRecordChild[] = []
+
+  // 同じ児童が2つ以上の事業に記録されていると、実績記録票の基本情報が2つできる
+  const multiUnit = await findMultiUnitChildren(supabase, scope, new Set(daytimeOnly.keys()))
+  if (multiUnit.length > 0) {
+    return NextResponse.json({ errors: multiUnitErrors(multiUnit), warnings }, { status: 422 })
+  }
 
   for (const unitId of scope.unitIds) {
     const result = await aggregateUnitMonth(supabase, unitId, yearMonth)
