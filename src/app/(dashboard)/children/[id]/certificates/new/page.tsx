@@ -14,7 +14,7 @@ export default async function NewCertificatePage({
 
   const { data: child } = await supabase
     .from('children')
-    .select('id, name')
+    .select('id, name, service_type')
     .eq('id', id)
     .single()
 
@@ -32,7 +32,11 @@ export default async function NewCertificatePage({
         </div>
       </div>
 
-      <CertificateForm childId={id} />
+      {/* 児発の子は、サービス種別と決定サービスコード（611000）を児発で始める */}
+      <CertificateForm
+        childId={id}
+        initial={child.service_type === 'development_support' ? { service_type: 'development_support' } : undefined}
+      />
     </div>
   )
 }
