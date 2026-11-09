@@ -14,19 +14,35 @@ const KINDS = {
   billing: {
     endpoint: '/api/billing/export-kokuhoren',
     label: '国保連取込用CSV（仕様準拠）',
+    fileTitle: '国保連取込用',
     fallbackFileName: 'K112.CSV',
   },
   service_record: {
     endpoint: '/api/billing/export-service-record',
     label: 'サービス提供実績記録票CSV（仕様準拠）',
+    fileTitle: '実績記録票',
     fallbackFileName: 'K611.CSV',
   },
   upper_limit: {
     endpoint: '/api/billing/export-upper-limit',
     label: '上限額管理結果票CSV（仕様準拠）',
+    fileTitle: '上限管理結果票',
     fallbackFileName: 'K411.CSV',
   },
 } as const
+
+/**
+ * 保存するファイル名に、どの帳票か・何月分かを日本語で付ける。
+ * 例: K1122610.CSV → 国保連取込用_2026年10月分_K1122610.CSV
+ * 取込送信ソフトはファイルの中身（1行目のデータ種別）で帳票を見分けるので、
+ * 元の名前（K1122610）も残しておく。
+ */
+export function friendlyFileName(serverFileName: string, fileTitle: string): string {
+  const m = serverFileName.match(/^(K\d{3})(\d{2})(\d{2})\.CSV$/i)
+  if (!m) return `${fileTitle}_${serverFileName}`
+  const [, , yy, mm] = m
+  return `${fileTitle}_20${yy}年${Number(mm)}月分_${serverFileName}`
+}
 
 export function KokuhorenExportButton({ billingMonthlyId, kind = 'billing' }: Props) {
   const config = KINDS[kind]
@@ -59,7 +75,7 @@ export function KokuhorenExportButton({ billingMonthlyId, kind = 'billing' }: Pr
       a.href = URL.createObjectURL(blob)
       const cd = res.headers.get('Content-Disposition') ?? ''
       const match = cd.match(/filename="(.+)"/)
-      a.download = match?.[1] ?? config.fallbackFileName
+      a.download = friendlyFileName(match?.[1] ?? config.fallbackFileName, config.fileTitle)
       a.click()
       URL.revokeObjectURL(a.href)
     } finally {
