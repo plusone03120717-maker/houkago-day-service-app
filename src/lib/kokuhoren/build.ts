@@ -121,6 +121,22 @@ export function computeKokuhorenBilling(
     }
     if (!/^[0-9A-Z]{6}$/.test(c.decisionServiceCode)) {
       errors.push(`${label}: 決定サービスコードが6桁の英数字ではありません: 「${c.decisionServiceCode}」（受給者証編集画面で入力）`)
+    } else {
+      // 決定サービスコードの先頭2桁（61=児発・63=放デイ）が、実際に請求するサービスと合わないと、
+      // 国保連で「当該サービスの報酬に該当する事業所との契約情報が存在していません（EE26）」になる
+      const usedTypes = new Set(
+        [c.serviceCode, ...(c.breakdown ?? []).map((l) => l.code)]
+          .filter((code) => /^\d{2}/.test(code))
+          .map((code) => code.slice(0, 2)),
+      )
+      const decisionType = c.decisionServiceCode.slice(0, 2)
+      if (usedTypes.size > 0 && !usedTypes.has(decisionType)) {
+        const typeName = (t: string) => (t === '61' ? '児発' : t === '63' ? '放デイ' : t)
+        const used = [...usedTypes].map(typeName).join('・')
+        errors.push(
+          `${label}: ${used}の利用なのに、決定サービスコードが${typeName(decisionType)}の「${c.decisionServiceCode}」です（受給者証編集画面で、児発は611000・放デイは631000などに直してください）`,
+        )
+      }
     }
     if (c.totalDays <= 0) {
       errors.push(`${label}: 利用日数が0日です`)

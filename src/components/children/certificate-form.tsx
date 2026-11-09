@@ -32,6 +32,13 @@ interface Props {
   }
 }
 
+/** サービス種別ごとの基本の決定サービスコード（児発 611000 ／ 放デイ 631000） */
+const DEFAULT_DECISION_CODE: Record<string, string> = {
+  development_support: '611000',
+  afterschool: '631000',
+}
+const defaultDecisionCode = (serviceType: string) => DEFAULT_DECISION_CODE[serviceType] ?? '631000'
+
 export function CertificateForm({ childId, initial }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -49,7 +56,7 @@ export function CertificateForm({ childId, initial }: Props) {
     copay_category: initial?.copay_category ?? '',
     municipality: initial?.municipality ?? '',
     upper_limit_manager: initial?.upper_limit_manager ?? '',
-    decision_service_code: initial?.decision_service_code ?? '631000',
+    decision_service_code: initial?.decision_service_code ?? defaultDecisionCode(initial?.service_type ?? 'afterschool'),
     contract_amount: initial?.contract_amount != null ? String(initial.contract_amount) : '',
     contract_start_date: initial?.contract_start_date ?? '',
     contract_end_date: initial?.contract_end_date ?? '',
@@ -83,7 +90,7 @@ export function CertificateForm({ childId, initial }: Props) {
       copay_category: form.copay_category || null,
       municipality: form.municipality || null,
       upper_limit_manager: form.upper_limit_manager || null,
-      decision_service_code: form.decision_service_code || '631000',
+      decision_service_code: form.decision_service_code || defaultDecisionCode(form.service_type),
       contract_amount: form.contract_amount ? parseInt(form.contract_amount) : null,
       contract_start_date: form.contract_start_date || null,
       contract_end_date: form.contract_end_date || null,
@@ -127,7 +134,18 @@ export function CertificateForm({ childId, initial }: Props) {
           <label className="text-xs font-medium text-gray-700 mb-1 block">サービス種別</label>
           <select
             value={form.service_type}
-            onChange={set('service_type')}
+            onChange={(e) => {
+              const next = e.target.value
+              setForm((prev) => ({
+                ...prev,
+                service_type: next,
+                // 決定サービスコードが空か、前の種別の基本の値のままなら、新しい種別の基本の値に合わせる
+                decision_service_code:
+                  !prev.decision_service_code || prev.decision_service_code === defaultDecisionCode(prev.service_type)
+                    ? defaultDecisionCode(next)
+                    : prev.decision_service_code,
+              }))
+            }}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
           >
             <option value="afterschool">放課後等デイサービス</option>
@@ -275,10 +293,10 @@ export function CertificateForm({ childId, initial }: Props) {
             <Input
               value={form.decision_service_code}
               onChange={set('decision_service_code')}
-              placeholder="631000"
+              placeholder={defaultDecisionCode(form.service_type)}
               maxLength={6}
             />
-            <p className="text-xs text-gray-400 mt-1">631000=放デイ基本決定 / 632000=重心 / 633000〜=医ケア児</p>
+            <p className="text-xs text-gray-400 mt-1">611000=児発基本決定 / 631000=放デイ基本決定 / 632000=重心 / 633000〜=医ケア児。サービス種別と合わないと、国保連で「契約情報が存在していません（EE26）」になります</p>
           </div>
           <div>
             <label className="text-xs font-medium text-gray-700 mb-1 block">契約支給量（日数）</label>
