@@ -11,6 +11,7 @@ import {
 } from '@/components/documents/service-record-document'
 import { aggregateUnitMonth } from '@/lib/billing/aggregate'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
+import { daytimeOnlyWarnings, findDaytimeOnlyChildren } from '@/lib/kokuhoren/daytime-only'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,7 +60,9 @@ export default async function ServiceRecordPrintPage({
   const monthStart = `${year}-${month}-01`
   const monthEnd = `${year}-${month}-${String(monthEndDay).padStart(2, '0')}`
 
-  const warnings: string[] = []
+  // 日中一時支援だけの児童は市町村の事業なので、実績記録票（国保連）に入れない
+  const daytimeOnly = await findDaytimeOnlyChildren(supabase, scope)
+  const warnings: string[] = daytimeOnlyWarnings(daytimeOnly)
   const documents: Omit<ServiceRecordDocumentData, 'pageNo' | 'pageCount'>[] = []
   const childIds: string[] = []
   // 対象者の選択肢（実績のある児童全員）
@@ -74,6 +77,7 @@ export default async function ServiceRecordPrintPage({
       : 'afterschool'
     for (const c of result.children) {
       if (c.days.length === 0) continue
+      if (daytimeOnly.has(c.childId)) continue
       optionById.set(c.childId, { id: c.childId, name: c.childName })
       if (filtered && !selectedIds.includes(c.childId)) continue
       childIds.push(c.childId)

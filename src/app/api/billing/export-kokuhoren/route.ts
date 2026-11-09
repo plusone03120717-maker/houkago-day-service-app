@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { buildKokuhorenCsv } from '@/lib/kokuhoren/build'
 import { loadBillingChildren } from '@/lib/kokuhoren/load'
+import { daytimeOnlyWarnings, findDaytimeOnlyChildren } from '@/lib/kokuhoren/daytime-only'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
 import { hasMoneyAccess } from '@/lib/require-admin'
 
@@ -26,9 +27,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ errors: [scope.error], warnings: [] }, { status: 422 })
   }
 
-  const childrenInput = await loadBillingChildren(supabase, scope)
+  // 日中一時支援だけの児童は loadBillingChildren の中で外している。警告で知らせる
+  const [childrenInput, daytimeOnly] = await Promise.all([
+    loadBillingChildren(supabase, scope),
+    findDaytimeOnlyChildren(supabase, scope),
+  ])
 
-  const result = buildKokuhorenCsv(
+  const built = buildKokuhorenCsv(
     {
       facilityNumber: scope.facilityNumber,
       regionCode: scope.regionCode,
@@ -37,6 +42,7 @@ export async function GET(request: NextRequest) {
     scope.yearMonth,
     childrenInput,
   )
+  const result = { ...built, warnings: [...daytimeOnlyWarnings(daytimeOnly), ...built.warnings] }
 
   if (!result.bytes) {
     return NextResponse.json({ errors: result.errors, warnings: result.warnings }, { status: 422 })
