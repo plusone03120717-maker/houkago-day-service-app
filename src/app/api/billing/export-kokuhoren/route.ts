@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { buildKokuhorenCsv } from '@/lib/kokuhoren/build'
 import { loadBillingChildren } from '@/lib/kokuhoren/load'
 import { daytimeOnlyWarnings, findDaytimeOnlyChildren } from '@/lib/kokuhoren/daytime-only'
+import { findMultiUnitChildren, multiUnitErrors } from '@/lib/kokuhoren/multi-unit'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
 import { hasMoneyAccess } from '@/lib/require-admin'
 
@@ -32,6 +33,15 @@ export async function GET(request: NextRequest) {
     loadBillingChildren(supabase, scope),
     findDaytimeOnlyChildren(supabase, scope),
   ])
+
+  // 同じ児童が2つ以上の事業に記録されていると明細書が2つでき、取込送信ソフトで TS049 になる
+  const multiUnit = await findMultiUnitChildren(supabase, scope, new Set(daytimeOnly.keys()))
+  if (multiUnit.length > 0) {
+    return NextResponse.json(
+      { errors: multiUnitErrors(multiUnit), warnings: daytimeOnlyWarnings(daytimeOnly) },
+      { status: 422 },
+    )
+  }
 
   const built = buildKokuhorenCsv(
     {
