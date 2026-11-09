@@ -2,6 +2,7 @@
 
 import type { createClient } from '@/lib/supabase/server'
 import type { ChildBillingInput } from './build'
+import { findDaytimeOnlyChildren } from './daytime-only'
 import type { BillingScope } from './scope'
 import type { UpperLimitChild, UpperLimitOfficeLine } from './upper-limit'
 
@@ -60,7 +61,11 @@ export async function loadBillingChildren(
     `)
     .in('billing_monthly_id', scope.billingMonthlyIds)
 
-  const details = (detailsRaw ?? []) as unknown as DetailRow[]
+  // 日中一時支援だけの児童は市町村の事業なので、国保連の請求書・明細書・CSVに入れない
+  const daytimeOnly = await findDaytimeOnlyChildren(supabase, scope)
+  const details = ((detailsRaw ?? []) as unknown as DetailRow[]).filter(
+    (d) => !(d.children && daytimeOnly.has(d.children.id)),
+  )
 
   const yearMonth = scope.yearMonth
   const monthStart = `${yearMonth.slice(0, 4)}-${yearMonth.slice(4, 6)}-01`

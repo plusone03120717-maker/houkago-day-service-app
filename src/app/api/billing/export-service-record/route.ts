@@ -7,6 +7,7 @@ import {
   type ServiceRecordChild,
 } from '@/lib/kokuhoren/service-record'
 import { resolveBillingScope } from '@/lib/kokuhoren/scope'
+import { daytimeOnlyWarnings, findDaytimeOnlyChildren } from '@/lib/kokuhoren/daytime-only'
 import { hasMoneyAccess } from '@/lib/require-admin'
 
 // サービス提供実績記録票CSV（インタフェース仕様準拠: K611）を生成する。
@@ -45,7 +46,9 @@ export async function GET(request: NextRequest) {
   )
 
   const yearMonth = scope.yearMonth
-  const warnings: string[] = []
+  // 日中一時支援だけの児童は市町村の事業なので、実績記録票（国保連）に入れない
+  const daytimeOnly = await findDaytimeOnlyChildren(supabase, scope)
+  const warnings: string[] = daytimeOnlyWarnings(daytimeOnly)
   const children: ServiceRecordChild[] = []
 
   for (const unitId of scope.unitIds) {
@@ -60,6 +63,7 @@ export async function GET(request: NextRequest) {
       serviceTypeByUnit.get(unitId) === 'development_support' ? '0301' : '0501'
 
     for (const c of result.children) {
+      if (daytimeOnly.has(c.childId)) continue
       children.push({
         childName: c.childName,
         certificateNumber: c.certificateNumber ?? '',
