@@ -17,7 +17,7 @@ import {
 // スタッフ申請（残業・有給・中抜け）のうち、確認済みにしたものの履歴。
 // 月は「申請の日（残業・有給の日／中抜けの日）」で区切る。
 //
-// 残業・有給は「LINEアプリから申請」の印があるか、確認の記録（reviewed_at）があるものだけ出す。
+// 残業・有給は LINE から来た申請（source=line・migration 181）か、確認の記録（reviewed_at）があるものだけ出す。
 // 管理者が画面から直接入れた有給・残業は申請ではないので出さない。
 // 中抜けは申請の印がないので、確認の記録が残るようになった 2026-11-12 以降の分だけ出る。
 
@@ -66,18 +66,18 @@ export default async function StaffRequestsHistoryPage({
   const [overtimeRes, leaveRes, breakRes] = await Promise.all([
     supabase
       .from('overtime_requests')
-      .select('id, date, actual_end_time, overtime_minutes, status, note, reviewed_at, reviewed_by, staff_members(name)')
+      .select('id, date, actual_end_time, overtime_minutes, status, reviewed_at, reviewed_by, staff_members(name)')
       .eq('is_new', false)
       .gte('date', from)
       .lt('date', to)
-      .or('note.eq.LINEアプリから申請,reviewed_at.not.is.null'),
+      .or('source.eq.line,reviewed_at.not.is.null'),
     supabase
       .from('paid_leave_usages')
-      .select('id, date, unit, days_used, hours_used, note, reviewed_at, reviewed_by, staff_members(name)')
+      .select('id, date, unit, days_used, hours_used, reviewed_at, reviewed_by, staff_members(name)')
       .eq('is_new', false)
       .gte('date', from)
       .lt('date', to)
-      .or('note.eq.LINEアプリから申請,reviewed_at.not.is.null'),
+      .or('source.eq.line,reviewed_at.not.is.null'),
     supabase
       .from('time_records')
       .select('id, staff_member_id, recorded_at, reviewed_at, reviewed_by, staff_members(name)')

@@ -53,6 +53,8 @@ export async function POST(req: NextRequest) {
       days_used: input.daysUsed,
       hours_used: input.hoursUsed,
       note: 'LINEアプリから申請',
+      // 承認の履歴で LINE の申請を見分ける印（note は管理画面で上書きされうる）
+      source: 'line',
       is_new: true,
     } as never)
 

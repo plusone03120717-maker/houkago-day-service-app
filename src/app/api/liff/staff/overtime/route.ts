@@ -70,6 +70,8 @@ export async function POST(req: NextRequest) {
       status: 'approved',
       is_new: true,
       note: 'LINEアプリから申請',
+      // 承認の履歴で LINE の申請を見分ける印（note は管理画面で上書きされうる）
+      source: 'line',
     } as never)
 
     if (error) {
