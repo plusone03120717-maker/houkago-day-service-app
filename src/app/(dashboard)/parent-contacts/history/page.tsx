@@ -183,7 +183,7 @@ export default async function ParentContactsHistoryPage({
                   <tr key={c.id} className="align-top">
                     <td className="px-3 py-2 whitespace-nowrap">{formatDay(c.date)}</td>
                     <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{c.children?.name ?? '—'}</td>
-                    <td className="px-3 py-2 text-gray-600">
+                    <td className="px-3 py-2 text-gray-600 min-w-[10rem]">
                       {c.status === 'absent' ? (
                         'お休み'
                       ) : (
