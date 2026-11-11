@@ -11,7 +11,7 @@ type Access = 'staff' | 'facility_manager' | 'admin'
 
 // ログイン権限。お金まわり（請求・給与）を扱えるのはシステム管理者だけ
 const ACCESS_OPTIONS: Array<{ value: Access; label: string; description: string }> = [
-  { value: 'staff', label: 'スタッフ', description: '出席・記録・支援計画・送迎・帳票。設定・請求・シフト管理は開けない' },
+  { value: 'staff', label: 'スタッフ', description: '出席・記録・支援計画・帳票。送迎管理と利用スケジュールは閲覧のみ。設定・請求・シフト管理は開けない' },
   { value: 'facility_manager', label: '施設長', description: '請求（国保連・上限管理・保護者請求）と給与まわり（タイムカード・勤務時間集計・有給・残業・スタッフ申請）以外のすべて。シフト管理と利用スケジュールは閲覧のみ' },
   { value: 'admin', label: 'システム管理者', description: 'すべての機能（請求・給与を含む）' },
 ]

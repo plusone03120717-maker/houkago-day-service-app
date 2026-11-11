@@ -89,7 +89,7 @@ interface Props {
   allChildren: UnitChild[]
   /** 一覧の取得に失敗した場合のメッセージ（成功時は null） */
   loadError: string | null
-  /** 送迎の追加・変更・削除・並び替え・再生成ができるか。施設長は false（閲覧のみ） */
+  /** 送迎の追加・変更・削除・並び替え・再生成ができるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
   canEdit?: boolean
 }
 
