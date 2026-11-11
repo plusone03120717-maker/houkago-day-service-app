@@ -270,6 +270,9 @@ export async function saveUsageContactsForDates(
       reported_at: reportedAt,
       is_new: true,
       approval_status: 'pending',
+      // 出し直した連絡は、前の承認の「だれが・いつ」を引き継がない
+      reviewed_at: null,
+      reviewed_by: null,
       // キャンセルの連絡は、前に承認した内容の控えを引き継がない。
       // 引き継ぐと利用連絡ページで「反映済み」に見えてしまい、
       // 欠席にするか削除するかをスタッフが選べなくなる。

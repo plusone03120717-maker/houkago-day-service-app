@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { hasMoneyAccess } from '@/lib/require-admin'
+import { getSessionUserId } from '@/lib/auth'
 
 export async function POST(req: NextRequest) {
   if (!(await hasMoneyAccess())) {
@@ -11,9 +12,10 @@ export async function POST(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'id が必要です' }, { status: 400 })
 
     const supabase = await createClient()
+    const userId = await getSessionUserId()
     const { error } = await supabase
       .from('overtime_requests')
-      .update({ is_new: false })
+      .update({ is_new: false, reviewed_at: new Date().toISOString(), reviewed_by: userId } as never)
       .eq('id', id)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
