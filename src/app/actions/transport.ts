@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { getStaffAccess } from '@/lib/require-admin'
+import { canEditTransport } from '@/lib/roles'
 import { buildRouteGroups, nearestNeighborSort, type RouteChildData } from '@/lib/transport-route'
 import {
   fetchScheduleDefaults,
@@ -46,12 +47,14 @@ function toHourSlot(timeStr: string | null): string | null {
 }
 
 /**
- * 送迎管理の編集（再生成・保存・取り下げ）を止める相手か。施設長は送迎を閲覧のみ。
+ * 送迎管理の編集（再生成・保存・取り下げ）を止める相手か。編集できるのはシステム管理者だけで、
+ * 施設長・スタッフは送迎を閲覧のみ。
  * 画面ではボタンを出していないが、サーバーアクションは直接呼べるのでここでも止める。
  * （画面を開いたときの autoCreateTransportSchedules は表示に要るので止めない）
  */
 async function isTransportReadOnly(): Promise<boolean> {
-  return (await getStaffAccess())?.isFacilityManager ?? false
+  const access = await getStaffAccess()
+  return !access || !canEditTransport(access.role, access.jobTitles)
 }
 
 /** 既存スケジュールを削除して再生成 */

@@ -62,6 +62,15 @@ export function canEditUsagePlans(role: string | null, jobTitles: string[] | nul
   return true
 }
 
+/**
+ * 送迎管理を編集できるか。システム管理者だけ（施設長・スタッフ・サービス管理者は閲覧のみ）。
+ * （role 未設定の旧アカウント＝初期管理者は requireAdmin と同じく通す）
+ */
+export function canEditTransport(role: string | null, jobTitles: string[] | null): boolean {
+  if (role === 'parent' || role === 'staff') return false
+  return !isFacilityManager(role, jobTitles)
+}
+
 /** 施設長か（システム管理者の権限からお金まわりを外した役職） */
 export function isFacilityManager(role: string | null, jobTitles: string[] | null): boolean {
   return role === 'admin' && (jobTitles ?? []).includes(FACILITY_MANAGER)

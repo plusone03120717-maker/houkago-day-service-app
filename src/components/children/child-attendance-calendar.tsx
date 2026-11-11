@@ -104,7 +104,7 @@ interface Props {
   basePath?: string
   staffMembers?: Array<{ id: string; name: string }>
   vehicles?: Array<{ id: string; name: string }>
-  /** 利用予定の削除（この日だけキャンセル）・一括削除・キャンセルの解除ができるか。施設長は false（閲覧のみ） */
+  /** 利用予定の削除（この日だけキャンセル）・一括削除・キャンセルの解除ができるか。利用スケジュールを編集できる人だけ true（施設長・スタッフは false） */
   canCancelPlans?: boolean
 }
 

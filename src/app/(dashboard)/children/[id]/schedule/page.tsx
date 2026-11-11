@@ -67,8 +67,9 @@ export default async function ChildSchedulePage({
 
   const access = await accessPromise
   const canEditPlans = access ? canEditUsagePlans(access.role, access.jobTitles) : false
-  // 出席カレンダーの「この日の予定を削除」「キャンセルの解除」も、施設長だけ止める（ほかの職員は今までどおり）
-  const canCancelPlans = !(access?.isFacilityManager ?? false)
+  // 出席カレンダーの「この日の予定を削除」「キャンセルの解除」も、利用スケジュールを編集できる人だけ
+  // （施設長・スタッフは止める。出席の記録は誰でもできる）
+  const canCancelPlans = canEditPlans
 
   if (!childRaw) notFound()
   const child = childRaw as unknown as {
