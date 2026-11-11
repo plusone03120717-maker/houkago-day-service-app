@@ -104,6 +104,8 @@ interface Props {
   basePath?: string
   staffMembers?: Array<{ id: string; name: string }>
   vehicles?: Array<{ id: string; name: string }>
+  /** 利用予定の削除（この日だけキャンセル）・一括削除・キャンセルの解除ができるか。施設長は false（閲覧のみ） */
+  canCancelPlans?: boolean
 }
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -134,7 +136,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, parentContacts = [], transportPlaces = [], units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [] }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, parentContacts = [], transportPlaces = [], units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [], canCancelPlans = true }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -401,7 +403,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
   }
 
   const handleRestorePlan = async () => {
-    if (!selectedDate) return
+    if (!canCancelPlans || !selectedDate) return
     const info = cancelledPlanDates[selectedDate]
     if (!info) return
     setRestoringPlan(true)
@@ -441,7 +443,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
   }
 
   const handleCancelPlan = async () => {
-    if (!selectedDate) return
+    if (!canCancelPlans || !selectedDate) return
     const planId = plannedDatePlanId[selectedDate]
     if (!planId) return
     setCancellingPlan(true)
@@ -479,6 +481,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
   }
 
   const handleBulkCancelPlan = async () => {
+    if (!canCancelPlans) return
     setBulkCancellingPlan(true)
     for (const date of selectedDates) {
       const planId = plannedDatePlanId[date]
@@ -791,7 +794,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
           )}
 
           {/* 一括予定削除（スケジュールドットがあり出席記録のない日のみ対象） */}
-          {(() => {
+          {canCancelPlans && (() => {
             const cancellable = [...selectedDates].filter(d => plannedDatePlanId[d] && !attendanceMap[d])
             if (cancellable.length === 0) return null
             return confirmBulkCancelPlan ? (
@@ -1089,7 +1092,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
           )}
 
           {/* キャンセル解除ボタン（キャンセル済み予定の日、既存レコードなし） */}
-          {!selected && selectedDate && cancelledPlanDates[selectedDate] && (
+          {canCancelPlans && !selected && selectedDate && cancelledPlanDates[selectedDate] && (
             confirmRestorePlan ? (
               <div className="flex gap-2">
                 <Button
@@ -1123,7 +1126,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
           )}
 
           {/* 予定削除ボタン（スケジュールドットの日、既存レコードなし） */}
-          {!selected && selectedDate && plannedDatePlanId[selectedDate] && (
+          {canCancelPlans && !selected && selectedDate && plannedDatePlanId[selectedDate] && (
             confirmCancelPlan ? (
               <div className="flex gap-2">
                 <Button

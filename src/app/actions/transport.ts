@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getStaffAccess } from '@/lib/require-admin'
 import { buildRouteGroups, nearestNeighborSort, type RouteChildData } from '@/lib/transport-route'
 import {
   fetchScheduleDefaults,
@@ -44,8 +45,18 @@ function toHourSlot(timeStr: string | null): string | null {
   return `${String(hour).padStart(2, '0')}:00:00`
 }
 
+/**
+ * 送迎管理の編集（再生成・保存・取り下げ）を止める相手か。施設長は送迎を閲覧のみ。
+ * 画面ではボタンを出していないが、サーバーアクションは直接呼べるのでここでも止める。
+ * （画面を開いたときの autoCreateTransportSchedules は表示に要るので止めない）
+ */
+async function isTransportReadOnly(): Promise<boolean> {
+  return (await getStaffAccess())?.isFacilityManager ?? false
+}
+
 /** 既存スケジュールを削除して再生成 */
 export async function deleteAndRecreateTransportSchedules(unitId: string, date: string) {
+  if (await isTransportReadOnly()) return
   const supabase = await createClient()
   await supabase
     .from('transport_schedules')
@@ -751,6 +762,7 @@ function transportTimePatch(
  * 送迎管理の表示（transport/page.tsx）とまったく同じ判定を使う。
  */
 export async function saveTransportRecord(input: TransportRecordInput) {
+  if (await isTransportReadOnly()) return
   const { childId, unitId, date, direction, time, driverMemberId, vehicleId } = input
   const supabase = await createClient()
 
@@ -874,6 +886,7 @@ export async function clearTransportDirection(
   date: string,
   direction: 'pickup' | 'dropoff'
 ) {
+  if (await isTransportReadOnly()) return
   const supabase = await createClient()
 
   const { data: existing } = await supabase

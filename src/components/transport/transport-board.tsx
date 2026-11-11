@@ -89,6 +89,8 @@ interface Props {
   allChildren: UnitChild[]
   /** 一覧の取得に失敗した場合のメッセージ（成功時は null） */
   loadError: string | null
+  /** 送迎の追加・変更・削除・並び替え・再生成ができるか。施設長は false（閲覧のみ） */
+  canEdit?: boolean
 }
 
 const DIRECTION_LABEL: Record<Direction, string> = { pickup: 'お迎え', dropoff: 'お送り' }
@@ -167,6 +169,7 @@ export function TransportManageBoard({
   drivers,
   allChildren,
   loadError,
+  canEdit = true,
 }: Props) {
   const router = useRouter()
   // ユニット未選択（＝すべて）。既定はこちらで、ユニットボタンで絞り込む
@@ -222,6 +225,7 @@ export function TransportManageBoard({
 
   /** 送迎一覧から外す（日々の記録側の送迎欄・送迎区分も同じ方向だけ取り下げる） */
   const handleRemove = async (row: TransportRow) => {
+    if (!canEdit) return
     if (!confirm(`「${row.name}」を${DIRECTION_LABEL[row.direction]}の一覧から外しますか？\n（日々の記録の${DIRECTION_LABEL[row.direction]}欄も消えます）`)) return
     await supabase.from('transport_details').delete().eq('id', row.id)
     await clearTransportDirection(row.childId, row.unitId, date, row.direction)
@@ -232,6 +236,7 @@ export function TransportManageBoard({
   const targetUnitIds = isAllUnits ? units.map((u) => u.id) : [selectedUnitId]
 
   const handleRegenerate = async () => {
+    if (!canEdit) return
     const scope = isAllUnits ? '全ユニット' : units.find((u) => u.id === selectedUnitId)?.name ?? ''
     if (!confirm(`${scope}の既存の送迎予定を削除して、利用スケジュールの時間設定をもとに再生成しますか？\n（日々の記録に保存済みの内容はそのまま残ります）`)) return
     setRegenerating(true)
@@ -242,6 +247,7 @@ export function TransportManageBoard({
 
   /** 表示行（まとまった便は1行）の単位で並び替える */
   const handleDrop = async (dropIdx: number) => {
+    if (!canEdit) return
     if (dragIndex === null || dragIndex === dropIdx) {
       setDragIndex(null)
       setDragOverIndex(null)
@@ -270,6 +276,7 @@ export function TransportManageBoard({
     group: RowGroup,
     fields: { driverMemberId?: string | null; vehicleId?: string | null }
   ) => {
+    if (!canEdit) return
     setBulkSavingKey(group.key)
     // 欠席として記録済みの児童は書き込み対象外（サーバー側でも弾かれる）
     for (const row of group.rows.filter((r) => !r.isAbsent)) {
@@ -287,6 +294,7 @@ export function TransportManageBoard({
 
   /** 便を分解して、児童ごとに単独の便にする */
   const splitGroup = async (group: RowGroup) => {
+    if (!canEdit) return
     setBulkSavingKey(group.key)
     // それぞれに別の ID を振ることで、条件が同じでも再び自動でまとまらないようにする
     await Promise.all(
@@ -303,7 +311,7 @@ export function TransportManageBoard({
 
   /** 選んだ児童を今の便に合流させる（1つの便にまとめる） */
   const mergeIntoGroup = async (group: RowGroup, targetRowIds: string[]) => {
-    if (targetRowIds.length === 0) return
+    if (!canEdit || targetRowIds.length === 0) return
     setBulkSavingKey(group.key)
 
     // すでに手動でまとめた便ならその ID を使い回し、自動判定の便なら新しく採番する
@@ -401,7 +409,7 @@ export function TransportManageBoard({
             </button>
           ))}
         </div>
-        {targetUnitIds.length > 0 && (
+        {canEdit && targetUnitIds.length > 0 && (
           <>
             <button
               onClick={() => setShowAddPanel((v) => !v)}
@@ -439,7 +447,13 @@ export function TransportManageBoard({
         {reordering && <span className="text-gray-400">並び順を保存中…</span>}
       </div>
 
-      {showAddPanel && (
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          送迎は閲覧のみです。追加・変更・削除・並び替え・再生成はできません。
+        </p>
+      )}
+
+      {canEdit && showAddPanel && (
         <AddChildPanel
           date={date}
           showUnit={isAllUnits}
@@ -485,6 +499,8 @@ export function TransportManageBoard({
             </div>
           </div>
 
+          {/* 閲覧のみのときは、中の選択欄・入力欄・ボタンをまとめて押せなくする */}
+          <fieldset disabled={!canEdit} className="contents">
           <div className="divide-y divide-gray-100">
             {(() => {
               let flatIndex = -1
@@ -504,6 +520,7 @@ export function TransportManageBoard({
                             index={i}
                             showUnit={isAllUnits}
                             date={date}
+                            draggable={canEdit}
                             isDragging={dragIndex === i}
                             isOver={dragOverIndex === i}
                             onDragStart={() => setDragIndex(i)}
@@ -539,7 +556,7 @@ export function TransportManageBoard({
                     />
                   </div>
 
-                  {mergePickerKey === group.key && (
+                  {canEdit && mergePickerKey === group.key && (
                     <MergePicker
                       group={group}
                       allRows={localRows}
@@ -552,6 +569,7 @@ export function TransportManageBoard({
               ))
             })()}
           </div>
+          </fieldset>
         </div>
       )}
 
@@ -812,6 +830,7 @@ function TransportRowItem({
   index,
   showUnit,
   date,
+  draggable = true,
   isDragging,
   isOver,
   onDragStart,
@@ -828,6 +847,8 @@ function TransportRowItem({
   /** 「すべて」表示のときだけユニット名を出す */
   showUnit: boolean
   date: string
+  /** ドラッグで並び替えられるか（閲覧のみのときは false） */
+  draggable?: boolean
   isDragging: boolean
   isOver: boolean
   onDragStart: () => void
@@ -929,7 +950,7 @@ function TransportRowItem({
 
   return (
     <div
-      draggable
+      draggable={draggable}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
