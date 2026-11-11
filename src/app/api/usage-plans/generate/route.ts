@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getStaffAccess } from '@/lib/require-admin'
 
 export async function POST(req: NextRequest) {
   const { planId, month } = await req.json() // month: "2026-03"
@@ -8,6 +9,12 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = await createClient()
+
+  // 施設長は利用スケジュールを編集できない（画面を通さない呼び出しも止める）
+  const access = await getStaffAccess()
+  if (access?.isFacilityManager) {
+    return NextResponse.json({ error: '施設長は利用スケジュールを編集できません' }, { status: 403 })
+  }
 
   // プランを取得
   const { data: plan, error: planError } = await supabase

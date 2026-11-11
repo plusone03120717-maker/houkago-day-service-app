@@ -49,6 +49,8 @@ interface Props {
   overtimeRequests?: OvertimeRequest[]
   /** 残業の登録は給与まわりなので、システム管理者だけ（施設長には出さない） */
   canManageMoney?: boolean
+  /** シフトの登録・変更・削除ができるか。施設長は閲覧のみ（false） */
+  canEdit?: boolean
 }
 
 const SHIFT_TYPES = [
@@ -213,7 +215,7 @@ function ShiftFields({
   )
 }
 
-export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeRequests = [], canManageMoney = false }: Props) {
+export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeRequests = [], canManageMoney = false, canEdit = true }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -358,6 +360,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
 
   // クリックハンドラーは setSelectedDates のみ更新（フォーム初期化は useEffect に委譲）
   function handleCellClick(date: string) {
+    if (!canEdit) return
     const isMulti = multiSelectMode || ctrlHeldRef.current
     if (isMulti) {
       setSelectedDates((prev) => {
@@ -381,7 +384,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
   }
 
   const handleSaveShift = async () => {
-    if (selectedDates.size === 0 || !selectedStaff) return
+    if (!canEdit || selectedDates.size === 0 || !selectedStaff) return
     setSaving(true)
 
     const payload = toShiftPayload({
@@ -403,6 +406,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
   }
 
   const handleDeleteShift = async () => {
+    if (!canEdit) return
     const ids = [...selectedDates]
       .map((d) => currentStaffShifts[d]?.id)
       .filter(Boolean) as string[]
@@ -436,7 +440,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
   })()
 
   const handleApplyPattern = async () => {
-    if (patternDates.length === 0 || !selectedStaff) return
+    if (!canEdit || patternDates.length === 0 || !selectedStaff) return
     setPatternSaving(true)
     setPatternResult(null)
 
@@ -482,7 +486,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
   }
 
   const handleDeletePattern = async () => {
-    if (patternDates.length === 0 || !selectedStaff) return
+    if (!canEdit || patternDates.length === 0 || !selectedStaff) return
     const staffName = staffList.find((s) => s.id === selectedStaff)?.name ?? ''
     if (!confirm(`${staffName} さんの ${patternDates.length} 日分のシフトを削除します。よろしいですか？`)) return
     setPatternSaving(true)
@@ -572,7 +576,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
               全員
             </button>
           </div>
-          {view === 'personal' && (
+          {canEdit && view === 'personal' && (
           <button
             onClick={() => {
               setMultiSelectMode((m) => !m)
@@ -590,6 +594,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
             複数選択
           </button>
           )}
+          {canEdit && (
           <button
             onClick={() => {
               setShowPattern((v) => !v)
@@ -607,6 +612,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
             <Repeat className="h-4 w-4" />
             曜日で一括登録
           </button>
+          )}
           {canManageMoney && (
             <Button
               size="sm"
@@ -701,8 +707,14 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
         </div>
       )}
 
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          シフトは閲覧のみです。登録・変更はできません。
+        </p>
+      )}
+
       {/* 複数選択モードバナー */}
-      {multiSelectMode && (
+      {canEdit && multiSelectMode && (
         <div className="flex items-center justify-between bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
           <span className="text-xs text-indigo-700 font-medium">
             <Layers className="h-3.5 w-3.5 inline mr-1" />
@@ -736,7 +748,7 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
       </div>
 
       {/* 曜日パターンで一括登録 */}
-      {showPattern && (
+      {canEdit && showPattern && (
         <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-teal-800 flex items-center gap-1.5">
@@ -950,11 +962,14 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
                           >
                             <button
                               type="button"
-                              onClick={() => { setSelectedStaff(s.id); setSelectedDates(new Set([date])) }}
+                              onClick={() => { if (canEdit) { setSelectedStaff(s.id); setSelectedDates(new Set([date])) } }}
                               title={`${s.name} ${month}/${d.getDate()}（${DAY_LABELS[dow]}）${info?.label ?? '未登録'}${
                                 shift?.start_time ? ` ${shift.start_time.slice(0, 5)}〜${shift.end_time?.slice(0, 5) ?? ''}` : ''
                               }${ot > 0 ? ` 残業${ot}分` : ''}`}
-                              className="relative w-full h-7 flex items-center justify-center hover:bg-indigo-100 transition-colors"
+                              className={cn(
+                                'relative w-full h-7 flex items-center justify-center transition-colors',
+                                canEdit ? 'hover:bg-indigo-100' : 'cursor-default'
+                              )}
                             >
                               {info ? (
                                 <span className={cn('inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold', info.color)}>
@@ -1032,9 +1047,11 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
               残業あり
             </div>
           </div>
-          <span className="text-xs text-gray-400 ml-auto">
-            セルをクリックすると、そのスタッフ・日付の編集パネルが下に開きます
-          </span>
+          {canEdit && (
+            <span className="text-xs text-gray-400 ml-auto">
+              セルをクリックすると、そのスタッフ・日付の編集パネルが下に開きます
+            </span>
+          )}
         </div>
       )}
 
@@ -1074,7 +1091,8 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
                 onClick={() => handleCellClick(date)}
                 title={holidayName ?? undefined}
                 className={cn(
-                  'h-16 border-b border-r border-gray-50 p-1 text-left transition-colors hover:bg-indigo-50',
+                  'h-16 border-b border-r border-gray-50 p-1 text-left transition-colors',
+                  canEdit ? 'hover:bg-indigo-50' : 'cursor-default',
                   holidayName && !isSelected && 'bg-red-50/60',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
                 )}
@@ -1130,15 +1148,17 @@ export function ShiftCalendar({ year, month, staffList, shifts, units, overtimeR
             </div>
           ))}
         </div>
-        <span className="text-xs text-gray-400 flex items-center gap-1 ml-auto">
-          <Layers className="h-3 w-3" />
-          「複数選択」ボタン または Ctrl（Mac: ⌘）+クリックで複数日を選択
-        </span>
+        {canEdit && (
+          <span className="text-xs text-gray-400 flex items-center gap-1 ml-auto">
+            <Layers className="h-3 w-3" />
+            「複数選択」ボタン または Ctrl（Mac: ⌘）+クリックで複数日を選択
+          </span>
+        )}
       </div>
       )}
 
       {/* 編集パネル */}
-      {selectedDates.size > 0 && (
+      {canEdit && selectedDates.size > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
           <div className="flex items-center justify-between">
             <div>

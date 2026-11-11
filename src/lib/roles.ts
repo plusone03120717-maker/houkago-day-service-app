@@ -52,10 +52,12 @@ export function roleBadgeClass(value: string): string {
 /**
  * 児童管理の「利用スケジュール」を編集できるか。
  * システム管理者と、サービス管理者の役職を持つスタッフのみ編集可。
+ * 施設長は閲覧のみ（保護者の LINE がつながり、利用の変更は保護者からの連絡で行うため）。
  * （role 未設定の旧アカウント＝初期管理者は requireAdmin と同じく通す）
  */
 export function canEditUsagePlans(role: string | null, jobTitles: string[] | null): boolean {
   if (role === 'parent') return false
+  if (isFacilityManager(role, jobTitles)) return false
   if (role === 'staff') return (jobTitles ?? []).includes(SERVICE_MANAGER)
   return true
 }
