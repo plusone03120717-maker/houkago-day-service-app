@@ -214,7 +214,7 @@ export function StaffInviteForm({ canAssignAdmin }: { canAssignAdmin: boolean })
             )}
             {selectedRoles.has(FACILITY_MANAGER) && (
               <p className="text-xs text-sky-700 mt-1.5">
-                施設長は、国保連請求・上限管理・保護者請求と、タイムカード・勤務時間集計・有給・残業・スタッフ申請を除く、すべての機能を使えます。
+                施設長は、国保連請求・上限管理・保護者請求と、タイムカード・勤務時間集計・有給・残業・スタッフ申請を除く、すべての機能を使えます。シフト管理と「児童管理 → 利用スケジュール」は閲覧のみです。
               </p>
             )}
             {!needsPhone && selectedRoles.size > 0 && (

@@ -5,7 +5,7 @@ import { ArrowLeft, CalendarDays } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChildSchedulePlanner } from '@/components/children/child-schedule-planner'
 import { ChildAttendanceCalendar, type AttendanceRecord, type ParentContact } from '@/components/children/child-attendance-calendar'
-import { getSessionClaims } from '@/lib/auth'
+import { getStaffAccess } from '@/lib/require-admin'
 import { canEditUsagePlans } from '@/lib/roles'
 import { loadTransportPlaces } from '@/lib/parent-usage-contact'
 
@@ -24,12 +24,9 @@ export default async function ChildSchedulePage({
   const supabase = await createClient()
 
   // 利用スケジュールを編集できるのはシステム管理者と、
-  // サービス管理者の役職を持つスタッフのみ（それ以外のスタッフは閲覧のみ）。
-  // job_titles は JWT に載らないため staff のときだけ DB を引く（他のクエリと並列）。
-  const claims = await getSessionClaims()
-  const viewerPromise = claims?.role === 'staff'
-    ? supabase.from('users').select('job_titles').eq('id', claims.id).maybeSingle()
-    : null
+  // サービス管理者の役職を持つスタッフのみ（施設長・それ以外のスタッフは閲覧のみ）。
+  // 役職は JWT ではなく users テーブルの値で判定する（施設長は JWT に載らず、user_metadata は本人が書き換えられるため）。
+  const accessPromise = getStaffAccess()
 
   // 児童・ユニット一覧・利用計画・送迎設定は互いに独立しているため並列取得
   const [
@@ -68,10 +65,8 @@ export default async function ChildSchedulePage({
       .eq('child_id', childId),
   ])
 
-  const viewerJobTitles = viewerPromise
-    ? (((await viewerPromise).data as { job_titles: string[] | null } | null)?.job_titles ?? [])
-    : null
-  const canEditPlans = canEditUsagePlans(claims?.role ?? null, viewerJobTitles)
+  const access = await accessPromise
+  const canEditPlans = access ? canEditUsagePlans(access.role, access.jobTitles) : false
 
   if (!childRaw) notFound()
   const child = childRaw as unknown as {

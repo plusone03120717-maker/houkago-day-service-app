@@ -44,7 +44,7 @@ export default async function ShiftsPage({
 }) {
   const params = await searchParams
   const supabase = await createClient()
-  const canManageMoneyPromise = getStaffAccess().then((a) => a?.canManageMoney ?? false)
+  const accessPromise = getStaffAccess()
 
   const now = new Date()
   const year = parseInt(params.year ?? String(now.getFullYear()))
@@ -90,7 +90,10 @@ export default async function ShiftsPage({
 
   const today = getTodayJST()
   // 出勤実績・残業は給与まわりなので、施設長には出さない
-  const canManageMoney = await canManageMoneyPromise
+  const access = await accessPromise
+  const canManageMoney = access?.canManageMoney ?? false
+  // シフトの登録・変更は施設長だけ閲覧のみ
+  const canEdit = !(access?.isFacilityManager ?? false)
 
   return (
     <div className="space-y-4">
@@ -113,6 +116,7 @@ export default async function ShiftsPage({
         units={units}
         overtimeRequests={overtimeRequests}
         canManageMoney={canManageMoney}
+        canEdit={canEdit}
       />
     </div>
   )
