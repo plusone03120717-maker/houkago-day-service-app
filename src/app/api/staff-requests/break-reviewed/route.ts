@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { hasMoneyAccess } from '@/lib/require-admin'
+import { getSessionUserId } from '@/lib/auth'
 
 /** 中抜け申請を確認済みにする。まとめて申請した分は ids でまとめて受け付ける */
 export async function POST(req: NextRequest) {
@@ -13,9 +14,10 @@ export async function POST(req: NextRequest) {
     if (targets.length === 0) return NextResponse.json({ error: 'id が必要です' }, { status: 400 })
 
     const supabase = await createClient()
+    const userId = await getSessionUserId()
     const { error } = await supabase
       .from('time_records')
-      .update({ is_new: false })
+      .update({ is_new: false, reviewed_at: new Date().toISOString(), reviewed_by: userId } as never)
       .eq('type', 'break_start')
       .in('id', targets)
 

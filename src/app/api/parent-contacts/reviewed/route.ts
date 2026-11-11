@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
 
     const { error } = await supabase
       .from('parent_attendance_contacts')
-      .update({ is_new: false })
+      .update({ is_new: false, reviewed_at: new Date().toISOString(), reviewed_by: userId } as never)
       .in('id', targetIds)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })

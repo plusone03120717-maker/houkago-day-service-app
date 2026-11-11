@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { formatDate, getTodayJST } from '@/lib/utils'
@@ -16,6 +17,7 @@ import {
   CalendarRange,
   Pencil,
   AlertTriangle,
+  History,
 } from 'lucide-react'
 import {
   resolveAssignment,
@@ -1015,7 +1017,16 @@ export function ParentContactsBoard({
   return (
     <div className="max-w-3xl mx-auto space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">保護者からの利用連絡</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-xl font-bold text-gray-900">保護者からの利用連絡</h1>
+          <Link
+            href="/parent-contacts/history"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <History className="h-4 w-4" />
+            承認の履歴
+          </Link>
+        </div>
         <p className="text-xs text-gray-500 mt-1">
           保護者が送るのは「利用したい時間」と「送迎の希望」だけです。
           放デイ・日中一時のどちらでお預かりするかは、承認するときにここで決めてください

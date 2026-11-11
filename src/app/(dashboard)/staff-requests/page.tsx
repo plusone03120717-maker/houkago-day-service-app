@@ -1,3 +1,5 @@
+import Link from 'next/link'
+import { History } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireMoneyAccess } from '@/lib/require-admin'
 import { StaffRequestsBoard } from '@/components/staff-requests/staff-requests-board'
@@ -54,9 +56,18 @@ export default async function StaffRequestsPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">スタッフ申請</h1>
-        <p className="text-sm text-gray-500 mt-0.5">LINEから申請された残業・有給・中抜けを確認します</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">スタッフ申請</h1>
+          <p className="text-sm text-gray-500 mt-0.5">LINEから申請された残業・有給・中抜けを確認します</p>
+        </div>
+        <Link
+          href="/staff-requests/history"
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          <History className="h-4 w-4" />
+          承認の履歴
+        </Link>
       </div>
       <StaffRequestsBoard
         overtimeRequests={(overtimeRes.data ?? []) as unknown as OvertimeRequest[]}

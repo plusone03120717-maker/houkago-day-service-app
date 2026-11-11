@@ -69,7 +69,10 @@ export async function POST(req: NextRequest) {
       .update({
         approval_status: approvalStatus,
         is_new: approvalStatus === 'pending',
-      })
+        // 承認の履歴に「だれが・いつ」を出す。未承認に戻したときは消す
+        reviewed_at: approvalStatus === 'pending' ? null : new Date().toISOString(),
+        reviewed_by: approvalStatus === 'pending' ? null : userId,
+      } as never)
       .eq('id', id)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
