@@ -5,6 +5,7 @@ import { getTodayJST } from '@/lib/utils'
 import { TransportManageBoard } from '@/components/transport/transport-board'
 import type { TransportRow, UnitChild } from '@/components/transport/transport-board'
 import { autoCreateTransportSchedules } from '@/app/actions/transport'
+import { getStaffAccess } from '@/lib/require-admin'
 import {
   transportTimeOf,
   fetchScheduleDefaults,
@@ -106,6 +107,8 @@ export default async function TransportPage({
   const driversPromise = supabase.from('staff_members').select('id, name').order('name').then((r) => r)
   // ドライバーの選択肢を「よく入る順」に並べるための過去の傾向
   const driverRankingPromise = fetchDriverRanking(supabase, today)
+  // 施設長は送迎を閲覧のみ（役職は users テーブルの値で判定）
+  const accessPromise = getStaffAccess()
 
   const { data: unitsRaw } = await supabase
     .from('units')
@@ -376,6 +379,8 @@ export default async function TransportPage({
       (a.name_kana ?? a.name).localeCompare(b.name_kana ?? b.name, 'ja')
   )
 
+  const canEdit = !((await accessPromise)?.isFacilityManager ?? false)
+
   return (
     <TransportManageBoard
       date={today}
@@ -387,6 +392,7 @@ export default async function TransportPage({
       drivers={drivers}
       allChildren={allChildren}
       loadError={loadError}
+      canEdit={canEdit}
     />
   )
 }
