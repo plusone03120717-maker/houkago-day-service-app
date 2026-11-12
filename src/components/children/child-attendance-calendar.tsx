@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { resolveAssignment, type ServiceAssignmentType } from '@/lib/parent-contact-service'
 import { placeLabel, toPlaceValue, type TransportPlace, type LocationType } from '@/lib/transport-place'
+import { keepAssignment } from '@/components/transport/transport-daytime-panel'
 
 export type AttendanceRecord = {
   id: string
@@ -106,6 +107,8 @@ interface Props {
   vehicles?: Array<{ id: string; name: string }>
   /** 利用予定の削除（この日だけキャンセル）・一括削除・キャンセルの解除ができるか。利用スケジュールを編集できる人だけ true（施設長・スタッフは false） */
   canCancelPlans?: boolean
+  /** 送迎の担当者（ドライバー）・車種を変えられるか。システム管理者だけ true（施設長・スタッフは不可） */
+  canAssignDrivers?: boolean
 }
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -136,7 +139,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, parentContacts = [], transportPlaces = [], units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [], canCancelPlans = true }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, parentContacts = [], transportPlaces = [], units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [], canCancelPlans = true, canAssignDrivers = true }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -300,7 +303,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
     if (selected) {
       const { error } = await supabase
         .from('daily_attendance')
-        .update(timeFields)
+        .update(canAssignDrivers ? timeFields : keepAssignment(timeFields, selected as unknown as Record<string, unknown>))
         .eq('id', selected.id)
       if (error) {
         setSaveError(error.message)
@@ -318,7 +321,8 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
         unit_id: resolvedUnitId,
         date: selectedDate,
         status: 'scheduled',
-        ...timeFields,
+        // 新しく作る日は、担当者・車種を変えられない人には担当者・車種を入れない
+        ...(canAssignDrivers ? timeFields : keepAssignment(timeFields, {})),
       })
       if (error) {
         setSaveError(error.message)
@@ -361,7 +365,9 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
     for (const date of selectedDates) {
       const att = attendanceMap[date]
       if (att) {
-        const { error } = await supabase.from('daily_attendance').update(timeFields).eq('id', att.id)
+        const { error } = await supabase.from('daily_attendance')
+          .update(canAssignDrivers ? timeFields : keepAssignment(timeFields, att as unknown as Record<string, unknown>))
+          .eq('id', att.id)
         if (error) {
           setSaveError(error.message)
           setSaving(false)
@@ -375,7 +381,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
             unit_id: unitId,
             date,
             status: 'scheduled',
-            ...timeFields,
+            ...(canAssignDrivers ? timeFields : keepAssignment(timeFields, {})),
           })
           if (error) {
             setSaveError(error.message)
@@ -735,7 +741,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                 {staffMembers.length > 0 && (
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">ドライバー（お迎え）</label>
-                    <select value={daytimePickupDriverId} onChange={(e) => setDaytimePickupDriverId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                    <select value={daytimePickupDriverId} onChange={(e) => setDaytimePickupDriverId(e.target.value)} disabled={!canAssignDrivers} title={canAssignDrivers ? undefined : "担当者・車種はシステム管理者だけが変えられます"} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50 disabled:text-gray-500">
                       <option value="">未選択</option>
                       {staffMembers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
@@ -744,7 +750,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                 {vehicles.length > 0 && (
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">車種（お迎え）</label>
-                    <select value={daytimePickupVehicleId} onChange={(e) => setDaytimePickupVehicleId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                    <select value={daytimePickupVehicleId} onChange={(e) => setDaytimePickupVehicleId(e.target.value)} disabled={!canAssignDrivers} title={canAssignDrivers ? undefined : "担当者・車種はシステム管理者だけが変えられます"} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50 disabled:text-gray-500">
                       <option value="">未選択</option>
                       {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                     </select>
@@ -758,7 +764,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                 {staffMembers.length > 0 && (
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">ドライバー（送り）</label>
-                    <select value={daytimeDropoffDriverId} onChange={(e) => setDaytimeDropoffDriverId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                    <select value={daytimeDropoffDriverId} onChange={(e) => setDaytimeDropoffDriverId(e.target.value)} disabled={!canAssignDrivers} title={canAssignDrivers ? undefined : "担当者・車種はシステム管理者だけが変えられます"} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50 disabled:text-gray-500">
                       <option value="">未選択</option>
                       {staffMembers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
@@ -767,7 +773,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                 {vehicles.length > 0 && (
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">車種（送り）</label>
-                    <select value={daytimeDropoffVehicleId} onChange={(e) => setDaytimeDropoffVehicleId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                    <select value={daytimeDropoffVehicleId} onChange={(e) => setDaytimeDropoffVehicleId(e.target.value)} disabled={!canAssignDrivers} title={canAssignDrivers ? undefined : "担当者・車種はシステム管理者だけが変えられます"} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50 disabled:text-gray-500">
                       <option value="">未選択</option>
                       {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                     </select>
@@ -996,7 +1002,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                 {staffMembers.length > 0 && (
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">ドライバー（お迎え）</label>
-                    <select value={daytimePickupDriverId} onChange={(e) => setDaytimePickupDriverId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                    <select value={daytimePickupDriverId} onChange={(e) => setDaytimePickupDriverId(e.target.value)} disabled={!canAssignDrivers} title={canAssignDrivers ? undefined : "担当者・車種はシステム管理者だけが変えられます"} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50 disabled:text-gray-500">
                       <option value="">未選択</option>
                       {staffMembers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
@@ -1005,7 +1011,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                 {vehicles.length > 0 && (
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">車種（お迎え）</label>
-                    <select value={daytimePickupVehicleId} onChange={(e) => setDaytimePickupVehicleId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                    <select value={daytimePickupVehicleId} onChange={(e) => setDaytimePickupVehicleId(e.target.value)} disabled={!canAssignDrivers} title={canAssignDrivers ? undefined : "担当者・車種はシステム管理者だけが変えられます"} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50 disabled:text-gray-500">
                       <option value="">未選択</option>
                       {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                     </select>
@@ -1019,7 +1025,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                 {staffMembers.length > 0 && (
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">ドライバー（送り）</label>
-                    <select value={daytimeDropoffDriverId} onChange={(e) => setDaytimeDropoffDriverId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                    <select value={daytimeDropoffDriverId} onChange={(e) => setDaytimeDropoffDriverId(e.target.value)} disabled={!canAssignDrivers} title={canAssignDrivers ? undefined : "担当者・車種はシステム管理者だけが変えられます"} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50 disabled:text-gray-500">
                       <option value="">未選択</option>
                       {staffMembers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
@@ -1028,7 +1034,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                 {vehicles.length > 0 && (
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">車種（送り）</label>
-                    <select value={daytimeDropoffVehicleId} onChange={(e) => setDaytimeDropoffVehicleId(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white">
+                    <select value={daytimeDropoffVehicleId} onChange={(e) => setDaytimeDropoffVehicleId(e.target.value)} disabled={!canAssignDrivers} title={canAssignDrivers ? undefined : "担当者・車種はシステム管理者だけが変えられます"} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white disabled:bg-gray-50 disabled:text-gray-500">
                       <option value="">未選択</option>
                       {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                     </select>

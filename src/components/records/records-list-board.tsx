@@ -18,6 +18,7 @@ import {
   isBlankFields,
   applyScheduleDefaults,
   buildTransportUpdate,
+  keepAssignment,
   type TransportRow,
   type TransportFields,
   type ScheduleDefaults,
@@ -58,6 +59,8 @@ interface Props {
   defaultServiceEndTime: string
   prevByChildId: Record<string, PrevAttendanceRow>
   scheduleDefaultsByAttendanceId: Record<string, ScheduleDefaults>
+  /** 送迎の担当者（ドライバー）・車種を変えられるか。システム管理者だけ true（施設長・スタッフは不可） */
+  canAssignDrivers?: boolean
 }
 
 export function RecordsListBoard({
@@ -73,6 +76,7 @@ export function RecordsListBoard({
   defaultServiceEndTime,
   prevByChildId,
   scheduleDefaultsByAttendanceId,
+  canAssignDrivers = true,
 }: Props) {
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -137,9 +141,11 @@ export function RecordsListBoard({
 
   const handleSave = async (a: AttendedChild) => {
     setSaving(a.id)
+    const update = buildTransportUpdate(getFields(a))
     await supabase
       .from('daily_attendance')
-      .update(buildTransportUpdate(getFields(a)))
+      // 担当者・車種を変えられない人は、元の担当者・車種のまま保存する
+      .update(canAssignDrivers ? update : keepAssignment(update, buildTransportUpdate(initFields(a, defaultServiceEndTime))))
       .eq('id', a.id)
 
     setSaving(null)
@@ -282,6 +288,7 @@ export function RecordsListBoard({
                             onSave={() => handleSave(a)}
                             saving={saving === a.id}
                             saved={savedIds.has(a.id)}
+                            lockAssignment={!canAssignDrivers}
                           />
                         </CardContent>
                       </Card>

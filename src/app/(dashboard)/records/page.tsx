@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getTodayJST } from '@/lib/utils'
 import { RecordsListBoard } from '@/components/records/records-list-board'
+import { getStaffAccess } from '@/lib/require-admin'
 import { comparePlanPriority } from '@/lib/schedule-defaults'
 
 type AttendedChild = {
@@ -327,6 +328,7 @@ export default async function RecordsPage({
       defaultServiceEndTime={defaultServiceEndTime}
       prevByChildId={prevByChildId}
       scheduleDefaultsByAttendanceId={scheduleDefaultsByAttendanceId}
+      canAssignDrivers={(await getStaffAccess())?.canEditOperations ?? false}
     />
   )
 }

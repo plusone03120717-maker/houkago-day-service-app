@@ -241,6 +241,27 @@ export function buildTransportUpdate(f: TransportFields) {
   }
 }
 
+/** 送迎の担当者（ドライバー）と車種の欄。施設長・スタッフは変えられない（2026-11-12 依頼主） */
+const ASSIGNMENT_KEYS = [
+  'pickup_driver_member_id', 'pickup_vehicle_id',
+  'dropoff_driver_member_id', 'dropoff_vehicle_id',
+  'daytime_pickup_driver_member_id', 'daytime_pickup_vehicle_id',
+  'daytime_dropoff_driver_member_id', 'daytime_dropoff_vehicle_id',
+] as const
+
+/**
+ * 担当者・車種を変えられない人が保存するとき、保存内容の担当者・車種を元の値に戻す。
+ * 送迎そのものを消した（クリア・日中一時をやめた）ときに外れる null だけはそのまま通す。
+ */
+export function keepAssignment<T extends Record<string, unknown>>(next: T, original: Record<string, unknown>): T {
+  const out: Record<string, unknown> = { ...next }
+  for (const k of ASSIGNMENT_KEYS) {
+    if (!(k in out)) continue
+    if (out[k] !== null && out[k] !== (original[k] ?? null)) out[k] = original[k] ?? null
+  }
+  return out as T
+}
+
 const inputCls = 'w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500'
 const inputClsPurple = 'w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500'
 const selectCls = 'w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500'
@@ -298,6 +319,8 @@ interface PanelProps {
   onSave: () => void
   saving: boolean
   saved: boolean
+  /** 担当者（ドライバー）・車種を変えられないようにする。施設長・スタッフのとき true（既定は false） */
+  lockAssignment?: boolean
 }
 
 /** 送迎・日中一時の入力フォーム本体（出席管理・日々の記録で共通） */
@@ -313,6 +336,7 @@ export function TransportDaytimePanel({
   onSave,
   saving,
   saved,
+  lockAssignment = false,
 }: PanelProps) {
   // お迎えの出発＝学校などに着いて子どもと出る時刻（送迎管理の時刻）、
   // 到着＝事業所に着いた時刻＝利用開始。お送りの出発＝事業所を出る時刻（送迎管理の時刻）、
@@ -401,7 +425,9 @@ export function TransportDaytimePanel({
           {staffMembers.length > 0 && (
             <div>
               <label className="text-xs text-gray-500 mb-1 block">ドライバー</label>
-              <select value={driverId} onChange={(e) => onDriver(e.target.value)} className={purple ? selectClsPurple : selectCls}>
+              <select value={driverId} onChange={(e) => onDriver(e.target.value)} disabled={lockAssignment}
+                title={lockAssignment ? 'ドライバーはシステム管理者だけが変えられます' : undefined}
+                className={`${purple ? selectClsPurple : selectCls} disabled:bg-gray-50 disabled:text-gray-500`}>
                 <option value="">未選択</option>
                 {staffMembers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
@@ -410,7 +436,9 @@ export function TransportDaytimePanel({
           {vehicles.length > 0 && (
             <div>
               <label className="text-xs text-gray-500 mb-1 block">車種</label>
-              <select value={vehicleId} onChange={(e) => onVehicle(e.target.value)} className={purple ? selectClsPurple : selectCls}>
+              <select value={vehicleId} onChange={(e) => onVehicle(e.target.value)} disabled={lockAssignment}
+                title={lockAssignment ? '車種はシステム管理者だけが変えられます' : undefined}
+                className={`${purple ? selectClsPurple : selectCls} disabled:bg-gray-50 disabled:text-gray-500`}>
                 <option value="">未選択</option>
                 {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
