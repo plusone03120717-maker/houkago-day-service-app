@@ -96,6 +96,7 @@ export default async function RecordPage({
       defaultServiceEndTime={defaultServiceEndTime}
       holidayServiceEndTime={holidayServiceEndTime}
       canEditContactNote={(await getStaffAccess())?.canEditOperations ?? false}
+      canEditAttendance={(await getStaffAccess())?.canEditOperations ?? false}
     />
   )
 }
