@@ -145,6 +145,35 @@ export function calcWorkedMinutes(
   return { net: Math.max(0, afterBreak - lunchDeduction), breakMinutes, lunchDeduction }
 }
 
+/**
+ * 承認ずみの残業申請から、日付ごとの「申請した終了時刻」（0時からの分）を作る。
+ * 退勤の打刻がこれより早い日・退勤を押し忘れた日は、この時刻まで働いたものとして数える。
+ */
+export function overtimeEndMinutesByDate(
+  requests: { date: string; actual_end_time: string | null; status: string }[],
+): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const r of requests) {
+    if (r.status !== 'approved' || !r.actual_end_time) continue
+    const m = toMinutes(r.actual_end_time)
+    if (m > (map.get(r.date) ?? -1)) map.set(r.date, m)
+  }
+  return map
+}
+
+/**
+ * 退勤の時刻（0時からの分・30分単位で切り捨てたあと）を決める。
+ * 打刻と残業申請の終了時刻のうち遅いほう。どちらもなければ null。
+ */
+export function effectiveOutMinutes(
+  punchedOutM: number | null,
+  overtimeEndM: number | undefined,
+): { outM: number | null; byOvertime: boolean } {
+  const otM = overtimeEndM != null ? Math.floor(overtimeEndM / 30) * 30 : null
+  if (otM != null && (punchedOutM == null || otM > punchedOutM)) return { outM: otM, byOvertime: true }
+  return { outM: punchedOutM, byOvertime: false }
+}
+
 export type TCDay = {
   date: string
   clockIn: string | null    // HH:MM
@@ -154,6 +183,7 @@ export type TCDay = {
   hours: number | null
   breakMinutes: number      // 差し引いた中抜け（シフト＋中抜け申請）
   lunchDeduction: number    // 5時間以上で自動控除される60分
+  outByOvertime: boolean    // 退勤を残業申請の終了時刻で数えた日
 }
 
 /**
@@ -163,6 +193,7 @@ export type TCDay = {
 export function buildTCDays(
   records: TimeRecordLike[],
   shiftsMap: Map<string, { break_start_time: string | null; break_end_time: string | null }>,
+  overtimeEnds: Map<string, number> = new Map(),
 ): TCDay[] {
   const breaksByDate = pairBreakRecords(records)
 
@@ -186,11 +217,14 @@ export function buildTCDays(
       let hours: number | null = null
       let brkMins = 0
       let lunchDeduction = 0
-      if (inRec && outRec) {
-        const dayStart = toJSTEpochMin(`${date}T00:00:00+09:00`)
+      let outByOvertime = false
+      const dayStart = toJSTEpochMin(`${date}T00:00:00+09:00`)
+      const punchedOutM = outRec ? Math.floor(toJSTEpochMin(outRec.recorded_at) / 30) * 30 - dayStart : null  // 切り捨て30分
+      const { outM, byOvertime } = effectiveOutMinutes(punchedOutM, overtimeEnds.get(date))
+      if (inRec && outM != null) {
         const inM = Math.ceil(toJSTEpochMin(inRec.recorded_at) / 30) * 30 - dayStart   // 切り上げ30分
-        const outM = Math.floor(toJSTEpochMin(outRec.recorded_at) / 30) * 30 - dayStart  // 切り捨て30分
         if (outM - inM > 0) {
+          outByOvertime = byOvertime
           const worked = calcWorkedMinutes(inM, outM, shiftsMap.get(date), breaksByDate.get(date) ?? [])
           brkMins = worked.breakMinutes
           lunchDeduction = worked.lunchDeduction
@@ -206,6 +240,7 @@ export function buildTCDays(
         hours,
         breakMinutes: brkMins,
         lunchDeduction,
+        outByOvertime,
       }
     })
 }

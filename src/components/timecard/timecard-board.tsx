@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
-import { calcWorkedMinutes, pairBreakRecords } from '@/lib/work-time'
+import { calcWorkedMinutes, pairBreakRecords, overtimeEndMinutesByDate, effectiveOutMinutes } from '@/lib/work-time'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Edit2, Check, X, ChevronLeft, ChevronRight, Plus, Pencil, AlertTriangle, CheckCircle, CalendarClock, Trash2 } from 'lucide-react'
@@ -70,6 +70,7 @@ type DayRecord = {
   hours: number | null
   break_minutes: number
   lunch_deduction: number
+  out_by_overtime: boolean // 退勤を残業申請の終了時刻で数えた日
 }
 
 type EditState = { recordId: string; field: 'clock_in' | 'clock_out'; value: string }
@@ -137,7 +138,11 @@ function getFirstDayOfNextMonth(ym: string): string {
 
 // ─── build day records ────────────────────────────────────────────────────────
 
-function buildDayRecords(records: TimeRecord[], shiftsMap: Map<string, ShiftEntry> = new Map()): DayRecord[] {
+function buildDayRecords(
+  records: TimeRecord[],
+  shiftsMap: Map<string, ShiftEntry> = new Map(),
+  overtimeEnds: Map<string, number> = new Map(),
+): DayRecord[] {
   const byDate = new Map<string, { clock_in: TimeRecord | null; clock_out: TimeRecord | null }>()
   // LINE の中抜け申請（break_start / break_end）は行を作らず、勤務時間から差し引くだけ
   const breaksByDate = pairBreakRecords(records)
@@ -159,12 +164,19 @@ function buildDayRecords(records: TimeRecord[], shiftsMap: Map<string, ShiftEntr
       let rounded_out: string | null = null
       let break_minutes = 0
       let lunch_deduction = 0
+      let out_by_overtime = false
+      const dayStart = toJSTEpochMinutes(`${date}T00:00:00+09:00`)
       if (clock_in) rounded_in = roundInUp30(clock_in.recorded_at).time
       if (clock_out) rounded_out = roundOutDown30(clock_out.recorded_at).time
-      if (clock_in && clock_out) {
-        const dayStart = toJSTEpochMinutes(`${date}T00:00:00+09:00`)
+      // 退勤の打刻より残業申請の終了時刻が遅い日（押し忘れを含む）は、申請した時刻まで数える
+      const punchedOutM = clock_out ? roundOutDown30(clock_out.recorded_at).minutes - dayStart : null
+      const { outM, byOvertime } = effectiveOutMinutes(punchedOutM, overtimeEnds.get(date))
+      if (byOvertime && outM != null) {
+        out_by_overtime = true
+        rounded_out = `${String(Math.floor(outM / 60)).padStart(2, '0')}:${String(outM % 60).padStart(2, '0')}`
+      }
+      if (clock_in && outM != null) {
         const inM = roundInUp30(clock_in.recorded_at).minutes - dayStart
-        const outM = roundOutDown30(clock_out.recorded_at).minutes - dayStart
 
         // シフトの中抜けと中抜け申請を差し引き、残りが5時間以上なら休憩1時間を自動控除
         const worked = calcWorkedMinutes(inM, outM, shiftsMap.get(date), breaksByDate.get(date) ?? [])
@@ -172,7 +184,7 @@ function buildDayRecords(records: TimeRecord[], shiftsMap: Map<string, ShiftEntr
         lunch_deduction = worked.lunchDeduction
         hours = Math.round((worked.net / 60) * 100) / 100
       }
-      return { date, clock_in, clock_out, rounded_in, rounded_out, hours, break_minutes, lunch_deduction }
+      return { date, clock_in, clock_out, rounded_in, rounded_out, hours, break_minutes, lunch_deduction, out_by_overtime }
     })
 }
 
@@ -463,7 +475,11 @@ export function TimecardBoard({
 
   // ─── derived values ────────────────────────────────────────────────────────
 
-  const dayRecords = buildDayRecords(records.filter((r) => r.staff_member_id === selectedStaffId), shiftsMap)
+  const dayRecords = buildDayRecords(
+    records.filter((r) => r.staff_member_id === selectedStaffId),
+    shiftsMap,
+    overtimeEndMinutesByDate(overtimeRequests),
+  )
   const missingClockOutCount = dayRecords.filter((d) => d.clock_in !== null && d.clock_out === null).length
   const missingClockInCount = dayRecords.filter((d) => d.clock_out !== null && d.clock_in === null).length
   const totalHours = dayRecords.reduce((sum, d) => sum + (d.hours ?? 0), 0)
@@ -781,6 +797,11 @@ export function TimecardBoard({
                             <span>
                               {day.hours}h
                               <span className="ml-1 text-xs text-gray-400">({day.rounded_in}〜{day.rounded_out})</span>
+                              {day.out_by_overtime && (
+                                <span className="ml-1 text-xs text-orange-600" title="退勤の打刻より残業申請の終了時刻が遅いため、申請した時刻まで数えています">
+                                  退勤は残業申請の時刻
+                                </span>
+                              )}
                               {day.break_minutes > 0 && (
                                 <span className="ml-1 text-xs text-gray-400">
                                   中抜け{day.break_minutes >= 60
