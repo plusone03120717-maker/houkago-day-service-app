@@ -7,6 +7,7 @@ import { usageLabel } from '@/lib/paid-leave'
 import { getTodayJST } from '@/lib/utils'
 import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { formatDuration } from '@/lib/work-time'
+import { TransportTab } from './transport-tab'
 import {
   Loader2, AlertCircle, ChevronLeft, ChevronRight, Clock, Car, CalendarDays,
   ArrowRight, User, FileText, RotateCw,
@@ -186,6 +187,8 @@ export default function StaffSchedulePage() {
   const today = getTodayJST()
   const [date, setDate] = useState(today)
   const [view, setView] = useState<'day' | 'month'>('day')
+  // 自分のスケジュール／全体（その日の送迎管理をまとめて閲覧）
+  const [tab, setTab] = useState<'mine' | 'all'>('mine')
   const [cal, setCal] = useState(() => {
     const [y, m] = today.split('-').map(Number)
     return { year: y, month: m }
@@ -341,6 +344,7 @@ export default function StaffSchedulePage() {
     )
   }
 
+  const isMonth = tab === 'mine' && view === 'month'
   const shiftInfo = data?.shift ? SHIFT_LABELS[data.shift.shiftType] : null
   const isOff = data?.shift?.shiftType === 'off' || data?.shift?.shiftType === 'holiday'
   const isToday = date === today
@@ -396,36 +400,51 @@ export default function StaffSchedulePage() {
     <div className="max-w-sm mx-auto min-h-screen bg-gray-50 pb-10">
       {/* ヘッダー */}
       <div className="bg-indigo-600 text-white px-5 pt-10 pb-5">
-        <p className="text-xs text-indigo-300 mb-0.5">マイスケジュール</p>
+        <p className="text-xs text-indigo-300 mb-0.5">{tab === 'mine' ? 'マイスケジュール' : '全体の送迎'}</p>
         <h1 className="text-xl font-bold">{data?.staff.name}さん</h1>
+        <div className="flex gap-1 mt-4 bg-indigo-700/60 rounded-full p-1" role="tablist">
+          {([['mine', '自分'], ['all', '全体']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+              className={`flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors ${
+                tab === key ? 'bg-white text-indigo-700 shadow-sm' : 'text-indigo-100'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 日付・月ナビゲーション */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm">
         <div className="flex items-center justify-between px-2 py-2.5">
           <button
-            onClick={() => view === 'day' ? setDate(addDays(date, -1)) : setCal(shiftMonth(cal, -1))}
+            onClick={() => !isMonth ? setDate(addDays(date, -1)) : setCal(shiftMonth(cal, -1))}
             className="p-2 text-gray-400 hover:text-gray-700"
-            aria-label={view === 'day' ? '前の日' : '前の月'}
+            aria-label={!isMonth ? '前の日' : '前の月'}
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
           <div className="flex flex-col items-center">
             <span className={`font-semibold text-sm ${
-              view === 'day' && (isJapaneseNationalHoliday(date) || new Date(date + 'T00:00:00').getDay() === 0)
+              !isMonth && (isJapaneseNationalHoliday(date) || new Date(date + 'T00:00:00').getDay() === 0)
                 ? 'text-red-500'
                 : 'text-gray-800'
             }`}>
-              {view === 'day' ? formatHeaderDate(date) : `${cal.year}年${cal.month}月`}
+              {!isMonth ? formatHeaderDate(date) : `${cal.year}年${cal.month}月`}
             </span>
-            {view === 'day' && dayHolidayName && (
+            {!isMonth && dayHolidayName && (
               <span className="text-[10px] text-red-500 leading-tight">{dayHolidayName}（祝日）</span>
             )}
           </div>
           <button
-            onClick={() => view === 'day' ? setDate(addDays(date, 1)) : setCal(shiftMonth(cal, 1))}
+            onClick={() => !isMonth ? setDate(addDays(date, 1)) : setCal(shiftMonth(cal, 1))}
             className="p-2 text-gray-400 hover:text-gray-700"
-            aria-label={view === 'day' ? '次の日' : '次の月'}
+            aria-label={!isMonth ? '次の日' : '次の月'}
           >
             <ChevronRight className="h-5 w-5" />
           </button>
@@ -434,7 +453,7 @@ export default function StaffSchedulePage() {
           <button
             onClick={() => { setDate(today); setView('day') }}
             className={`flex-1 rounded-full py-1.5 text-xs font-medium transition-colors ${
-              view === 'day' && isToday ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
+              !isMonth && isToday ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
             }`}
           >
             今日
@@ -442,11 +461,12 @@ export default function StaffSchedulePage() {
           <button
             onClick={() => { setDate(addDays(today, 1)); setView('day') }}
             className={`flex-1 rounded-full py-1.5 text-xs font-medium transition-colors ${
-              view === 'day' && isTomorrow ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
+              !isMonth && isTomorrow ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
             }`}
           >
             明日
           </button>
+          {tab === 'mine' && (
           <button
             onClick={() => {
               const [y, m] = date.split('-').map(Number)
@@ -454,19 +474,20 @@ export default function StaffSchedulePage() {
               setView('month')
             }}
             className={`flex-1 rounded-full py-1.5 text-xs font-medium transition-colors flex items-center justify-center gap-1 ${
-              view === 'month' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
+              isMonth ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
             }`}
           >
             <CalendarDays className="h-3.5 w-3.5" />
             月表示
           </button>
+          )}
           <button
             onClick={() => setReloadKey((k) => k + 1)}
-            disabled={view === 'day' ? loadingDay : loadingMonth}
+            disabled={isMonth ? loadingMonth : tab === 'mine' && loadingDay}
             className="rounded-full px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-600 disabled:opacity-50 flex items-center gap-1"
             aria-label="更新"
           >
-            {(view === 'day' ? loadingDay : loadingMonth)
+            {(isMonth ? loadingMonth : tab === 'mine' && loadingDay)
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
               : <RotateCw className="h-3.5 w-3.5" />}
           </button>
@@ -474,7 +495,7 @@ export default function StaffSchedulePage() {
       </div>
 
       {/* 月カレンダー（有給・残業・中抜けの申請状況） */}
-      {view === 'month' && (
+      {isMonth && (
         <div className="px-3 pt-4 space-y-5">
           <div className={`bg-white rounded-2xl shadow-sm overflow-hidden transition-opacity ${loadingMonth ? 'opacity-50' : ''}`}>
             <div className="grid grid-cols-7 border-b border-gray-100">
@@ -688,7 +709,7 @@ export default function StaffSchedulePage() {
         </div>
       )}
 
-      {view === 'day' && (
+      {tab === 'mine' && view === 'day' && (
       <>
 
       <div className={`px-3 pt-4 space-y-5 transition-opacity ${loadingDay ? 'opacity-50' : ''}`}>
@@ -883,6 +904,11 @@ export default function StaffSchedulePage() {
         </Link>
       </div>
       </>
+      )}
+
+      {/* 全体：その日の送迎管理（閲覧のみ） */}
+      {tab === 'all' && accessToken && (
+        <TransportTab accessToken={accessToken} date={date} reloadKey={reloadKey} />
       )}
 
       {/* 有給の取り消し確認 */}
