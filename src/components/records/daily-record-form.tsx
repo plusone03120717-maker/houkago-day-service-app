@@ -110,6 +110,8 @@ interface Props {
   isSchoolHoliday: boolean
   defaultServiceEndTime: string
   holidayServiceEndTime: string
+  /** 連絡帳の本文を書けるか。システム管理者だけ true（施設長・スタッフは見るだけ・2026-11-12 依頼主） */
+  canEditContactNote?: boolean
 }
 
 
@@ -128,6 +130,7 @@ export function DailyRecordForm({
   isSchoolHoliday,
   defaultServiceEndTime,
   holidayServiceEndTime,
+  canEditContactNote = true,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -353,7 +356,8 @@ export function DailyRecordForm({
       })
       .eq('id', attendance.id)
 
-    if (contactNoteContent) {
+    // 連絡帳はシステム管理者だけが書く（施設長・スタッフの保存では連絡帳に触れない）
+    if (canEditContactNote && contactNoteContent) {
       if (initialContactNote) {
         await supabase
           .from('contact_notes')
@@ -628,6 +632,7 @@ export function DailyRecordForm({
               <FileText className="h-5 w-5 text-purple-500" />
               連絡帳
             </CardTitle>
+            {canEditContactNote && (
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -650,19 +655,33 @@ export function DailyRecordForm({
                 {refineLoading ? '整えています...' : '文章を整える'}
               </Button>
             </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          <AutoTextarea
-            value={contactNoteContent}
-            onChange={(e) => setContactNoteContent(e.target.value)}
-            placeholder="保護者へのメッセージを入力してください..."
-            minRows={5}
-            className="w-full text-sm leading-relaxed border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-          <p className="text-xs text-gray-400 mt-1.5">
-            ※ AI生成後、内容を確認・編集してから保存してください
-          </p>
+          {canEditContactNote ? (
+            <>
+              <AutoTextarea
+                value={contactNoteContent}
+                onChange={(e) => setContactNoteContent(e.target.value)}
+                placeholder="保護者へのメッセージを入力してください..."
+                minRows={5}
+                className="w-full text-sm leading-relaxed border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              <p className="text-xs text-gray-400 mt-1.5">
+                ※ AI生成後、内容を確認・編集してから保存してください
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 min-h-[3rem]">
+                {contactNoteContent || 'まだ書かれていません'}
+              </p>
+              <p className="text-xs text-gray-400 mt-1.5">
+                連絡帳は見るだけです。書く・直すのはシステム管理者が行います。
+              </p>
+            </>
+          )}
         </CardContent>
       </Card>
 
