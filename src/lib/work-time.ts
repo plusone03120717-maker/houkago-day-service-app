@@ -136,12 +136,13 @@ export function calcWorkedMinutes(
   outM: number,
   shift: { break_start_time: string | null; break_end_time: string | null } | undefined,
   requested: BreakPair[],
+  noBreak = false, // 「休憩なし」を申請した日は昼休憩の60分を引かない
 ): { net: number; breakMinutes: number; lunchDeduction: number } {
   const diff = outM - inM
   if (diff <= 0) return { net: 0, breakMinutes: 0, lunchDeduction: 0 }
   const breakMinutes = deductibleBreakMinutes(inM, outM, shift, requested)
   const afterBreak = Math.max(0, diff - breakMinutes)
-  const lunchDeduction = afterBreak >= 300 ? 60 : 0
+  const lunchDeduction = !noBreak && afterBreak >= 300 ? 60 : 0
   return { net: Math.max(0, afterBreak - lunchDeduction), breakMinutes, lunchDeduction }
 }
 
@@ -174,6 +175,15 @@ export function effectiveOutMinutes(
   return { outM: punchedOutM, byOvertime: false }
 }
 
+/** 承認ずみの「休憩なし」の申請がある日付 */
+export function noBreakDatesOf(
+  requests: { date: string; status: string; request_type?: string | null }[],
+): Set<string> {
+  return new Set(
+    requests.filter((r) => r.request_type === 'no_break' && r.status === 'approved').map((r) => r.date),
+  )
+}
+
 export type TCDay = {
   date: string
   clockIn: string | null    // HH:MM
@@ -184,6 +194,7 @@ export type TCDay = {
   breakMinutes: number      // 差し引いた中抜け（シフト＋中抜け申請）
   lunchDeduction: number    // 5時間以上で自動控除される60分
   outByOvertime: boolean    // 退勤を残業申請の終了時刻で数えた日
+  noBreak: boolean          // 「休憩なし」の申請で昼休憩を引かなかった日
 }
 
 /**
@@ -194,6 +205,7 @@ export function buildTCDays(
   records: TimeRecordLike[],
   shiftsMap: Map<string, { break_start_time: string | null; break_end_time: string | null }>,
   overtimeEnds: Map<string, number> = new Map(),
+  noBreakDates: Set<string> = new Set(),
 ): TCDay[] {
   const breaksByDate = pairBreakRecords(records)
 
@@ -225,7 +237,7 @@ export function buildTCDays(
         const inM = Math.ceil(toJSTEpochMin(inRec.recorded_at) / 30) * 30 - dayStart   // 切り上げ30分
         if (outM - inM > 0) {
           outByOvertime = byOvertime
-          const worked = calcWorkedMinutes(inM, outM, shiftsMap.get(date), breaksByDate.get(date) ?? [])
+          const worked = calcWorkedMinutes(inM, outM, shiftsMap.get(date), breaksByDate.get(date) ?? [], noBreakDates.has(date))
           brkMins = worked.breakMinutes
           lunchDeduction = worked.lunchDeduction
           hours = Math.round((worked.net / 60) * 100) / 100
@@ -241,6 +253,7 @@ export function buildTCDays(
         breakMinutes: brkMins,
         lunchDeduction,
         outByOvertime,
+        noBreak: noBreakDates.has(date),
       }
     })
 }

@@ -24,6 +24,8 @@ export type DailyRow = {
   lunchDeduction: number
   isConfirmed: boolean
   overtimeMinutes: number | null
+  /** 「休憩なし」の申請で昼休憩を引かなかった日 */
+  noBreak: boolean
   leaveDays: number | null
   /** 時間単位で取得した有給（労使協定に基づく・年5日分まで） */
   leaveHours: number | null
@@ -257,6 +259,12 @@ export function SummaryDailyEditor({
             {row.overtimeMinutes != null && (
               <span className="text-xs text-orange-600 flex-shrink-0">
                 残業 {row.overtimeMinutes}分
+              </span>
+            )}
+
+            {row.noBreak && (
+              <span className="text-xs font-semibold text-rose-700 bg-rose-100 rounded px-1.5 py-0.5 flex-shrink-0">
+                休憩なし
               </span>
             )}
 

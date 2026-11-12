@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`
     const endDate = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
 
-    const [overtimeRes, leaveRes, breakRes] = await Promise.all([
+    const [overtimeRes, leaveRes, breakRes, noBreakRes] = await Promise.all([
       // 残業申請（staff_members.id で検索）
       adminClient
         .from('overtime_requests')
@@ -60,6 +60,15 @@ export async function POST(req: NextRequest) {
         .gte('recorded_at', new Date(`${startDate}T00:00:00+09:00`).toISOString())
         .lte('recorded_at', new Date(`${endDate}T23:59:59+09:00`).toISOString())
         .order('recorded_at'),
+
+      // 「休憩なし」の申請（昼休憩をとれなかった日）
+      adminClient
+        .from('overtime_requests')
+        .select('id, date, status')
+        .eq('staff_id', staffMemberId)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .eq('request_type', 'no_break'),
     ])
 
     // 中抜け記録をdateでグループ化してペアリング
@@ -87,6 +96,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       overtimeRequests: overtimeRes.data ?? [],
+      noBreakRequests: noBreakRes.data ?? [],
       leaveUsages: leaveRes.data ?? [],
       breakRecords,
       leavePolicy: {

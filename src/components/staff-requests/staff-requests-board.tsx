@@ -13,6 +13,7 @@ export type OvertimeRequest = {
   actual_end_time: string | null
   overtime_minutes: number | null
   status: string
+  request_type?: string | null
   staff_members: { name: string } | null
 }
 
@@ -167,8 +168,15 @@ export function StaffRequestsBoard({ overtimeRequests: init_ot, leaveUsages: ini
                   <p className="text-sm text-gray-500">
                     {formatDate(req.date)}
                     {req.actual_end_time ? ` 終了 ${req.actual_end_time.slice(0, 5)}` : ''}
-                    {req.overtime_minutes ? `　残業 ${req.overtime_minutes}分` : ''}
+                    {req.request_type === 'no_break'
+                      ? '　昼休憩の1時間を勤務に入れる'
+                      : req.overtime_minutes ? `　残業 ${req.overtime_minutes}分` : ''}
                   </p>
+                  {req.request_type === 'no_break' && (
+                    <p className="mt-1 inline-block rounded bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700">
+                      休憩なし（昼休憩をとれなかった）
+                    </p>
+                  )}
                   <p className="text-xs text-green-600 mt-0.5">自動承認済み</p>
                 </div>
                 <Button

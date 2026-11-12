@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { ChevronLeft, ChevronRight, Clock, Fingerprint } from 'lucide-react'
 import { SummaryDailyEditor, type DailyRow } from '@/components/shifts/summary-daily-editor'
 import {
-  toMinutes, formatDuration, calcShiftMinutes, buildTCDays, overtimeEndMinutesByDate,
+  toMinutes, formatDuration, calcShiftMinutes, buildTCDays, overtimeEndMinutesByDate, noBreakDatesOf,
 } from '@/lib/work-time'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -29,7 +29,7 @@ type StaffShift = {
 }
 
 type TCRecord = { id: string; staff_member_id: string; type: string; recorded_at: string }
-type OvertimeRow = { staff_id: string; date: string; overtime_minutes: number | null; actual_end_time: string | null; status: string }
+type OvertimeRow = { staff_id: string; date: string; overtime_minutes: number | null; actual_end_time: string | null; status: string; request_type: string }
 type PaidLeaveRow = {
   staff_id: string
   date: string
@@ -108,7 +108,7 @@ export default async function ShiftSummaryPage({
     memberIds.length > 0
       ? supabase
           .from('overtime_requests')
-          .select('staff_id, date, overtime_minutes, actual_end_time, status')
+          .select('staff_id, date, overtime_minutes, actual_end_time, status, request_type')
           .in('staff_id', memberIds)
           .eq('status', 'approved')
           .gte('date', monthStart)
@@ -156,7 +156,8 @@ export default async function ShiftSummaryPage({
     // タイムカードベース集計
     const myTC = tcRecords.filter((r) => r.staff_member_id === member.id)
     // 退勤の打刻より残業申請の終了時刻が遅い日は、申請した時刻まで数える
-    const tcDays = buildTCDays(myTC, shiftsMap, overtimeEndMinutesByDate(overtimes.filter((o) => o.staff_id === member.id)))
+    const memberOvertimes = overtimes.filter((o) => o.staff_id === member.id)
+    const tcDays = buildTCDays(myTC, shiftsMap, overtimeEndMinutesByDate(memberOvertimes), noBreakDatesOf(memberOvertimes))
     const tcWorkDays = tcDays.filter((d) => d.clockIn !== null).length
     const tcTotalHours = Math.round(tcDays.reduce((sum, d) => sum + (d.hours ?? 0), 0) * 100) / 100
     // 実働から差し引いた休憩の合計（中抜け＋5時間以上の自動控除）
@@ -167,7 +168,9 @@ export default async function ShiftSummaryPage({
     const approvedOvertimeMinutes = myOvertimes.reduce(
       (sum, o) => sum + Math.floor((o.overtime_minutes ?? 0) / 30) * 30, 0,
     )
-    const overtimeByDate = new Map(myOvertimes.map((o) => [o.date, o.overtime_minutes]))
+    // 同じ日に残業申請と「休憩なし」があれば合わせる
+    const overtimeByDate = new Map<string, number>()
+    for (const o of myOvertimes) overtimeByDate.set(o.date, (overtimeByDate.get(o.date) ?? 0) + (o.overtime_minutes ?? 0))
 
     // 有給集計（時間単位は日数に合算せず、別建てで集計する）
     const myLeaves = leaves.filter((l) => l.staff_id === member.id)
@@ -215,6 +218,7 @@ export default async function ShiftSummaryPage({
           lunchDeduction: tc?.lunchDeduction ?? 0,
           isConfirmed: shift?.is_attendance_confirmed ?? false,
           overtimeMinutes: overtimeByDate.get(date) ?? null,
+          noBreak: tc?.noBreak ?? false,
           leaveDays: leaveByDate.get(date)?.days || null,
           leaveHours: leaveByDate.get(date)?.hours || null,
         }

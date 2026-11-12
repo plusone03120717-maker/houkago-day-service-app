@@ -38,6 +38,8 @@ type LeavePolicy = {
   hourlyUsedHours: number
 }
 
+type NoBreakReq = { id: string; date: string; status: string }
+
 type BreakRecord = {
   date: string
   break_start: string | null
@@ -89,12 +91,13 @@ function StaffLiffContent() {
   const [month, setMonth] = useState(initialDate ? Number(initialDate.slice(5, 7)) : now.getMonth() + 1)
 
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeReq[]>([])
+  const [noBreakRequests, setNoBreakRequests] = useState<NoBreakReq[]>([])
   const [leaveUsages, setLeaveUsages] = useState<LeaveUsage[]>([])
   const [breakRecords, setBreakRecords] = useState<BreakRecord[]>([])
   const [loadingMonth, setLoadingMonth] = useState(false)
 
   const [selectedDate, setSelectedDate] = useState<string | null>(initialDate)
-  const [activeForm, setActiveForm] = useState<'leave' | 'overtime' | 'break' | null>(null)
+  const [activeForm, setActiveForm] = useState<'leave' | 'overtime' | 'break' | 'noBreak' | null>(null)
 
   const [leaveUnit, setLeaveUnit] = useState<'1.0' | '0.5' | 'hour'>('1.0')
   const [leaveHours, setLeaveHours] = useState(1)
@@ -159,11 +162,13 @@ function StaffLiffContent() {
       .then(r => r.json())
       .then((json: {
         overtimeRequests?: OvertimeReq[]
+        noBreakRequests?: NoBreakReq[]
         leaveUsages?: LeaveUsage[]
         breakRecords?: BreakRecord[]
         leavePolicy?: LeavePolicy
       }) => {
         setOvertimeRequests(json.overtimeRequests ?? [])
+        setNoBreakRequests(json.noBreakRequests ?? [])
         setLeaveUsages(json.leaveUsages ?? [])
         setBreakRecords(json.breakRecords ?? [])
         setLeavePolicy(json.leavePolicy ?? null)
@@ -189,6 +194,7 @@ function StaffLiffContent() {
     return {
       leaves: leaveUsages.filter(l => l.date === dateStr),
       overtime: overtimeRequests.find(o => o.date === dateStr) ?? null,
+      noBreak: noBreakRequests.find(o => o.date === dateStr) ?? null,
       breaks: breakRecords.filter(b => b.date === dateStr),
     }
   }
@@ -529,6 +535,7 @@ function StaffLiffContent() {
                       }`} />
                     )}
                     {info.breaks.length > 0 && <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />}
+                    {info.noBreak && <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />}
                   </div>
                 </button>
               )
@@ -549,6 +556,10 @@ function StaffLiffContent() {
           <div className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-sky-400" />
             <span className="text-xs text-gray-400">中抜け</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-rose-500" />
+            <span className="text-xs text-gray-400">休憩なし</span>
           </div>
         </div>
       </div>
@@ -840,6 +851,19 @@ function StaffLiffContent() {
                   </div>
                 </div>
               )}
+              {dateInfo.noBreak && (
+                <div className="flex items-center gap-2.5 rounded-2xl px-4 py-3 border bg-rose-50 border-rose-100">
+                  <span className="w-2 h-2 rounded-full shrink-0 bg-rose-500" />
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-800">休憩なし</span>
+                    <span className="text-gray-500 ml-1">昼休憩1時間を勤務に入れる</span>
+                    <span className="ml-2 text-xs text-rose-600">
+                      {dateInfo.noBreak.status === 'approved' ? '承認済' :
+                       dateInfo.noBreak.status === 'rejected' ? '却下' : '承認待ち'}
+                    </span>
+                  </div>
+                </div>
+              )}
               {dateInfo.breaks.map((b, i) => {
                 const key = `${b.date}-${i}`
                 const cancellable = !!(b.break_start && b.break_end)
@@ -1004,6 +1028,39 @@ function StaffLiffContent() {
                     className="w-full bg-orange-400 text-white rounded-2xl py-3.5 text-sm font-semibold shadow-sm active:opacity-80"
                   >
                     残業申請
+                  </button>
+                )
+              )}
+
+              {/* 休憩なし（昼休憩をとれなかった日） */}
+              {!dateInfo.noBreak && (
+                activeForm === 'noBreak' ? (
+                  <div className="bg-rose-50 rounded-2xl p-4 border border-rose-100">
+                    <p className="text-sm font-semibold text-rose-800 mb-2">休憩なしの申請</p>
+                    <p className="text-xs text-gray-600 leading-relaxed mb-4">
+                      昼休憩をとれなかった日に使います。その日は昼休憩の1時間を引かずに、勤務時間に入れます。
+                      休憩はできるだけとってください。昼にとれない日は、ほかの時間にずらしてとってください。
+                    </p>
+                    <div className="flex gap-2">
+                      <button onClick={() => setActiveForm(null)} className="flex-1 rounded-xl py-3 text-sm text-gray-500 bg-white border border-gray-200">
+                        キャンセル
+                      </button>
+                      <button
+                        onClick={() => submit('/api/liff/staff/no-break', { date: selectedDate! })}
+                        disabled={submitting}
+                        className="flex-1 rounded-xl py-3 text-sm font-semibold text-white bg-rose-500 disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm"
+                      >
+                        {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                        申請する
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setActiveForm('noBreak'); setToast(null) }}
+                    className="w-full bg-white text-rose-600 border border-rose-200 rounded-2xl py-3.5 text-sm font-semibold shadow-sm active:opacity-80"
+                  >
+                    休憩なし（昼休憩をとれなかった）
                   </button>
                 )
               )}

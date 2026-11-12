@@ -66,7 +66,7 @@ export default async function StaffRequestsHistoryPage({
   const [overtimeRes, leaveRes, breakRes] = await Promise.all([
     supabase
       .from('overtime_requests')
-      .select('id, date, actual_end_time, overtime_minutes, status, reviewed_at, reviewed_by, staff_members(name)')
+      .select('id, date, actual_end_time, overtime_minutes, status, request_type, reviewed_at, reviewed_by, staff_members(name)')
       .eq('is_new', false)
       .gte('date', from)
       .lt('date', to)
@@ -94,6 +94,7 @@ export default async function StaffRequestsHistoryPage({
     actual_end_time: string | null
     overtime_minutes: number | null
     status: string
+    request_type: string
     reviewed_at: string | null
     reviewed_by: string | null
     staff_members: { name: string } | null
@@ -141,10 +142,12 @@ export default async function StaffRequestsHistoryPage({
       kind: 'overtime',
       staffName: o.staff_members?.name ?? '—',
       date: o.date,
-      detail: [
-        o.actual_end_time ? `終了 ${o.actual_end_time.slice(0, 5)}` : null,
-        o.overtime_minutes ? `残業 ${o.overtime_minutes}分` : null,
-      ].filter(Boolean).join('　') || '—',
+      detail: o.request_type === 'no_break'
+        ? '休憩なし（昼休憩の1時間を勤務に入れる）'
+        : [
+          o.actual_end_time ? `終了 ${o.actual_end_time.slice(0, 5)}` : null,
+          o.overtime_minutes ? `残業 ${o.overtime_minutes}分` : null,
+        ].filter(Boolean).join('　') || '—',
       result: o.status === 'rejected' ? '却下' : '承認（自動）',
       reviewed_at: o.reviewed_at,
       reviewed_by: o.reviewed_by,
