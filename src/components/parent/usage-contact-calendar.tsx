@@ -187,13 +187,44 @@ function toTimeInput(v: string | null): string {
   return v ? v.slice(0, 5) : ''
 }
 
-// 6:00〜21:00 を15分刻みで選択肢にする。
+// 6:00〜21:00 を5分刻みで選択肢にする。
 // input[type=time] のネイティブピッカーは端末により現在時刻より前を選びにくいため、
-// 端末差の出ないプルダウンで時刻を選ばせる。
-const TIME_OPTIONS = Array.from({ length: (21 - 6) * 4 + 1 }, (_, i) => {
-  const total = 6 * 60 + i * 15
+// 端末差の出ないプルダウンで時刻を選ばせる。刻みに合わない時刻は「手入力」で入れる。
+const TIME_STEP_MIN = 5
+const TIME_OPTIONS = Array.from({ length: ((21 - 6) * 60) / TIME_STEP_MIN + 1 }, (_, i) => {
+  const total = 6 * 60 + i * TIME_STEP_MIN
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
 })
+
+/**
+ * 手入力の時刻を HH:MM にそろえる。読み取れなければ null。
+ * 「15:20」「15：20」「1520」「９時５分」「9.05」「15」（＝15:00）などを受け付ける。
+ */
+function parseTypedTime(raw: string): string | null {
+  const s = raw
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[：.．時]/g, ':')
+    .replace(/[分\s]/g, '')
+  let h: number
+  let m: number
+  const colon = s.match(/^(\d{1,2}):(\d{0,2})$/)
+  if (colon) {
+    h = Number(colon[1])
+    m = colon[2] === '' ? 0 : Number(colon[2])
+  } else if (/^\d{1,4}$/.test(s)) {
+    if (s.length <= 2) {
+      h = Number(s)
+      m = 0
+    } else {
+      h = Number(s.slice(0, s.length - 2))
+      m = Number(s.slice(-2))
+    }
+  } else {
+    return null
+  }
+  if (h > 23 || m > 59) return null
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
 
 function TimeSelect({
   value,
@@ -204,23 +235,93 @@ function TimeSelect({
   onChange: (v: string) => void
   ariaLabel: string
 }) {
-  // 選択肢の刻みに載らない既存データ（例: 15:20）も失わずに表示する
+  const [manual, setManual] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const [invalid, setInvalid] = useState(false)
+
+  // 選択肢の刻みに載らない既存データ（例: 15:23）も失わずに表示する
   const options = value && !TIME_OPTIONS.includes(value)
     ? [...TIME_OPTIONS, value].sort()
     : TIME_OPTIONS
 
+  const fieldClass =
+    'w-full rounded-lg border px-2 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400'
+
+  function startManual() {
+    setDraft(value)
+    setInvalid(false)
+    setManual(true)
+  }
+
+  function handleTyping(text: string) {
+    setDraft(text)
+    if (text.trim() === '') {
+      setInvalid(false)
+      onChange('')
+      return
+    }
+    const parsed = parseTypedTime(text)
+    setInvalid(false)
+    // 入力の途中でも、読み取れた時刻はすぐ反映する（そのまま送信しても失われない）
+    onChange(parsed ?? '')
+  }
+
+  function handleBlur() {
+    if (draft.trim() === '') return
+    const parsed = parseTypedTime(draft)
+    if (parsed) {
+      setDraft(parsed)
+    } else {
+      setInvalid(true)
+    }
+  }
+
   return (
-    <select
-      aria-label={ariaLabel}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-    >
-      <option value="">指定なし</option>
-      {options.map((t) => (
-        <option key={t} value={t}>{t}</option>
-      ))}
-    </select>
+    <div>
+      {manual ? (
+        <input
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          aria-label={ariaLabel}
+          aria-invalid={invalid}
+          placeholder="例 15:20"
+          value={draft}
+          onChange={(e) => handleTyping(e.target.value)}
+          onBlur={handleBlur}
+          className={`${fieldClass} ${invalid ? 'border-red-400' : 'border-gray-200'}`}
+        />
+      ) : (
+        <select
+          aria-label={ariaLabel}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`${fieldClass} border-gray-200`}
+        >
+          <option value="">指定なし</option>
+          {options.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+      )}
+      {invalid && (
+        <p className="mt-1 text-[10px] text-red-500">時刻を読み取れませんでした（例 15:20）</p>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          if (manual) {
+            setManual(false)
+            setInvalid(false)
+          } else {
+            startManual()
+          }
+        }}
+        className="mt-1 text-[11px] text-indigo-500 underline underline-offset-2"
+      >
+        {manual ? '一覧から選ぶ' : '手入力する'}
+      </button>
+    </div>
   )
 }
 
