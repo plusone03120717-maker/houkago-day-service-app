@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
-import { calcWorkedMinutes, pairBreakRecords, overtimeEndMinutesByDate, effectiveOutMinutes } from '@/lib/work-time'
+import { calcWorkedMinutes, pairBreakRecords, overtimeEndMinutesByDate, effectiveOutMinutes, noBreakDatesOf } from '@/lib/work-time'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Edit2, Check, X, ChevronLeft, ChevronRight, Plus, Pencil, AlertTriangle, CheckCircle, CalendarClock, Trash2 } from 'lucide-react'
@@ -54,7 +54,7 @@ export type OvertimeRequest = {
   scheduled_end_time: string | null
   actual_end_time: string | null
   overtime_minutes: number
-  request_type: 'pre' | 'auto'
+  request_type: 'pre' | 'auto' | 'no_break'
   status: 'pending' | 'approved' | 'rejected'
   note: string | null
 }
@@ -71,6 +71,7 @@ type DayRecord = {
   break_minutes: number
   lunch_deduction: number
   out_by_overtime: boolean // 退勤を残業申請の終了時刻で数えた日
+  no_break: boolean // 「休憩なし」の申請で昼休憩を引かなかった日
 }
 
 type EditState = { recordId: string; field: 'clock_in' | 'clock_out'; value: string }
@@ -142,6 +143,7 @@ function buildDayRecords(
   records: TimeRecord[],
   shiftsMap: Map<string, ShiftEntry> = new Map(),
   overtimeEnds: Map<string, number> = new Map(),
+  noBreakDates: Set<string> = new Set(),
 ): DayRecord[] {
   const byDate = new Map<string, { clock_in: TimeRecord | null; clock_out: TimeRecord | null }>()
   // LINE の中抜け申請（break_start / break_end）は行を作らず、勤務時間から差し引くだけ
@@ -179,12 +181,12 @@ function buildDayRecords(
         const inM = roundInUp30(clock_in.recorded_at).minutes - dayStart
 
         // シフトの中抜けと中抜け申請を差し引き、残りが5時間以上なら休憩1時間を自動控除
-        const worked = calcWorkedMinutes(inM, outM, shiftsMap.get(date), breaksByDate.get(date) ?? [])
+        const worked = calcWorkedMinutes(inM, outM, shiftsMap.get(date), breaksByDate.get(date) ?? [], noBreakDates.has(date))
         break_minutes = worked.breakMinutes
         lunch_deduction = worked.lunchDeduction
         hours = Math.round((worked.net / 60) * 100) / 100
       }
-      return { date, clock_in, clock_out, rounded_in, rounded_out, hours, break_minutes, lunch_deduction, out_by_overtime }
+      return { date, clock_in, clock_out, rounded_in, rounded_out, hours, break_minutes, lunch_deduction, out_by_overtime, no_break: noBreakDates.has(date) }
     })
 }
 
@@ -479,6 +481,7 @@ export function TimecardBoard({
     records.filter((r) => r.staff_member_id === selectedStaffId),
     shiftsMap,
     overtimeEndMinutesByDate(overtimeRequests),
+    noBreakDatesOf(overtimeRequests),
   )
   const missingClockOutCount = dayRecords.filter((d) => d.clock_in !== null && d.clock_out === null).length
   const missingClockInCount = dayRecords.filter((d) => d.clock_out !== null && d.clock_in === null).length
@@ -706,6 +709,7 @@ export function TimecardBoard({
 
                     const shift = shiftsMap.get(day.date)
                     const preOT = (overtimeMap.get(day.date) ?? []).find((o) => o.request_type === 'pre')
+                    const noBreakOT = (overtimeMap.get(day.date) ?? []).find((o) => o.request_type === 'no_break' && o.status === 'approved')
                     const dowLabel = ['日', '月', '火', '水', '木', '金', '土'][new Date(day.date + 'T00:00:00').getDay()]
                     const holidayName = getJapaneseHolidayName(day.date)
                     const isRestDay = dowLabel === '日' || holidayName !== null
@@ -826,6 +830,14 @@ export function TimecardBoard({
                                 </span>
                                 <CheckCircle className="h-3.5 w-3.5 text-green-500" />
                               </div>
+                            )}
+                            {noBreakOT && (
+                              <span
+                                className="inline-block mt-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700"
+                                title="昼休憩をとれなかった日。昼休憩の60分を引かずに勤務時間に入れています"
+                              >
+                                休憩なし
+                              </span>
                             )}
                           </td>
                         )}

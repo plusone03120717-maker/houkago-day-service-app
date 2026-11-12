@@ -4,7 +4,7 @@ import { verifyLineAccessToken } from '@/lib/line/verify-id-token'
 import { sumDayUnitDays, sumHourUnitHours } from '@/lib/paid-leave'
 import { findStaffByLineUserId } from '@/lib/line/liff-staff'
 import { logStaffView } from '@/lib/line/log-staff-view'
-import { calcShiftMinutes, buildTCDays, pairBreakRecords, overtimeEndMinutesByDate } from '@/lib/work-time'
+import { calcShiftMinutes, buildTCDays, pairBreakRecords, overtimeEndMinutesByDate, noBreakDatesOf } from '@/lib/work-time'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
 
       adminClient
         .from('overtime_requests')
-        .select('id, date, actual_end_time, status')
+        .select('id, date, actual_end_time, status, request_type')
         .eq('staff_id', staff.staffMemberId)
         .gte('date', startDate)
         .lte('date', endDate)
@@ -201,13 +201,14 @@ export async function POST(req: NextRequest) {
       shiftRows.map((s) => [s.date, { break_start_time: s.break_start_time, break_end_time: s.break_end_time }]),
     )
     // 退勤の打刻より残業申請の終了時刻が遅い日は、申請した時刻まで数える
-    const overtimeRows = (overtimeRes.data ?? []) as unknown as { date: string; actual_end_time: string | null; status: string }[]
-    const tcDays = buildTCDays(timeRecords, shiftsMap, overtimeEndMinutesByDate(overtimeRows))
+    const overtimeRows = (overtimeRes.data ?? []) as unknown as { date: string; actual_end_time: string | null; status: string; request_type: string }[]
+    const tcDays = buildTCDays(timeRecords, shiftsMap, overtimeEndMinutesByDate(overtimeRows), noBreakDatesOf(overtimeRows))
     const workedMinutes = Math.round(tcDays.reduce((sum, d) => sum + (d.hours ?? 0), 0) * 60)
 
     return NextResponse.json({
       days,
-      overtimeRequests: overtimeRes.data ?? [],
+      // 画面の「残業」には残業申請だけを出す（休憩なしは勤務時間の計算にだけ使う）
+      overtimeRequests: overtimeRows.filter((o) => o.request_type !== 'no_break'),
       leaveUsages,
       breakRecords,
       summary: {
