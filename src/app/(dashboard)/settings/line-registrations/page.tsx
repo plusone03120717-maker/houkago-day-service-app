@@ -1,8 +1,10 @@
+import { requireAdmin } from '@/lib/require-admin'
 import { createClient } from '@/lib/supabase/server'
 import { findCandidates, type CandidateChild } from '@/lib/guardian-registration'
 import { LineRegistrationsManager } from '@/components/settings/line-registrations-manager'
 
 export default async function LineRegistrationsPage() {
+  await requireAdmin()
   const supabase = await createClient()
 
   const [{ data: requestsRaw }, { data: childrenRaw }, { data: guardiansRaw }] = await Promise.all([

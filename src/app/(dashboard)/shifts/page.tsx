@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { ClipboardCheck } from 'lucide-react'
 import { ShiftCalendar } from '@/components/shifts/shift-calendar'
-import { getStaffAccess } from '@/lib/require-admin'
+import { getStaffAccess, requireAdmin } from '@/lib/require-admin'
 
 type StaffUser = {
   id: string
@@ -42,6 +42,7 @@ export default async function ShiftsPage({
 }: {
   searchParams: Promise<{ year?: string; month?: string }>
 }) {
+  await requireAdmin()
   const params = await searchParams
   const supabase = await createClient()
   const accessPromise = getStaffAccess()

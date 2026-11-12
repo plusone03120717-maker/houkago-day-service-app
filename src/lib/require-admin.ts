@@ -1,22 +1,20 @@
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
-import { getSessionClaims } from '@/lib/auth'
-import { createClient } from '@/lib/supabase/server'
+import { getSessionUser, getSessionUserRow } from '@/lib/auth'
 import { canManageMoney, isFacilityManager } from '@/lib/roles'
 
 /**
- * 管理者（admin）のみアクセス可能なページで呼ぶ。
- * staff ロールの場合は /shifts へリダイレクト。
- * DBクエリを使わず JWT の user_metadata.role を参照。
+ * 管理者（システム管理者・施設長）のみアクセス可能なページで呼ぶ。
+ * 役職は users テーブルの値で判定する（JWT の user_metadata は本人が書き換えられるため使わない）。
+ * スタッフはダッシュボード、保護者は保護者画面、users に行がない人はログイン画面へ戻す。
  */
 export async function requireAdmin() {
-  const claims = await getSessionClaims()
-  if (!claims) redirect('/login')
-
-  // role が未設定（初期管理者等）の場合は通す。staff は必ずブロック。
-  if (claims.role === 'staff') {
-    redirect('/shifts')
-  }
+  const user = await getSessionUser()
+  if (!user) redirect('/login')
+  if (user.role === 'admin') return
+  if (user.role === 'staff') redirect('/dashboard')
+  if (user.role === 'parent') redirect('/parent')
+  redirect('/login')
 }
 
 export type StaffAccess = {
@@ -32,24 +30,16 @@ export type StaffAccess = {
  * ログイン中の職員の役職を users テーブルから読む。
  * 施設長かどうかは JWT に載らず、user_metadata は本人が書き換えられるため、
  * お金まわりの判定には必ずこちらを使う。未ログインなら null。
- * レイアウトとページの両方から呼ばれるので、1回の表示につき DB を読むのは1回だけにする（React の cache）。
+ * users の読み取りは getSessionUser と共通（1回の表示につき1回だけ）。
  */
 export const getStaffAccess = cache(async (): Promise<StaffAccess | null> => {
-  const claims = await getSessionClaims()
-  if (!claims) return null
-
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('users')
-    .select('role, job_titles')
-    .eq('id', claims.id)
-    .maybeSingle()
-  const row = data as { role: string | null; job_titles: string[] | null } | null
-  const role = row?.role ?? null
-  const jobTitles = row?.job_titles ?? []
+  const res = await getSessionUserRow()
+  if (!res) return null
+  const role = res.row?.role ?? null
+  const jobTitles = res.row?.job_titles ?? []
 
   return {
-    userId: claims.id,
+    userId: res.id,
     role,
     jobTitles,
     canManageMoney: canManageMoney(role, jobTitles),

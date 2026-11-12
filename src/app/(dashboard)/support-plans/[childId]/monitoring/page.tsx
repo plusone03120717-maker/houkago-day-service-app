@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
-import { getSessionClaims } from '@/lib/auth'
+import { getSessionUser } from '@/lib/auth'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -51,8 +51,8 @@ export default async function MonitoringPage({
 }) {
   const { childId } = await params
   const supabase = await createClient()
-  const claims = await getSessionClaims()
-  const isReadOnly = claims?.role === 'staff'
+  const sessionUser = await getSessionUser()
+  const isReadOnly = sessionUser?.role === 'staff'
 
   // 児童・支援計画・モニタリング予定・施設・記録は互いに独立しているため並列取得
   const [

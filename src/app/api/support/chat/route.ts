@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { getSessionUser } from '@/lib/auth'
+import { getSessionUser, isStaffRole } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { loadManualText } from '@/lib/support/manual'
 import { loadInternalManualText } from '@/lib/internal-manual/knowledge'
@@ -43,7 +43,7 @@ type ChatBody = {
 export async function POST(request: NextRequest) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 })
-  if (user.role === 'parent') {
+  if (!isStaffRole(user.role)) {
     return NextResponse.json({ error: '権限がありません' }, { status: 403 })
   }
 

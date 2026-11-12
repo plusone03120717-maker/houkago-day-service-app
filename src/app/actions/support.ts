@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { getSessionClaims } from '@/lib/auth'
+import { getSessionClaims, getSessionUser } from '@/lib/auth'
 import type { InquiryStatus } from '@/lib/support/labels'
 
 /**
@@ -54,8 +54,8 @@ export async function saveAdminNote(id: string, note: string): Promise<{ error?:
 
 /** 管理者が詳細を開いたら未読を落とす（ベルの件数用） */
 export async function markInquiryRead(id: string): Promise<void> {
-  const claims = await getSessionClaims()
-  if (claims?.role !== 'admin') return
+  const sessionUser = await getSessionUser()
+  if (sessionUser?.role !== 'admin') return
 
   const supabase = await createClient()
   await supabase.from('support_inquiries').update({ is_new: false }).eq('id', id)

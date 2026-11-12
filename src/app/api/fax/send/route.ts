@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
-import { getSessionUser } from '@/lib/auth'
+import { getSessionUser, isStaffRole } from '@/lib/auth'
 import { jfaxAddress } from '@/lib/fax/partner-offices'
 import { sendJfaxMail } from '@/lib/fax/send-jfax'
 import { hasMoneyAccess } from '@/lib/require-admin'
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 })
   // role が未設定なのは初期の管理者アカウント（require-admin と同じ扱い）
-  if (user.role !== 'admin' && user.role !== 'staff' && user.role !== null) {
+  if (!isStaffRole(user.role)) {
     return NextResponse.json({ error: '送信できるのはスタッフだけです' }, { status: 403 })
   }
 

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
-import { getSessionClaims } from '@/lib/auth'
+import { getSessionClaims, getSessionUser, isStaffRole } from '@/lib/auth'
 import { runAnomalyCheck } from '@/lib/anomaly/run'
 
 /**
@@ -16,7 +16,7 @@ import { runAnomalyCheck } from '@/lib/anomaly/run'
 export async function runCheckNow(): Promise<{ error?: string; found?: number }> {
   const claims = await getSessionClaims()
   if (!claims) return { error: 'ログインが必要です' }
-  if (claims.role === 'parent') return { error: '権限がありません' }
+  if (!isStaffRole((await getSessionUser())?.role)) return { error: '権限がありません' }
 
   const admin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { getSessionUser } from '@/lib/auth'
+import { getSessionUser, isStaffRole } from '@/lib/auth'
 import { isCategory } from '@/lib/internal-manual/categories'
 
 type Result = { error?: string }
@@ -10,7 +10,7 @@ type Result = { error?: string }
 async function requireStaff() {
   const user = await getSessionUser()
   if (!user) return { error: 'ログインが必要です' as const, user: null }
-  if (user.role === 'parent') return { error: '権限がありません' as const, user: null }
+  if (!isStaffRole(user.role)) return { error: '権限がありません' as const, user: null }
   return { error: null, user }
 }
 

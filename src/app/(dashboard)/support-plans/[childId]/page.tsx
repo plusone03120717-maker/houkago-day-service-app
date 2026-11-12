@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
-import { getSessionClaims } from '@/lib/auth'
+import { getSessionUser } from '@/lib/auth'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { ArrowLeft, ClipboardList, FileDown } from 'lucide-react'
@@ -92,8 +92,8 @@ export default async function SupportPlanDetailPage({
 }) {
   const { childId } = await params
   const supabase = await createClient()
-  const claims = await getSessionClaims()
-  const isReadOnly = claims?.role === 'staff'
+  const sessionUser = await getSessionUser()
+  const isReadOnly = sessionUser?.role === 'staff'
 
   // 直近3ヶ月の特記事項の範囲
   const threeMonthsAgo = new Date()
