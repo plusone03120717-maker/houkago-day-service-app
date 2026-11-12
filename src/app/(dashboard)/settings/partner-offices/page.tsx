@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { getSessionUser } from '@/lib/auth'
+import { getSessionUser, isStaffRole } from '@/lib/auth'
 import { Card, CardContent } from '@/components/ui/card'
 import { PartnerOfficesForm, type PartnerOfficeRow } from '@/components/settings/partner-offices-form'
 import { requireMoneyAccess } from '@/lib/require-admin'
@@ -16,7 +16,7 @@ export default async function PartnerOfficesSettingsPage() {
   await requireMoneyAccess()
   const user = await getSessionUser()
   if (!user) redirect('/login')
-  if (user.role !== 'admin' && user.role !== 'staff' && user.role !== null) redirect('/')
+  if (!isStaffRole(user.role)) redirect('/')
   const supabase = await createClient()
   const { data } = await supabase
     .from('partner_offices')

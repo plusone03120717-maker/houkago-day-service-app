@@ -20,7 +20,7 @@
     "verify:break": "tsx scripts/verify-break-requests.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.80.0",
+    "@anthropic-ai/sdk": "^1.8.0",
     "@line/liff": "^2.31.2",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -41,7 +41,7 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^0.577.0",
     "next": "16.4.3",
-    "nodemailer": "^6.9.16",
+    "nodemailer": "^10.5.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "tailwind-merge": "^3.5.0"
@@ -50,7 +50,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/encoding-japanese": "^2.2.1",
     "@types/node": "^20",
-    "@types/nodemailer": "^6.4.17",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

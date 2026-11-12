@@ -56,13 +56,13 @@ export function roleBadgeClass(value: string): string {
  * 児童管理の「利用スケジュール」を編集できるか。
  * システム管理者と、サービス管理者の役職を持つスタッフのみ編集可。
  * 施設長は閲覧のみ（保護者の LINE がつながり、利用の変更は保護者からの連絡で行うため）。
- * （role 未設定の旧アカウント＝初期管理者は requireAdmin と同じく通す）
+ * （役職が未設定＝users に行がない人は通さない）
  */
 export function canEditUsagePlans(role: string | null, jobTitles: string[] | null): boolean {
-  if (role === 'parent') return false
-  if (isFacilityManager(role, jobTitles)) return false
+  // role は users テーブルの値。null（users に行がない人）は編集させない
   if (role === 'staff') return (jobTitles ?? []).includes(SERVICE_MANAGER)
-  return true
+  if (role !== 'admin') return false
+  return !isFacilityManager(role, jobTitles)
 }
 
 /**
@@ -70,10 +70,11 @@ export function canEditUsagePlans(role: string | null, jobTitles: string[] | nul
  * システム管理者だけ。施設長・スタッフ（サービス管理者を含む）は閲覧のみ。
  * 施設長・スタッフが編集できるのは「日々の記録」「児童の情報」「ヒヤリハット」だけで、
  * それらの画面ではこの判定を使わない（2026-11-12 依頼主）。
- * （role 未設定の旧アカウント＝初期管理者は requireAdmin と同じく通す）
+ * （役職が未設定＝users に行がない人は通さない）
  */
 export function canEditOperations(role: string | null, jobTitles: string[] | null): boolean {
-  if (role === 'parent' || role === 'staff') return false
+  // role は users テーブルの値。システム管理者だけ（null＝users に行がない人も不可）
+  if (role !== 'admin') return false
   return !isFacilityManager(role, jobTitles)
 }
 

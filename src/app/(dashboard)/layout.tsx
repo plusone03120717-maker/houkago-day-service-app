@@ -1,6 +1,6 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
-import { requireSessionUser } from '@/lib/auth'
+import { requireSessionUser, isStaffRole } from '@/lib/auth'
 import { getStaffAccess } from '@/lib/require-admin'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
@@ -14,17 +14,19 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  // getUser()（Auth サーバーへの往復）+ users テーブル参照の2往復を、
-  // JWT のローカル検証だけで済ませる。詳細は lib/auth.ts を参照。
+  // JWT はローカル検証、役職は users テーブルを1回だけ読む。詳細は lib/auth.ts を参照。
   const user = await requireSessionUser()
 
-  // 保護者の場合は保護者ダッシュボードへリダイレクト
+  // 役職は users テーブルの値。保護者は保護者画面へ、users に行がない人はログイン画面へ
   if (user.role === 'parent') {
     redirect('/parent')
   }
+  if (!isStaffRole(user.role)) {
+    redirect('/login')
+  }
 
-  const role = user.role ?? 'staff'
-  // 施設長（お金まわりを外した管理者）は JWT に載らないので、管理者のときだけ DB を引く
+  const role = user.role as string
+  // 施設長かどうか（お金まわりを外した管理者）。users の読み取りは getSessionUser と共通
   const canManageMoney = role === 'staff' ? false : (await getStaffAccess())?.canManageMoney ?? false
 
   return (

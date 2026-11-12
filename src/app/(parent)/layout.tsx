@@ -6,12 +6,15 @@ import { ParentNav } from '@/components/parent/parent-nav'
 export const dynamic = 'force-dynamic'
 
 export default async function ParentLayout({ children }: { children: React.ReactNode }) {
-  // JWT のローカル検証のみ（getUser() + users 参照の2往復を削減）。詳細は lib/auth.ts
+  // 役職は users テーブルの値（本人には書き換えられない）。詳細は lib/auth.ts
   const user = await requireSessionUser()
 
-  // スタッフ・管理者はスタッフ画面へ
+  // スタッフ・管理者はスタッフ画面へ、users に行がない人はログイン画面へ
   if (user.role === 'admin' || user.role === 'staff') {
     redirect('/dashboard')
+  }
+  if (user.role !== 'parent') {
+    redirect('/login')
   }
 
   return (

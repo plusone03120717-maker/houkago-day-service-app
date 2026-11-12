@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { getSessionUser } from '@/lib/auth'
+import { getSessionUser, isStaffRole } from '@/lib/auth'
 import { hasEditAccess } from '@/lib/require-admin'
 import { createClient } from '@/lib/supabase/server'
 import { SUPPORT_MODEL, stripMarkdown } from '@/lib/support/bot'
@@ -19,7 +19,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 export async function POST(request: NextRequest) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 })
-  if (user.role === 'parent') {
+  if (!isStaffRole(user.role)) {
     return NextResponse.json({ error: '権限がありません' }, { status: 403 })
   }
   // 議事録を編集できるのはシステム管理者だけ（施設長・スタッフは閲覧のみ）

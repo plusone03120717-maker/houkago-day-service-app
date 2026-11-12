@@ -58,8 +58,7 @@ export async function saveAdminNote(id: string, note: string): Promise<{ error?:
 
 /** 管理者が詳細を開いたら未読を落とす（ベルの件数用）。落とせるのはシステム管理者だけ */
 export async function markInquiryRead(id: string): Promise<{ error?: string }> {
-  const claims = await getSessionClaims()
-  if (claims?.role !== 'admin') return { error: '管理者のみ既読にできます' }
+  // 役職は users テーブルの値で見る（hasEditAccess＝システム管理者だけ true）。
   // 施設長は閲覧のみ。開いても未読は落とさない（システム管理者が気づけるように残す）
   if (!(await hasEditAccess())) return { error: '既読にできるのはシステム管理者だけです' }
 

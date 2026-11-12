@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { getSessionUser } from '@/lib/auth'
+import { getSessionUser, isStaffRole } from '@/lib/auth'
 import { hasEditAccess } from '@/lib/require-admin'
 import { isCategory, type Category } from '@/lib/internal-manual/categories'
 
@@ -18,7 +18,7 @@ const MAX_NOTE_LENGTH = 2000
 async function requireEditor() {
   const user = await getSessionUser()
   if (!user) return { error: 'ログインが必要です' as const, user: null }
-  if (user.role === 'parent') return { error: '権限がありません' as const, user: null }
+  if (!isStaffRole(user.role)) return { error: '権限がありません' as const, user: null }
   if (!(await hasEditAccess())) {
     return { error: '社内マニュアルの編集はシステム管理者だけができます' as const, user: null }
   }

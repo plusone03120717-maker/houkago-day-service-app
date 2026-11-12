@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { staffApiGuard } from '@/lib/auth'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
 import { WRITING_EFFORT, WRITING_MODEL } from '@/lib/ai/models'
@@ -9,6 +10,9 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 職員だけ（保護者のアカウントや users に行がない人は AI を呼べない）
+  const denied = await staffApiGuard()
+  if (denied) return denied
 
   const { childName, diagnosis, supportPolicy, longTermGoals } = await request.json() as {
     childName: string

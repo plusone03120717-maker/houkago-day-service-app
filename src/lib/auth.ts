@@ -1,63 +1,94 @@
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
+import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 export type SessionUser = {
   id: string
   name: string | null
+  /**
+   * users テーブルの役職（'admin' | 'staff' | 'parent'）。
+   * users に行がないアカウント（招待されずに自分で登録した人など）は null。
+   * null は「どの画面にも入れない」として扱うこと。
+   */
   role: string | null
+}
+
+export type SessionClaims = {
+  id: string
+  name: string | null
 }
 
 /**
  * JWT のクレームだけを読む（DB往復ゼロ・ネットワーク往復ゼロ）。
  *
- * getUser() は呼ぶたびに Supabase Auth サーバーへネットワーク往復が発生する。
  * getClaims() は JWT をローカル検証するため（非対称鍵なら）往復ゼロで済む。
- * proxy.ts と同じ方式。レイアウトとページで何度呼ばれても、1回の表示につき1回だけ動く（React の cache）。
- *
- * name / role はスタッフ・保護者招待時に user_metadata へ書き込まれる
- * （api/staff/invite, api/parents/invite）。旧アカウントでは未設定のことがあり、
- * その場合 null が返る。
+ * 役職（role）はここでは返さない。JWT の user_metadata は本人が
+ * supabase.auth.updateUser() で書き換えられるので、権限の判定には使えない。
+ * 役職が要るときは getSessionUser()（users テーブルを読む）を使う。
  */
-export const getSessionClaims = cache(async (): Promise<SessionUser | null> => {
+export const getSessionClaims = cache(async (): Promise<SessionClaims | null> => {
   const supabase = await createClient()
   const { data } = await supabase.auth.getClaims()
   const claims = data?.claims
   const id = claims?.sub
   if (!id) return null
 
-  const meta = claims.user_metadata as { name?: string; role?: string } | undefined
-  return {
-    id,
-    name: meta?.name ?? null,
-    role: meta?.role ?? null,
-  }
+  const meta = claims.user_metadata as { name?: string } | undefined
+  return { id, name: meta?.name ?? null }
+})
+
+type UserRow = { name: string | null; role: string | null; job_titles: string[] | null }
+
+/**
+ * ログイン中の人の users テーブルの行（名前・役職・追加の役職）。
+ * レイアウトとページの両方から呼ばれるので、1回の表示につき DB を読むのは1回だけ（React の cache）。
+ */
+export const getSessionUserRow = cache(async (): Promise<{ id: string; row: UserRow | null } | null> => {
+  const claims = await getSessionClaims()
+  if (!claims) return null
+
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('users')
+    .select('name, role, job_titles')
+    .eq('id', claims.id)
+    .maybeSingle()
+  return { id: claims.id, row: (data as UserRow | null) ?? null }
 })
 
 /**
- * ログイン中ユーザーを取得する。
- * JWT に name / role が載っていない旧アカウント（初期管理者など）のときだけ
- * users テーブルへフォールバックするので、表示内容は従来と変わらない。
+ * ログイン中ユーザーを取得する。役職は必ず users テーブルの値（本人には書き換えられない）。
  */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
-  const user = await getSessionClaims()
-  if (!user) return null
-  if (user.name !== null && user.role !== null) return user
-
-  // JWT に載っていない項目だけ DB から補う
-  const supabase = await createClient()
-  const { data: row } = await supabase
-    .from('users')
-    .select('name, role')
-    .eq('id', user.id)
-    .single()
+  const claims = await getSessionClaims()
+  if (!claims) return null
+  const res = await getSessionUserRow()
 
   return {
-    id: user.id,
-    name: user.name ?? row?.name ?? null,
-    role: user.role ?? row?.role ?? null,
+    id: claims.id,
+    name: res?.row?.name ?? claims.name,
+    role: res?.row?.role ?? null,
   }
 })
+
+/** スタッフ画面を使える役職か（システム管理者・施設長・スタッフ）。 */
+export function isStaffRole(role: string | null | undefined): boolean {
+  return role === 'admin' || role === 'staff'
+}
+
+/**
+ * API 用：職員（システム管理者・施設長・スタッフ）でなければ断る。
+ * 通してよいときは null、断るときはそのまま返す応答。
+ *   const denied = await staffApiGuard()
+ *   if (denied) return denied
+ */
+export async function staffApiGuard(): Promise<NextResponse | null> {
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isStaffRole(user.role)) return NextResponse.json({ error: '権限がありません' }, { status: 403 })
+  return null
+}
 
 /**
  * ユーザーIDだけが必要な場面用（往復ゼロ）。未ログインなら null。

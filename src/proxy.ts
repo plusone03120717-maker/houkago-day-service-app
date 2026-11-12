@@ -31,6 +31,9 @@ export async function proxy(request: NextRequest) {
   const claims = data?.claims
   if (!claims) return response
 
+  // ここは「スタッフを管理者の画面に入れない」ための早めの振り分けだけ。
+  // user_metadata は本人が書き換えられるので、本当の守りは各ページ・レイアウトの
+  // requireAdmin / requireMoneyAccess / getSessionUser（users テーブルで判定）が受け持つ。
   const role = claims.user_metadata?.role as string | undefined
   if (!role) return response
 
