@@ -109,6 +109,11 @@ interface Props {
   canCancelPlans?: boolean
   /** 送迎の担当者（ドライバー）・車種を変えられるか。システム管理者だけ true（施設長・スタッフは不可） */
   canAssignDrivers?: boolean
+  /**
+   * 時刻・送迎・日中一時の入力、保存、「利用予定として記録」、「この記録を削除」ができるか。
+   * システム管理者だけ true（施設長・スタッフは見るだけ・2026-11-12 依頼主）
+   */
+  canEditAttendance?: boolean
 }
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -139,7 +144,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, parentContacts = [], transportPlaces = [], units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [], canCancelPlans = true, canAssignDrivers = true }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, parentContacts = [], transportPlaces = [], units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [], canCancelPlans = true, canAssignDrivers = true, canEditAttendance = true }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -275,7 +280,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
   }
 
   const handleSave = async () => {
-    if (!selectedDate) return
+    if (!canEditAttendance || !selectedDate) return
     setSaving(true)
 
     const timeFields = {
@@ -338,7 +343,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
   }
 
   const handleBulkSave = async () => {
-    if (selectedDates.size === 0) return
+    if (!canEditAttendance || selectedDates.size === 0) return
     setSaving(true)
     setSaveError(null)
 
@@ -399,6 +404,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
   }
 
   const handleDelete = async () => {
+    if (!canEditAttendance) return
     if (!selected) return
     setDeleting(true)
     await supabase.from('daily_attendance').delete().eq('id', selected.id)
@@ -681,8 +687,8 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
         </div>
       </div>
 
-      {/* 一括編集パネル（複数選択時） */}
-      {isMultiSelect && (
+      {/* 一括編集パネル（複数選択時）。システム管理者だけ */}
+      {canEditAttendance && isMultiSelect && (
         <div className="bg-white rounded-xl border border-indigo-200 p-4 space-y-4">
           <h3 className="font-semibold text-sm text-indigo-700">
             {selectedDates.size}日を一括編集
@@ -927,6 +933,12 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
             )
           })()}
 
+          {!canEditAttendance && (
+            <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+              時刻・送迎・日中一時は見るだけです。変える・記録を足す・消すのはシステム管理者です。
+            </p>
+          )}
+          <fieldset disabled={!canEditAttendance} className="min-w-0 space-y-4">
           {/* ユニット表示 or 選択 */}
           {selected ? (
             selected.units?.name && (
@@ -1044,7 +1056,10 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
             )}
           </div>
 
-          {/* 保存ボタン */}
+          </fieldset>
+
+          {/* 保存ボタン（システム管理者だけ） */}
+          {canEditAttendance && (
           <Button
             onClick={handleSave}
             disabled={saving || (!selected && units.length > 1 && !newUnitId)}
@@ -1057,12 +1072,13 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
               <><Save className="h-4 w-4" />{saving ? '保存中...' : selected ? '変更を保存' : '利用予定として記録'}</>
             )}
           </Button>
+          )}
           {saveError && (
             <p className="text-xs text-red-500 text-center">{saveError}</p>
           )}
 
-          {/* 削除ボタン（既存レコードのみ） */}
-          {selected && (
+          {/* 削除ボタン（既存レコードのみ・システム管理者だけ。日々の記録も一緒に消えるため） */}
+          {canEditAttendance && selected && (
             confirmDelete ? (
               <div className="flex gap-2">
                 <Button

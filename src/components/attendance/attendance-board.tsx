@@ -424,7 +424,9 @@ export function AttendanceBoard({
   }
 
   // 出席取り消し（レコードを削除して未記録に戻す）
+  // 出席の取り消しは記録ごと消える（日々の記録・活動記録も消える）ので、システム管理者だけ
   const cancelAttendance = async (unitId: string, childId: string) => {
+    if (!canEdit) return
     const existing = attendanceMap[unitChildKey(unitId, childId)]
     if (!existing) return
     setSaving(unitChildKey(unitId, childId))
@@ -761,10 +763,12 @@ export function AttendanceBoard({
                         <>
                           <button
                             onClick={() => isPresent
-                              ? cancelAttendance(res.unit_id, child.id)
+                              ? (canEdit ? cancelAttendance(res.unit_id, child.id) : undefined)
                               : upsertAttendance(res.unit_id, child.id, { status: 'attended' })}
                             disabled={saving === rowKey}
-                            title={isPresent ? 'もう一度押すと取り消し' : '出席にする'}
+                            title={isPresent
+                              ? (canEdit ? 'もう一度押すと取り消し' : '出席の取り消しはシステム管理者だけができます')
+                              : '出席にする'}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                               isPresent
                                 ? 'bg-green-500 text-white hover:bg-green-600'

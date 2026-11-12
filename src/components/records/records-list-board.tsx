@@ -59,7 +59,10 @@ interface Props {
   defaultServiceEndTime: string
   prevByChildId: Record<string, PrevAttendanceRow>
   scheduleDefaultsByAttendanceId: Record<string, ScheduleDefaults>
-  /** 送迎の担当者（ドライバー）・車種を変えられるか。システム管理者だけ true（施設長・スタッフは不可） */
+  /**
+   * 送迎・利用時間・日中一時の欄（送迎パネル全体）を変えられるか。システム管理者だけ true。
+   * 施設長・スタッフは見るだけ（2026-11-12 依頼主：保護者の LINE の申請を優先し、管理者以外は変えない）
+   */
   canAssignDrivers?: boolean
 }
 
@@ -140,6 +143,7 @@ export function RecordsListBoard({
   }
 
   const handleSave = async (a: AttendedChild) => {
+    if (!canAssignDrivers) return
     setSaving(a.id)
     const update = buildTransportUpdate(getFields(a))
     await supabase
@@ -276,6 +280,12 @@ export function RecordsListBoard({
                     {isExpanded && !isAbsent && (
                       <Card className="rounded-t-none border-t-0">
                         <CardContent className="p-4">
+                          {!canAssignDrivers && (
+                            <p className="mb-3 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                              送迎・利用時間・日中一時は見るだけです。変えるのはシステム管理者です。
+                            </p>
+                          )}
+                          <fieldset disabled={!canAssignDrivers} className="min-w-0">
                           <TransportDaytimePanel
                             fields={f}
                             onChange={(patch) => setField(a.id, patch, a)}
@@ -290,6 +300,7 @@ export function RecordsListBoard({
                             saved={savedIds.has(a.id)}
                             lockAssignment={!canAssignDrivers}
                           />
+                          </fieldset>
                         </CardContent>
                       </Card>
                     )}

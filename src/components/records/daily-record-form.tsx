@@ -112,6 +112,8 @@ interface Props {
   holidayServiceEndTime: string
   /** 連絡帳の本文を書けるか。システム管理者だけ true（施設長・スタッフは見るだけ・2026-11-12 依頼主） */
   canEditContactNote?: boolean
+  /** 日中一時の有無と利用時間を変えられるか。システム管理者だけ true（施設長・スタッフは見るだけ・2026-11-12 依頼主） */
+  canEditAttendance?: boolean
 }
 
 
@@ -131,6 +133,7 @@ export function DailyRecordForm({
   defaultServiceEndTime,
   holidayServiceEndTime,
   canEditContactNote = true,
+  canEditAttendance = true,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -346,15 +349,18 @@ export function DailyRecordForm({
       }
     }
 
-    // 日中一時利用の利用時間のみ保存（送迎は一覧側で管理）
-    await supabase
-      .from('daily_attendance')
-      .update({
-        daytime_support: daytimeSupport,
-        daytime_support_start_time: daytimeSupport ? (daytimeSupportStartTime || null) : null,
-        daytime_support_end_time: daytimeSupport ? (daytimeSupportEndTime || null) : null,
-      })
-      .eq('id', attendance.id)
+    // 日中一時利用の利用時間のみ保存（送迎は一覧側で管理）。
+    // 施設長・スタッフは見るだけなので、出欠の行には触れない
+    if (canEditAttendance) {
+      await supabase
+        .from('daily_attendance')
+        .update({
+          daytime_support: daytimeSupport,
+          daytime_support_start_time: daytimeSupport ? (daytimeSupportStartTime || null) : null,
+          daytime_support_end_time: daytimeSupport ? (daytimeSupportEndTime || null) : null,
+        })
+        .eq('id', attendance.id)
+    }
 
     // 連絡帳はシステム管理者だけが書く（施設長・スタッフの保存では連絡帳に触れない）
     if (canEditContactNote && contactNoteContent) {
@@ -427,7 +433,8 @@ export function DailyRecordForm({
         </div>
       )}
 
-      {/* 日中一時利用（利用時間のみ） */}
+      {/* 日中一時利用（利用時間のみ）。施設長・スタッフは見るだけ */}
+      <fieldset disabled={!canEditAttendance} className="min-w-0">
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -468,11 +475,14 @@ export function DailyRecordForm({
               </div>
             </div>
             <p className="text-xs text-gray-400">
-              ※ 送迎時間の入力は「日々の記録」一覧の送迎入力から行ってください
+              {canEditAttendance
+                ? '※ 送迎時間の入力は「日々の記録」一覧の送迎入力から行ってください'
+                : '※ 日中一時の有無と利用時間は見るだけです。変えるのはシステム管理者です'}
             </p>
           </CardContent>
         )}
       </Card>
+      </fieldset>
 
       {/* 活動プログラム */}
       <Card>
