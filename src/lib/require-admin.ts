@@ -1,7 +1,7 @@
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { getSessionUser, getSessionUserRow } from '@/lib/auth'
-import { canManageMoney, isFacilityManager } from '@/lib/roles'
+import { canEditOperations, canManageMoney, isFacilityManager } from '@/lib/roles'
 
 /**
  * 管理者（システム管理者・施設長）のみアクセス可能なページで呼ぶ。
@@ -24,6 +24,8 @@ export type StaffAccess = {
   /** お金まわり（請求・給与）を扱える＝システム管理者 */
   canManageMoney: boolean
   isFacilityManager: boolean
+  /** 業務の画面を編集できる＝システム管理者（施設長・スタッフは閲覧のみ） */
+  canEditOperations: boolean
 }
 
 /**
@@ -44,6 +46,7 @@ export const getStaffAccess = cache(async (): Promise<StaffAccess | null> => {
     jobTitles,
     canManageMoney: canManageMoney(role, jobTitles),
     isFacilityManager: isFacilityManager(role, jobTitles),
+    canEditOperations: canEditOperations(role, jobTitles),
   }
 })
 
@@ -56,6 +59,15 @@ export async function requireMoneyAccess() {
   const access = await getStaffAccess()
   if (!access) redirect('/login')
   if (!access.canManageMoney) redirect('/dashboard')
+}
+
+/**
+ * API・サーバーアクション用。業務の画面を編集できる（＝システム管理者）なら true。
+ * 施設長・スタッフは閲覧のみなので false。未ログインも false。
+ */
+export async function hasEditAccess(): Promise<boolean> {
+  const access = await getStaffAccess()
+  return access?.canEditOperations ?? false
 }
 
 /** API・サーバーアクション用。システム管理者なら true。 */

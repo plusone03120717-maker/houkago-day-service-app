@@ -1,10 +1,11 @@
-import { requireAdmin } from '@/lib/require-admin'
 import { createClient } from '@/lib/supabase/server'
+import { getStaffAccess } from '@/lib/require-admin'
 import { findCandidates, type CandidateChild } from '@/lib/guardian-registration'
 import { LineRegistrationsManager } from '@/components/settings/line-registrations-manager'
 
 export default async function LineRegistrationsPage() {
-  await requireAdmin()
+  // スタッフも URL で開けるが、承認・紐付けができるのはシステム管理者だけ（施設長・スタッフは閲覧のみ・2026-11-12 依頼主）
+  const canEdit = (await getStaffAccess())?.canEditOperations ?? false
   const supabase = await createClient()
 
   const [{ data: requestsRaw }, { data: childrenRaw }, { data: guardiansRaw }] = await Promise.all([
@@ -66,6 +67,7 @@ export default async function LineRegistrationsPage() {
       requests={requests}
       guardians={guardians}
       childList={children.map((c) => ({ id: c.id, name: c.name, birth_date: c.birth_date }))}
+      canEdit={canEdit}
     />
   )
 }

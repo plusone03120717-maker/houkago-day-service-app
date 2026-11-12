@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getSessionUser, isStaffRole } from '@/lib/auth'
+import { hasEditAccess } from '@/lib/require-admin'
 import { isCategory, type Category } from '@/lib/internal-manual/categories'
 
 type Result = { error?: string }
@@ -10,19 +11,26 @@ type Result = { error?: string }
 /** メモ1件の上限。長文はマニュアル記事側で書いてもらう */
 const MAX_NOTE_LENGTH = 2000
 
-async function requireStaff() {
+/**
+ * 社内マニュアルを書き換える操作（メモ・記事とも）の入口。
+ * できるのはシステム管理者だけ。施設長・スタッフは閲覧のみ（2026-11-12 依頼主）。
+ */
+async function requireEditor() {
   const user = await getSessionUser()
   if (!user) return { error: 'ログインが必要です' as const, user: null }
   if (!isStaffRole(user.role)) return { error: '権限がありません' as const, user: null }
+  if (!(await hasEditAccess())) {
+    return { error: '社内マニュアルの編集はシステム管理者だけができます' as const, user: null }
+  }
   return { error: null, user }
 }
 
 // =====================================================
-// メモ（職員なら誰でも）
+// メモ（システム管理者のみ。施設長・スタッフは閲覧のみ）
 // =====================================================
 
 export async function addNote(category: string, content: string): Promise<Result> {
-  const { error: authError, user } = await requireStaff()
+  const { error: authError, user } = await requireEditor()
   if (authError || !user) return { error: authError ?? '権限がありません' }
   if (!isCategory(category)) return { error: '分類が不正です' }
 
@@ -47,7 +55,7 @@ export async function addNote(category: string, content: string): Promise<Result
 }
 
 export async function updateNote(id: string, content: string): Promise<Result> {
-  const { error: authError } = await requireStaff()
+  const { error: authError } = await requireEditor()
   if (authError) return { error: authError }
 
   const text = content.trim()
@@ -73,7 +81,7 @@ export async function setNoteStatus(
   id: string,
   status: 'open' | 'archived'
 ): Promise<Result> {
-  const { error: authError } = await requireStaff()
+  const { error: authError } = await requireEditor()
   if (authError) return { error: authError }
 
   const supabase = await createClient()
@@ -88,7 +96,7 @@ export async function setNoteStatus(
 }
 
 export async function deleteNote(id: string): Promise<Result> {
-  const { error: authError } = await requireStaff()
+  const { error: authError } = await requireEditor()
   if (authError) return { error: authError }
 
   const supabase = await createClient()
@@ -100,14 +108,14 @@ export async function deleteNote(id: string): Promise<Result> {
 }
 
 // =====================================================
-// マニュアル記事（管理者のみ。RLS でも同じ条件を掛けている）
+// マニュアル記事（システム管理者のみ。RLS では管理者＝施設長も通るので、ここで絞る）
 // =====================================================
 
 export async function createArticle(
   category: string,
   title: string
 ): Promise<{ error?: string; id?: string }> {
-  const { error: authError, user } = await requireStaff()
+  const { error: authError, user } = await requireEditor()
   if (authError || !user) return { error: authError ?? '権限がありません' }
   if (!isCategory(category)) return { error: '分類が不正です' }
   if (!title.trim()) return { error: '見出しを入力してください' }
@@ -142,7 +150,7 @@ export async function saveArticle(
   id: string,
   fields: { title?: string; body?: string; draftBody?: string | null }
 ): Promise<Result> {
-  const { error: authError, user } = await requireStaff()
+  const { error: authError, user } = await requireEditor()
   if (authError || !user) return { error: authError ?? '権限がありません' }
 
   const patch: Record<string, unknown> = {
@@ -170,7 +178,7 @@ export async function saveArticle(
  * ここで初めてサポートボットの回答根拠になる。
  */
 export async function publishArticle(id: string): Promise<Result> {
-  const { error: authError, user } = await requireStaff()
+  const { error: authError, user } = await requireEditor()
   if (authError || !user) return { error: authError ?? '権限がありません' }
 
   const supabase = await createClient()
@@ -215,7 +223,7 @@ export async function publishArticle(id: string): Promise<Result> {
 
 /** 公開を取り下げる。内容は残るが、ボットは読まなくなる */
 export async function unpublishArticle(id: string): Promise<Result> {
-  const { error: authError, user } = await requireStaff()
+  const { error: authError, user } = await requireEditor()
   if (authError || !user) return { error: authError ?? '権限がありません' }
 
   const supabase = await createClient()
@@ -232,7 +240,7 @@ export async function unpublishArticle(id: string): Promise<Result> {
 
 /** AIの下書き案を破棄して、公開中の本文だけに戻す */
 export async function discardDraft(id: string): Promise<Result> {
-  const { error: authError } = await requireStaff()
+  const { error: authError } = await requireEditor()
   if (authError) return { error: authError }
 
   const supabase = await createClient()
@@ -255,7 +263,7 @@ export async function discardDraft(id: string): Promise<Result> {
 }
 
 export async function deleteArticle(id: string): Promise<Result> {
-  const { error: authError } = await requireStaff()
+  const { error: authError } = await requireEditor()
   if (authError) return { error: authError }
 
   const supabase = await createClient()

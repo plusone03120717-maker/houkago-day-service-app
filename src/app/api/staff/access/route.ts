@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { getStaffAccess } from '@/lib/require-admin'
+import { getStaffAccess, hasEditAccess } from '@/lib/require-admin'
 import { FACILITY_MANAGER, SERVICE_MANAGER, canManageAccountOf, isFacilityManager } from '@/lib/roles'
 
 /** 画面から付けられる追加の役職（施設長はログイン権限の側で扱う） */
@@ -21,6 +21,10 @@ export async function POST(request: NextRequest) {
   if (!actor) return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 })
   if (actor.role !== 'admin') {
     return NextResponse.json({ error: '管理者のみ変更できます' }, { status: 403 })
+  }
+  // 施設長はスタッフ管理も閲覧のみ（2026-11-12 依頼主）。下の施設長向けの判定は残したまま、ここで止める
+  if (!(await hasEditAccess())) {
+    return NextResponse.json({ error: '役職の変更はシステム管理者だけができます' }, { status: 403 })
   }
 
   const body = await request.json().catch(() => ({}))

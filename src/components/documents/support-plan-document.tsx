@@ -59,7 +59,14 @@ const ROW_HEIGHTS = {
   large:   { section: 48, area: 64 },
 }
 
-export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData }) {
+export function SupportPlanDocument({
+  data,
+  canEdit = true,
+}: {
+  data: SupportPlanDocumentData
+  /** 帳票の編集・保存ができるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
+  canEdit?: boolean
+}) {
   const supabase = createClient()
 
   const [editMode, setEditMode] = useState(false)
@@ -87,6 +94,7 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
   const heights  = ROW_HEIGHTS[rowSize]
 
   const handleSave = async () => {
+    if (!canEdit) return
     setSaving(true)
     const payload: Record<string, string> = {
       family_wishes:         values.wishes,
@@ -167,6 +175,7 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
       <div className="print:hidden mb-4 flex flex-wrap items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
 
         {/* 編集モード切替 */}
+        {canEdit && (
         <button
           onClick={() => setEditMode((v) => !v)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -178,6 +187,7 @@ export function SupportPlanDocument({ data }: { data: SupportPlanDocumentData })
           {editMode ? <Eye className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
           {editMode ? '編集を終了する' : '帳票を編集する'}
         </button>
+        )}
 
         {/* 保存ボタン（編集モードのとき表示） */}
         {editMode && (

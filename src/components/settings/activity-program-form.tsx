@@ -16,11 +16,13 @@ type Program = {
 interface Props {
   facilityId: string
   programs: Program[]
+  /** プログラムの追加・変更・削除ができるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
+  canEdit?: boolean
 }
 
 const CATEGORIES = ['スポーツ', '学習', '創作', '生活訓練', '遊び', 'コミュニケーション', 'その他']
 
-export function ActivityProgramForm({ facilityId, programs: initial }: Props) {
+export function ActivityProgramForm({ facilityId, programs: initial, canEdit = true }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -38,6 +40,7 @@ export function ActivityProgramForm({ facilityId, programs: initial }: Props) {
   const [deleting, setDeleting] = useState<string | null>(null)
 
   const handleAdd = async () => {
+    if (!canEdit) return
     if (!name.trim()) return
     setSaving(true)
     const charge = extraCharge !== '' ? parseInt(extraCharge) : null
@@ -54,11 +57,13 @@ export function ActivityProgramForm({ facilityId, programs: initial }: Props) {
   }
 
   const startEdit = (p: Program) => {
+    if (!canEdit) return
     setEditingId(p.id)
     setEditForm({ name: p.name, extra_charge: p.extra_charge != null ? String(p.extra_charge) : '' })
   }
 
   const handleEditSave = async (id: string) => {
+    if (!canEdit) return
     const charge = editForm.extra_charge !== '' ? parseInt(editForm.extra_charge) : null
     const { error } = await supabase
       .from('activity_programs')
@@ -73,6 +78,7 @@ export function ActivityProgramForm({ facilityId, programs: initial }: Props) {
   }
 
   const handleDelete = async (id: string) => {
+    if (!canEdit) return
     if (!confirm('このプログラムを削除しますか？')) return
     setDeleting(id)
     await supabase.from('activity_programs').delete().eq('id', id)
@@ -91,6 +97,12 @@ export function ActivityProgramForm({ facilityId, programs: initial }: Props) {
 
   return (
     <div className="space-y-6">
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          活動プログラムは閲覧のみです。追加・変更・削除はできません。
+        </p>
+      )}
+
       {/* 一覧 */}
       {Object.keys(grouped).length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-4">プログラムがまだ登録されていません</p>
@@ -138,6 +150,7 @@ export function ActivityProgramForm({ facilityId, programs: initial }: Props) {
                             </span>
                           )}
                         </div>
+                        {canEdit && (
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => startEdit(p)}
@@ -153,6 +166,7 @@ export function ActivityProgramForm({ facilityId, programs: initial }: Props) {
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -163,7 +177,8 @@ export function ActivityProgramForm({ facilityId, programs: initial }: Props) {
         </div>
       )}
 
-      {/* 追加フォーム */}
+      {/* 追加フォーム（閲覧のみのときは出さない） */}
+      {canEdit && (
       <div className="border-t border-gray-100 pt-4 space-y-3">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">プログラムを追加</p>
         <div className="grid grid-cols-2 gap-3">
@@ -219,6 +234,7 @@ export function ActivityProgramForm({ facilityId, programs: initial }: Props) {
           {saving ? '追加中...' : 'プログラムを追加'}
         </Button>
       </div>
+      )}
     </div>
   )
 }

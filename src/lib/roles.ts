@@ -7,9 +7,12 @@
  * 追加でできることは「児童管理 → 利用スケジュール」の編集のみ。
  *
  * 「施設長」は users.role = 'admin' に job_titles の facility_manager を重ねたもの。
- * システム管理者と同じことができるが、お金まわり（国保連請求・保護者請求・上限管理と、
- * タイムカード・勤務時間集計・有給・残業・スタッフ申請）だけは扱えない。
+ * 開ける画面はシステム管理者に近いが、お金まわり（国保連請求・保護者請求・上限管理と、
+ * タイムカード・勤務時間集計・有給・残業・スタッフ申請）は開けない。
  * 施設長を任命・解除できるのはシステム管理者だけ。
+ *
+ * 2026-11-12 から、施設長とスタッフが編集できるのは「日々の記録」「児童の情報」「ヒヤリハット」
+ * だけで、ほかの業務の画面は閲覧のみ（判定は canEditOperations）。
  */
 
 /** サービス管理者を表す job_titles の値 */
@@ -53,22 +56,31 @@ export function roleBadgeClass(value: string): string {
  * 児童管理の「利用スケジュール」を編集できるか。
  * システム管理者と、サービス管理者の役職を持つスタッフのみ編集可。
  * 施設長は閲覧のみ（保護者の LINE がつながり、利用の変更は保護者からの連絡で行うため）。
- * （role 未設定の旧アカウント＝初期管理者は requireAdmin と同じく通す）
+ * （役職が未設定＝users に行がない人は通さない）
  */
 export function canEditUsagePlans(role: string | null, jobTitles: string[] | null): boolean {
-  if (role === 'parent') return false
-  if (isFacilityManager(role, jobTitles)) return false
+  // role は users テーブルの値。null（users に行がない人）は編集させない
   if (role === 'staff') return (jobTitles ?? []).includes(SERVICE_MANAGER)
-  return true
+  if (role !== 'admin') return false
+  return !isFacilityManager(role, jobTitles)
 }
 
 /**
- * 送迎管理を編集できるか。システム管理者だけ（施設長・スタッフ・サービス管理者は閲覧のみ）。
- * （role 未設定の旧アカウント＝初期管理者は requireAdmin と同じく通す）
+ * 業務の画面（出席・送迎・支援計画・連絡帳・お知らせ・設定など）を編集できるか。
+ * システム管理者だけ。施設長・スタッフ（サービス管理者を含む）は閲覧のみ。
+ * 施設長・スタッフが編集できるのは「日々の記録」「児童の情報」「ヒヤリハット」だけで、
+ * それらの画面ではこの判定を使わない（2026-11-12 依頼主）。
+ * （役職が未設定＝users に行がない人は通さない）
  */
-export function canEditTransport(role: string | null, jobTitles: string[] | null): boolean {
-  if (role === 'parent' || role === 'staff') return false
+export function canEditOperations(role: string | null, jobTitles: string[] | null): boolean {
+  // role は users テーブルの値。システム管理者だけ（null＝users に行がない人も不可）
+  if (role !== 'admin') return false
   return !isFacilityManager(role, jobTitles)
+}
+
+/** 送迎管理を編集できるか。システム管理者だけ（施設長・スタッフは閲覧のみ）。 */
+export function canEditTransport(role: string | null, jobTitles: string[] | null): boolean {
+  return canEditOperations(role, jobTitles)
 }
 
 /** 施設長か（システム管理者の権限からお金まわりを外した役職） */

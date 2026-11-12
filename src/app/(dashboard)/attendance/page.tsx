@@ -8,6 +8,7 @@ import {
   type AttendanceBoardData,
 } from '@/lib/attendance-board-data'
 import { AttendanceBoard } from '@/components/attendance/attendance-board'
+import { getStaffAccess } from '@/lib/require-admin'
 import type { Unit, Reservation, Attendance, PrevAttendanceRow } from '@/components/attendance/attendance-board'
 import {
   pickPrimaryPlanPerChild,
@@ -219,9 +220,11 @@ export default async function AttendancePage({
   // DB内で解決されるため、以前のような4段のウォーターフォールは発生しない。
   // 「すべて」のときは1回目の結果に入っているユニット一覧を使って
   // 残りのユニットを並列で取りにいく（サーバー往復は最大2段）。
-  const [userId, firstData] = await Promise.all([
+  const [userId, firstData, access] = await Promise.all([
     getSessionUserId(),
     loadAttendanceBoardData(supabase, showAllUnits ? undefined : params.unit, today),
+    // 出席管理を編集できるのはシステム管理者だけ（施設長・スタッフは閲覧のみ）
+    getStaffAccess(),
   ])
 
   const units = firstData.units as unknown as Unit[]
@@ -280,6 +283,7 @@ export default async function AttendancePage({
       defaultServiceEndTime={firstData.defaultServiceEndTime}
       prevByChildId={prevByChildId}
       scheduleDefaultsByKey={scheduleDefaultsByKey}
+      canEdit={access?.canEditOperations ?? false}
     />
   )
 }

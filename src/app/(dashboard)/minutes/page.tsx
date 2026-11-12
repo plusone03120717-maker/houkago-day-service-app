@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { NotebookPen, CheckCircle2, BookMarked } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSessionUser } from '@/lib/auth'
+import { getStaffAccess } from '@/lib/require-admin'
 import { Card, CardContent } from '@/components/ui/card'
 import { NewMinutesButton } from '@/components/minutes/new-minutes-button'
 
@@ -28,8 +29,9 @@ function formatDate(date: string): string {
 }
 
 export default async function MinutesPage() {
-  const user = await requireSessionUser()
-  const isAdmin = user.role === 'admin'
+  await requireSessionUser()
+  // 議事録を作れるのはシステム管理者だけ（施設長・スタッフは閲覧のみ）
+  const accessPromise = getStaffAccess()
   const supabase = await createClient()
 
   const { data: raw } = await supabase
@@ -42,6 +44,7 @@ export default async function MinutesPage() {
     .limit(200)
 
   const minutes = (raw ?? []) as MinutesRow[]
+  const canEdit = (await accessPromise)?.canEditOperations ?? false
   const drafts = minutes.filter((m) => m.status === 'draft')
   const finalized = minutes.filter((m) => m.status === 'finalized')
 
@@ -54,7 +57,7 @@ export default async function MinutesPage() {
             会議のメモをAIで整え、決まったことを社内マニュアルへ引き継ぎます
           </p>
         </div>
-        <NewMinutesButton />
+        {canEdit && <NewMinutesButton />}
       </div>
 
       <Card>
@@ -64,7 +67,7 @@ export default async function MinutesPage() {
             会議中は走り書きのままで構いません。あとから
             <span className="mx-1 font-medium text-gray-900">「AIで議事録に整える」</span>
             を押すと、決定事項・検討事項・次回までにやること、の形にまとまります。
-            {isAdmin && '確定した議事録からは、社内マニュアルに載せるべき決めごとを抜き出せます。'}
+            {canEdit && '確定した議事録からは、社内マニュアルに載せるべき決めごとを抜き出せます。'}
           </p>
         </CardContent>
       </Card>
@@ -72,7 +75,7 @@ export default async function MinutesPage() {
       {minutes.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center text-sm text-gray-500">
-            まだ議事録はありません。右上の「議事録を作る」から始めてください。
+            まだ議事録はありません。{canEdit && '右上の「議事録を作る」から始めてください。'}
           </CardContent>
         </Card>
       ) : (

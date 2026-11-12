@@ -265,6 +265,8 @@ type Props = {
   currentPlans: Record<string, CurrentPlan>
   /** 英会話に所属する児童（児童IDごと）。この児童だけ区分に「英会話」を出す */
   englishChoices: Record<string, EnglishUnitChoice>
+  /** 承認・処理ができるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
+  canEdit?: boolean
 }
 
 /**
@@ -778,6 +780,7 @@ export function ParentContactsBoard({
   transportPlaces,
   currentPlans,
   englishChoices,
+  canEdit = true,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -893,6 +896,7 @@ export function ParentContactsBoard({
     g: { key: string; contacts: Contact[] },
     next: ApprovalStatus
   ) {
+    if (!canEdit) return
     const assignment = groupAssignmentOf(g)
     if (next === 'approved') {
       const invalid = validateAssignment(assignment)
@@ -912,7 +916,7 @@ export function ParentContactsBoard({
    * handling で「欠席として記録」か「予定から削除」かを選ぶ。
    */
   async function markReviewed(ids: string[], handling: AbsentHandling, absenceReason?: string) {
-    if (ids.length === 0) return
+    if (!canEdit || ids.length === 0) return
     setReviewing(true)
     const res = await fetch('/api/parent-contacts/reviewed', {
       method: 'POST',
@@ -956,6 +960,7 @@ export function ParentContactsBoard({
     next: ApprovalStatus,
     forced?: ServiceAssignment
   ) {
+    if (!canEdit) return
     const target = visible.find((c) => c.id === id)
 
     // 承認する利用連絡には、施設が決めた区分と時間を必ず添える。
@@ -1015,7 +1020,14 @@ export function ParentContactsBoard({
   }
 
   return (
+    // 閲覧のみのときは、承認・処理のボタンと割り振りの入力欄をまとめて押せなくする
+    <fieldset disabled={!canEdit} className="contents">
     <div className="max-w-3xl mx-auto space-y-5">
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          利用連絡は閲覧のみです。承認・承認しない・欠席として記録・予定から削除はできません。
+        </p>
+      )}
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-bold text-gray-900">保護者からの利用連絡</h1>
@@ -1262,5 +1274,6 @@ export function ParentContactsBoard({
         承認を「取り消す」と、この連絡で追加された予定も一緒に取り消されます
       </p>
     </div>
+    </fieldset>
   )
 }

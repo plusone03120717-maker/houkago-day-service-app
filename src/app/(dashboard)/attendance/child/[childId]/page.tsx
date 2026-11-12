@@ -9,6 +9,7 @@ import { SchoolHolidaySection } from '@/components/children/school-holiday-secti
 import { AttendanceStatusToggle } from '@/components/attendance/attendance-status-toggle'
 import { AttendanceTimeEditor } from '@/components/attendance/attendance-time-editor'
 import { BackButton } from '@/components/ui/back-button'
+import { getStaffAccess } from '@/lib/require-admin'
 
 function monthRange(year: number, month: number): { start: string; end: string } {
   const lastDay = new Date(year, month, 0).getDate()
@@ -42,6 +43,9 @@ export default async function ChildAttendanceHistoryPage({
   const next = addMonths(selectedYear, selectedMonth, 1)
 
   const supabase = await createClient()
+  // 時刻を変えられるのはシステム管理者だけ（施設長・スタッフは閲覧のみ）。
+  // 出席・欠席の切り替えと学校休日（児童の情報）は全員ができる（2026-11-12 依頼主）
+  const canEdit = (await getStaffAccess())?.canEditOperations ?? false
 
   const [
     { data: child },
@@ -279,6 +283,7 @@ export default async function ChildAttendanceHistoryPage({
                           attendanceId={att.id}
                           currentStatus={att.status}
                         />
+                        <fieldset disabled={!canEdit} className="contents">
                         <AttendanceTimeEditor
                           attendanceId={att.id}
                           serviceStartTime={att.service_start_time}
@@ -287,6 +292,7 @@ export default async function ChildAttendanceHistoryPage({
                           daytimeSupportStartTime={att.daytime_support_start_time}
                           daytimeSupportEndTime={att.daytime_support_end_time}
                         />
+                        </fieldset>
                       </div>
                     </div>
                     {hasContent && (

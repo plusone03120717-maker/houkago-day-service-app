@@ -5,6 +5,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { getSessionClaims, getSessionUser, isStaffRole } from '@/lib/auth'
 import { runAnomalyCheck } from '@/lib/anomaly/run'
+import { hasEditAccess } from '@/lib/require-admin'
 
 /**
  * 「今すぐチェック」ボタン。
@@ -17,6 +18,8 @@ export async function runCheckNow(): Promise<{ error?: string; found?: number }>
   const claims = await getSessionClaims()
   if (!claims) return { error: 'ログインが必要です' }
   if (!isStaffRole((await getSessionUser())?.role)) return { error: '権限がありません' }
+  // 施設長・スタッフは入力チェックを閲覧のみ（2026-11-12 依頼主）
+  if (!(await hasEditAccess())) return { error: '入力チェックの操作はシステム管理者だけができます' }
 
   const admin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,6 +50,7 @@ export async function updateFindingStatus(
 ): Promise<{ error?: string }> {
   const claims = await getSessionClaims()
   if (!claims) return { error: 'ログインが必要です' }
+  if (!(await hasEditAccess())) return { error: '入力チェックの操作はシステム管理者だけができます' }
 
   const supabase = await createClient()
   const { error } = await supabase

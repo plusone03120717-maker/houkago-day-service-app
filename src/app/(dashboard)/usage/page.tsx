@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { UsageCalendar, type UsageEntry } from '@/components/usage/usage-calendar'
 import { buildUsageRoster, eachDate } from '@/lib/usage-roster'
 import { ALL_UNITS } from '@/lib/attendance-board-data'
+import { getStaffAccess } from '@/lib/require-admin'
 
 type Unit = { id: string; name: string; capacity: number }
 type Reservation = {
@@ -175,6 +176,9 @@ export default async function UsagePage({
   const reservedCount = reservations.filter((r) => r.status === 'reserved').length
   const cancelledCount = reservations.filter((r) => r.status === 'cancelled').length
 
+  // 確定・欠席・削除・追加はシステム管理者だけ（施設長・スタッフは閲覧のみ）
+  const canEdit = (await getStaffAccess())?.canEditOperations ?? false
+
   return (
     <div className="space-y-5">
       <div>
@@ -191,6 +195,7 @@ export default async function UsagePage({
         childOptions={childOptions}
         attendanceStatusByKey={attendanceStatusByKey}
         summary={{ confirmed: confirmedCount, reserved: reservedCount, cancelled: cancelledCount }}
+        canEdit={canEdit}
       />
     </div>
   )

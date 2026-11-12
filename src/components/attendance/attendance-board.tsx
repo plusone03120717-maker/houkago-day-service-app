@@ -96,6 +96,11 @@ interface Props {
   prevByChildId: Record<string, PrevAttendanceRow>
   /** キーは unitChildKey(unitId, childId) */
   scheduleDefaultsByKey: Record<string, ScheduleDefaults>
+  /**
+   * 送迎・欠席理由の入力と、利用予定の削除ができるか。システム管理者だけ true（施設長・スタッフは閲覧のみ）。
+   * 出席・欠席・一括出席は日々の記録を書き始めるのに要るので、canEdit に関係なく全員が押せる（2026-11-12 依頼主）
+   */
+  canEdit?: boolean
 }
 
 /** "16:30:00" → "16:30"。未設定・00:00 は空文字として扱う */
@@ -122,6 +127,7 @@ export function AttendanceBoard({
   defaultServiceEndTime,
   prevByChildId,
   scheduleDefaultsByKey,
+  canEdit = true,
 }: Props) {
   const router = useRouter()
   // ユニット未選択（＝すべて）。既定はこちらで、ユニットボタンで絞り込む
@@ -263,6 +269,7 @@ export function AttendanceBoard({
   }
 
   const handleSaveTransport = async (a: Attendance) => {
+    if (!canEdit) return
     setTransportSaving(a.id)
     // 更新後の行を受け取ってローカルへ反映する（ページ全体の再取得は不要）
     const { data, error } = await supabase
@@ -404,6 +411,7 @@ export function AttendanceBoard({
 
   // 欠席理由の保存
   const saveAbsenceReason = async (attendanceId: string, reason: string | null) => {
+    if (!canEdit) return false
     const { data, error } = await supabase
       .from('daily_attendance')
       .update({ absence_reason: reason })
@@ -431,6 +439,7 @@ export function AttendanceBoard({
   // 一覧の行は予約由来・利用計画由来・出欠記録由来が混在するため、
   // 予約IDではなく児童・ユニット・日付で消す（利用状況ページと共通処理）
   const deleteReservation = async (res: Reservation) => {
+    if (!canEdit) return
     setDeleting(unitChildKey(res.unit_id, res.child_id))
     const { error } = await deleteUsageDay(supabase, {
       childId: res.child_id,
@@ -503,6 +512,12 @@ export function AttendanceBoard({
           </Button>
         )}
       </div>
+
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          出席管理では、出席・欠席を付けることだけできます。送迎・欠席理由の入力と、利用予定の削除はできません（日々の記録は入力できます）。
+        </p>
+      )}
 
       {/* 日付・ユニット選択バー */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
@@ -790,6 +805,7 @@ export function AttendanceBoard({
                       )}
 
                       {/* 利用予定ごと削除（誤って予定に入れた児童を一覧から消す） */}
+                      {canEdit && (
                       <button
                         onClick={() => setConfirmDelete(res)}
                         disabled={deleting === rowKey}
@@ -800,16 +816,19 @@ export function AttendanceBoard({
                           ? <Loader2 className="h-4 w-4 animate-spin" />
                           : <Trash2 className="h-4 w-4" />}
                       </button>
+                      )}
                     </div>
                   </CardContent>
 
                     {/* 欠席理由（欠席にした児童のみ） */}
                     {att?.status === 'absent' && res.status !== 'cancel_waiting' && (
                       <div className="border-t border-red-100 bg-red-50/50 px-4 py-2.5">
-                        <AbsenceReasonInput
-                          value={att.absence_reason}
-                          onSave={(reason) => saveAbsenceReason(att.id, reason)}
-                        />
+                        <fieldset disabled={!canEdit} className="contents">
+                          <AbsenceReasonInput
+                            value={att.absence_reason}
+                            onSave={(reason) => saveAbsenceReason(att.id, reason)}
+                          />
+                        </fieldset>
                       </div>
                     )}
 
@@ -828,6 +847,7 @@ export function AttendanceBoard({
                   {isTransportExpanded && att && fields && (
                     <Card className="rounded-t-none border-t-0">
                       <CardContent className="p-4">
+                        <fieldset disabled={!canEdit} className="contents">
                         <TransportDaytimePanel
                           fields={fields}
                           onChange={(patch) => setField(att, patch)}
@@ -841,6 +861,7 @@ export function AttendanceBoard({
                           saving={transportSaving === att.id}
                           saved={transportSavedIds.has(att.id)}
                         />
+                        </fieldset>
                       </CardContent>
                     </Card>
                   )}

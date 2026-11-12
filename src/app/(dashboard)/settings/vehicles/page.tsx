@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireAdmin, getStaffAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, Car } from 'lucide-react'
@@ -19,6 +19,8 @@ type StaffOption = { id: string; name: string }
 
 export default async function VehiclesPage() {
   await requireAdmin()
+  // 施設長・スタッフは閲覧のみ（編集できるのはシステム管理者だけ・2026-11-12 依頼主）
+  const canEdit = (await getStaffAccess())?.canEditOperations ?? false
   const supabase = await createClient()
 
   const [{ data: facilitiesRaw }, { data: vehiclesRaw }, { data: staffRaw }] = await Promise.all([
@@ -62,6 +64,7 @@ export default async function VehiclesPage() {
             facilityId={facilityId}
             vehicles={vehicles}
             staffOptions={staffOptions}
+            canEdit={canEdit}
           />
         </CardContent>
       </Card>

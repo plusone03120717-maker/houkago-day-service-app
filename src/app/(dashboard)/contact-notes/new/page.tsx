@@ -2,6 +2,8 @@ import { getTodayJST } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
 import { getSessionUserId } from '@/lib/auth'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { getStaffAccess } from '@/lib/require-admin'
 import { ArrowLeft } from 'lucide-react'
 import { NewContactNoteForm } from '@/components/contact-notes/new-contact-note-form'
 
@@ -20,10 +22,14 @@ export default async function NewContactNotePage({
   searchParams: Promise<{ date?: string; childId?: string }>
 }) {
   const params = await searchParams
+  const targetDate = params.date ?? getTodayJST()
+
+  // 連絡帳の画面で作成できるのはシステム管理者だけ。施設長・スタッフは一覧へ戻す
+  const access = await getStaffAccess()
+  if (!access?.canEditOperations) redirect(`/contact-notes?date=${targetDate}`)
+
   const supabase = await createClient()
   const userId = await getSessionUserId()
-
-  const targetDate = params.date ?? getTodayJST()
 
   // 当日の出席児童一覧
   const { data: attendedRaw } = await supabase

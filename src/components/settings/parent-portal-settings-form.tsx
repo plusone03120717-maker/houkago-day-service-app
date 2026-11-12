@@ -27,9 +27,12 @@ export type FacilityDeadlineSetting = {
 export function ParentPortalSettingsForm({
   initial,
   today,
+  canEdit = true,
 }: {
   initial: FacilityDeadlineSetting[]
   today: string
+  /** 締切の設定を保存できるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
+  canEdit?: boolean
 }) {
   const supabase = createClient()
   const [rows, setRows] = useState<FacilityDeadlineSetting[]>(initial)
@@ -38,11 +41,13 @@ export function ParentPortalSettingsForm({
   const [error, setError] = useState<string | null>(null)
 
   const update = (facilityId: string, patch: Partial<FacilityDeadlineSetting>) => {
+    if (!canEdit) return
     setRows((prev) => prev.map((r) => (r.facilityId === facilityId ? { ...r, ...patch } : r)))
     setSaved(false)
   }
 
   const handleSave = async () => {
+    if (!canEdit) return
     setSaving(true)
     setError(null)
     const { error: err } = await supabase.from('parent_portal_settings').upsert(
@@ -73,6 +78,14 @@ export function ParentPortalSettingsForm({
 
   return (
     <div className="space-y-4">
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          保護者ポータルの設定は閲覧のみです。締切の変更・保存はできません。
+        </p>
+      )}
+
+      {/* 閲覧のみのときは、中のチェック・選択欄をまとめて押せなくする */}
+      <fieldset disabled={!canEdit} className="space-y-4 min-w-0">
       {rows.map((row) => {
         const deadline: ReservationDeadline = { enabled: row.enabled, day: row.day }
         const open = firstOpenMonth(today, deadline)
@@ -130,6 +143,7 @@ export function ParentPortalSettingsForm({
           </div>
         )
       })}
+      </fieldset>
 
       <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
         <p className="text-xs text-amber-800">
@@ -142,14 +156,16 @@ export function ParentPortalSettingsForm({
         </p>
       </div>
 
-      <div className="flex items-center gap-3 pt-2">
-        <Button onClick={handleSave} disabled={saving} size="sm">
-          <Save className="h-4 w-4" />
-          {saving ? '保存中...' : '設定を保存'}
-        </Button>
-        {saved && <span className="text-xs text-green-600">保存しました</span>}
-        {error && <span className="text-xs text-red-600">{error}</span>}
-      </div>
+      {canEdit && (
+        <div className="flex items-center gap-3 pt-2">
+          <Button onClick={handleSave} disabled={saving} size="sm">
+            <Save className="h-4 w-4" />
+            {saving ? '保存中...' : '設定を保存'}
+          </Button>
+          {saved && <span className="text-xs text-green-600">保存しました</span>}
+          {error && <span className="text-xs text-red-600">{error}</span>}
+        </div>
+      )}
     </div>
   )
 }

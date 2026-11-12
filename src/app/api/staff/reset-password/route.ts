@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { canManageAccountOf } from '@/lib/roles'
+import { hasEditAccess } from '@/lib/require-admin'
 
 function generateTempPassword(): string {
   const upper = 'ABCDEFGHJKMNPQRSTUVWXYZ'
@@ -30,6 +31,10 @@ export async function POST(request: NextRequest) {
     .single()
   if (!currentUser || currentUser.role !== 'admin') {
     return NextResponse.json({ error: '管理者のみパスワードを再発行できます' }, { status: 403 })
+  }
+  // 施設長はスタッフ管理も閲覧のみ（2026-11-12 依頼主）
+  if (!(await hasEditAccess())) {
+    return NextResponse.json({ error: 'パスワードの再発行はシステム管理者だけができます' }, { status: 403 })
   }
 
   const { userId } = await request.json()

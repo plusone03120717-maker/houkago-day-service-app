@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireAdmin, getStaffAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { ArrowLeft, Car } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,6 +13,8 @@ export default async function StaffMemberPage({
   params: Promise<{ memberId: string }>
 }) {
   await requireAdmin()
+  // 施設長はスタッフ管理も閲覧のみ（編集できるのはシステム管理者だけ・2026-11-12 依頼主）
+  const canEdit = (await getStaffAccess())?.canEditOperations ?? false
   const { memberId } = await params
   const supabase = await createClient()
 
@@ -39,6 +41,12 @@ export default async function StaffMemberPage({
         </div>
       </div>
 
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          スタッフ管理は閲覧のみです。名前・役職・LINE の変更と削除はできません。
+        </p>
+      )}
+
       {/* 基本情報 */}
       <Card>
         <CardContent className="p-4 flex items-center gap-4">
@@ -60,7 +68,7 @@ export default async function StaffMemberPage({
       {/* 編集フォーム */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">情報編集</CardTitle>
+          <CardTitle className="text-base">{canEdit ? '情報編集' : '登録内容'}</CardTitle>
         </CardHeader>
         <CardContent>
           <StaffMemberForm
@@ -68,6 +76,7 @@ export default async function StaffMemberPage({
             initialName={member.name}
             initialRoles={memberRoles}
             initialLineUserId={member.line_user_id ?? ''}
+            canEdit={canEdit}
           />
         </CardContent>
       </Card>

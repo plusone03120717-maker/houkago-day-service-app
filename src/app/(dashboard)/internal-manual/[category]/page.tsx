@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { FileText, StickyNote, Eye, EyeOff, PenLine } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSessionUser } from '@/lib/auth'
+import { getStaffAccess } from '@/lib/require-admin'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { BackButton } from '@/components/ui/back-button'
 import { NoteForm } from '@/components/internal-manual/note-form'
@@ -50,12 +51,11 @@ export default async function InternalManualCategoryPage({
   const { category } = await params
   if (!isCategory(category)) notFound()
 
-  const user = await requireSessionUser()
-  const isAdmin = user.role === 'admin'
+  await requireSessionUser()
   const meta = CATEGORY_META[category]
   const supabase = await createClient()
 
-  const [{ data: articlesRaw }, { data: notesRaw }] = await Promise.all([
+  const [{ data: articlesRaw }, { data: notesRaw }, access] = await Promise.all([
     supabase
       .from('internal_manual_articles')
       .select('id, title, body, draft_body, status, updated_at')
@@ -68,7 +68,11 @@ export default async function InternalManualCategoryPage({
       .eq('category', category)
       .order('created_at', { ascending: false })
       .limit(200),
+    getStaffAccess(),
   ])
+  // メモの追加・編集と記事づくりはシステム管理者だけ。
+  // 施設長・スタッフは自分が書いたメモでも閲覧のみ（2026-11-12 依頼主）
+  const canEdit = access?.canEditOperations ?? false
 
   const articles = (articlesRaw ?? []) as ArticleRow[]
   const notes = (notesRaw ?? []) as NoteRow[]
@@ -93,18 +97,24 @@ export default async function InternalManualCategoryPage({
         </div>
       </div>
 
-      {/* メモの投稿。一番よく使うので最上部に置く */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <PenLine className="h-5 w-5 text-indigo-500" />
-            メモを追加する
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <NoteForm category={category} />
-        </CardContent>
-      </Card>
+      {/* メモの投稿。一番よく使うので最上部に置く（システム管理者だけ） */}
+      {canEdit ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <PenLine className="h-5 w-5 text-indigo-500" />
+              メモを追加する
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <NoteForm category={category} />
+          </CardContent>
+        </Card>
+      ) : (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          社内マニュアルは閲覧のみです。メモの追加・編集・見送りや、記事の作成・編集はできません。
+        </p>
+      )}
 
       {/* マニュアル記事 */}
       <Card>
@@ -113,15 +123,15 @@ export default async function InternalManualCategoryPage({
             <FileText className="h-5 w-5 text-gray-400" />
             マニュアル（{articles.length}件）
           </CardTitle>
-          {isAdmin && <NewArticleButton category={category} />}
+          {canEdit && <NewArticleButton category={category} />}
         </CardHeader>
         <CardContent className="p-0">
           {articles.length === 0 ? (
             <p className="px-6 pb-6 text-sm text-gray-500">
               まだ記事はありません。
-              {isAdmin
+              {canEdit
                 ? 'メモが溜まったら「AIで下書きを作る」から記事に起こしてください。'
-                : 'メモが溜まると管理者が記事にまとめます。'}
+                : 'メモが溜まるとシステム管理者が記事にまとめます。'}
             </p>
           ) : (
             <div className="divide-y divide-gray-100">
@@ -170,7 +180,7 @@ export default async function InternalManualCategoryPage({
             <StickyNote className="h-5 w-5 text-amber-500" />
             まだマニュアルに反映していないメモ（{openNotes.length}件）
           </CardTitle>
-          {isAdmin && openNotes.length > 0 && (
+          {canEdit && openNotes.length > 0 && (
             <GenerateDraftButton category={category} noteCount={openNotes.length} />
           )}
         </CardHeader>
@@ -188,7 +198,7 @@ export default async function InternalManualCategoryPage({
                   createdAt={jst(n.created_at)}
                   linkedToArticle={Boolean(n.article_id)}
                   sourceMinutesId={n.source_minutes_id}
-                  canEdit={isAdmin || n.created_by === user.id}
+                  canEdit={canEdit}
                 />
               ))}
             </div>
