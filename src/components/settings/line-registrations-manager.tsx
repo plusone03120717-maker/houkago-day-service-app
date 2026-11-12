@@ -34,6 +34,8 @@ type Props = {
   requests: RequestRow[]
   guardians: GuardianRow[]
   childList: Child[]
+  /** 申請の承認・却下、児童の紐付け・解除ができるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
+  canEdit?: boolean
 }
 
 function formatDate(iso: string) {
@@ -93,7 +95,15 @@ function ChildPicker({
   )
 }
 
-function RequestCard({ request, childList }: { request: RequestRow; childList: Child[] }) {
+function RequestCard({
+  request,
+  childList,
+  canEdit,
+}: {
+  request: RequestRow
+  childList: Child[]
+  canEdit: boolean
+}) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   // 生年月日と名前の両方が合う候補が1人だけなら、最初から選んでおく
@@ -109,10 +119,12 @@ function RequestCard({ request, childList }: { request: RequestRow; childList: C
   const extra = selected.filter((id) => !candidateIds.includes(id))
 
   function toggle(id: string) {
+    if (!canEdit) return
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
   async function act(action: 'approve' | 'reject') {
+    if (!canEdit) return
     setBusy(action)
     setError(null)
     const err = await post(
@@ -142,6 +154,8 @@ function RequestCard({ request, childList }: { request: RequestRow; childList: C
         </div>
       </div>
 
+      {/* 閲覧のみのときは、候補のチェックをまとめて押せなくする */}
+      <fieldset disabled={!canEdit} className="min-w-0">
       <div>
         <p className="text-xs font-medium text-gray-600 mb-1.5">紐付ける児童（ごきょうだいは複数選べます）</p>
         {request.candidates.length === 0 && (
@@ -195,19 +209,23 @@ function RequestCard({ request, childList }: { request: RequestRow; childList: C
             </div>
           ))}
         </div>
-        <div className="mt-2">
-          <ChildPicker
-            childList={childList}
-            exclude={[...candidateIds, ...selected]}
-            label="＋ 児童を選ぶ"
-            disabled={busy !== null}
-            onPick={(id) => setSelected((prev) => [...prev, id])}
-          />
-        </div>
+        {canEdit && (
+          <div className="mt-2">
+            <ChildPicker
+              childList={childList}
+              exclude={[...candidateIds, ...selected]}
+              label="＋ 児童を選ぶ"
+              disabled={busy !== null}
+              onPick={(id) => setSelected((prev) => [...prev, id])}
+            />
+          </div>
+        )}
       </div>
+      </fieldset>
 
       {error && <p className="text-xs text-red-600">{error}</p>}
 
+      {canEdit && (
       <div className="flex items-center justify-end gap-2 pt-1">
         {confirmReject ? (
           <>
@@ -248,11 +266,20 @@ function RequestCard({ request, childList }: { request: RequestRow; childList: C
           </>
         )}
       </div>
+      )}
     </div>
   )
 }
 
-function GuardianCard({ guardian, childList }: { guardian: GuardianRow; childList: Child[] }) {
+function GuardianCard({
+  guardian,
+  childList,
+  canEdit,
+}: {
+  guardian: GuardianRow
+  childList: Child[]
+  canEdit: boolean
+}) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [busy, setBusy] = useState<string | null>(null)
@@ -260,6 +287,7 @@ function GuardianCard({ guardian, childList }: { guardian: GuardianRow; childLis
   const [error, setError] = useState<string | null>(null)
 
   async function act(action: 'link' | 'unlink', childId: string) {
+    if (!canEdit) return
     setBusy(childId)
     setError(null)
     const err = await post({ action, guardianId: guardian.id, childId })
@@ -279,13 +307,15 @@ function GuardianCard({ guardian, childList }: { guardian: GuardianRow; childLis
           {guardian.name ?? '（LINEの名前なし）'}
           <span className="ml-2 text-xs font-normal text-gray-400">{formatDate(guardian.created_at)} 登録</span>
         </p>
-        <ChildPicker
-          childList={childList}
-          exclude={guardian.children.map((c) => c.id)}
-          label="＋ きょうだいを追加"
-          disabled={busy !== null}
-          onPick={(id) => act('link', id)}
-        />
+        {canEdit && (
+          <ChildPicker
+            childList={childList}
+            exclude={guardian.children.map((c) => c.id)}
+            label="＋ きょうだいを追加"
+            disabled={busy !== null}
+            onPick={(id) => act('link', id)}
+          />
+        )}
       </div>
 
       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -313,14 +343,16 @@ function GuardianCard({ guardian, childList }: { guardian: GuardianRow; childLis
               className="flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 px-2.5 py-1 text-xs"
             >
               {c.name}
-              <button
-                onClick={() => setConfirmUnlink(c.id)}
-                disabled={busy !== null}
-                className="text-indigo-300 hover:text-red-500"
-                title="この児童との紐付けを外す"
-              >
-                <X className="h-3 w-3" />
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => setConfirmUnlink(c.id)}
+                  disabled={busy !== null}
+                  className="text-indigo-300 hover:text-red-500"
+                  title="この児童との紐付けを外す"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </span>
           )
         )}
@@ -331,7 +363,7 @@ function GuardianCard({ guardian, childList }: { guardian: GuardianRow; childLis
   )
 }
 
-export function LineRegistrationsManager({ requests, guardians, childList }: Props) {
+export function LineRegistrationsManager({ requests, guardians, childList, canEdit = true }: Props) {
   const [query, setQuery] = useState('')
   const q = query.trim()
   const shownGuardians = q
@@ -347,6 +379,11 @@ export function LineRegistrationsManager({ requests, guardians, childList }: Pro
         <p className="text-sm text-gray-500 mt-1">
           保護者がLINEから送った登録の申請を承認します。登録済みの保護者には、ごきょうだいをここから追加できます。
         </p>
+        {!canEdit && (
+          <p className="mt-3 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+            保護者のLINE登録は閲覧のみです。申請の承認・却下、児童の追加・解除はできません。
+          </p>
+        )}
       </div>
 
       <section className="space-y-3">
@@ -362,7 +399,7 @@ export function LineRegistrationsManager({ requests, guardians, childList }: Pro
             承認待ちの申請はありません
           </div>
         ) : (
-          requests.map((r) => <RequestCard key={r.id} request={r} childList={childList} />)
+          requests.map((r) => <RequestCard key={r.id} request={r} childList={childList} canEdit={canEdit} />)
         )}
       </section>
 
@@ -388,7 +425,7 @@ export function LineRegistrationsManager({ requests, guardians, childList }: Pro
             {q ? '該当する保護者はいません' : 'LINEで登録した保護者はまだいません'}
           </div>
         ) : (
-          shownGuardians.map((g) => <GuardianCard key={g.id} guardian={g} childList={childList} />)
+          shownGuardians.map((g) => <GuardianCard key={g.id} guardian={g} childList={childList} canEdit={canEdit} />)
         )}
         <p className="text-xs text-gray-400 flex items-center gap-1">
           <Plus className="h-3 w-3" />

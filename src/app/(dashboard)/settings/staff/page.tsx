@@ -35,6 +35,8 @@ export default async function SettingsStaffPage() {
   const supabase = await createClient()
   // システム管理者・施設長を登録できるのはシステム管理者だけ
   const access = await getStaffAccess()
+  // 施設長はスタッフ管理も閲覧のみ（編集できるのはシステム管理者だけ・2026-11-12 依頼主）
+  const canEdit = access?.canEditOperations ?? false
 
   const { data: staffRaw } = await supabase
     .from('users')
@@ -61,7 +63,13 @@ export default async function SettingsStaffPage() {
         </div>
       </div>
 
-      <StaffInviteForm canAssignAdmin={access?.canManageMoney ?? false} />
+      {canEdit ? (
+        <StaffInviteForm canAssignAdmin={access?.canManageMoney ?? false} canEdit={canEdit} />
+      ) : (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          スタッフ管理は閲覧のみです。スタッフの招待・登録・変更・削除はできません。
+        </p>
+      )}
 
       {/* ログインアカウントあり（管理者・スタッフ） */}
       <Card>

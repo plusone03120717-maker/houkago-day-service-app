@@ -44,9 +44,12 @@ const TYPE_COLORS: Record<string, string> = {
 export function TrainingRecordForm({
   staffProfileId,
   records,
+  canEdit = true,
 }: {
   staffProfileId: string
   records: TrainingRecord[]
+  /** 研修記録の追加・削除ができるか。システム管理者だけ true（施設長は閲覧のみ） */
+  canEdit?: boolean
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -64,6 +67,7 @@ export function TrainingRecordForm({
   const [deleting, setDeleting] = useState<string | null>(null)
 
   const handleSave = async () => {
+    if (!canEdit) return
     if (!trainingName.trim() || !completedDate) return
     setSaving(true)
     await supabase.from('staff_training_records').insert({
@@ -89,6 +93,7 @@ export function TrainingRecordForm({
   }
 
   const handleDelete = async (id: string) => {
+    if (!canEdit) return
     if (!confirm('この研修記録を削除しますか？')) return
     setDeleting(id)
     await supabase.from('staff_training_records').delete().eq('id', id)
@@ -118,13 +123,15 @@ export function TrainingRecordForm({
                 </div>
                 {rec.notes && <p className="text-xs text-gray-400 mt-0.5 truncate">{rec.notes}</p>}
               </div>
-              <button
-                onClick={() => handleDelete(rec.id)}
-                disabled={deleting === rec.id}
-                className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0 mt-0.5 disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => handleDelete(rec.id)}
+                  disabled={deleting === rec.id}
+                  className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0 mt-0.5 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -134,8 +141,8 @@ export function TrainingRecordForm({
         )
       )}
 
-      {/* 追加フォーム */}
-      {open ? (
+      {/* 追加フォーム（閲覧のみのときは出さない） */}
+      {!canEdit ? null : open ? (
         <div className="space-y-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">

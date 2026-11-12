@@ -17,6 +17,8 @@ interface Props {
   initialName: string
   initialRoles: string[]
   initialLineUserId: string
+  /** 名前・役職・LINE の変更と削除ができるか。システム管理者だけ true（施設長は閲覧のみ） */
+  canEdit?: boolean
 }
 
 export function StaffMemberForm({
@@ -24,6 +26,7 @@ export function StaffMemberForm({
   initialName,
   initialRoles,
   initialLineUserId,
+  canEdit = true,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -37,6 +40,7 @@ export function StaffMemberForm({
   const [deleting, setDeleting] = useState(false)
 
   const toggleRole = (value: string) => {
+    if (!canEdit) return
     setRoles((prev) => {
       const next = new Set(prev)
       if (next.has(value)) next.delete(value)
@@ -47,6 +51,7 @@ export function StaffMemberForm({
   }
 
   const handleSave = async () => {
+    if (!canEdit) return
     if (!name.trim()) return
     setSaving(true)
     setSaved(false)
@@ -67,6 +72,7 @@ export function StaffMemberForm({
   }
 
   const handleDelete = async () => {
+    if (!canEdit) return
     if (!confirm(`「${name}」を削除しますか？`)) return
     setDeleting(true)
     await supabase.from('staff_members').delete().eq('id', memberId)
@@ -75,6 +81,8 @@ export function StaffMemberForm({
 
   return (
     <div className="space-y-5">
+      {/* 閲覧のみのときは、中のボタン・入力欄をまとめて押せなくする */}
+      <fieldset disabled={!canEdit} className="space-y-5 min-w-0">
       {/* 氏名 */}
       <div>
         <label className="text-xs font-medium text-gray-700 mb-1 block">氏名</label>
@@ -127,7 +135,9 @@ export function StaffMemberForm({
           LINE公式アカウントにメッセージを送ると自動返信されます
         </p>
       </div>
+      </fieldset>
 
+      {canEdit && (
       <div className="flex items-center justify-between pt-2 border-b border-gray-100 pb-5">
         <div className="flex items-center gap-3">
           <Button onClick={handleSave} disabled={saving || !name.trim()} size="sm">
@@ -152,6 +162,7 @@ export function StaffMemberForm({
           削除
         </Button>
       </div>
+      )}
 
     </div>
   )

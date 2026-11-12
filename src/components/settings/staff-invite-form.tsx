@@ -35,8 +35,17 @@ type InviteResult = {
   overwrittenName: string | null
 }
 
-/** canAssignAdmin: システム管理者・施設長を登録できるか（システム管理者だけ true） */
-export function StaffInviteForm({ canAssignAdmin }: { canAssignAdmin: boolean }) {
+/**
+ * canAssignAdmin: システム管理者・施設長を登録できるか（システム管理者だけ true）
+ * canEdit: スタッフを招待・登録できるか（システム管理者だけ true。施設長は閲覧のみでフォームを出さない）
+ */
+export function StaffInviteForm({
+  canAssignAdmin,
+  canEdit = true,
+}: {
+  canAssignAdmin: boolean
+  canEdit?: boolean
+}) {
   const supabase = createClient()
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
@@ -75,6 +84,7 @@ export function StaffInviteForm({ canAssignAdmin }: { canAssignAdmin: boolean })
   }
 
   const submitInvite = async (overwrite: boolean) => {
+    if (!canEdit) return
     const nonAuthRoles = [...selectedRoles].filter((r) => !['admin', 'staff'].includes(r))
     setLoading(true)
     setError('')
@@ -112,6 +122,7 @@ export function StaffInviteForm({ canAssignAdmin }: { canAssignAdmin: boolean })
 
   const handleSubmit = async (ev: React.BaseSyntheticEvent) => {
     ev.preventDefault()
+    if (!canEdit) return
     if (!name.trim() || selectedRoles.size === 0) return
 
     if (needsPhone) {
@@ -144,6 +155,9 @@ export function StaffInviteForm({ canAssignAdmin }: { canAssignAdmin: boolean })
       }
     }
   }
+
+  // 閲覧のみのときは追加フォームを出さない
+  if (!canEdit) return null
 
   return (
     <Card>
@@ -214,7 +228,7 @@ export function StaffInviteForm({ canAssignAdmin }: { canAssignAdmin: boolean })
             )}
             {selectedRoles.has(FACILITY_MANAGER) && (
               <p className="text-xs text-sky-700 mt-1.5">
-                施設長は、国保連請求・上限管理・保護者請求と、タイムカード・勤務時間集計・有給・残業・スタッフ申請を除く、すべての機能を使えます。シフト管理と「児童管理 → 利用スケジュール」は閲覧のみです。
+                施設長が編集できるのは、日々の記録・児童の情報・ヒヤリハットです。ほかの画面（設定・スタッフ管理を含む）は閲覧のみで、国保連請求・上限管理・保護者請求と、タイムカード・勤務時間集計・有給・残業・スタッフ申請は開けません。
               </p>
             )}
             {!needsPhone && selectedRoles.size > 0 && (

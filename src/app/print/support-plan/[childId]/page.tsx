@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { PrintOptions } from '@/components/documents/print-options'
 import { SupportPlanDocument } from '@/components/documents/support-plan-document'
+import { getStaffAccess } from '@/lib/require-admin'
 import { formatDate } from '@/lib/utils'
 
 type Child = { id: string; name: string }
@@ -183,7 +184,7 @@ export default async function PrintSupportPlanPage({
 
       {docData && (
         <div id="doc-wrapper" style={{ width: '200mm', margin: '8mm auto', padding: '0 4mm' }}>
-          <SupportPlanDocument data={docData} />
+          <SupportPlanDocument data={docData} canEdit={(await getStaffAccess())?.canEditOperations ?? false} />
         </div>
       )}
     </>

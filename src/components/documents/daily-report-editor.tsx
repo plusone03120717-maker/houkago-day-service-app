@@ -44,6 +44,8 @@ interface Props {
   absentCount: number
   attendances: AttendanceRow[]
   initial: DailyReport | null
+  /** 日報を保存できるか（システム管理者だけ）。false なら表示と印刷だけ */
+  canEdit?: boolean
 }
 
 const SHIFT_LABEL: Record<string, string> = {
@@ -51,7 +53,7 @@ const SHIFT_LABEL: Record<string, string> = {
 }
 
 export function DailyReportEditor({
-  date, dayLabel, shifts, presentCount, absentCount, attendances, initial,
+  date, dayLabel, shifts, presentCount, absentCount, attendances, initial, canEdit = true,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -65,6 +67,7 @@ export function DailyReportEditor({
   const [saved, setSaved] = useState(false)
 
   const handleSave = async () => {
+    if (!canEdit) return
     setSaving(true)
     const payload = {
       report_date: date,
@@ -203,67 +206,77 @@ export function DailyReportEditor({
           <CardTitle className="text-sm">日報記録</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* 安全確認 */}
-          <div className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="safety"
-              checked={safetyCheck}
-              onChange={(e) => { setSafetyCheck(e.target.checked); setSaved(false) }}
-              className="w-4 h-4 text-indigo-600 rounded"
-            />
-            <label htmlFor="safety" className="text-sm font-medium text-gray-800">
-              安全確認実施済み（避難経路・設備・薬品管理等）
-            </label>
-          </div>
+          {!canEdit && (
+            <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 print:hidden">
+              業務日報は閲覧のみです。記録の入力・保存はできません。
+            </p>
+          )}
+          {/* contents にすると親の space-y が効かないので、fieldset 自身で間をあける */}
+          <fieldset disabled={!canEdit} className="space-y-4 min-w-0">
+            {/* 安全確認 */}
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="safety"
+                checked={safetyCheck}
+                onChange={(e) => { setSafetyCheck(e.target.checked); setSaved(false) }}
+                className="w-4 h-4 text-indigo-600 rounded"
+              />
+              <label htmlFor="safety" className="text-sm font-medium text-gray-800">
+                安全確認実施済み（避難経路・設備・薬品管理等）
+              </label>
+            </div>
 
-          <div>
-            <label className="text-xs font-medium text-gray-700 mb-1 block">
-              管理者コメント・申し送り事項
-            </label>
-            <AutoTextarea
-              value={managerComment}
-              onChange={(e) => { setManagerComment(e.target.value); setSaved(false) }}
-              minRows={3}
-              placeholder="本日の業務全般・申し送り事項など"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-          </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">
+                管理者コメント・申し送り事項
+              </label>
+              <AutoTextarea
+                value={managerComment}
+                onChange={(e) => { setManagerComment(e.target.value); setSaved(false) }}
+                minRows={3}
+                placeholder="本日の業務全般・申し送り事項など"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
 
-          <div>
-            <label className="text-xs font-medium text-gray-700 mb-1 block">
-              服薬記録
-            </label>
-            <AutoTextarea
-              value={medicationRecords}
-              onChange={(e) => { setMedicationRecords(e.target.value); setSaved(false) }}
-              minRows={2}
-              placeholder="服薬が必要な児童の記録（児童名・薬名・時間・確認者）"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-          </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">
+                服薬記録
+              </label>
+              <AutoTextarea
+                value={medicationRecords}
+                onChange={(e) => { setMedicationRecords(e.target.value); setSaved(false) }}
+                minRows={2}
+                placeholder="服薬が必要な児童の記録（児童名・薬名・時間・確認者）"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
 
-          <div>
-            <label className="text-xs font-medium text-gray-700 mb-1 block">
-              事故・ヒヤリハット記録
-            </label>
-            <AutoTextarea
-              value={incidentNotes}
-              onChange={(e) => { setIncidentNotes(e.target.value); setSaved(false) }}
-              minRows={2}
-              placeholder="事故・ヒヤリハット・保護者からのクレーム等"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-          </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">
+                事故・ヒヤリハット記録
+              </label>
+              <AutoTextarea
+                value={incidentNotes}
+                onChange={(e) => { setIncidentNotes(e.target.value); setSaved(false) }}
+                minRows={2}
+                placeholder="事故・ヒヤリハット・保護者からのクレーム等"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+          </fieldset>
         </CardContent>
       </Card>
 
       {/* アクションボタン */}
       <div className="flex items-center gap-3 print:hidden">
-        <Button onClick={handleSave} disabled={saving} size="sm">
-          <Save className="h-4 w-4" />
-          {saving ? '保存中...' : '日報を保存'}
-        </Button>
+        {canEdit && (
+          <Button onClick={handleSave} disabled={saving} size="sm">
+            <Save className="h-4 w-4" />
+            {saving ? '保存中...' : '日報を保存'}
+          </Button>
+        )}
         <Button
           onClick={() => window.print()}
           variant="outline"

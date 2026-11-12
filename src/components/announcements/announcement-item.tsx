@@ -28,9 +28,11 @@ export type AnnouncementItemData = {
 interface Props {
   announcement: AnnouncementItemData
   units: Unit[]
+  /** 編集・削除できるか（システム管理者だけ）。false なら表示するだけ */
+  canEdit?: boolean
 }
 
-export function AnnouncementItem({ announcement: ann, units }: Props) {
+export function AnnouncementItem({ announcement: ann, units, canEdit = true }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -47,6 +49,7 @@ export function AnnouncementItem({ announcement: ann, units }: Props) {
   const edited = new Date(ann.updated_at).getTime() - new Date(ann.created_at).getTime() > 60_000
 
   const startEdit = () => {
+    if (!canEdit) return
     setTitle(ann.title)
     setContent(ann.content)
     setTargetType(ann.target_type === 'unit' ? 'unit' : 'all')
@@ -57,7 +60,7 @@ export function AnnouncementItem({ announcement: ann, units }: Props) {
 
   // publish: true=公開する / false=下書きに戻す / undefined=公開状態はそのまま
   const handleSave = async (publish?: boolean) => {
-    if (!title.trim() || !content.trim()) return
+    if (!canEdit || !title.trim() || !content.trim()) return
     setSaving(true)
     setError(null)
     const update: Record<string, unknown> = {
@@ -79,6 +82,7 @@ export function AnnouncementItem({ announcement: ann, units }: Props) {
   }
 
   const handleDelete = async () => {
+    if (!canEdit) return
     const msg = isPublished
       ? `「${ann.title}」を削除しますか？\n保護者の画面からも見えなくなります。この操作は取り消せません。`
       : `下書き「${ann.title}」を削除しますか？この操作は取り消せません。`
@@ -94,7 +98,7 @@ export function AnnouncementItem({ announcement: ann, units }: Props) {
     startTransition(() => router.refresh())
   }
 
-  if (editing) {
+  if (editing && canEdit) {
     return (
       <Card className="border-indigo-200">
         <CardContent className="p-4 space-y-3">
@@ -232,26 +236,28 @@ export function AnnouncementItem({ announcement: ann, units }: Props) {
             <Badge variant={isPublished ? 'success' : 'secondary'}>
               {isPublished ? '公開中' : '下書き'}
             </Badge>
-            <div className="flex gap-1">
-              <button
-                onClick={startEdit}
-                disabled={saving}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50"
-                aria-label="編集"
-                title="編集"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={saving}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
-                aria-label="削除"
-                title="削除"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
+            {canEdit && (
+              <div className="flex gap-1">
+                <button
+                  onClick={startEdit}
+                  disabled={saving}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50"
+                  aria-label="編集"
+                  title="編集"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={saving}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
+                  aria-label="削除"
+                  title="削除"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
         {error && (

@@ -1,9 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireAdmin, getStaffAccess } from '@/lib/require-admin'
 import { ActivityProgramForm } from '@/components/settings/activity-program-form'
 
 export default async function ActivityProgramsPage() {
   await requireAdmin()
+  // 施設長・スタッフは閲覧のみ（編集できるのはシステム管理者だけ・2026-11-12 依頼主）
+  const canEdit = (await getStaffAccess())?.canEditOperations ?? false
   const supabase = await createClient()
 
   const { data: facility } = await supabase
@@ -28,6 +30,7 @@ export default async function ActivityProgramsPage() {
         <ActivityProgramForm
           facilityId={facility?.id ?? ''}
           programs={programs ?? []}
+          canEdit={canEdit}
         />
       </div>
     </div>

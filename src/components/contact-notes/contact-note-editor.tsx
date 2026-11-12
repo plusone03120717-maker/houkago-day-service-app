@@ -15,6 +15,8 @@ interface Props {
   aiDraft: string | null
   childId: string
   date: string
+  /** 編集できるか（システム管理者だけ）。false なら本文を表示するだけ */
+  canEdit?: boolean
 }
 
 export function ContactNoteEditor({
@@ -24,6 +26,7 @@ export function ContactNoteEditor({
   aiDraft,
   childId,
   date,
+  canEdit = true,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -34,6 +37,7 @@ export function ContactNoteEditor({
   const [saving, setSaving] = useState(false)
 
   const handleGenerateAI = async () => {
+    if (!canEdit) return
     setGenerating(true)
     const res = await fetch('/api/contact-notes/generate', {
       method: 'POST',
@@ -48,6 +52,7 @@ export function ContactNoteEditor({
   }
 
   const handleSave = async (publish: boolean) => {
+    if (!canEdit) return
     setSaving(true)
     await supabase.from('contact_notes').update({
       content,
@@ -56,6 +61,30 @@ export function ContactNoteEditor({
     setSaving(false)
     setPublished(publish)
     startTransition(() => router.refresh())
+  }
+
+  // 閲覧のみ（施設長・スタッフ）：本文と公開状態を表示するだけ
+  if (!canEdit) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">連絡帳内容</CardTitle>
+            <span className="text-xs text-gray-500">{published ? '公開済' : '下書き'}</span>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+            連絡帳は閲覧のみです。この画面での編集・AI下書き・公開はできません。
+          </p>
+          {content.trim() ? (
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{content}</p>
+          ) : (
+            <p className="text-sm text-gray-400">本文はまだありません</p>
+          )}
+        </CardContent>
+      </Card>
+    )
   }
 
   return (

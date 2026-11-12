@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getSessionUser } from '@/lib/auth'
+import { hasEditAccess } from '@/lib/require-admin'
 import { createClient } from '@/lib/supabase/server'
 import { SUPPORT_MODEL } from '@/lib/support/bot'
 import { CATEGORY_META, isCategory } from '@/lib/internal-manual/categories'
@@ -83,8 +84,9 @@ function normalize(value: unknown): string {
 export async function POST(request: NextRequest) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 })
-  if (user.role !== 'admin') {
-    return NextResponse.json({ error: '管理者のみ実行できます' }, { status: 403 })
+  // 社内マニュアルの記事づくりはシステム管理者だけ。施設長は users.role が 'admin' でも通さない（DB の役職で判定）
+  if (!(await hasEditAccess())) {
+    return NextResponse.json({ error: 'システム管理者のみ実行できます' }, { status: 403 })
   }
 
   const { category, noteIds } = (await request.json()) as {

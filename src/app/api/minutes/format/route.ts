@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getSessionUser } from '@/lib/auth'
+import { hasEditAccess } from '@/lib/require-admin'
 import { createClient } from '@/lib/supabase/server'
 import { SUPPORT_MODEL, stripMarkdown } from '@/lib/support/bot'
 
@@ -20,6 +21,10 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 })
   if (user.role === 'parent') {
     return NextResponse.json({ error: '権限がありません' }, { status: 403 })
+  }
+  // 議事録を編集できるのはシステム管理者だけ（施設長・スタッフは閲覧のみ）
+  if (!(await hasEditAccess())) {
+    return NextResponse.json({ error: '議事録の編集はシステム管理者だけができます' }, { status: 403 })
   }
 
   const { minutesId } = (await request.json()) as { minutesId?: string }

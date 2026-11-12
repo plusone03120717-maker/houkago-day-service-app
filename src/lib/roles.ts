@@ -7,9 +7,12 @@
  * 追加でできることは「児童管理 → 利用スケジュール」の編集のみ。
  *
  * 「施設長」は users.role = 'admin' に job_titles の facility_manager を重ねたもの。
- * システム管理者と同じことができるが、お金まわり（国保連請求・保護者請求・上限管理と、
- * タイムカード・勤務時間集計・有給・残業・スタッフ申請）だけは扱えない。
+ * 開ける画面はシステム管理者に近いが、お金まわり（国保連請求・保護者請求・上限管理と、
+ * タイムカード・勤務時間集計・有給・残業・スタッフ申請）は開けない。
  * 施設長を任命・解除できるのはシステム管理者だけ。
+ *
+ * 2026-11-12 から、施設長とスタッフが編集できるのは「日々の記録」「児童の情報」「ヒヤリハット」
+ * だけで、ほかの業務の画面は閲覧のみ（判定は canEditOperations）。
  */
 
 /** サービス管理者を表す job_titles の値 */
@@ -63,12 +66,20 @@ export function canEditUsagePlans(role: string | null, jobTitles: string[] | nul
 }
 
 /**
- * 送迎管理を編集できるか。システム管理者だけ（施設長・スタッフ・サービス管理者は閲覧のみ）。
+ * 業務の画面（出席・送迎・支援計画・連絡帳・お知らせ・設定など）を編集できるか。
+ * システム管理者だけ。施設長・スタッフ（サービス管理者を含む）は閲覧のみ。
+ * 施設長・スタッフが編集できるのは「日々の記録」「児童の情報」「ヒヤリハット」だけで、
+ * それらの画面ではこの判定を使わない（2026-11-12 依頼主）。
  * （role 未設定の旧アカウント＝初期管理者は requireAdmin と同じく通す）
  */
-export function canEditTransport(role: string | null, jobTitles: string[] | null): boolean {
+export function canEditOperations(role: string | null, jobTitles: string[] | null): boolean {
   if (role === 'parent' || role === 'staff') return false
   return !isFacilityManager(role, jobTitles)
+}
+
+/** 送迎管理を編集できるか。システム管理者だけ（施設長・スタッフは閲覧のみ）。 */
+export function canEditTransport(role: string | null, jobTitles: string[] | null): boolean {
+  return canEditOperations(role, jobTitles)
 }
 
 /** 施設長か（システム管理者の権限からお金まわりを外した役職） */

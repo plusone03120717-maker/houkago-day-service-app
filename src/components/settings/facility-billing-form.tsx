@@ -30,6 +30,8 @@ interface Props {
   initialFacilityNumber: string
   initialRegionCode: string
   initialUnitPrice: number
+  /** 事業所番号・地域区分・単価を保存できるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
+  canEdit?: boolean
 }
 
 export function FacilityBillingForm({
@@ -37,6 +39,7 @@ export function FacilityBillingForm({
   initialFacilityNumber,
   initialRegionCode,
   initialUnitPrice,
+  canEdit = true,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -53,6 +56,7 @@ export function FacilityBillingForm({
   }
 
   const handleSave = async () => {
+    if (!canEdit) return
     const trimmed = facilityNumber.trim()
     if (!FACILITY_NUMBER_PATTERN.test(trimmed)) {
       setMessage('事業所番号は10桁の数字で入力してください')
@@ -85,6 +89,8 @@ export function FacilityBillingForm({
   return (
     <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-lg space-y-3">
       <p className="text-xs font-semibold text-gray-700">国保連請求設定（事業所番号・地域区分・単位数単価）</p>
+      {/* 閲覧のみのときは、入力欄をまとめて押せなくする */}
+      <fieldset disabled={!canEdit} className="min-w-0">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
         <div>
           <label className="text-xs font-medium text-gray-600 mb-1 block">事業所番号（10桁）</label>
@@ -120,14 +126,17 @@ export function FacilityBillingForm({
             onChange={(e) => setUnitPrice(e.target.value)}
           />
         </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={handleSave} disabled={saving} size="sm">
-            <Save className="h-4 w-4" />
-            {saving ? '保存中...' : '保存'}
-          </Button>
-          {message && <span className="text-xs text-gray-500">{message}</span>}
-        </div>
+        {canEdit && (
+          <div className="flex items-center gap-2">
+            <Button onClick={handleSave} disabled={saving} size="sm">
+              <Save className="h-4 w-4" />
+              {saving ? '保存中...' : '保存'}
+            </Button>
+            {message && <span className="text-xs text-gray-500">{message}</span>}
+          </div>
+        )}
       </div>
+      </fieldset>
       <p className="text-xs text-gray-400">
         事業所番号は指定通知書に記載された10桁です。国保連請求CSVの全レコードに出力されるため、
         誤っていると取込で弾かれます。単位数単価は地域区分とサービス種類（放デイ等）で決まります。

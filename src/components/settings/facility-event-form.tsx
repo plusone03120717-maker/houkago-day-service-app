@@ -18,9 +18,11 @@ interface Props {
   facilityId: string
   defaultYear: number
   defaultMonth: number
+  /** 予定を追加できるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
+  canEdit?: boolean
 }
 
-export function FacilityEventForm({ facilityId, defaultYear, defaultMonth }: Props) {
+export function FacilityEventForm({ facilityId, defaultYear, defaultMonth, canEdit = true }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -35,6 +37,7 @@ export function FacilityEventForm({ facilityId, defaultYear, defaultMonth }: Pro
   const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
+    if (!canEdit) return
     if (!title.trim() || !eventDate) return
     setSaving(true)
 
@@ -58,6 +61,9 @@ export function FacilityEventForm({ facilityId, defaultYear, defaultMonth }: Pro
 
   // 休業日は自動的に予約停止
   const isAutoBlock = eventType === 'closed'
+
+  // 閲覧のみのときは登録フォームを出さない
+  if (!canEdit) return null
 
   return (
     <div className="space-y-3">

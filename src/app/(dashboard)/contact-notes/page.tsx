@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { FileText, Plus, ChevronRight, MessageCircle } from 'lucide-react'
 import { formatDate, getTodayJST } from '@/lib/utils'
 import { DateNav } from '@/components/ui/date-nav'
+import { getStaffAccess } from '@/lib/require-admin'
 
 type ContactNote = {
   id: string
@@ -26,6 +27,8 @@ export default async function ContactNotesPage({
 }) {
   const params = await searchParams
   const supabase = await createClient()
+  // 連絡帳の画面で作成・編集できるのはシステム管理者だけ（施設長・スタッフは閲覧のみ。日々の記録からの作成はそのまま）
+  const accessPromise = getStaffAccess()
 
   const targetDate = params.date ?? getTodayJST()
 
@@ -55,6 +58,8 @@ export default async function ContactNotesPage({
     units: { name: string } | null
   }>
 
+  const canEdit = (await accessPromise)?.canEditOperations ?? false
+
   const notedChildIds = new Set(notes.map((n) => n.child_id))
   const missingNotes = attended.filter((a) => !notedChildIds.has(a.child_id))
 
@@ -72,13 +77,21 @@ export default async function ContactNotesPage({
           <h1 className="text-2xl font-bold text-gray-900">連絡帳</h1>
           <p className="text-sm text-gray-500 mt-0.5">日々の連絡帳作成・管理</p>
         </div>
-        <Link href={`/contact-notes/new?date=${targetDate}`}>
-          <Button size="sm">
-            <Plus className="h-4 w-4" />
-            新規作成
-          </Button>
-        </Link>
+        {canEdit && (
+          <Link href={`/contact-notes/new?date=${targetDate}`}>
+            <Button size="sm">
+              <Plus className="h-4 w-4" />
+              新規作成
+            </Button>
+          </Link>
+        )}
       </div>
+
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          連絡帳は閲覧のみです。この画面での作成・編集・公開はできません。
+        </p>
+      )}
 
       {/* 日付ナビ */}
       <div className="flex items-center gap-3">
@@ -98,16 +111,25 @@ export default async function ContactNotesPage({
             連絡帳が未作成の児童（{missingNotes.length}名）
           </p>
           <div className="flex flex-wrap gap-2">
-            {missingNotes.map((a) => (
-              <Link
-                key={a.child_id}
-                href={`/contact-notes/new?date=${targetDate}&childId=${a.child_id}`}
-              >
-                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full hover:bg-amber-200 transition-colors cursor-pointer">
+            {missingNotes.map((a) =>
+              canEdit ? (
+                <Link
+                  key={a.child_id}
+                  href={`/contact-notes/new?date=${targetDate}&childId=${a.child_id}`}
+                >
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full hover:bg-amber-200 transition-colors cursor-pointer">
+                    {a.children?.name ?? '—'}
+                  </span>
+                </Link>
+              ) : (
+                <span
+                  key={a.child_id}
+                  className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full"
+                >
                   {a.children?.name ?? '—'}
                 </span>
-              </Link>
-            ))}
+              )
+            )}
           </div>
         </div>
       )}

@@ -21,9 +21,11 @@ type Settings = {
 interface Props {
   facilityId: string | null
   initial: Settings | null
+  /** 設定を保存できるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
+  canEdit?: boolean
 }
 
-export function NotificationSettingsForm({ facilityId, initial }: Props) {
+export function NotificationSettingsForm({ facilityId, initial, canEdit = true }: Props) {
   const supabase = createClient()
   const [settings, setSettings] = useState<Settings>(
     initial ?? {
@@ -42,11 +44,13 @@ export function NotificationSettingsForm({ facilityId, initial }: Props) {
   const [saved, setSaved] = useState(false)
 
   const toggle = (key: keyof Settings) => {
+    if (!canEdit) return
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }))
     setSaved(false)
   }
 
   const handleSave = async () => {
+    if (!canEdit) return
     setSaving(true)
     const data = { ...settings, facility_id: facilityId }
     if (settings.id) {
@@ -70,6 +74,14 @@ export function NotificationSettingsForm({ facilityId, initial }: Props) {
 
   return (
     <div className="space-y-4">
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          通知設定は閲覧のみです。設定の変更・保存はできません。
+        </p>
+      )}
+
+      {/* 閲覧のみのときは、中のチェック・入力欄をまとめて押せなくする */}
+      <fieldset disabled={!canEdit} className="space-y-4 min-w-0">
       {/* 連絡帳通知 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-gray-50">
@@ -179,14 +191,17 @@ export function NotificationSettingsForm({ facilityId, initial }: Props) {
           </div>
         </div>
       </div>
+      </fieldset>
 
-      <div className="flex items-center gap-3 pt-2">
-        <Button onClick={handleSave} disabled={saving} size="sm">
-          <Save className="h-4 w-4" />
-          {saving ? '保存中...' : '設定を保存'}
-        </Button>
-        {saved && <span className="text-xs text-green-600">保存しました</span>}
-      </div>
+      {canEdit && (
+        <div className="flex items-center gap-3 pt-2">
+          <Button onClick={handleSave} disabled={saving} size="sm">
+            <Save className="h-4 w-4" />
+            {saving ? '保存中...' : '設定を保存'}
+          </Button>
+          {saved && <span className="text-xs text-green-600">保存しました</span>}
+        </div>
+      )}
     </div>
   )
 }

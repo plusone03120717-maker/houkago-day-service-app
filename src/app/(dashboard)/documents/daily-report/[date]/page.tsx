@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { DailyReportEditor } from '@/components/documents/daily-report-editor'
+import { getStaffAccess } from '@/lib/require-admin'
 
 type ShiftEntry = {
   id: string
@@ -37,6 +38,8 @@ export default async function DailyReportDetailPage({
 }) {
   const { date } = await params
   const supabase = await createClient()
+  // 業務日報を保存できるのはシステム管理者だけ（施設長・スタッフは閲覧と印刷のみ）
+  const accessPromise = getStaffAccess()
 
   // シフト情報（スタッフ名付き）
   const { data: shiftsRaw } = await supabase
@@ -65,6 +68,7 @@ export default async function DailyReportDetailPage({
     .limit(1)
     .single()
   const report = reportRaw as unknown as DailyReport | null
+  const canEdit = (await accessPromise)?.canEditOperations ?? false
 
   const d = new Date(date)
   const dayLabel = d.toLocaleDateString('ja-JP', {
@@ -102,6 +106,7 @@ export default async function DailyReportDetailPage({
           status: a.status,
         }))}
         initial={report}
+        canEdit={canEdit}
       />
     </div>
   )

@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
-import { getSessionClaims } from '@/lib/auth'
+import { getStaffAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { ArrowLeft, ClipboardList, FileDown } from 'lucide-react'
@@ -92,8 +92,8 @@ export default async function SupportPlanDetailPage({
 }) {
   const { childId } = await params
   const supabase = await createClient()
-  const claims = await getSessionClaims()
-  const isReadOnly = claims?.role === 'staff'
+  // 編集できるのはシステム管理者だけ。施設長・スタッフは閲覧のみ（2026-11-12 依頼主）
+  const isReadOnly = !((await getStaffAccess())?.canEditOperations ?? false)
 
   // 直近3ヶ月の特記事項の範囲
   const threeMonthsAgo = new Date()

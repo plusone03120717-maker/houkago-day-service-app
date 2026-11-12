@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { CheckCircle2, StickyNote } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSessionUser } from '@/lib/auth'
+import { getStaffAccess } from '@/lib/require-admin'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { BackButton } from '@/components/ui/back-button'
 import { MinutesEditor } from '@/components/minutes/minutes-editor'
@@ -41,8 +42,10 @@ export default async function MinutesDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const user = await requireSessionUser()
-  const isAdmin = user.role === 'admin'
+  await requireSessionUser()
+  // 議事録を編集・確定・削除し、社内マニュアルへ反映できるのはシステム管理者だけ。
+  // 施設長・スタッフは自分が作った議事録でも閲覧のみ（2026-11-12 依頼主）
+  const accessPromise = getStaffAccess()
   const supabase = await createClient()
 
   const { data: raw } = await supabase
@@ -56,8 +59,7 @@ export default async function MinutesDetailPage({
   if (!raw) notFound()
   const minutes = raw as Minutes
 
-  // 自分の議事録か管理者なら編集できる（RLS でも同じ条件を掛けている）
-  const canEdit = isAdmin || minutes.created_by === user.id
+  const canEdit = (await accessPromise)?.canEditOperations ?? false
 
   // この議事録から社内マニュアルへ送った項目
   const { data: notesRaw } = await supabase
@@ -114,8 +116,8 @@ export default async function MinutesDetailPage({
         canEdit={canEdit}
       />
 
-      {/* 社内マニュアルへの反映は管理者のみ。確定してからにする */}
-      {isAdmin &&
+      {/* 社内マニュアルへの反映はシステム管理者のみ。確定してからにする */}
+      {canEdit &&
         (minutes.status === 'finalized' ? (
           <ReflectPanel minutesId={minutes.id} reflectedAt={minutes.reflected_at} />
         ) : (

@@ -9,10 +9,11 @@ import { SERVICE_MANAGER } from '@/lib/roles'
 
 type Access = 'staff' | 'facility_manager' | 'admin'
 
-// ログイン権限。お金まわり（請求・給与）を扱えるのはシステム管理者だけ
+// ログイン権限。お金まわり（請求・給与）を扱えるのはシステム管理者だけ。
+// 施設長・スタッフが編集できるのは日々の記録・児童の情報・ヒヤリハットだけで、ほかは閲覧のみ（2026-11-12 依頼主）
 const ACCESS_OPTIONS: Array<{ value: Access; label: string; description: string }> = [
-  { value: 'staff', label: 'スタッフ', description: '出席・記録・支援計画・帳票。送迎管理と利用スケジュールは閲覧のみ。設定・請求・シフト管理は開けない' },
-  { value: 'facility_manager', label: '施設長', description: '請求（国保連・上限管理・保護者請求）と給与まわり（タイムカード・勤務時間集計・有給・残業・スタッフ申請）以外のすべて。シフト管理と利用スケジュールは閲覧のみ' },
+  { value: 'staff', label: 'スタッフ', description: '日々の記録・児童の情報・ヒヤリハットを編集できる。ほかの画面は閲覧のみ。設定・請求・シフト管理は開けない' },
+  { value: 'facility_manager', label: '施設長', description: '日々の記録・児童の情報・ヒヤリハットを編集できる。ほかの画面（設定・スタッフ管理を含む）は閲覧のみ。請求（国保連・上限管理・保護者請求）と給与まわり（タイムカード・勤務時間集計・有給・残業・スタッフ申請）は開けない' },
   { value: 'admin', label: 'システム管理者', description: 'すべての機能（請求・給与を含む）' },
 ]
 
@@ -58,6 +59,8 @@ interface Props {
   initialAccess: Access
   /** ログイン権限を変えられるか（システム管理者が、自分以外を見ているとき） */
   canChangeAccess: boolean
+  /** 勤務情報・資格・役職などを保存できるか。システム管理者だけ true（施設長は閲覧のみ） */
+  canEdit?: boolean
 }
 
 export function StaffProfileForm({
@@ -73,6 +76,7 @@ export function StaffProfileForm({
   initialJobTitles,
   initialAccess,
   canChangeAccess,
+  canEdit = true,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -90,6 +94,7 @@ export function StaffProfileForm({
   const [saveError, setSaveError] = useState('')
 
   const toggleJobTitle = (value: string) => {
+    if (!canEdit) return
     setJobTitles((prev) => {
       const next = new Set(prev)
       if (next.has(value)) next.delete(value)
@@ -100,6 +105,7 @@ export function StaffProfileForm({
   }
 
   const toggleUnit = (unitId: string) => {
+    if (!canEdit) return
     setSelectedUnitIds((prev) => {
       const next = new Set(prev)
       if (next.has(unitId)) next.delete(unitId)
@@ -110,6 +116,7 @@ export function StaffProfileForm({
   }
 
   const handleSave = async () => {
+    if (!canEdit) return
     setSaving(true)
     setSaved(false)
     setSaveError('')
@@ -207,6 +214,8 @@ export function StaffProfileForm({
 
   return (
     <div className="space-y-5">
+      {/* 閲覧のみのときは、中のボタン・入力欄をまとめて押せなくする */}
+      <fieldset disabled={!canEdit} className="space-y-5 min-w-0">
       {/* 雇用形態 */}
       <div>
         <label className="text-xs font-medium text-gray-700 mb-2 block">雇用形態</label>
@@ -387,19 +396,23 @@ export function StaffProfileForm({
         </div>
       )}
 
-      <div className="flex items-center gap-3 pt-2">
-        <Button onClick={handleSave} disabled={saving} size="sm">
-          <Save className="h-4 w-4" />
-          {saving ? '保存中...' : '保存'}
-        </Button>
-        {saved && (
-          <span className="flex items-center gap-1 text-xs text-green-600">
-            <CheckCircle className="h-3.5 w-3.5" />
-            保存しました
-          </span>
-        )}
-        {saveError && <span className="text-xs text-red-600">{saveError}</span>}
-      </div>
+      </fieldset>
+
+      {canEdit && (
+        <div className="flex items-center gap-3 pt-2">
+          <Button onClick={handleSave} disabled={saving} size="sm">
+            <Save className="h-4 w-4" />
+            {saving ? '保存中...' : '保存'}
+          </Button>
+          {saved && (
+            <span className="flex items-center gap-1 text-xs text-green-600">
+              <CheckCircle className="h-3.5 w-3.5" />
+              保存しました
+            </span>
+          )}
+          {saveError && <span className="text-xs text-red-600">{saveError}</span>}
+        </div>
+      )}
     </div>
   )
 }

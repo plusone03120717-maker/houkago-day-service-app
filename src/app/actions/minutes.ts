@@ -3,14 +3,22 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getSessionUser } from '@/lib/auth'
+import { hasEditAccess } from '@/lib/require-admin'
 import { isCategory } from '@/lib/internal-manual/categories'
 
 type Result = { error?: string }
 
-async function requireStaff() {
+/**
+ * 議事録を書き換える操作（作成・保存・確定・削除・マニュアルへの反映）の入口。
+ * できるのはシステム管理者だけ。施設長・スタッフは自分が作った議事録でも閲覧のみ（2026-11-12 依頼主）。
+ */
+async function requireEditor() {
   const user = await getSessionUser()
   if (!user) return { error: 'ログインが必要です' as const, user: null }
   if (user.role === 'parent') return { error: '権限がありません' as const, user: null }
+  if (!(await hasEditAccess())) {
+    return { error: '議事録の作成・編集はシステム管理者だけができます' as const, user: null }
+  }
   return { error: null, user }
 }
 
@@ -19,7 +27,7 @@ export async function createMinutes(fields: {
   meetingDate: string
   attendees: string
 }): Promise<{ error?: string; id?: string }> {
-  const { error: authError, user } = await requireStaff()
+  const { error: authError, user } = await requireEditor()
   if (authError || !user) return { error: authError ?? '権限がありません' }
   if (!fields.title.trim()) return { error: '会議名を入力してください' }
   if (!fields.meetingDate) return { error: '開催日を入力してください' }
@@ -52,7 +60,7 @@ export async function saveMinutes(
     formattedBody?: string | null
   }
 ): Promise<Result> {
-  const { error: authError } = await requireStaff()
+  const { error: authError } = await requireEditor()
   if (authError) return { error: authError }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -83,7 +91,7 @@ export async function setMinutesStatus(
   id: string,
   status: 'draft' | 'finalized'
 ): Promise<Result> {
-  const { error: authError } = await requireStaff()
+  const { error: authError } = await requireEditor()
   if (authError) return { error: authError }
 
   const supabase = await createClient()
@@ -103,7 +111,7 @@ export async function setMinutesStatus(
 }
 
 export async function deleteMinutes(id: string): Promise<Result> {
-  const { error: authError } = await requireStaff()
+  const { error: authError } = await requireEditor()
   if (authError) return { error: authError }
 
   const supabase = await createClient()
@@ -125,9 +133,8 @@ export async function reflectToInternalManual(
   minutesId: string,
   items: { category: string; content: string }[]
 ): Promise<{ error?: string; created?: number }> {
-  const { error: authError, user } = await requireStaff()
+  const { error: authError, user } = await requireEditor()
   if (authError || !user) return { error: authError ?? '権限がありません' }
-  if (user.role !== 'admin') return { error: '管理者のみ実行できます' }
 
   const rows = items
     .filter((i) => isCategory(i.category) && i.content.trim())

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { FACILITY_MANAGER, isFacilityManager } from '@/lib/roles'
+import { hasEditAccess } from '@/lib/require-admin'
 
 function generateTempPassword(): string {
   const upper = 'ABCDEFGHJKMNPQRSTUVWXYZ'
@@ -99,6 +100,10 @@ export async function POST(request: NextRequest) {
     .single()
   if (!currentUser || currentUser.role !== 'admin') {
     return NextResponse.json({ error: '管理者のみ招待できます' }, { status: 403 })
+  }
+  // 施設長はスタッフ管理も閲覧のみ（2026-11-12 依頼主）
+  if (!(await hasEditAccess())) {
+    return NextResponse.json({ error: 'スタッフの招待はシステム管理者だけができます' }, { status: 403 })
   }
 
   const body = await request.json()
