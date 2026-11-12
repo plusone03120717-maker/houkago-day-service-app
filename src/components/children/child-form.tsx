@@ -91,6 +91,34 @@ function eraMaxYear(era: string): number {
   return 99
 }
 
+type SchoolTab = 'school' | 'junior_high' | 'high_school' | 'nursery'
+
+const SCHOOL_TABS: { value: SchoolTab; label: string }[] = [
+  { value: 'school', label: '小学校' },
+  { value: 'junior_high', label: '中学校' },
+  { value: 'high_school', label: '高校' },
+  { value: 'nursery', label: '保育園・幼稚園' },
+]
+
+// 支援学校（小学部・中学部・高等部がある学校）
+function isSupportSchool(s: School): boolean {
+  return s.name.includes('支援学校')
+}
+
+// そのタブに出す学校か
+function schoolInTab(s: School, tab: SchoolTab): boolean {
+  if (tab !== 'nursery' && isSupportSchool(s)) return true
+  return s.facility_type === tab
+}
+
+// 学年から最初に開くタブを決める
+function tabForGrade(grade: string): SchoolTab {
+  if (grade.startsWith('高')) return 'high_school'
+  if (grade.startsWith('中')) return 'junior_high'
+  if (grade.startsWith('年')) return 'nursery'
+  return 'school'
+}
+
 function calculateGrade(birthDate: string): string {
   if (!birthDate) return ''
   const birth = new Date(birthDate)
@@ -189,13 +217,14 @@ export function ChildForm({ units, schools, initial, initialAddresses, initialPh
     if (grade) setForm((prev) => ({ ...prev, grade }))
   }, [form.birth_date])
 
-  // 学校タブ（学校 or 保育園・幼稚園）
-  const [schoolTab, setSchoolTab] = useState<'school' | 'nursery' | 'junior_high'>(() => {
-    if (!initial?.school_id) return 'school'
-    const matched = schools.find((s) => s.id === initial.school_id)
+  // 学校タブ（小学校・中学校・高校・保育園・幼稚園）
+  // 支援学校（ふじざくらなど）は小学部・中学部・高等部があるので、小・中・高のどのタブにも出す
+  const [schoolTab, setSchoolTab] = useState<SchoolTab>(() => {
+    const matched = initial?.school_id ? schools.find((s) => s.id === initial.school_id) : undefined
     if (matched?.facility_type === 'nursery') return 'nursery'
     if (matched?.facility_type === 'junior_high') return 'junior_high'
-    return 'school'
+    if (matched && !isSupportSchool(matched)) return 'school'
+    return tabForGrade(initial?.grade ?? '')
   })
 
   // 郵便番号検索中フラグ（住所インデックスごと）
@@ -548,24 +577,17 @@ export function ChildForm({ units, schools, initial, initialAddresses, initialPh
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-gray-700">学校・通園先</label>
+              <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                <label className="text-xs font-medium text-gray-700 whitespace-nowrap">学校・通園先</label>
                 <div className="flex text-xs border border-gray-200 rounded overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setSchoolTab('school')}
-                    className={`px-2 py-0.5 ${schoolTab === 'school' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-                  >小学校</button>
-                  <button
-                    type="button"
-                    onClick={() => setSchoolTab('junior_high')}
-                    className={`px-2 py-0.5 ${schoolTab === 'junior_high' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-                  >中学校</button>
-                  <button
-                    type="button"
-                    onClick={() => setSchoolTab('nursery')}
-                    className={`px-2 py-0.5 ${schoolTab === 'nursery' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-                  >保育園・幼稚園</button>
+                  {SCHOOL_TABS.map((t) => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => setSchoolTab(t.value)}
+                      className={`px-2 py-0.5 whitespace-nowrap ${schoolTab === t.value ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                    >{t.label}</button>
+                  ))}
                 </div>
               </div>
               <select
@@ -573,9 +595,9 @@ export function ChildForm({ units, schools, initial, initialAddresses, initialPh
                 onChange={handleSchoolChange}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
               >
-                <option value="">-- {schoolTab === 'school' ? '小学校' : schoolTab === 'junior_high' ? '中学校' : '保育園・幼稚園'}を選択 --</option>
+                <option value="">-- {SCHOOL_TABS.find((t) => t.value === schoolTab)?.label}を選択 --</option>
                 {municipalities.map((m) => {
-                  const list = schools.filter((s) => s.municipality === m && s.facility_type === schoolTab)
+                  const list = schools.filter((s) => s.municipality === m && schoolInTab(s, schoolTab))
                   if (list.length === 0) return null
                   return (
                     <optgroup key={m} label={m}>
