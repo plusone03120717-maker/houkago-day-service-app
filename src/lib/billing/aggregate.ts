@@ -153,6 +153,7 @@ type CertRow = {
   copay_limit: number
   max_days_per_month: number
   contract_amount: number | null
+  copay_exempt: boolean | null
 }
 
 const CATEGORY_LABEL: Record<number, string> = {
@@ -332,7 +333,7 @@ export async function aggregateUnitMonth(
       : Promise.resolve({ data: [] }),
     supabase
       .from('benefit_certificates')
-      .select('id, child_id, certificate_number, municipality, start_date, end_date, copay_limit, max_days_per_month, contract_amount')
+      .select('id, child_id, certificate_number, municipality, start_date, end_date, copay_limit, max_days_per_month, contract_amount, copay_exempt')
       .in('child_id', childIds)
       .lte('start_date', end)
       .gte('end_date', start),
@@ -615,7 +616,8 @@ export async function aggregateUnitMonth(
     const tenPercent = Math.floor(totalCost / 10)
     // 上限額管理の結果が入力されていれば、その額（管理結果後利用者負担額）を負担額にする
     const managedCopay = upperLimits.get(childId)?.managedCopay ?? null
-    const copayAmount = managedCopay ?? Math.min(copayLimit, tenPercent)
+    // 無償化・軽減対象（受給者証の「利用者負担が生じない」）は、上限額管理の結果にかかわらず0円
+    const copayAmount = cert?.copay_exempt ? 0 : (managedCopay ?? Math.min(copayLimit, tenPercent))
     const billedAmount = totalCost - copayAmount
 
     if (!cert) {
