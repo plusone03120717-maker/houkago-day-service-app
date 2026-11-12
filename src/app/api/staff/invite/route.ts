@@ -78,6 +78,27 @@ async function upsertStaffMember(
       .from('staff_members')
       .update({ name, role: titles[0] ?? 'staff', roles: titles })
       .eq('id', (existing as { id: string }).id)
+    return
+  }
+
+  // ログインのないスタッフ（送迎のドライバーだけ登録していた人など）に、あとから
+  // アカウントを作ることがある。同じ名前でログイン未作成の登録が1件だけあれば、
+  // 新しく作らずにそこへつなぐ。新しく作ると登録が2件になり、送迎の担当は古い方、
+  // LINE とログインは新しい方につながって、LINE の「自分」に送迎が出なくなる
+  // （2026-11-12 大石さんの登録が2件になっていた）。
+  const sameName = (s: string) => s.replace(/[\s　]/g, '')
+  const { data: unlinked } = await adminClient
+    .from('staff_members')
+    .select('id, name')
+    .is('user_id', null)
+  const matches = ((unlinked ?? []) as { id: string; name: string }[]).filter(
+    (m) => sameName(m.name) === sameName(name)
+  )
+  if (matches.length === 1) {
+    await adminClient
+      .from('staff_members')
+      .update({ user_id: userId, name, role: titles[0] ?? 'staff', roles: titles })
+      .eq('id', matches[0].id)
   } else {
     await adminClient.from('staff_members').insert({
       user_id: userId,
