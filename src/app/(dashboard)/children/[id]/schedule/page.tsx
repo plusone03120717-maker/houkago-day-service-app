@@ -337,6 +337,7 @@ export default async function ChildSchedulePage({
             staffMembers={staffMembers}
             vehicles={vehicles}
             canCancelPlans={canCancelPlans}
+            canAssignDrivers={access?.canEditOperations ?? false}
           />
         </CardContent>
       </Card>
