@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireAdmin, getStaffAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +35,8 @@ const serviceTypeLabel: Record<string, string> = {
 
 export default async function SettingsFacilitiesPage() {
   await requireAdmin()
+  // 施設長・スタッフは閲覧のみ（編集できるのはシステム管理者だけ・2026-11-12 依頼主）
+  const canEdit = (await getStaffAccess())?.canEditOperations ?? false
   const supabase = await createClient()
 
   const { data: facilitiesRaw } = await supabase
@@ -54,6 +56,12 @@ export default async function SettingsFacilitiesPage() {
           <p className="text-sm text-gray-500 mt-0.5">施設情報・事業所番号・ユニット設定</p>
         </div>
       </div>
+
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          施設・ユニットの設定は閲覧のみです。事業所番号・地域区分・単価の変更はできません。
+        </p>
+      )}
 
       {facilities.length === 0 ? (
         <div className="text-center py-12 text-gray-400 text-sm">
@@ -88,6 +96,7 @@ export default async function SettingsFacilitiesPage() {
                 initialFacilityNumber={facility.facility_number ?? ''}
                 initialRegionCode={facility.region_code ?? '20'}
                 initialUnitPrice={Number(facility.unit_price ?? 10)}
+                canEdit={canEdit}
               />
 
               <div>

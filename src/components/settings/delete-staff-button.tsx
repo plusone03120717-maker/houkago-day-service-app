@@ -8,15 +8,18 @@ import { Button } from '@/components/ui/button'
 interface Props {
   userId: string
   staffName: string
+  /** 削除できるか。システム管理者だけ true（施設長は閲覧のみでボタンを出さない） */
+  canEdit?: boolean
 }
 
-export function DeleteStaffButton({ userId, staffName }: Props) {
+export function DeleteStaffButton({ userId, staffName, canEdit = true }: Props) {
   const router = useRouter()
   const [confirm, setConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
 
   const handleDelete = async () => {
+    if (!canEdit) return
     setDeleting(true)
     setError('')
     const res = await fetch('/api/staff/delete', {
@@ -33,6 +36,8 @@ export function DeleteStaffButton({ userId, staffName }: Props) {
     router.push('/settings/staff')
     router.refresh()
   }
+
+  if (!canEdit) return null
 
   if (!confirm) {
     return (

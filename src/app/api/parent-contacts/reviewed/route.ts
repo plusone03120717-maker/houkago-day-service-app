@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getSessionUserId } from '@/lib/auth'
+import { hasEditAccess } from '@/lib/require-admin'
 import {
   PARENT_CONTACT_COLUMNS,
   applyParentContact,
@@ -39,6 +40,10 @@ export async function POST(req: NextRequest) {
     const supabase = await createClient()
     const userId = await getSessionUserId()
     if (!userId) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+    // 施設長・スタッフは利用連絡を閲覧のみ。承認・処理はシステム管理者だけ（2026-11-12 依頼主）
+    if (!(await hasEditAccess())) {
+      return NextResponse.json({ error: '利用連絡の承認・処理はシステム管理者だけができます' }, { status: 403 })
+    }
 
     const { data: contactsRaw } = await supabase
       .from('parent_attendance_contacts')

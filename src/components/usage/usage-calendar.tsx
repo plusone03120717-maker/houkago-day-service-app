@@ -48,6 +48,8 @@ interface Props {
   summary: { confirmed: number; reserved: number; cancelled: number }
   /** `${childId}_${date}` → daily_attendance.status */
   attendanceStatusByKey: Record<string, string>
+  /** 確定・欠席・削除・復元・追加ができるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
+  canEdit?: boolean
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -74,6 +76,7 @@ const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
 export function UsageCalendar({
   year, month, units, selectedUnitId, entries, childOptions, summary, attendanceStatusByKey,
+  canEdit = true,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -133,6 +136,7 @@ export function UsageCalendar({
     .sort((a, b) => a.date.localeCompare(b.date))
 
   const handleConfirm = async (reservationId: string) => {
+    if (!canEdit) return
     setUpdating(true)
     await confirmReservation(reservationId)
     setUpdating(false)
@@ -140,6 +144,7 @@ export function UsageCalendar({
   }
 
   const handleConfirmAll = async () => {
+    if (!canEdit) return
     if (!confirm(`承認待ちの利用予定 ${pendingReservations.length}件をすべて確定しますか？`)) return
     setUpdating(true)
     await confirmAllReservations(pendingReservations.map((r) => r.reservationId!))
@@ -187,6 +192,7 @@ export function UsageCalendar({
   // お休みは「欠席」（記録が残る）、誤登録は「削除」（なかったことにする）で使い分ける。
   // 子ども管理などで付いた既存のキャンセルは、下の復元ボタンで戻せる。
   const handleRestore = async (reservationId: string) => {
+    if (!canEdit) return
     const reservation = entries.find((r) => r.reservationId === reservationId)
     setUpdating(true)
     const { error } = await supabase
@@ -209,6 +215,7 @@ export function UsageCalendar({
   // その日を欠席として記録する（予定は残るので出席管理にも欠席として出る）
   // もう一度押すと欠席を取り消して未記録に戻す
   const handleToggleAbsent = async (reservation: UsageEntry) => {
+    if (!canEdit) return
     const args = {
       childId: reservation.child_id,
       unitId: reservation.unit_id,
@@ -229,6 +236,7 @@ export function UsageCalendar({
   // 誤って入れた予定を「なかったこと」にする（欠席とは別物）
   // 出席管理にも出てこないよう、利用計画からの自動生成もこの日だけ止める
   const handleDelete = async (reservation: UsageEntry) => {
+    if (!canEdit) return
     setDeleting(true)
     const { error } = await deleteUsageDay(supabase, {
       childId: reservation.child_id,
@@ -245,6 +253,7 @@ export function UsageCalendar({
   }
 
   const handleAddReservation = async () => {
+    if (!canEdit) return
     if (!addChildId || !selectedDate || !addUnitId) return
     setAdding(true)
     setAddError(null)
@@ -347,6 +356,7 @@ export function UsageCalendar({
                 承認待ちの利用予定（{pendingReservations.length}件）
               </span>
             </div>
+            {canEdit && (
             <Button
               size="sm"
               onClick={handleConfirmAll}
@@ -356,6 +366,7 @@ export function UsageCalendar({
               <CheckCheck className="h-3.5 w-3.5" />
               全件一括確定
             </Button>
+            )}
           </div>
           <div className="space-y-1.5">
             {pendingReservations.map((r) => {
@@ -369,6 +380,7 @@ export function UsageCalendar({
                   <span className="text-sm font-medium text-gray-800 flex-1">
                     {r.children?.name ?? '—'}
                   </span>
+                  {canEdit && (
                   <div className="flex gap-1 shrink-0">
                     <button
                       onClick={() => handleConfirm(r.reservationId!)}
@@ -394,6 +406,7 @@ export function UsageCalendar({
                       <Trash2 className="h-3 w-3" />削除
                     </button>
                   </div>
+                  )}
                 </div>
               )
             })}
@@ -516,7 +529,7 @@ export function UsageCalendar({
                     <Badge variant={STATUS_VARIANTS[r.status] ?? 'secondary'} className="text-xs">
                       {STATUS_LABELS[r.status] ?? r.status}
                     </Badge>
-                    {r.reservationStatus === 'reserved' && (
+                    {canEdit && r.reservationStatus === 'reserved' && (
                       <button
                         onClick={() => handleConfirm(r.reservationId!)}
                         disabled={updating}
@@ -526,7 +539,7 @@ export function UsageCalendar({
                         <Check className="h-4 w-4" />
                       </button>
                     )}
-                    {r.status === 'cancelled' && (
+                    {canEdit && r.status === 'cancelled' && (
                       <button
                         onClick={() => handleRestore(r.reservationId!)}
                         disabled={updating}
@@ -536,7 +549,7 @@ export function UsageCalendar({
                         <RotateCcw className="h-4 w-4" />
                       </button>
                     )}
-                    {r.status !== 'cancelled' && (
+                    {canEdit && r.status !== 'cancelled' && (
                       <button
                         onClick={() => handleToggleAbsent(r)}
                         disabled={updating || deleting}
@@ -553,6 +566,7 @@ export function UsageCalendar({
                         欠席
                       </button>
                     )}
+                    {canEdit && (
                     <button
                       onClick={() => setConfirmDelete(r)}
                       disabled={updating || deleting}
@@ -561,6 +575,7 @@ export function UsageCalendar({
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
+                    )}
                   </div>
                 </div>
                 )
@@ -569,7 +584,7 @@ export function UsageCalendar({
           )}
 
           {/* 一括承認ボタン */}
-          {selectedDateReservations.some((r) => r.reservationStatus === 'reserved') && (
+          {canEdit && selectedDateReservations.some((r) => r.reservationStatus === 'reserved') && (
             <Button
               onClick={async () => {
                 setUpdating(true)
@@ -591,7 +606,7 @@ export function UsageCalendar({
           )}
 
           {/* 施設側から利用予定を追加 */}
-          {!showAddForm ? (
+          {!canEdit ? null : !showAddForm ? (
             <Button
               onClick={() => { setShowAddForm(true); setAddError(null) }}
               size="sm"

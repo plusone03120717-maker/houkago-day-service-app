@@ -19,9 +19,11 @@ interface Props {
   facilityId: string
   vehicles: Vehicle[]
   staffOptions: StaffOption[]
+  /** 車両の追加・削除ができるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
+  canEdit?: boolean
 }
 
-export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOptions }: Props) {
+export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOptions, canEdit = true }: Props) {
   const supabase = createClient()
 
   const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles)
@@ -33,6 +35,7 @@ export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOption
   const [error, setError] = useState<string | null>(null)
 
   const handleAdd = async () => {
+    if (!canEdit) return
     if (!name.trim()) return
     if (!facilityId) {
       setError('施設情報が取得できません。施設設定を確認してください。')
@@ -70,6 +73,7 @@ export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOption
   }
 
   const handleDelete = async (id: string) => {
+    if (!canEdit) return
     setDeleting(id)
     setError(null)
     const { error: deleteError } = await supabase
@@ -87,6 +91,12 @@ export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOption
 
   return (
     <div className="space-y-4">
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          車両は閲覧のみです。追加・削除はできません。
+        </p>
+      )}
+
       {/* 既存車両一覧 */}
       {vehicles.length > 0 && (
         <div className="space-y-2">
@@ -102,13 +112,15 @@ export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOption
                   {v.driver?.name && ` ・ ドライバー: ${v.driver.name}`}
                 </p>
               </div>
-              <button
-                onClick={() => handleDelete(v.id)}
-                disabled={deleting === v.id}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => handleDelete(v.id)}
+                  disabled={deleting === v.id}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -124,7 +136,8 @@ export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOption
         </div>
       )}
 
-      {/* 追加フォーム */}
+      {/* 追加フォーム（閲覧のみのときは出さない） */}
+      {canEdit && (
       <div className="border-t border-gray-100 pt-4 space-y-3">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">車両を追加</p>
 
@@ -177,6 +190,7 @@ export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOption
           {saving ? '追加中...' : '車両を追加'}
         </Button>
       </div>
+      )}
     </div>
   )
 }

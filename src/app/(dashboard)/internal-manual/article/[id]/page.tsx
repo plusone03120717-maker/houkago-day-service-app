@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Eye, EyeOff, StickyNote } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSessionUser } from '@/lib/auth'
+import { getStaffAccess } from '@/lib/require-admin'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { BackButton } from '@/components/ui/back-button'
 import { ArticleEditor } from '@/components/internal-manual/article-editor'
@@ -38,8 +39,9 @@ export default async function InternalManualArticlePage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const user = await requireSessionUser()
-  const isAdmin = user.role === 'admin'
+  await requireSessionUser()
+  // 記事を編集・公開できるのはシステム管理者だけ（施設長・スタッフは本文を読むだけ）
+  const accessPromise = getStaffAccess()
   const supabase = await createClient()
 
   const { data: raw } = await supabase
@@ -67,6 +69,7 @@ export default async function InternalManualArticlePage({
   }[]
 
   const meta = isCategory(article.category) ? CATEGORY_META[article.category] : null
+  const canEdit = (await accessPromise)?.canEditOperations ?? false
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -102,7 +105,7 @@ export default async function InternalManualArticlePage({
         </div>
       </div>
 
-      {isAdmin ? (
+      {canEdit ? (
         <ArticleEditor
           id={article.id}
           title={article.title}

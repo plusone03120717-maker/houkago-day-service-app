@@ -1,11 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
 import { AnnouncementForm } from '@/components/announcements/announcement-form'
 import { AnnouncementItem, type AnnouncementItemData } from '@/components/announcements/announcement-item'
+import { getStaffAccess } from '@/lib/require-admin'
 
 type Unit = { id: string; name: string }
 
 export default async function AnnouncementsPage() {
   const supabase = await createClient()
+  // お知らせを作成・編集・削除できるのはシステム管理者だけ（施設長・スタッフは閲覧のみ）
+  const canEdit = (await getStaffAccess())?.canEditOperations ?? false
 
   const { data: announcementsRaw } = await supabase
     .from('announcements')
@@ -34,14 +37,20 @@ export default async function AnnouncementsPage() {
         <p className="text-sm text-gray-500 mt-0.5">保護者向けお知らせの作成・管理</p>
       </div>
 
-      {/* 新規作成フォーム */}
-      <AnnouncementForm units={units} facilityId={facilityId} />
+      {/* 新規作成フォーム（システム管理者だけ） */}
+      {canEdit ? (
+        <AnnouncementForm units={units} facilityId={facilityId} />
+      ) : (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          お知らせは閲覧のみです。作成・編集・公開・削除はできません。
+        </p>
+      )}
 
       {/* 一覧 */}
       <div className="space-y-3">
         <h2 className="text-base font-semibold text-gray-700">過去のお知らせ</h2>
         {announcements.map((ann) => (
-          <AnnouncementItem key={ann.id} announcement={ann} units={units} />
+          <AnnouncementItem key={ann.id} announcement={ann} units={units} canEdit={canEdit} />
         ))}
         {announcements.length === 0 && (
           <div className="text-center py-8 text-gray-400 text-sm">お知らせがありません</div>

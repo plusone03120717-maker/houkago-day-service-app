@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/require-admin'
+import { requireAdmin, getStaffAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { ArrowLeft, Calendar } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -32,6 +32,8 @@ export default async function FacilityCalendarPage({
   searchParams: Promise<{ year?: string; month?: string }>
 }) {
   await requireAdmin()
+  // 施設長・スタッフは閲覧のみ（編集できるのはシステム管理者だけ・2026-11-12 依頼主）
+  const canEdit = (await getStaffAccess())?.canEditOperations ?? false
   const params = await searchParams
   const now = new Date()
   const year = parseInt(params.year ?? String(now.getFullYear()))
@@ -80,6 +82,12 @@ export default async function FacilityCalendarPage({
           <p className="text-sm text-gray-500 mt-0.5">休業日・行事・研修日の登録</p>
         </div>
       </div>
+
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          施設カレンダーは閲覧のみです。予定の追加・削除はできません。
+        </p>
+      )}
 
       {/* 月ナビゲーション */}
       <div className="flex items-center gap-2">
@@ -151,7 +159,8 @@ export default async function FacilityCalendarPage({
           </CardContent>
         </Card>
 
-        {/* 登録フォーム */}
+        {/* 登録フォーム（閲覧のみのときは出さない） */}
+        {canEdit && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -160,9 +169,10 @@ export default async function FacilityCalendarPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <FacilityEventForm facilityId={facilityId} defaultYear={year} defaultMonth={month} />
+            <FacilityEventForm facilityId={facilityId} defaultYear={year} defaultMonth={month} canEdit={canEdit} />
           </CardContent>
         </Card>
+        )}
       </div>
 
       {/* 当月の予定一覧 */}
@@ -192,7 +202,7 @@ export default async function FacilityCalendarPage({
                     {ev.affects_reservation && (
                       <span className="text-xs text-red-500 flex-shrink-0">予約停止</span>
                     )}
-                    <FacilityEventDeleteButton eventId={ev.id} />
+                    <FacilityEventDeleteButton eventId={ev.id} canEdit={canEdit} />
                   </div>
                 )
               })}

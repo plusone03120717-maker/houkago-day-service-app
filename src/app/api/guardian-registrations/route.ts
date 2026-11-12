@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { ensurePortalAccountForGuardian } from '@/lib/parent-account-link'
 import { getSessionUserId } from '@/lib/auth'
+import { hasEditAccess } from '@/lib/require-admin'
 
 const adminClient = createAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,6 +56,10 @@ async function linkChildren(guardianId: string, childIds: string[], displayName?
 export async function POST(req: NextRequest) {
   const auth = await requireStaff()
   if (auth instanceof NextResponse) return auth
+  // スタッフ・施設長は閲覧のみ（2026-11-12 依頼主）。承認・却下・紐付け・解除はシステム管理者だけ
+  if (!(await hasEditAccess())) {
+    return NextResponse.json({ error: 'LINE登録の承認・紐付けはシステム管理者だけができます' }, { status: 403 })
+  }
 
   try {
     const body = await req.json() as Body

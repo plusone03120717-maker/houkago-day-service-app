@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { canManageAccountOf } from '@/lib/roles'
+import { hasEditAccess } from '@/lib/require-admin'
 
 export async function DELETE(request: NextRequest) {
   const supabase = await createClient()
@@ -16,6 +17,10 @@ export async function DELETE(request: NextRequest) {
     .single()
   if (!currentUser || currentUser.role !== 'admin') {
     return NextResponse.json({ error: '管理者のみ削除できます' }, { status: 403 })
+  }
+  // 施設長はスタッフ管理も閲覧のみ（2026-11-12 依頼主）
+  if (!(await hasEditAccess())) {
+    return NextResponse.json({ error: 'スタッフの削除はシステム管理者だけができます' }, { status: 403 })
   }
 
   const { userId } = await request.json()

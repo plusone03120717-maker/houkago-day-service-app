@@ -8,9 +8,11 @@ interface Props {
   userId: string
   staffName: string
   email: string
+  /** 再発行できるか。システム管理者だけ true（施設長は閲覧のみでボタンを出さない） */
+  canEdit?: boolean
 }
 
-export function ResetStaffPasswordButton({ userId, staffName, email }: Props) {
+export function ResetStaffPasswordButton({ userId, staffName, email, canEdit = true }: Props) {
   const [confirm, setConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -18,6 +20,7 @@ export function ResetStaffPasswordButton({ userId, staffName, email }: Props) {
   const [copied, setCopied] = useState(false)
 
   const handleReset = async () => {
+    if (!canEdit) return
     setLoading(true)
     setError('')
     const res = await fetch('/api/staff/reset-password', {
@@ -41,6 +44,8 @@ export function ResetStaffPasswordButton({ userId, staffName, email }: Props) {
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  if (!canEdit) return null
 
   // 発行済み表示
   if (tempPassword) {

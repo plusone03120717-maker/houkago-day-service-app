@@ -66,6 +66,7 @@ export function MinutesEditor({
 
   const save = (extra?: { formattedBody?: string }) =>
     start(async () => {
+      if (!canEdit) return
       setMessage(null)
       const result = await saveMinutes(id, {
         title,
@@ -79,7 +80,7 @@ export function MinutesEditor({
     })
 
   const format = async () => {
-    if (formatting) return
+    if (!canEdit || formatting) return
     if (!rawBody.trim()) {
       setMessage('走り書きが空です')
       return
@@ -114,6 +115,12 @@ export function MinutesEditor({
 
   return (
     <div className="space-y-4">
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          議事録は閲覧のみです。編集・AIでの整形・確定・削除はできません。
+        </p>
+      )}
+
       {/* 見出し情報 */}
       <Card>
         <CardContent className="grid gap-3 p-4 sm:grid-cols-3">

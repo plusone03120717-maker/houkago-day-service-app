@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { AlertTriangle, AlertCircle, CheckCircle2, History, Info } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSessionUser } from '@/lib/auth'
+import { getStaffAccess } from '@/lib/require-admin'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { RULES } from '@/lib/anomaly/rules'
@@ -53,6 +54,8 @@ function jst(iso: string): string {
 
 export default async function ChecksPage() {
   await requireSessionUser()
+  // 「今すぐチェック」と対応状況の変更はシステム管理者だけ（施設長・スタッフは閲覧のみ）
+  const canEdit = (await getStaffAccess())?.canEditOperations ?? false
   const supabase = await createClient()
 
   const [{ data: findingsRaw }, { data: runsRaw }] = await Promise.all([
@@ -102,7 +105,7 @@ export default async function ChecksPage() {
             <History className="h-4 w-4" />
             変更履歴
           </Link>
-          <RunCheckButton />
+          {canEdit && <RunCheckButton />}
         </div>
       </div>
 
@@ -206,7 +209,7 @@ export default async function ChecksPage() {
                       )}
                     </div>
                   </div>
-                  <FindingActions id={f.id} status={f.status} />
+                  {canEdit && <FindingActions id={f.id} status={f.status} />}
                 </div>
               )
             })}
@@ -232,7 +235,7 @@ export default async function ChecksPage() {
                     </span>
                     <span className="ml-2 text-gray-600">{f.message}</span>
                   </div>
-                  <FindingActions id={f.id} status={f.status} />
+                  {canEdit && <FindingActions id={f.id} status={f.status} />}
                 </div>
               ))}
             </CardContent>

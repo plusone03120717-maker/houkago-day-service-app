@@ -82,6 +82,9 @@ export default async function StaffProfilePage({
   const canManage = canManageAccountOf(viewer?.role ?? null, viewer?.jobTitles ?? null, user.role)
   // ログイン権限（スタッフ／施設長／システム管理者）を変えられるのはシステム管理者だけ。自分自身は変えない
   const canChangeAccess = (viewer?.canManageMoney ?? false) && viewer?.userId !== user.id
+  // 施設長はスタッフ管理も閲覧のみ（編集できるのはシステム管理者だけ・2026-11-12 依頼主）。
+  // 上の canManage は残したまま、施設長には値を見せるだけにする
+  const canEdit = viewer?.canEditOperations ?? false
   const targetAccess = accessKey(user.role, user.job_titles) as 'staff' | 'facility_manager' | 'admin'
 
   const profile = profileRaw as unknown as StaffProfile | null
@@ -119,6 +122,12 @@ export default async function StaffProfilePage({
           <p className="text-sm text-gray-500 mt-0.5">資格・雇用情報・ユニット割当</p>
         </div>
       </div>
+
+      {!canEdit && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          スタッフ管理は閲覧のみです。勤務情報・研修記録の変更、パスワードの再発行、削除はできません。
+        </p>
+      )}
 
       {/* 基本情報 */}
       <Card>
@@ -159,6 +168,7 @@ export default async function StaffProfilePage({
               initialJobTitles={otherJobTitles(user?.job_titles ?? [])}
               initialAccess={targetAccess}
               canChangeAccess={canChangeAccess}
+              canEdit={canEdit}
             />
           ) : (
             <p className="text-sm text-gray-500">
@@ -178,20 +188,21 @@ export default async function StaffProfilePage({
             <TrainingRecordForm
               staffProfileId={profile.id}
               records={trainingRecords}
+              canEdit={canEdit}
             />
           ) : (
             <p className="text-sm text-gray-400 text-center py-4">
-              勤務情報を登録してから研修記録を追加できます
+              {canEdit ? '勤務情報を登録してから研修記録を追加できます' : '研修記録はありません'}
             </p>
           )}
         </CardContent>
       </Card>
 
-      {/* パスワード再発行・削除 */}
-      {canManage && (
+      {/* パスワード再発行・削除（システム管理者だけ） */}
+      {canManage && canEdit && (
         <div className="pt-2 border-t border-gray-200 space-y-3">
-          <ResetStaffPasswordButton userId={userId} staffName={user.name} email={user.email} />
-          <DeleteStaffButton userId={userId} staffName={user.name} />
+          <ResetStaffPasswordButton userId={userId} staffName={user.name} email={user.email} canEdit={canEdit} />
+          <DeleteStaffButton userId={userId} staffName={user.name} canEdit={canEdit} />
         </div>
       )}
     </div>

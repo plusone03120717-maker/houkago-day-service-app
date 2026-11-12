@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { MessageSquare, User, Bot, Database } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSessionUser } from '@/lib/auth'
+import { getStaffAccess } from '@/lib/require-admin'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { BackButton } from '@/components/ui/back-button'
 import { InquiryAdminPanel, MarkRead } from '@/components/support/inquiry-admin-panel'
@@ -53,7 +54,9 @@ export default async function SupportInquiryPage({
 }) {
   const { id } = await params
   const user = await requireSessionUser()
-  const isAdmin = user.role === 'admin'
+  // 対応状況の変更・メモ・既読はシステム管理者だけ。施設長・スタッフは閲覧のみ（2026-11-12 依頼主）
+  // これまでの「管理者（role = admin）」の条件は残し、そこから施設長を外す
+  const canEdit = user.role === 'admin' && ((await getStaffAccess())?.canEditOperations ?? false)
   const supabase = await createClient()
 
   // 自分の問い合わせか管理者でなければ RLS で弾かれ、null が返る
@@ -88,8 +91,8 @@ export default async function SupportInquiryPage({
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      {/* 管理者が開いた時点で未読を落とす */}
-      {isAdmin && inquiry.is_new && <MarkRead id={inquiry.id} />}
+      {/* システム管理者が開いた時点で未読を落とす */}
+      {canEdit && inquiry.is_new && <MarkRead id={inquiry.id} />}
 
       <div className="flex items-start gap-3">
         <BackButton fallbackHref="/support" />
@@ -222,8 +225,8 @@ export default async function SupportInquiryPage({
         </Card>
       )}
 
-      {/* 管理者の対応 */}
-      {isAdmin && escalated && (
+      {/* システム管理者の対応（施設長・スタッフには出さない） */}
+      {canEdit && escalated && (
         <InquiryAdminPanel
           id={inquiry.id}
           status={inquiry.status}

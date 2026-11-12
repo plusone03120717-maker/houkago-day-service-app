@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, MessageCircle } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { ContactNoteEditor } from '@/components/contact-notes/contact-note-editor'
+import { getStaffAccess } from '@/lib/require-admin'
 
 type ContactNote = {
   id: string
@@ -26,6 +27,8 @@ export default async function ContactNoteDetailPage({
 }) {
   const { id } = await params
   const supabase = await createClient()
+  // 連絡帳の画面で編集・公開できるのはシステム管理者だけ（施設長・スタッフは閲覧のみ）
+  const accessPromise = getStaffAccess()
 
   const { data: noteRaw } = await supabase
     .from('contact_notes')
@@ -35,6 +38,8 @@ export default async function ContactNoteDetailPage({
   const note = noteRaw as unknown as ContactNote | null
 
   if (!note) return <div className="p-4 text-gray-500">連絡帳が見つかりません</div>
+
+  const canEdit = (await accessPromise)?.canEditOperations ?? false
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -59,6 +64,7 @@ export default async function ContactNoteDetailPage({
         aiDraft={note.ai_draft}
         childId={note.child_id}
         date={note.date}
+        canEdit={canEdit}
       />
 
       {/* 保護者コメント */}

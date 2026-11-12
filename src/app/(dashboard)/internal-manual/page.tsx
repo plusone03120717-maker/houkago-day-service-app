@@ -2,21 +2,24 @@ import Link from 'next/link'
 import { BookMarked, BookOpen, ExternalLink, FileText, StickyNote, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSessionUser } from '@/lib/auth'
+import { getStaffAccess } from '@/lib/require-admin'
 import { Card, CardContent } from '@/components/ui/card'
 import { CATEGORIES, CATEGORY_META } from '@/lib/internal-manual/categories'
 
 export const dynamic = 'force-dynamic'
 
 export default async function InternalManualPage() {
-  const user = await requireSessionUser()
-  const isAdmin = user.role === 'admin'
+  await requireSessionUser()
   const supabase = await createClient()
 
   // 分類ごとの件数を出すだけなので、必要な列だけをまとめて取って数える
-  const [{ data: articlesRaw }, { data: notesRaw }] = await Promise.all([
+  const [{ data: articlesRaw }, { data: notesRaw }, access] = await Promise.all([
     supabase.from('internal_manual_articles').select('category, status'),
     supabase.from('internal_notes').select('category, status'),
+    getStaffAccess(),
   ])
+  // メモの追加・記事づくりはシステム管理者だけ（施設長・スタッフは閲覧のみ）
+  const canEdit = access?.canEditOperations ?? false
 
   const articles = (articlesRaw ?? []) as { category: string; status: string }[]
   const notes = (notesRaw ?? []) as { category: string; status: string }[]
@@ -34,12 +37,18 @@ export default async function InternalManualPage() {
         <CardContent className="flex items-start gap-3 p-4 text-sm text-gray-600">
           <BookMarked className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500" />
           <div className="space-y-1 leading-relaxed">
-            <p>
-              気づいたことは、整った文章にする必要はありません。分類を選んで
-              <span className="mx-1 font-medium text-gray-900">メモ</span>
-              に放り込んでおいてください。溜まったメモは
-              {isAdmin ? '「AIで下書きを作る」で記事に整え、内容を確認して公開します。' : '管理者が記事に整えて公開します。'}
-            </p>
+            {canEdit ? (
+              <p>
+                気づいたことは、整った文章にする必要はありません。分類を選んで
+                <span className="mx-1 font-medium text-gray-900">メモ</span>
+                に放り込んでおいてください。溜まったメモは
+                「AIで下書きを作る」で記事に整え、内容を確認して公開します。
+              </p>
+            ) : (
+              <p>
+                社内マニュアルは閲覧のみです。メモの追加や記事の作成・編集はシステム管理者が行います。
+              </p>
+            )}
             <p>
               公開された記事は、右下のサポートボットが回答の根拠として読みます。
               「うちの法人ではどうしてる？」にボットが答えられるようになります。

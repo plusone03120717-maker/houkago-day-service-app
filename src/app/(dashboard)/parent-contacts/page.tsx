@@ -14,6 +14,7 @@ import {
 import { loadTransportPlaces, loadFacilitySchedule } from '@/lib/parent-usage-contact'
 import { resolveUnitIds, type AbsentHandling } from '@/lib/parent-contact-schedule'
 import type { LocationType } from '@/lib/transport-place'
+import { getStaffAccess } from '@/lib/require-admin'
 
 export default async function ParentContactsPage() {
   const supabase = await createClient()
@@ -151,6 +152,9 @@ export default async function ParentContactsPage() {
     if (!choice.otherUnitId && unitId !== choice.englishUnitId) choice.otherUnitId = unitId
   }
 
+  // 承認・処理はシステム管理者だけ（施設長・スタッフは閲覧のみ）
+  const canEdit = (await getStaffAccess())?.canEditOperations ?? false
+
   return (
     <ParentContactsBoard
       unconfirmedContacts={unconfirmedContacts}
@@ -158,6 +162,7 @@ export default async function ParentContactsPage() {
       transportPlaces={transportPlaces}
       currentPlans={currentPlans}
       englishChoices={englishChoices}
+      canEdit={canEdit}
     />
   )
 }
