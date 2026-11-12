@@ -5,6 +5,7 @@ import {
   linkChildrenToPortalAccount,
   linkPortalAccountToGuardians,
 } from '@/lib/parent-account-link'
+import { hasEditAccess } from '@/lib/require-admin'
 
 function generateLoginCode(): string {
   // 読みやすい6文字の英数字コード（O/0, I/1/l は除外）
@@ -37,6 +38,10 @@ async function requireAdmin(): Promise<NextResponse | null> {
     .single()
   if (!currentUser || currentUser.role !== 'admin') {
     return NextResponse.json({ error: '管理者のみ登録できます' }, { status: 403 })
+  }
+  // 施設長（role は admin）も止める。保護者のアカウント・パスワードはシステム管理者だけ（2026-11-12 依頼主）
+  if (!(await hasEditAccess())) {
+    return NextResponse.json({ error: '保護者のアカウントはシステム管理者だけが扱えます' }, { status: 403 })
   }
   return null
 }

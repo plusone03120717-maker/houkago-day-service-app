@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getSessionUserId } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import { DailyRecordForm } from '@/components/records/daily-record-form'
+import { getStaffAccess } from '@/lib/require-admin'
 
 export default async function RecordPage({
   params,
@@ -94,6 +95,7 @@ export default async function RecordPage({
       isSchoolHoliday={isSchoolHoliday}
       defaultServiceEndTime={defaultServiceEndTime}
       holidayServiceEndTime={holidayServiceEndTime}
+      canEditContactNote={(await getStaffAccess())?.canEditOperations ?? false}
     />
   )
 }

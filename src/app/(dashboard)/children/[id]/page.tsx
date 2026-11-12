@@ -16,6 +16,7 @@ import { loadTransportPlaces } from '@/lib/parent-usage-contact'
 import { placeLabel, toPlaceValue, type LocationType } from '@/lib/transport-place'
 import { EmergencyContactList } from '@/components/children/emergency-contact-form'
 import { ParentInviteButton } from '@/components/children/parent-invite-button'
+import { getStaffAccess } from '@/lib/require-admin'
 
 type Cert = {
   id: string
@@ -184,7 +185,10 @@ export default async function ChildDetailPage({
             編集
           </Button>
         </Link>
-        <ParentInviteButton childId={id} childName={child.name} />
+        {/* 保護者のアカウント作成・パスワード再設定はシステム管理者だけ（2026-11-12 依頼主） */}
+        {((await getStaffAccess())?.canEditOperations ?? false) && (
+          <ParentInviteButton childId={id} childName={child.name} />
+        )}
       </div>
 
       {/* クイックアクセス */}
