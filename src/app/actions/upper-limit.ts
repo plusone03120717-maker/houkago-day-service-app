@@ -150,7 +150,7 @@ async function syncBillingCopay(
     .from('billing_details')
     .select(`
       id, total_units, unit_price, recalculated_at,
-      benefit_certificates (copay_limit),
+      benefit_certificates (copay_limit, copay_exempt),
       billing_monthly!inner (year_month, unit_id, units (facilities (facility_number)))
     `)
     .eq('child_id', childId)
@@ -161,7 +161,7 @@ async function syncBillingCopay(
     total_units: number
     unit_price: number
     recalculated_at: string | null
-    benefit_certificates: { copay_limit: number } | null
+    benefit_certificates: { copay_limit: number; copay_exempt: boolean | null } | null
     billing_monthly: { unit_id: string; units: { facilities: { facility_number: string | null } | null } | null } | null
   }
 
@@ -212,7 +212,10 @@ async function syncBillingCopay(
     const facilityNumber = r.billing_monthly?.units?.facilities?.facility_number ?? ''
     const managed = await loadManagedCopays(supabase, yearMonth, [childId], facilityNumber)
     const totalCost = Math.floor(r.total_units * Number(r.unit_price))
-    const copay = managed.get(childId) ?? Math.min(r.benefit_certificates?.copay_limit ?? 0, Math.floor(totalCost / 10))
+    // 無償化・軽減対象は上限額管理の結果にかかわらず0円
+    const copay = r.benefit_certificates?.copay_exempt
+      ? 0
+      : (managed.get(childId) ?? Math.min(r.benefit_certificates?.copay_limit ?? 0, Math.floor(totalCost / 10)))
     const { error } = await supabase
       .from('billing_details')
       .update({ copay_amount: copay, billed_amount: totalCost - copay })
