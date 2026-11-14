@@ -53,7 +53,10 @@ export type ExplainItem = {
 
 export type DayExplain = {
   items: ExplainItem[]
-  /** いつもの予定と違う日（保護者の利用連絡・特定日の変更・キャンセル・記録の時刻が予定と違う） */
+  /**
+   * その日だけ人が決めたことで、いつもの予定と違う日（保護者の利用連絡・特定日の変更・キャンセル）。
+   * 出席の記録の時刻が予定と少し違うだけの日は含めない（毎日のことで、印が多すぎるため）
+   */
   hasException: boolean
 }
 
@@ -268,7 +271,6 @@ export function explainDay(input: {
     if (recorded) {
       const differs = !!planned && hm(planned) !== recorded
       items.push({ label, value: recorded, source: 'record', usual: differs ? hm(planned) ?? undefined : undefined })
-      if (differs) exception = true
     } else if (planned) {
       items.push({ label, value: hm(planned)!, source: plannedSource, usual: usual && hm(usual) !== hm(planned) ? hm(usual) ?? undefined : undefined })
       if (isDayChoice(plannedSource) && usual && hm(usual) !== hm(planned)) exception = true
