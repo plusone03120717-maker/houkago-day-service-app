@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getStaffAccess } from '@/lib/require-admin'
 import { canEditTransport, canEditUsagePlans } from '@/lib/roles'
 import { isCancelMarkerOverride, pickPrimaryPlanPerChild } from '@/lib/schedule-defaults'
-import { decidePickupLocation, type PickupLocationType } from '@/lib/pickup-location'
+import { decideDropoffLocation, decidePickupLocation, type PickupLocationType } from '@/lib/pickup-location'
 import { getTodayJST } from '@/lib/utils'
 import type { PickupReviewItem, PickupSyncResult, PickupSyncScope } from '@/lib/pickup-review'
 
@@ -48,6 +48,8 @@ type PlanOptions = {
    * 渡さないとき（送迎設定で全曜日を変えたとき）は、先の日の行すべてが対象。
    */
   scope?: PickupSyncScope
+  /** お迎え（pickup）か送り（dropoff）か。送りも同じ決め方（2026-11-14 依頼主：送り：学校を効かせる） */
+  direction?: 'pickup' | 'dropoff'
 }
 
 /**
@@ -75,13 +77,14 @@ async function planPickupRows(
 ): Promise<PickupPlan> {
   const today = getTodayJST()
   const result: PickupPlan = { auto: [], review: [] }
+  const direction = options.direction ?? 'pickup'
 
   const [rowsRes, childRes] = await Promise.all([
     supabase
       .from('transport_details')
       .select('id, pickup_location, transport_schedules!inner(date, direction, unit_id)')
       .eq('child_id', childId)
-      .eq('transport_schedules.direction', 'pickup')
+      .eq('transport_schedules.direction', direction)
       .gte('transport_schedules.date', today),
     supabase
       .from('children')
@@ -112,24 +115,31 @@ async function planPickupRows(
     start_date: string
     end_date: string | null
     pickup_location_type: string | null
+    dropoff_location_type: string | null
   }
   const plans = must(
     await supabase
       .from('usage_plans')
-      .select('id, child_id, unit_id, day_of_week, start_date, end_date, pickup_location_type')
+      .select('id, child_id, unit_id, day_of_week, start_date, end_date, pickup_location_type, dropoff_location_type')
       .eq('child_id', childId)
       .eq('is_active', true),
     '利用スケジュール'
   ) as unknown as Plan[]
   const planIds = plans.map((p) => p.id)
 
-  type DaySetting = { plan_id: string; day_of_week: number; pickup_location_type: string | null }
+  type DaySetting = {
+    plan_id: string
+    day_of_week: number
+    pickup_location_type: string | null
+    dropoff_location_type: string | null
+  }
   type Override = {
     id: string
     plan_id: string
     date: string
     transport_type: string | null
     pickup_location_type: string | null
+    dropoff_location_type: string | null
     pickup_time: string | null
     dropoff_time: string | null
     service_start_time: string | null
@@ -142,24 +152,26 @@ async function planPickupRows(
     date: string
     pickup_location_type: string | null
     pickup_address_id: string | null
+    dropoff_location_type: string | null
+    dropoff_address_id: string | null
   }
   const [daySettingsRes, overridesRes, reservationsRes] = await Promise.all([
     planIds.length > 0
       ? supabase
           .from('usage_plan_day_settings')
-          .select('plan_id, day_of_week, pickup_location_type')
+          .select('plan_id, day_of_week, pickup_location_type, dropoff_location_type')
           .in('plan_id', planIds)
       : Promise.resolve({ data: [], error: null }),
     planIds.length > 0
       ? supabase
           .from('usage_plan_date_overrides')
-          .select('id, plan_id, date, transport_type, pickup_location_type, pickup_time, dropoff_time, service_start_time, service_end_time, is_cancelled')
+          .select('id, plan_id, date, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time, is_cancelled')
           .in('plan_id', planIds)
           .in('date', dates)
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('usage_reservations')
-      .select('id, unit_id, date, pickup_location_type, pickup_address_id')
+      .select('id, unit_id, date, pickup_location_type, pickup_address_id, dropoff_location_type, dropoff_address_id')
       .eq('child_id', childId)
       .in('date', dates)
       .in('status', ['confirmed', 'reserved']),
@@ -168,8 +180,14 @@ async function planPickupRows(
   const overrides = must(overridesRes, '特定日の上書き') as unknown as Override[]
   const reservations = must(reservationsRes, '利用予定') as unknown as Reservation[]
 
+  // お迎え・送りで見る欄
+  const locOf = (x: { pickup_location_type: string | null; dropoff_location_type: string | null } | undefined) =>
+    x ? (direction === 'pickup' ? x.pickup_location_type : x.dropoff_location_type) : undefined
+  const addressIdOf = (r: Reservation | null) =>
+    r ? (direction === 'pickup' ? r.pickup_address_id : r.dropoff_address_id) : null
+
   // その日だけ指定された登録住所（祖父母宅など）
-  const addressIds = [...new Set(reservations.map((r) => r.pickup_address_id).filter((v): v is string => !!v))]
+  const addressIds = [...new Set(reservations.map((r) => addressIdOf(r)).filter((v): v is string => !!v))]
   const addressById = new Map<string, string>()
   if (addressIds.length > 0) {
     const addressRows = must(
@@ -201,26 +219,27 @@ async function planPickupRows(
     const reservation = reservations.find((r) => r.unit_id === unitId && r.date === date) ?? null
     const fallbackPlan = pickPrimaryPlanPerChild(unitPlans)[0]
     const daySettingType = dayPlan
-      ? daySettings.find((d) => d.plan_id === dayPlan.id && d.day_of_week === dow)?.pickup_location_type
+      ? locOf(daySettings.find((d) => d.plan_id === dayPlan.id && d.day_of_week === dow))
       : null
 
     if (options.scope && !inScope(options.scope, { date, dow, dayPlan, daySettingType, reservation, fallbackPlan })) {
       continue
     }
 
-    const decision = decidePickupLocation({
+    const common = {
       date,
-      dayPlanType: dayPlan && !cancelled ? dayPlan.pickup_location_type : undefined,
+      dayPlanType: dayPlan && !cancelled ? locOf(dayPlan) ?? null : undefined,
       cancelled,
-      overrideType: liveOverride?.pickup_location_type,
+      overrideType: locOf(liveOverride),
       daySettingType,
-      reservation,
-      fallbackPlanType: fallbackPlan?.pickup_location_type,
-    })
+      fallbackPlanType: locOf(fallbackPlan),
+    }
+    const decision = direction === 'pickup'
+      ? decidePickupLocation({ ...common, reservation })
+      : decideDropoffLocation({ ...common, reservation })
 
-    const requestAddress = reservation?.pickup_address_id
-      ? addressById.get(reservation.pickup_address_id) ?? null
-      : null
+    const requestAddressId = addressIdOf(reservation)
+    const requestAddress = requestAddressId ? addressById.get(requestAddressId) ?? null : null
     const expected = valueOf(decision.type, decision.type === 'home' ? requestAddress : null)
     const baseValue = decision.baseType ? valueOf(decision.baseType) : null
     const isAutoValue = current == null || current === homeValue || current === schoolValue
@@ -368,6 +387,26 @@ export async function refreshFuturePickupLocations(
 }
 
 /**
+ * 利用スケジュールで送り先を変えたあとに呼ぶ。今日以降の送りの行のうち、
+ * 前の送り先のまま（自宅・学校）の行だけを新しい送り先にそろえる。
+ * 送迎管理で手で選んだ場所・保護者の指定の日などは変えない（確認の一覧は出さない）。
+ */
+export async function refreshFutureDropoffLocations(
+  childId: string,
+  options: { from?: string | null; scope?: PickupSyncScope } = {}
+): Promise<{ updated: number }> {
+  if (!(await canSync())) return { updated: 0 }
+  const supabase = await createClient()
+  const plan = await planPickupRows(supabase, childId, {
+    baseChanged: false,
+    from: asLocation(options.from),
+    scope: options.scope,
+    direction: 'dropoff',
+  })
+  return { updated: await applyRows(supabase, plan.auto) }
+}
+
+/**
  * 確認の一覧で「変える」を選んだ行だけを書きかえる。
  * 画面から来た id はそのまま信じず、今の状態で選べる行かを計算し直してから変える。
  * 保護者の利用連絡・特定日の上書きの日は、その指定も新しい場所にする
@@ -430,67 +469,4 @@ export async function applyPickupReview(childId: string, rowIds: string[]): Prom
   const failed = (await Promise.allSettled(specifierWrites)).find((s) => s.status === 'rejected')
   if (failed) throw (failed as PromiseRejectedResult).reason
   return { updated: await applyRows(supabase, picked) }
-}
-
-/**
- * 児童の「送迎設定」でお迎え場所を変えたときに呼ぶ。
- * 送迎設定は新しい利用スケジュールの初期値で、送迎管理が見るのは利用スケジュールの方。
- * そのため送迎設定だけ変えても送迎管理は変わらなかった。
- *
- * 今日以降も使う利用スケジュールのうち、前の場所のままの計画・曜日別設定を新しい場所にそろえ、
- * 先の日の送迎の行もそろえる（変えるかどうかを選ぶ行は返す）。
- * 特定日の上書きはその日だけの指定なので変えない。
- * 利用スケジュールを編集できない人（施設長・スタッフ）のときは何もしない。
- */
-export async function applyChildPickupLocation(
-  childId: string,
-  from: PickupLocationType,
-  to: PickupLocationType
-): Promise<{ ok: boolean; plansUpdated: number } & PickupSyncResult> {
-  const access = await getStaffAccess()
-  if (!access || !canEditUsagePlans(access.role, access.jobTitles)) {
-    return { ok: false, plansUpdated: 0, updated: 0, review: [] }
-  }
-  if (from === to) return { ok: true, plansUpdated: 0, updated: 0, review: [] }
-
-  const supabase = await createClient()
-  const today = getTodayJST()
-
-  const planIds = (must(
-    await supabase
-      .from('usage_plans')
-      .select('id')
-      .eq('child_id', childId)
-      .eq('is_active', true)
-      .or(`end_date.is.null,end_date.gte.${today}`),
-    '利用スケジュール'
-  ) as { id: string }[]).map((p) => p.id)
-
-  let plansUpdated = 0
-  if (planIds.length > 0) {
-    const [plansRes, dayRes] = await Promise.all([
-      supabase
-        .from('usage_plans')
-        .update({ pickup_location_type: to })
-        .in('id', planIds)
-        .eq('pickup_location_type', from)
-        .select('id'),
-      supabase
-        .from('usage_plan_day_settings')
-        .update({ pickup_location_type: to })
-        .in('plan_id', planIds)
-        .eq('pickup_location_type', from),
-    ])
-    if (plansRes.error) throw new Error(`利用スケジュールの書きかえに失敗しました: ${plansRes.error.message}`)
-    if (dayRes.error) throw new Error(`曜日別設定の書きかえに失敗しました: ${dayRes.error.message}`)
-    plansUpdated = (plansRes.data ?? []).length
-  }
-
-  const plan = await planPickupRows(supabase, childId, { baseChanged: true, from })
-  return {
-    ok: true,
-    plansUpdated,
-    updated: await applyRows(supabase, plan.auto),
-    review: toClient(plan.review),
-  }
 }

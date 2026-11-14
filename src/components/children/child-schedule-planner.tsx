@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Plus, Trash2, Power, CalendarRange, Clock, Pencil, X, Check, CalendarDays, Repeat, Car, ChevronDown, RotateCcw } from 'lucide-react'
 import { formatDate, getTodayJST } from '@/lib/utils'
-import { refreshFuturePickupLocations } from '@/app/actions/transport-location'
+import { refreshFutureDropoffLocations, refreshFuturePickupLocations } from '@/app/actions/transport-location'
 import { PickupReviewDialog } from '@/components/children/pickup-review-dialog'
 import type { PickupReviewItem, PickupSyncScope } from '@/lib/pickup-review'
 import { isSchoolOffDay } from '@/lib/pickup-location'
@@ -245,6 +245,34 @@ export function ChildSchedulePlanner({
   }
 
   /**
+   * 送り先を変えたら、作成ずみの先の日の送りの行もそろえる（前の送り先のままの行だけ。
+   * 確認の一覧は出さない）。2026-11-14 依頼主：利用スケジュールの「送り：学校」を送迎管理に効かせる。
+   */
+  const syncDropoffRows = async (changes: PickupChange[]) => {
+    const todo = changes.filter((c) => c.before !== c.after)
+    if (todo.length === 0) return
+    try {
+      let updated = 0
+      for (const c of todo) {
+        const res = await refreshFutureDropoffLocations(childId, { from: c.before, scope: c.scope })
+        updated += res.updated
+      }
+      if (updated > 0) {
+        setPickupNote((prev) => `${prev ? `${prev} ` : ''}作成ずみの送迎 ${updated} 件の送り先もそろえました。`)
+      }
+    } catch {
+      setPickupNote('送迎管理の送り先への反映に失敗しました。送迎管理の場所の選択から直してください。')
+    }
+  }
+
+  /** 特定日の上書きがないときの、その日の送り先（曜日別設定 → 計画）。土日・祝日の学校は自宅 */
+  const baseDropoffOn = (plan: Plan | undefined, date: string) => {
+    const dow = new Date(`${date}T00:00:00`).getDay()
+    const type = (plan ? getDaySetting(plan.id, dow)?.dropoff_location_type : undefined) ?? plan?.dropoff_location_type
+    return type === 'school' && isSchoolOffDay(date) ? 'home' : type
+  }
+
+  /**
    * 特定日の上書きがないときの、その日のお迎え場所（曜日別設定 → 計画）。
    * 土日・祝日は学校が休みなので、学校でも自宅（送迎を作るときの決め方と同じ）
    */
@@ -325,6 +353,7 @@ export function ChildSchedulePlanner({
     setDaySaving(true)
     const existing = getDaySetting(plan.id, dow)
     const pickupBefore = existing?.pickup_location_type ?? plan.pickup_location_type
+    const dropoffBefore = existing?.dropoff_location_type ?? plan.dropoff_location_type
     const payload = {
       transport_type: dayEditState.transport_type,
       pickup_location_type: dayEditState.pickup_location_type,
@@ -345,6 +374,7 @@ export function ChildSchedulePlanner({
       setDaySaving(false)
       if (!error && data) {
         void syncPickupRows([{ before: pickupBefore, after: payload.pickup_location_type, scope: { planId: plan.id, dayOfWeek: dow } }])
+        void syncDropoffRows([{ before: dropoffBefore, after: payload.dropoff_location_type, scope: { planId: plan.id, dayOfWeek: dow } }])
         setDaySettings((prev) => prev.map((ds) => ds.id === existing.id ? data as unknown as DaySetting : ds))
         setOpenDayKey(null)
         setDayEditState(null)
@@ -358,6 +388,7 @@ export function ChildSchedulePlanner({
       setDaySaving(false)
       if (!error && data) {
         void syncPickupRows([{ before: pickupBefore, after: payload.pickup_location_type, scope: { planId: plan.id, dayOfWeek: dow } }])
+        void syncDropoffRows([{ before: dropoffBefore, after: payload.dropoff_location_type, scope: { planId: plan.id, dayOfWeek: dow } }])
         setDaySettings((prev) => [...prev, data as unknown as DaySetting])
         setOpenDayKey(null)
         setDayEditState(null)
@@ -373,6 +404,11 @@ export function ChildSchedulePlanner({
       void syncPickupRows([{
         before: existing.pickup_location_type ?? plan.pickup_location_type,
         after: plan.pickup_location_type,
+        scope: { planId: plan.id, dayOfWeek: dow },
+      }])
+      void syncDropoffRows([{
+        before: existing.dropoff_location_type ?? plan.dropoff_location_type,
+        after: plan.dropoff_location_type,
         scope: { planId: plan.id, dayOfWeek: dow },
       }])
     }
@@ -454,6 +490,20 @@ export function ChildSchedulePlanner({
               after: payload.pickup_location_type,
               scope: { planId, date: payload.date },
             }])
+        void syncDropoffRows(editingOverride.date !== payload.date
+          ? [
+              {
+                before: editingOverride.dropoff_location_type ?? baseDropoffOn(plan, editingOverride.date),
+                after: baseDropoffOn(plan, editingOverride.date),
+                scope: { planId, date: editingOverride.date },
+              },
+              { before: baseDropoffOn(plan, payload.date), after: payload.dropoff_location_type, scope: { planId, date: payload.date } },
+            ]
+          : [{
+              before: editingOverride.dropoff_location_type ?? baseDropoffOn(plan, payload.date),
+              after: payload.dropoff_location_type,
+              scope: { planId, date: payload.date },
+            }])
       }
       if (!error && data) {
         setDateOverrides((prev) => prev.map((o) => o.id === editingDateOverrideId ? data as unknown as DateOverride : o))
@@ -468,6 +518,7 @@ export function ChildSchedulePlanner({
       setDateOverrideSaving(false)
       if (!error && data) {
         void syncPickupRows([{ before: basePickupOn(plan, payload.date), after: payload.pickup_location_type, scope: { planId, date: payload.date } }])
+        void syncDropoffRows([{ before: baseDropoffOn(plan, payload.date), after: payload.dropoff_location_type, scope: { planId, date: payload.date } }])
         setDateOverrides((prev) => [...prev, data as unknown as DateOverride])
         closeDateOverrideForm()
       }
@@ -482,6 +533,11 @@ export function ChildSchedulePlanner({
       void syncPickupRows([{
         before: removed.pickup_location_type,
         after: basePickupOn(plan, removed.date) ?? removed.pickup_location_type,
+        scope: { planId: removed.plan_id, date: removed.date },
+      }])
+      void syncDropoffRows([{
+        before: removed.dropoff_location_type,
+        after: baseDropoffOn(plan, removed.date) ?? removed.dropoff_location_type,
         scope: { planId: removed.plan_id, date: removed.date },
       }])
     }
@@ -603,6 +659,11 @@ export function ChildSchedulePlanner({
       await syncPickupRows([{
         before: oldPlan?.pickup_location_type,
         after: editState.pickup_location_type,
+        scope: { planId },
+      }])
+      await syncDropoffRows([{
+        before: oldPlan?.dropoff_location_type,
+        after: editState.dropoff_location_type,
         scope: { planId },
       }])
       setPlans((prev) => prev.map((p) => p.id === planId ? data as unknown as Plan : p))

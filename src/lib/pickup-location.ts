@@ -1,7 +1,7 @@
 import { isJapaneseNationalHoliday } from '@/lib/japanese-holidays'
 
 /**
- * その日のお迎え場所（自宅・学校）の決め方。
+ * その日のお迎え場所・送り先（自宅・学校）の決め方。
  *
  * 送迎を作るとき（@/app/actions/transport の autoCreateTransportSchedules）と、
  * お迎え場所を変えたあとに作成ずみの行をそろえるとき（@/app/actions/transport-location）で
@@ -60,13 +60,36 @@ const asType = (v: string | null | undefined): PickupLocationType | null =>
   v === 'home' || v === 'school' ? v : null
 
 export function decidePickupLocation(i: PickupInputs): PickupDecision {
+  return decideLocation({ ...i, requestedType: i.reservation?.pickup_location_type, hasReservation: !!i.reservation })
+}
+
+/**
+ * その日の送り先（自宅・学校）。お迎えと同じ決め方（2026-11-14 依頼主：利用スケジュールの
+ * 「送り：学校」を送迎管理に効かせる）。今までは保護者が指定した日だけが効き、
+ * 計画・曜日別設定・特定日の上書きの送り先は送迎管理に届いていなかった。
+ */
+export type DropoffInputs = Omit<PickupInputs, 'reservation'> & {
+  reservation: { dropoff_location_type: string | null } | null
+}
+
+export function decideDropoffLocation(i: DropoffInputs): PickupDecision {
+  return decideLocation({ ...i, requestedType: i.reservation?.dropoff_location_type, hasReservation: !!i.reservation })
+}
+
+type LocationInputs = Omit<PickupInputs, 'reservation'> & {
+  /** その日の予約で指定された場所（保護者の利用連絡を承認した日だけ入る） */
+  requestedType: string | null | undefined
+  hasReservation: boolean
+}
+
+function decideLocation(i: LocationInputs): PickupDecision {
   let type: PickupLocationType
   let source: PickupSource
   let baseType: PickupLocationType | null
 
-  const requested = asType(i.reservation?.pickup_location_type)
+  const requested = asType(i.requestedType)
   if (i.dayPlanType !== undefined && !i.cancelled) {
-    // 優先順位: その日の予約 > 特定日の上書き > 曜日別設定 > 計画
+    // 優先順位: その日の予約（保護者の利用連絡） > 特定日の上書き > 曜日別設定 > 計画
     baseType = asType(i.daySettingType) ?? asType(i.dayPlanType) ?? 'home'
     const override = asType(i.overrideType)
     if (requested) {
@@ -79,7 +102,7 @@ export function decidePickupLocation(i: PickupInputs): PickupDecision {
       type = baseType
       source = 'plan'
     }
-  } else if (i.reservation) {
+  } else if (i.hasReservation) {
     // 予約だけの日（計画がない・計画をキャンセルした日）は、予約の場所、なければ自宅
     baseType = null
     type = requested ?? 'home'
@@ -91,7 +114,7 @@ export function decidePickupLocation(i: PickupInputs): PickupDecision {
     source = baseType ? 'plan' : 'none'
   }
 
-  // 土日・祝日は学校が休みなので、いつもの場所が学校でも自宅へ迎えに行く。
+  // 土日・祝日は学校が休みなので、いつもの場所が学校でも自宅にする。
   // 保護者の指定・特定日の上書きで学校と決めた日はそのまま
   let schoolOffAdjusted = false
   if (type === 'school' && source === 'plan' && isSchoolOffDay(i.date)) {

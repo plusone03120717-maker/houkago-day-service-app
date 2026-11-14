@@ -15,6 +15,8 @@
  * マージを持っているが、対象の児童を決めるルールはこのファイルと同じ。
  */
 
+import { comparePlanPriority } from '@/lib/schedule-defaults'
+
 export type RosterReservation = {
   id: string
   child_id: string
@@ -128,7 +130,8 @@ export function buildUsageRoster({
 
     // その日に有効な計画（1児童1本。期間・曜日が重なる計画が2本あっても行は増やさない）
     const planIdByChild = new Map<string, string>()
-    for (const p of plans) {
+    // 重なった計画は、ほかの画面と同じく開始日の新しい方を採る（取得順まかせにしない）
+    for (const p of [...plans].sort(comparePlanPriority)) {
       if (p.start_date > date) continue
       if (p.end_date !== null && p.end_date < date) continue
       if (!(p.day_of_week ?? []).includes(dow)) continue

@@ -9,8 +9,13 @@ type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
  * 「その日の記録（daily_attendance）が空なら、この値を未確定として表示する」
  * という同じ規則で動く。値の解決をここ1か所に集約している。
  *
- * 優先順位: 特定日の上書き > 曜日別設定 > プランのデフォルト
+ * 優先順位（2026-11-14 依頼主：全項目・全画面で1つの決まりにそろえる）:
+ *   その日の予約（保護者の利用連絡を承認した日だけ値が入る） > 特定日の上書き > 曜日別設定 > プランのデフォルト
+ * 出席の記録（daily_attendance）が入った項目は、記録が正（各画面で記録を先に見る）。
  */
+/** その日の値がどこで決まったか */
+export type ScheduleSource = 'request' | 'override' | 'day' | 'plan'
+
 export type ScheduleDefaults = {
   transportType: string
   pickupTime: string | null
@@ -20,6 +25,25 @@ export type ScheduleDefaults = {
   daytimeSupport: boolean
   daytimeSupportStartTime: string | null
   daytimeSupportEndTime: string | null
+  /** 項目ごとの決まった元。予約・上書き・曜日別設定を見ずに作った値には無い */
+  sources?: {
+    transportType: ScheduleSource
+    pickupTime: ScheduleSource
+    dropoffTime: ScheduleSource
+    serviceTime: ScheduleSource
+  }
+}
+
+/**
+ * その日の予約のうち、予定の決め方に使う項目。
+ * 自動で作った予約は値が空（migration 184・185 で既定値をやめた）なので、
+ * 値が入っているのは保護者の利用連絡を承認した日だけ。
+ */
+export type ReservationRow = {
+  child_id: string
+  transport_type?: string | null
+  pickup_time?: string | null
+  dropoff_time?: string | null
 }
 
 export type PlanRow = {
@@ -69,6 +93,44 @@ export function isCancelMarkerOverride(o: {
   if (!o || o.transport_type !== 'none') return false
   return !o.pickup_time && !o.dropoff_time && !o.service_start_time && !o.service_end_time
 }
+
+/**
+ * キャンセルを取り消すとき、消してよい「キャンセルのためだけの上書き」か。
+ *
+ * キャンセルで作る上書きは、送迎区分 'none'・時刻なしの印にする（isCancelMarkerOverride）。
+ * 以前は利用状況・出席管理・利用連絡の承認から、計画の値を写した上書きを作っていたため、
+ * キャンセルを取り消すと「特定日の上書き」として計画の古い値が残り、計画を変えても
+ * その日だけ戻らなかった（2026-11-14 プログラマー担当の点検）。
+ * 時刻を持たず、区分・場所が計画と同じ写しも、キャンセルのためだけの行として扱う。
+ */
+export function isCancelOnlyOverride(
+  o: {
+    transport_type?: string | null
+    pickup_location_type?: string | null
+    dropoff_location_type?: string | null
+    pickup_time?: string | null
+    dropoff_time?: string | null
+    service_start_time?: string | null
+    service_end_time?: string | null
+  } | null | undefined,
+  plan?: { transport_type?: string | null; pickup_location_type?: string | null; dropoff_location_type?: string | null } | null
+): boolean {
+  if (!o) return false
+  if (o.pickup_time || o.dropoff_time || o.service_start_time || o.service_end_time) return false
+  if (o.transport_type === 'none') return true
+  return !!plan &&
+    o.transport_type === plan.transport_type &&
+    o.pickup_location_type === plan.pickup_location_type &&
+    o.dropoff_location_type === plan.dropoff_location_type
+}
+
+/** キャンセルの印として作る上書きの中身（送迎・時刻を持たない） */
+export const CANCEL_MARKER_FIELDS = {
+  is_cancelled: true,
+  transport_type: 'none',
+  pickup_location_type: 'home',
+  dropoff_location_type: 'home',
+} as const
 
 const PLAN_SELECT =
   'id, child_id, start_date, transport_type, pickup_time, dropoff_time, service_start_time, service_end_time, ' +
@@ -140,7 +202,14 @@ export async function fetchScheduleDefaults(
   if (plans.length === 0) return {}
 
   const planIds = plans.map((p) => p.id)
-  const [{ data: daySettingsRaw }, { data: overridesRaw }] = await Promise.all([
+  let reservationQuery = supabase
+    .from('usage_reservations')
+    .select('child_id, transport_type, pickup_time, dropoff_time')
+    .eq('unit_id', unitId)
+    .eq('date', date)
+    .in('status', ['confirmed', 'reserved'])
+  if (childId) reservationQuery = reservationQuery.eq('child_id', childId)
+  const [{ data: daySettingsRaw }, { data: overridesRaw }, { data: reservationsRaw }] = await Promise.all([
     supabase
       .from('usage_plan_day_settings')
       .select(OVERRIDE_SELECT)
@@ -151,12 +220,14 @@ export async function fetchScheduleDefaults(
       .select(`${OVERRIDE_SELECT}, is_cancelled`)
       .in('plan_id', planIds)
       .eq('date', date),
+    reservationQuery,
   ])
 
   return resolveScheduleDefaults(
     plans,
     (daySettingsRaw ?? []) as unknown as OverrideRow[],
-    (overridesRaw ?? []) as unknown as OverrideRow[]
+    (overridesRaw ?? []) as unknown as OverrideRow[],
+    (reservationsRaw ?? []) as unknown as ReservationRow[]
   )
 }
 
@@ -168,8 +239,11 @@ export async function fetchScheduleDefaults(
 export function resolveScheduleDefaults(
   plans: PlanRow[],
   daySettings: OverrideRow[],
-  overrides: OverrideRow[]
+  overrides: OverrideRow[],
+  /** その日の予約。渡すと、保護者の利用連絡で決まった値が上書き・計画より優先される */
+  reservations: ReservationRow[] = []
 ): Record<string, ScheduleDefaults> {
+  const reservationByChild = new Map(reservations.map((r) => [r.child_id, r]))
   const cancelledPlanIds = new Set(overrides.filter((o) => o.is_cancelled).map((o) => o.plan_id))
   const daySettingByPlan = new Map(daySettings.map((d) => [d.plan_id, d]))
   const overrideByPlan = new Map(overrides.filter((o) => !o.is_cancelled).map((o) => [o.plan_id, o]))
@@ -180,22 +254,41 @@ export function resolveScheduleDefaults(
 
   const result: Record<string, ScheduleDefaults> = {}
   for (const plan of livePlans) {
-    const ov = overrideByPlan.get(plan.id)
+    // 中身の無いキャンセル跡（transport_type='none' だけ）は上書きとして使わない
+    const ov = isCancelMarkerOverride(overrideByPlan.get(plan.id)) ? undefined : overrideByPlan.get(plan.id)
     const ds = daySettingByPlan.get(plan.id)
+    const res = reservationByChild.get(plan.child_id)
+
+    // 予約 > 特定日の上書き > 曜日別設定 > 計画 の順に、最初に値がある所を採る
+    const pick = <T,>(
+      r: T | null | undefined,
+      o: T | null | undefined,
+      d: T | null | undefined,
+      p: T | null | undefined
+    ): [T | null, ScheduleSource] =>
+      r != null ? [r, 'request'] : o != null ? [o, 'override'] : d != null ? [d, 'day'] : [p ?? null, 'plan']
+
+    const [transportType, transportSource] = pick(res?.transport_type, ov?.transport_type, ds?.transport_type, plan.transport_type)
+    const [pickupTime, pickupSource] = pick(res?.pickup_time, ov?.pickup_time, ds?.pickup_time, plan.pickup_time)
+    const [dropoffTime, dropoffSource] = pick(res?.dropoff_time, ov?.dropoff_time, ds?.dropoff_time, plan.dropoff_time)
+    const [serviceStartTime, serviceSource] = pick(null, ov?.service_start_time, ds?.service_start_time, plan.service_start_time)
+    const [serviceEndTime] = pick(null, ov?.service_end_time, ds?.service_end_time, plan.service_end_time)
+
     result[plan.child_id] = {
-      // 中身の無いキャンセル跡（transport_type='none' だけ）は送迎区分として使わない
-      transportType:
-        (isCancelMarkerOverride(ov) ? null : ov?.transport_type) ??
-        ds?.transport_type ??
-        plan.transport_type ??
-        'both',
-      pickupTime: ov?.pickup_time ?? ds?.pickup_time ?? plan.pickup_time,
-      dropoffTime: ov?.dropoff_time ?? ds?.dropoff_time ?? plan.dropoff_time,
-      serviceStartTime: ov?.service_start_time ?? ds?.service_start_time ?? plan.service_start_time,
-      serviceEndTime: ov?.service_end_time ?? ds?.service_end_time ?? plan.service_end_time,
+      transportType: transportType ?? 'both',
+      pickupTime,
+      dropoffTime,
+      serviceStartTime,
+      serviceEndTime,
       daytimeSupport: plan.daytime_support ?? false,
       daytimeSupportStartTime: plan.daytime_support_start_time,
       daytimeSupportEndTime: plan.daytime_support_end_time,
+      sources: {
+        transportType: transportSource,
+        pickupTime: pickupSource,
+        dropoffTime: dropoffSource,
+        serviceTime: serviceSource,
+      },
     }
   }
   return result

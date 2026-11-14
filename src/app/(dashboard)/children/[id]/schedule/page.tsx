@@ -111,14 +111,16 @@ export default async function ChildSchedulePage({
   }
   const plans = (plansRaw ?? []) as unknown as Plan[]
 
-  const defaultTransportType = (transportSettingRaw?.transport_type as string | null)
-    ?? plans[0]?.transport_type
+  // 新しいスケジュールの初期値は、今の利用スケジュール（いちばん新しい計画）に合わせる。
+  // 計画がまだない児童だけ、前に保存された送迎設定を使う（2026-11-14 送迎設定は表示だけにした）
+  const defaultTransportType = plans[0]?.transport_type
+    ?? (transportSettingRaw?.transport_type as string | null)
     ?? 'both'
-  const defaultPickupLocationType = (transportSettingRaw?.pickup_location_type as string | null)
-    ?? plans[0]?.pickup_location_type
+  const defaultPickupLocationType = plans[0]?.pickup_location_type
+    ?? (transportSettingRaw?.pickup_location_type as string | null)
     ?? 'home'
-  const defaultDropoffLocationType = (transportSettingRaw?.dropoff_location_type as string | null)
-    ?? plans[0]?.dropoff_location_type
+  const defaultDropoffLocationType = plans[0]?.dropoff_location_type
+    ?? (transportSettingRaw?.dropoff_location_type as string | null)
     ?? 'home'
 
   // 曜日別設定・特定日上書き設定を並列取得

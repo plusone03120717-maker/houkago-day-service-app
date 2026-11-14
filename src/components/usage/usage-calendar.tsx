@@ -1,5 +1,6 @@
 'use client'
 
+import { CANCEL_MARKER_FIELDS, isCancelOnlyOverride } from '@/lib/schedule-defaults'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient, getBrowserUserId } from '@/lib/supabase/client'
@@ -167,7 +168,7 @@ export function UsageCalendar({
       if (plan.end_date && date > plan.end_date) continue
       const { data: existing } = await supabase
         .from('usage_plan_date_overrides')
-        .select('id')
+        .select('id, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time')
         .eq('plan_id', plan.id)
         .eq('date', date)
         .maybeSingle()
@@ -175,15 +176,17 @@ export function UsageCalendar({
         if (existing) {
           await supabase.from('usage_plan_date_overrides').update({ is_cancelled: true }).eq('id', existing.id)
         } else {
-          await supabase.from('usage_plan_date_overrides').insert({
-            plan_id: plan.id, date, is_cancelled: true,
-            transport_type: plan.transport_type,
-            pickup_location_type: plan.pickup_location_type,
-            dropoff_location_type: plan.dropoff_location_type,
-          })
+          // 計画の値を写さず、キャンセルの印だけを作る（@/lib/schedule-defaults）
+          await supabase.from('usage_plan_date_overrides').insert({ plan_id: plan.id, date, ...CANCEL_MARKER_FIELDS })
         }
       } else if (existing) {
-        await supabase.from('usage_plan_date_overrides').update({ is_cancelled: false }).eq('id', existing.id)
+        // キャンセルのためだけの行は消して、利用スケジュール本体の設定に戻す。
+        // 印を外すだけだと「特定日の上書き」として古い値が残る
+        if (isCancelOnlyOverride(existing, plan)) {
+          await supabase.from('usage_plan_date_overrides').delete().eq('id', existing.id)
+        } else {
+          await supabase.from('usage_plan_date_overrides').update({ is_cancelled: false }).eq('id', existing.id)
+        }
       }
     }
   }

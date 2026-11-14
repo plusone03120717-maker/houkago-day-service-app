@@ -308,7 +308,9 @@ export async function saveUsageContactsForDates(
  *
  * 学校・児童の登録住所（child_addresses）から作る。登録住所が1件も無い児童は
  * 児童の基本住所（children.address）を「自宅」として1件だけ出す。
- * 既定値は施設に登録されている送迎設定（child_transport_settings）に合わせる。
+ * 既定値は利用スケジュール（いま効いている計画）の場所に合わせる。
+ * 2026-11-14 から、いつもの送迎は利用スケジュール1か所で決める（児童の送迎設定は表示だけ）。
+ * 計画がない児童は、前に保存された送迎設定を使う。
  */
 export async function loadTransportPlaces(
   supabase: Client,
@@ -316,7 +318,8 @@ export async function loadTransportPlaces(
 ): Promise<ChildTransportPlaces[]> {
   if (childIds.length === 0) return []
 
-  const [{ data: childRows }, { data: addressRows }, { data: settingRows }] = await Promise.all([
+  const today = getTodayJST()
+  const [{ data: childRows }, { data: addressRows }, { data: settingRows }, { data: planRows }] = await Promise.all([
     supabase.from('children').select('id, address, schools (name)').in('id', childIds),
     supabase
       .from('child_addresses')
@@ -327,6 +330,12 @@ export async function loadTransportPlaces(
       .from('child_transport_settings')
       .select('child_id, pickup_location_type, dropoff_location_type')
       .in('child_id', childIds),
+    supabase
+      .from('usage_plans')
+      .select('id, child_id, start_date, pickup_location_type, dropoff_location_type')
+      .in('child_id', childIds)
+      .eq('is_active', true)
+      .or(`end_date.is.null,end_date.gte.${today}`),
   ])
 
   type AddressRow = { id: string; child_id: string; label: string; address: string; is_default: boolean }
@@ -345,6 +354,11 @@ export async function loadTransportPlaces(
   const settingByChild = new Map<string, SettingRow>()
   for (const row of (settingRows ?? []) as unknown as SettingRow[]) {
     settingByChild.set(row.child_id, row)
+  }
+  // 利用スケジュールが先。期間の重なる計画は開始日の新しい方
+  type PlanLoc = SettingRow & { id: string; start_date: string }
+  for (const plan of pickPrimaryPlanPerChild((planRows ?? []) as unknown as PlanLoc[])) {
+    settingByChild.set(plan.child_id, plan)
   }
 
   type ChildRow = { id: string; address: string | null; schools: { name: string } | null }
