@@ -14,6 +14,7 @@ import {
   transportTimeOf,
   type ScheduleDefaults,
 } from '@/lib/schedule-defaults'
+import { decidePickupLocation } from '@/lib/pickup-location'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -191,7 +192,16 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
   const pickupTimeMap = new Map<string, string | null>()
   const dropoffTimeMap = new Map<string, string | null>()
   const transportTypeMap = new Map<string, string>()
-  const pickupLocationTypeMap = new Map<string, string>()
+  // お迎え場所は最後に decidePickupLocation（@/lib/pickup-location）で決める。
+  // 作成ずみの行をそろえる処理（@/app/actions/transport-location）と同じ決め方にするため、
+  // ここでは材料（計画・曜日別設定・特定日の上書き・予約・出席だけの日の計画）だけを集める。
+  const planPickupByChild = new Map<string, {
+    dayPlanType: string | null
+    daySettingType: string | null
+    overrideType: string | null
+  }>()
+  const reservationPickupByChild = new Map<string, { pickup_location_type: string | null }>()
+  const fallbackPickupByChild = new Map<string, string | null>()
   // 保護者がその日だけ指定した送迎の場所（@/lib/transport-place）。
   // 予約にだけ入るので、指定が無い児童は今までどおりの扱いになる。
   const dropoffLocationTypeMap = new Map<string, 'home' | 'school'>()
@@ -216,7 +226,11 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       pickupTimeMap.set(p.child_id, toHourSlot((override?.pickup_time ?? p.pickup_time) as string | null))
       dropoffTimeMap.set(p.child_id, toHourSlot((override?.dropoff_time ?? p.dropoff_time) as string | null))
       transportTypeMap.set(p.child_id, (override?.transport_type ?? p.transport_type ?? 'both') as string)
-      pickupLocationTypeMap.set(p.child_id, (override?.pickup_location_type ?? p.pickup_location_type ?? 'home') as string)
+      planPickupByChild.set(p.child_id, {
+        dayPlanType: (p.pickup_location_type ?? null) as string | null,
+        daySettingType: (daySettingsMap.get(p.id as string)?.pickup_location_type ?? null) as string | null,
+        overrideType: (dateOverride?.pickup_location_type ?? null) as string | null,
+      })
     }
   }
   for (const r of reservationsRaw ?? []) {
@@ -228,6 +242,9 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       dropoffLocationTypeMap.set(r.child_id, r.dropoff_location_type as 'home' | 'school')
     }
     if (r.pickup_address_id) pickupAddressIdMap.set(r.child_id, r.pickup_address_id as string)
+    reservationPickupByChild.set(r.child_id, {
+      pickup_location_type: (r.pickup_location_type ?? null) as string | null,
+    })
     if (r.dropoff_address_id) dropoffAddressIdMap.set(r.child_id, r.dropoff_address_id as string)
     if (!childrenMap.has(r.child_id)) {
       // 予約のみの児童（プランに存在しない）
@@ -235,16 +252,12 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       pickupTimeMap.set(r.child_id, toHourSlot(rPickupTime))
       dropoffTimeMap.set(r.child_id, toHourSlot(rDropoffTime))
       transportTypeMap.set(r.child_id, (r.transport_type ?? 'both') as string)
-      pickupLocationTypeMap.set(r.child_id, (r.pickup_location_type ?? 'home') as string)
     } else {
       // プランに存在する児童: 予約のtransport_typeと時間で補完・上書き
       // transport_typeが予約で明示されている場合はプランの設定より優先（当日のみ有効）
       const rTransportType = r.transport_type as string | null
       if (rTransportType && rTransportType !== transportTypeMap.get(r.child_id)) {
         transportTypeMap.set(r.child_id, rTransportType)
-      }
-      if (r.pickup_location_type) {
-        pickupLocationTypeMap.set(r.child_id, r.pickup_location_type as string)
       }
       if (pickupTimeMap.get(r.child_id) === null && rPickupTime) {
         pickupTimeMap.set(r.child_id, toHourSlot(rPickupTime))
@@ -386,7 +399,7 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       pickupTimeMap.set(a.child_id, toHourSlot(recordedPickup ?? plan?.pickup_time ?? null))
       dropoffTimeMap.set(a.child_id, toHourSlot(recordedDropoff ?? plan?.dropoff_time ?? null))
       transportTypeMap.set(a.child_id, transportType)
-      pickupLocationTypeMap.set(a.child_id, plan?.pickup_location_type ?? 'home')
+      fallbackPickupByChild.set(a.child_id, plan?.pickup_location_type ?? null)
     }
   }
 
@@ -510,7 +523,15 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
         school_id: childData?.school_id ?? null,
         schools: childData?.schools ?? null,
       },
-      pickup_location_type: (pickupLocationTypeMap.get(childId) ?? 'home') as 'home' | 'school',
+      pickup_location_type: decidePickupLocation({
+        date,
+        dayPlanType: planPickupByChild.has(childId) ? planPickupByChild.get(childId)!.dayPlanType : undefined,
+        cancelled: false,
+        overrideType: planPickupByChild.get(childId)?.overrideType,
+        daySettingType: planPickupByChild.get(childId)?.daySettingType,
+        reservation: reservationPickupByChild.get(childId) ?? null,
+        fallbackPlanType: fallbackPickupByChild.get(childId),
+      }).type,
       dropoff_location_type: dropoffLocationTypeMap.get(childId) ?? null,
       pickup_address: addressById.get(pickupAddressIdMap.get(childId) ?? '') ?? null,
       dropoff_address: addressById.get(dropoffAddressIdMap.get(childId) ?? '') ?? null,
