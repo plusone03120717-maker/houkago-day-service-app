@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge'
 import { Plus, Trash2, Power, CalendarRange, Clock, Pencil, X, Check, CalendarDays, Repeat, Car, ChevronDown, RotateCcw } from 'lucide-react'
 import { formatDate, getTodayJST } from '@/lib/utils'
 import { refreshFuturePickupLocations } from '@/app/actions/transport-location'
+import { PickupReviewDialog } from '@/components/children/pickup-review-dialog'
+import type { PickupReviewItem } from '@/lib/pickup-review'
 
 type Unit = { id: string; name: string; service_type: string }
 type Plan = {
@@ -196,17 +198,37 @@ export function ChildSchedulePlanner({
   const [dayEditState, setDayEditState] = useState<DayEditState | null>(null)
   const [daySaving, setDaySaving] = useState(false)
 
+  // お迎え場所を変えたあと、変えるかどうかを選んでもらう送迎の日
+  const [pickupReview, setPickupReview] = useState<PickupReviewItem[]>([])
+  const [pickupNote, setPickupNote] = useState<string | null>(null)
+
   /**
    * お迎え場所を変えたら、作成ずみの先の日の送迎（送迎管理の行）もそろえる。
    * 送迎の行は作ったときの場所を持つため、そのままだと前の場所が残る。
+   * 送迎管理で選んだ場所・保護者の利用連絡・特定日の上書き・土日祝の日は、
+   * 一覧を出して変えるかどうかを選んでもらう。
+   * baseChanged は計画・曜日別設定（いつもの場所）を変えたか。特定日の上書きだけなら false。
    * 失敗しても利用スケジュールの保存は済んでいるので、ここでは止めない。
    */
-  const syncPickupRows = async (before: string | null | undefined, after: string) => {
+  const syncPickupRows = async (
+    before: string | null | undefined,
+    after: string,
+    baseChanged = true
+  ) => {
     if (before === after) return
     try {
-      await refreshFuturePickupLocations(childId)
+      const res = await refreshFuturePickupLocations(childId, { baseChanged })
+      setPickupNote(res.updated > 0 ? `作成ずみの送迎 ${res.updated} 件のお迎え場所もそろえました。` : null)
+      if (res.review.length > 0) setPickupReview(res.review)
     } catch {
-      // 送迎管理の行は、送迎管理の場所の選択からも直せる
+      setPickupNote('送迎管理への反映に失敗しました。送迎管理の場所の選択から直してください。')
+    }
+  }
+
+  const closePickupReview = (changed: number) => {
+    setPickupReview([])
+    if (changed > 0) {
+      setPickupNote((prev) => `${prev ? `${prev} ` : ''}確認した日のうち ${changed} 件も変えました。`)
     }
   }
 
@@ -383,7 +405,7 @@ export function ChildSchedulePlanner({
         .single()
       setDateOverrideSaving(false)
       if (!error && data) {
-        void syncPickupRows(pickupBefore, payload.pickup_location_type)
+        void syncPickupRows(pickupBefore, payload.pickup_location_type, false)
         setDateOverrides((prev) => prev.map((o) => o.id === editingDateOverrideId ? data as unknown as DateOverride : o))
         closeDateOverrideForm()
       }
@@ -395,7 +417,7 @@ export function ChildSchedulePlanner({
         .single()
       setDateOverrideSaving(false)
       if (!error && data) {
-        void syncPickupRows(pickupBefore, payload.pickup_location_type)
+        void syncPickupRows(pickupBefore, payload.pickup_location_type, false)
         setDateOverrides((prev) => [...prev, data as unknown as DateOverride])
         closeDateOverrideForm()
       }
@@ -407,7 +429,7 @@ export function ChildSchedulePlanner({
     const { error } = await supabase.from('usage_plan_date_overrides').delete().eq('id', overrideId)
     if (!error && removed) {
       const plan = plans.find((p) => p.id === removed.plan_id)
-      void syncPickupRows(removed.pickup_location_type, plan?.pickup_location_type ?? removed.pickup_location_type)
+      void syncPickupRows(removed.pickup_location_type, plan?.pickup_location_type ?? removed.pickup_location_type, false)
     }
     setDateOverrides((prev) => prev.filter((o) => o.id !== overrideId))
     if (editingDateOverrideId === overrideId) closeDateOverrideForm()
@@ -783,6 +805,14 @@ export function ChildSchedulePlanner({
 
   return (
     <div className="space-y-4">
+      {pickupReview.length > 0 && (
+        <PickupReviewDialog childId={childId} items={pickupReview} onClose={closePickupReview} />
+      )}
+      {pickupNote && (
+        <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
+          {pickupNote}
+        </p>
+      )}
       {!canEdit && (
         <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
           利用スケジュールの編集はシステム管理者・サービス管理者のみ行えます（閲覧のみ）。

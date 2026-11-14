@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Save, Car } from 'lucide-react'
 import { AutoTextarea } from '@/components/ui/auto-textarea'
 import { applyChildPickupLocation } from '@/app/actions/transport-location'
+import { PickupReviewDialog } from '@/components/children/pickup-review-dialog'
+import type { PickupReviewItem } from '@/lib/pickup-review'
 
 type LocationType = 'home' | 'school'
 type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
@@ -53,6 +55,8 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
     initial?.pickup_location_type ?? 'home'
   )
   const [syncNote, setSyncNote] = useState<string | null>(null)
+  // 変えるかどうかを選んでもらう送迎の日（送迎管理で選んだ場所・保護者の利用連絡・特定日・土日祝）
+  const [pickupReview, setPickupReview] = useState<PickupReviewItem[]>([])
 
   const locationLabel = (type: LocationType) => {
     if (type === 'home') return childAddress ? `自宅（${childAddress}）` : '自宅'
@@ -113,11 +117,14 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
         const res = await applyChildPickupLocation(childId, savedPickupLocation, nextPickup)
         if (!res.ok) {
           setSyncNote('利用スケジュールのお迎え場所は変わっていません。利用スケジュールを編集できる人に変更を頼んでください。')
-        } else if (res.plansUpdated > 0 || res.rowsUpdated > 0) {
-          setSyncNote(
-            `利用スケジュールのお迎え場所も「${nextPickup === 'school' ? '学校' : '自宅'}」にそろえました` +
-            (res.rowsUpdated > 0 ? `（作成ずみの送迎 ${res.rowsUpdated} 件も変更）。` : '。')
-          )
+        } else {
+          if (res.plansUpdated > 0 || res.updated > 0) {
+            setSyncNote(
+              `利用スケジュールのお迎え場所も「${nextPickup === 'school' ? '学校' : '自宅'}」にそろえました` +
+              (res.updated > 0 ? `（作成ずみの送迎 ${res.updated} 件も変更）。` : '。')
+            )
+          }
+          if (res.review.length > 0) setPickupReview(res.review)
         }
       } catch {
         setSyncNote('利用スケジュールと送迎管理への反映に失敗しました。もう一度保存してください。')
@@ -246,6 +253,19 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
 
       {syncNote && (
         <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-sm text-indigo-800">{syncNote}</div>
+      )}
+
+      {pickupReview.length > 0 && (
+        <PickupReviewDialog
+          childId={childId}
+          items={pickupReview}
+          onClose={(changed) => {
+            setPickupReview([])
+            if (changed > 0) {
+              setSyncNote((prev) => `${prev ? `${prev} ` : ''}確認した日のうち ${changed} 件も変えました。`)
+            }
+          }}
+        />
       )}
 
       <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto">
