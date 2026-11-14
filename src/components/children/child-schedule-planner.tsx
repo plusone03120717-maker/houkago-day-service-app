@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Plus, Trash2, Power, CalendarRange, Clock, Pencil, X, Check, CalendarDays, Repeat, Car, ChevronDown, RotateCcw } from 'lucide-react'
 import { formatDate, getTodayJST } from '@/lib/utils'
+import { refreshFuturePickupLocations } from '@/app/actions/transport-location'
 
 type Unit = { id: string; name: string; service_type: string }
 type Plan = {
@@ -195,6 +196,20 @@ export function ChildSchedulePlanner({
   const [dayEditState, setDayEditState] = useState<DayEditState | null>(null)
   const [daySaving, setDaySaving] = useState(false)
 
+  /**
+   * お迎え場所を変えたら、作成ずみの先の日の送迎（送迎管理の行）もそろえる。
+   * 送迎の行は作ったときの場所を持つため、そのままだと前の場所が残る。
+   * 失敗しても利用スケジュールの保存は済んでいるので、ここでは止めない。
+   */
+  const syncPickupRows = async (before: string | null | undefined, after: string) => {
+    if (before === after) return
+    try {
+      await refreshFuturePickupLocations(childId)
+    } catch {
+      // 送迎管理の行は、送迎管理の場所の選択からも直せる
+    }
+  }
+
   // 新規追加フォーム状態
   const [planName, setPlanName] = useState('')
   const [addMode, setAddMode] = useState<'repeat' | 'once'>('repeat')
@@ -258,6 +273,7 @@ export function ChildSchedulePlanner({
     if (!dayEditState) return
     setDaySaving(true)
     const existing = getDaySetting(plan.id, dow)
+    const pickupBefore = existing?.pickup_location_type ?? plan.pickup_location_type
     const payload = {
       transport_type: dayEditState.transport_type,
       pickup_location_type: dayEditState.pickup_location_type,
@@ -277,6 +293,7 @@ export function ChildSchedulePlanner({
         .single()
       setDaySaving(false)
       if (!error && data) {
+        void syncPickupRows(pickupBefore, payload.pickup_location_type)
         setDaySettings((prev) => prev.map((ds) => ds.id === existing.id ? data as unknown as DaySetting : ds))
         setOpenDayKey(null)
         setDayEditState(null)
@@ -289,6 +306,7 @@ export function ChildSchedulePlanner({
         .single()
       setDaySaving(false)
       if (!error && data) {
+        void syncPickupRows(pickupBefore, payload.pickup_location_type)
         setDaySettings((prev) => [...prev, data as unknown as DaySetting])
         setOpenDayKey(null)
         setDayEditState(null)
@@ -299,7 +317,8 @@ export function ChildSchedulePlanner({
   const handleResetDaySetting = async (plan: Plan, dow: number) => {
     const existing = getDaySetting(plan.id, dow)
     if (!existing) return
-    await supabase.from('usage_plan_day_settings').delete().eq('id', existing.id)
+    const { error } = await supabase.from('usage_plan_day_settings').delete().eq('id', existing.id)
+    if (!error) void syncPickupRows(existing.pickup_location_type, plan.pickup_location_type)
     setDaySettings((prev) => prev.filter((ds) => ds.id !== existing.id))
     setOpenDayKey(null)
     setDayEditState(null)
@@ -338,6 +357,11 @@ export function ChildSchedulePlanner({
   const handleSaveDateOverride = async (planId: string) => {
     if (!dateOverrideEditState || !dateOverrideDate) return
     setDateOverrideSaving(true)
+    const plan = plans.find((p) => p.id === planId)
+    const editingOverride = editingDateOverrideId
+      ? dateOverrides.find((o) => o.id === editingDateOverrideId)
+      : undefined
+    const pickupBefore = editingOverride?.pickup_location_type ?? plan?.pickup_location_type
     const payload = {
       date: dateOverrideDate,
       transport_type: dateOverrideEditState.transport_type,
@@ -359,6 +383,7 @@ export function ChildSchedulePlanner({
         .single()
       setDateOverrideSaving(false)
       if (!error && data) {
+        void syncPickupRows(pickupBefore, payload.pickup_location_type)
         setDateOverrides((prev) => prev.map((o) => o.id === editingDateOverrideId ? data as unknown as DateOverride : o))
         closeDateOverrideForm()
       }
@@ -370,6 +395,7 @@ export function ChildSchedulePlanner({
         .single()
       setDateOverrideSaving(false)
       if (!error && data) {
+        void syncPickupRows(pickupBefore, payload.pickup_location_type)
         setDateOverrides((prev) => [...prev, data as unknown as DateOverride])
         closeDateOverrideForm()
       }
@@ -377,7 +403,12 @@ export function ChildSchedulePlanner({
   }
 
   const handleDeleteDateOverride = async (overrideId: string) => {
-    await supabase.from('usage_plan_date_overrides').delete().eq('id', overrideId)
+    const removed = dateOverrides.find((o) => o.id === overrideId)
+    const { error } = await supabase.from('usage_plan_date_overrides').delete().eq('id', overrideId)
+    if (!error && removed) {
+      const plan = plans.find((p) => p.id === removed.plan_id)
+      void syncPickupRows(removed.pickup_location_type, plan?.pickup_location_type ?? removed.pickup_location_type)
+    }
     setDateOverrides((prev) => prev.filter((o) => o.id !== overrideId))
     if (editingDateOverrideId === overrideId) closeDateOverrideForm()
   }
@@ -493,6 +524,7 @@ export function ChildSchedulePlanner({
     setEditSaving(false)
     if (error) return
     if (data) {
+      await syncPickupRows(oldPlan?.pickup_location_type, editState.pickup_location_type)
       setPlans((prev) => prev.map((p) => p.id === planId ? data as unknown as Plan : p))
       setEditingId(null)
       setEditState(null)
