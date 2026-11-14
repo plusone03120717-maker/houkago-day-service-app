@@ -72,13 +72,19 @@ const PARENT_TRANSPORT_LABELS: Record<ParentContact['transport_type'], string> =
   dropoff_only: '送りのみ',
 }
 
+/** 保護者が利用を申請して、まだ承認していない日 */
+function isPendingRequest(c: ParentContact | undefined) {
+  return !!c && c.status === 'attending' && c.approval_status === 'pending'
+}
+
 /**
  * 保護者連絡の区分ごとの色・ラベル。
  * 承認前はまだ区分が決まっていないので「利用」とだけ出す。
  */
 function parentContactMeta(c: ParentContact) {
   if (c.status === 'absent') return { color: 'bg-red-400', label: 'お休み', text: 'text-red-700', bg: 'bg-red-50', border: 'border-red-100' }
-  if (c.approval_status !== 'approved') return { color: 'bg-indigo-400', label: '利用', text: 'text-indigo-700', bg: 'bg-indigo-50', border: 'border-indigo-100' }
+  // 承認待ちは目立つ琥珀色（スケジュールの藍色の点と見分けがつくように）
+  if (c.approval_status !== 'approved') return { color: 'bg-amber-400', label: '利用', text: 'text-amber-800', bg: 'bg-amber-50', border: 'border-amber-200' }
   const type = resolveAssignment(c).serviceType
   if (type === 'daytime_support') return { color: 'bg-orange-400', label: '日中一時', text: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-100' }
   if (type === 'both') return { color: 'bg-purple-400', label: '放デイ＋日中一時', text: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-100' }
@@ -607,6 +613,7 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
             const isPlanned = plannedSet.has(date) && !att
             const isCancelledPlan = !!cancelledPlanDates[date] && !att && !plannedSet.has(date)
             const contact = parentContactMap[date]
+            const pendingRequest = isPendingRequest(contact)
 
             return (
               <button
@@ -616,14 +623,15 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                 className={cn(
                   'relative h-12 border-b border-r border-gray-50 p-1 flex flex-col items-center transition-colors hover:bg-indigo-50',
                   getJapaneseHolidayName(date) && !isSelected && 'bg-red-50/60',
+                  pendingRequest && !isSelected && 'bg-amber-50',
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
                 )}
               >
                 {/* 保護者からの利用連絡（右上の四角マーカー） */}
                 {contact && (
                   <span
-                    className={cn('absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-sm', parentContactMeta(contact).color)}
-                    title={`保護者連絡: ${parentContactMeta(contact).label}`}
+                    className={cn('absolute top-0.5 right-0.5 w-2 h-2 rounded-sm', parentContactMeta(contact).color)}
+                    title={pendingRequest ? '保護者の予約申請（承認待ち）' : `保護者連絡: ${parentContactMeta(contact).label}`}
                   />
                 )}
                 <div
@@ -677,10 +685,16 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
       <div className="flex gap-4 text-xs text-gray-500 flex-wrap items-center">
         <span className="text-gray-400">保護者連絡（右上の■）:</span>
         <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-sm bg-amber-400" />承認待ち
+        </div>
+        <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-sm bg-green-500" />放デイ
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-sm bg-orange-400" />日中一時
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-sm bg-purple-400" />放デイ＋日中一時
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-sm bg-red-400" />お休み
