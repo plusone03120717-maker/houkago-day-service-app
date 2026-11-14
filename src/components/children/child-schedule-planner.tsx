@@ -1342,8 +1342,9 @@ export function ChildSchedulePlanner({
                                   setDateOverrideEditState((p) => p ? {
                                     ...p,
                                     transport_type: ds?.transport_type ?? plan.transport_type,
-                                    pickup_location_type: ds?.pickup_location_type ?? plan.pickup_location_type,
-                                    dropoff_location_type: ds?.dropoff_location_type ?? plan.dropoff_location_type,
+                                    // 場所は土日・祝日なら自宅（送迎を作るときの決め方と同じ）
+                                    pickup_location_type: basePickupOn(plan, v) ?? plan.pickup_location_type,
+                                    dropoff_location_type: baseDropoffOn(plan, v) ?? plan.dropoff_location_type,
                                     pickup_time: formatTime(ds?.pickup_time ?? plan.pickup_time),
                                     dropoff_time: formatTime(ds?.dropoff_time ?? plan.dropoff_time),
                                     service_start_time: formatTime(ds?.service_start_time ?? plan.service_start_time),
