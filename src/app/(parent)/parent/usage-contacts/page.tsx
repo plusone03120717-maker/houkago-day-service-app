@@ -15,6 +15,7 @@ import {
   type UsageSubmitResult,
 } from '@/components/parent/usage-contact-calendar'
 import type { ChildTransportPlaces } from '@/lib/transport-place'
+import { ScheduleWeekConfirmCard } from '@/components/parent/schedule-week-confirm-card'
 
 /**
  * 保護者ポータルの「利用連絡」。
@@ -166,6 +167,8 @@ export default function ParentUsageContactsPage() {
           )}
         </p>
       </div>
+
+      <ScheduleWeekConfirmCard showContactLink={false} />
 
       <UsageContactCalendar
         childrenList={childrenList}

@@ -3,6 +3,10 @@ import { UsageCalendar, type UsageEntry } from '@/components/usage/usage-calenda
 import { buildUsageRoster, eachDate } from '@/lib/usage-roster'
 import { ALL_UNITS } from '@/lib/attendance-board-data'
 import { getStaffAccess } from '@/lib/require-admin'
+import { ScheduleWeekPanel } from '@/components/usage/schedule-week-panel'
+import { loadStaffWeekOverview, type StaffWeekOverview } from '@/lib/schedule-week-confirm-db'
+import { addDays, isWeekStart, weekStartOf } from '@/lib/schedule-week-confirm'
+import { getTodayJST } from '@/lib/utils'
 
 type Unit = { id: string; name: string; capacity: number }
 type Reservation = {
@@ -35,10 +39,19 @@ type ChildOption = { id: string; name: string }
 export default async function UsagePage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; month?: string; unit?: string }>
+  searchParams: Promise<{ year?: string; month?: string; unit?: string; week?: string }>
 }) {
   const params = await searchParams
   const supabase = await createClient()
+
+  // 保護者への予定のお知らせ（週ごと）。既定は来週（金曜に翌週の予定を入れて知らせるため）。
+  // 月の読みこみと並べて走らせる
+  const weekStart =
+    params.week && isWeekStart(params.week) ? params.week : addDays(weekStartOf(getTodayJST()), 7)
+  const weekOverviewPromise: Promise<StaffWeekOverview> = loadStaffWeekOverview(weekStart).catch((err) => {
+    console.error('[usage] 週のお知らせを読みこめませんでした', err)
+    return { ready: false, reason: 'error' }
+  })
 
   const now = new Date()
   const year = parseInt(params.year ?? String(now.getFullYear()))
@@ -179,12 +192,31 @@ export default async function UsagePage({
   // 確定・欠席・削除・追加はシステム管理者だけ（施設長・スタッフは閲覧のみ）
   const canEdit = (await getStaffAccess())?.canEditOperations ?? false
 
+  const weekHref = (w: string) => {
+    const q = new URLSearchParams()
+    if (params.year) q.set('year', params.year)
+    if (params.month) q.set('month', params.month)
+    if (params.unit) q.set('unit', params.unit)
+    q.set('week', w)
+    return `/usage?${q.toString()}`
+  }
+  // 読みこみに失敗しても利用状況の画面は止めない（欄に「読みこめませんでした」と出す）
+  const weekOverview: StaffWeekOverview = await weekOverviewPromise
+
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">利用状況</h1>
         <p className="text-sm text-gray-500 mt-0.5">予約・利用申し込みの確認・承認</p>
       </div>
+
+      <ScheduleWeekPanel
+        overview={weekOverview}
+        weekStart={weekStart}
+        prevHref={weekHref(addDays(weekStart, -7))}
+        nextHref={weekHref(addDays(weekStart, 7))}
+        canEdit={canEdit}
+      />
 
       <UsageCalendar
         year={year}
