@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Save, Car } from 'lucide-react'
 import { AutoTextarea } from '@/components/ui/auto-textarea'
+import { applyChildPickupLocation } from '@/app/actions/transport-location'
 
 type LocationType = 'home' | 'school'
 type TransportType = 'none' | 'pickup_only' | 'dropoff_only' | 'both'
@@ -47,6 +48,11 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 最後に保存したお迎え場所。変えたときだけ利用スケジュールと送迎管理にも広げる
+  const [savedPickupLocation, setSavedPickupLocation] = useState<LocationType>(
+    initial?.pickup_location_type ?? 'home'
+  )
+  const [syncNote, setSyncNote] = useState<string | null>(null)
 
   const locationLabel = (type: LocationType) => {
     if (type === 'home') return childAddress ? `自宅（${childAddress}）` : '自宅'
@@ -62,6 +68,7 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
     setSaving(true)
     setSaved(false)
     setError(null)
+    setSyncNote(null)
 
     const payload = {
       child_id: childId,
@@ -92,13 +99,37 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
       }
     }
 
-    setSaving(false)
     if (err) {
+      setSaving(false)
       setError(err.message)
-    } else {
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
+      return
     }
+
+    // 送迎管理が見るのは利用スケジュールのお迎え場所。送迎設定だけ変えても
+    // 送迎管理は前の場所のままだったので、利用スケジュールと先の日の送迎もそろえる
+    const nextPickup = settings.pickup_location_type
+    if (nextPickup !== savedPickupLocation) {
+      try {
+        const res = await applyChildPickupLocation(childId, savedPickupLocation, nextPickup)
+        if (!res.ok) {
+          setSyncNote('利用スケジュールのお迎え場所は変わっていません。利用スケジュールを編集できる人に変更を頼んでください。')
+        } else if (res.plansUpdated > 0 || res.rowsUpdated > 0) {
+          setSyncNote(
+            `利用スケジュールのお迎え場所も「${nextPickup === 'school' ? '学校' : '自宅'}」にそろえました` +
+            (res.rowsUpdated > 0 ? `（作成ずみの送迎 ${res.rowsUpdated} 件も変更）。` : '。')
+          )
+        }
+      } catch {
+        setSyncNote('利用スケジュールと送迎管理への反映に失敗しました。もう一度保存してください。')
+        setSaving(false)
+        return
+      }
+      setSavedPickupLocation(nextPickup)
+    }
+
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
   }
 
   return (
@@ -211,6 +242,10 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
 
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
+      )}
+
+      {syncNote && (
+        <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-sm text-indigo-800">{syncNote}</div>
       )}
 
       <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto">
