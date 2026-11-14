@@ -1046,7 +1046,7 @@ function TransportRowItem({
       </div>
 
       {/* 送迎場所 */}
-      <label className="flex items-center gap-1.5 md:gap-0 min-w-0">
+      <label className="relative flex items-center gap-1.5 md:gap-0 min-w-0">
         <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">送迎場所</span>
         <select
           value={head.location ?? ''}
@@ -1064,7 +1064,7 @@ function TransportRowItem({
         {head.locationTag && (
           <span
             className={cn(
-              'ml-1 shrink-0 rounded px-1 py-0.5 text-[10px] font-medium',
+              'pointer-events-none absolute -top-2 right-1 rounded px-1 text-[9px] leading-4 font-medium shadow-sm',
               head.locationTag === 'request' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'
             )}
             title={head.locationTag === 'request'
