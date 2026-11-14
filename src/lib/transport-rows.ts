@@ -119,11 +119,14 @@ function locationTagOf(
   homeAddress: string | null,
   schoolName: string | null
 ): 'request' | 'manual' | null {
-  const requested = direction === 'pickup'
-    ? reservation?.pickup_location_type || reservation?.pickup_address_id
-    : reservation?.dropoff_location_type || reservation?.dropoff_address_id
-  if (requested) return 'request'
-  if (location && location !== homeAddress && location !== schoolName) return 'manual'
+  const type = direction === 'pickup' ? reservation?.pickup_location_type : reservation?.dropoff_location_type
+  const addressId = direction === 'pickup' ? reservation?.pickup_address_id : reservation?.dropoff_address_id
+  const isAutoValue = location == null || location === homeAddress || location === schoolName
+  // 保護者が指定した場所のままの行だけ「保護者の指定」。送迎管理で選び直した行は「手直し」
+  if (type === 'school' && location === schoolName) return 'request'
+  if (addressId && !isAutoValue) return 'request'
+  if (type === 'home' && !addressId && location === homeAddress) return 'request'
+  if (!isAutoValue) return 'manual'
   return null
 }
 

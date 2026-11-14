@@ -2,7 +2,13 @@ import { createClient } from '@/lib/supabase/server'
 import { getTodayJST } from '@/lib/utils'
 import { RecordsListBoard } from '@/components/records/records-list-board'
 import { getStaffAccess } from '@/lib/require-admin'
-import { comparePlanPriority } from '@/lib/schedule-defaults'
+import {
+  comparePlanPriority,
+  resolveScheduleDefaults,
+  type OverrideRow,
+  type PlanRow,
+  type ReservationRow,
+} from '@/lib/schedule-defaults'
 
 type AttendedChild = {
   id: string
@@ -248,41 +254,43 @@ export default async function RecordsPage({
     .sort(comparePlanPriority)
   const planIds = plansForDate.map((p) => p.id)
 
-  const [{ data: daySettingsRaw }, { data: overridesRaw }] = planIds.length > 0
-    ? await Promise.all([
-        supabase
+  const [{ data: daySettingsRaw }, { data: overridesRaw }, { data: reservationsRaw }] = await Promise.all([
+    planIds.length > 0
+      ? supabase
           .from('usage_plan_day_settings')
           .select('plan_id, day_of_week, transport_type, pickup_time, dropoff_time, service_start_time, service_end_time')
           .in('plan_id', planIds)
-          .eq('day_of_week', dow),
-        supabase
+          .eq('day_of_week', dow)
+      : Promise.resolve({ data: [] }),
+    planIds.length > 0
+      ? supabase
           .from('usage_plan_date_overrides')
           .select('plan_id, date, transport_type, pickup_time, dropoff_time, service_start_time, service_end_time, is_cancelled')
           .in('plan_id', planIds)
-          .eq('date', targetDate),
-      ])
-    : [{ data: [] }, { data: [] }]
+          .eq('date', targetDate)
+      : Promise.resolve({ data: [] }),
+    // その日の予約（保護者の利用連絡で決まった区分・時刻）。出席管理・送迎管理と同じ優先順位にする
+    supabase
+      .from('usage_reservations')
+      .select('child_id, unit_id, transport_type, pickup_time, dropoff_time')
+      .eq('date', targetDate)
+      .in('status', ['confirmed', 'reserved']),
+  ])
 
   const daySettings = (daySettingsRaw ?? []) as unknown as DaySettingRow[]
   const overrides = (overridesRaw ?? []) as unknown as DateOverrideRow[]
-  const daySettingByPlanId = Object.fromEntries(daySettings.map((d) => [d.plan_id, d]))
-  const overrideByPlanId = Object.fromEntries(
-    overrides.filter((o) => !o.is_cancelled).map((o) => [o.plan_id, o])
-  )
+  const reservations = (reservationsRaw ?? []) as unknown as (ReservationRow & { unit_id: string })[]
 
-  const resolveDefaults = (plan: UsagePlanRow): ScheduleDefaults => {
-    const ov = overrideByPlanId[plan.id]
-    const ds = daySettingByPlanId[plan.id]
-    return {
-      transportType: ov?.transport_type ?? ds?.transport_type ?? plan.transport_type,
-      pickupTime: ov?.pickup_time ?? ds?.pickup_time ?? plan.pickup_time,
-      dropoffTime: ov?.dropoff_time ?? ds?.dropoff_time ?? plan.dropoff_time,
-      serviceStartTime: ov?.service_start_time ?? ds?.service_start_time ?? plan.service_start_time,
-      serviceEndTime: ov?.service_end_time ?? ds?.service_end_time ?? plan.service_end_time,
-      daytimeSupport: plan.daytime_support ?? false,
-      daytimeSupportStartTime: plan.daytime_support_start_time,
-      daytimeSupportEndTime: plan.daytime_support_end_time,
-    }
+  // 優先順位は送迎管理・出席管理と同じ関数で決める（@/lib/schedule-defaults）：
+  // 予約（保護者の利用連絡） > 特定日の変更 > 曜日別設定 > 計画。キャンセルの印も見分ける
+  const resolveDefaults = (plan: UsagePlanRow): ScheduleDefaults | undefined => {
+    const reservation = reservations.find((r) => r.child_id === plan.child_id && r.unit_id === plan.unit_id)
+    return resolveScheduleDefaults(
+      [plan as unknown as PlanRow],
+      daySettings.filter((d) => d.plan_id === plan.id) as unknown as OverrideRow[],
+      overrides.filter((o) => o.plan_id === plan.id) as unknown as OverrideRow[],
+      reservation ? [reservation] : []
+    )[plan.child_id]
   }
 
   // 出席行ごとにプランを解決（ユニット一致を優先）
@@ -291,7 +299,8 @@ export default async function RecordsPage({
     const plan =
       plansForDate.find((p) => p.child_id === a.child_id && p.unit_id === a.unit_id) ??
       plansForDate.find((p) => p.child_id === a.child_id)
-    if (plan) scheduleDefaultsByAttendanceId[a.id] = resolveDefaults(plan)
+    const defaults = plan ? resolveDefaults(plan) : undefined
+    if (defaults) scheduleDefaultsByAttendanceId[a.id] = defaults
   }
 
   // ユニット（放デイ・児発など）で分けず、全員を1つの一覧にして名前順に並べる

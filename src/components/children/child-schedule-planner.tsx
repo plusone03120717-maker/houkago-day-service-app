@@ -235,7 +235,9 @@ export function ChildSchedulePlanner({
         updated += res.updated
         for (const item of res.review) review.set(item.id, item)
       }
-      setPickupNote(updated > 0 ? `作成ずみの送迎 ${updated} 件のお迎え場所もそろえました。` : null)
+      if (updated > 0) {
+        setPickupNote((prev) => `${prev ? `${prev} ` : ''}作成ずみの送迎 ${updated} 件のお迎え場所もそろえました。`)
+      }
       if (review.size > 0) {
         setPickupReview([...review.values()].sort((a, b) => a.date.localeCompare(b.date)))
       }
@@ -427,14 +429,17 @@ export function ChildSchedulePlanner({
     setOpenDateOverridePlanId(plan.id)
     setEditingDateOverrideId(override?.id ?? null)
     setDateOverrideDate(override?.date ?? '')
+    // 新しく作るときの初期値は、その日に効いている値（曜日別設定 → 計画）。
+    // 計画の値を写すと、時刻だけ変えたいのに曜日別の場所（例：火曜は送り：学校）を上書きして固めてしまう
+    const ds = override?.date ? getDaySetting(plan.id, new Date(`${override.date}T00:00:00`).getDay()) : null
     setDateOverrideEditState({
-      transport_type: override?.transport_type ?? plan.transport_type,
-      pickup_location_type: override?.pickup_location_type ?? plan.pickup_location_type,
-      dropoff_location_type: override?.dropoff_location_type ?? plan.dropoff_location_type,
-      pickup_time: formatTime(override?.pickup_time ?? plan.pickup_time),
-      dropoff_time: formatTime(override?.dropoff_time ?? plan.dropoff_time),
-      service_start_time: formatTime(override?.service_start_time ?? plan.service_start_time),
-      service_end_time: formatTime(override?.service_end_time ?? plan.service_end_time),
+      transport_type: override?.transport_type ?? ds?.transport_type ?? plan.transport_type,
+      pickup_location_type: override?.pickup_location_type ?? ds?.pickup_location_type ?? plan.pickup_location_type,
+      dropoff_location_type: override?.dropoff_location_type ?? ds?.dropoff_location_type ?? plan.dropoff_location_type,
+      pickup_time: formatTime(override?.pickup_time ?? ds?.pickup_time ?? plan.pickup_time),
+      dropoff_time: formatTime(override?.dropoff_time ?? ds?.dropoff_time ?? plan.dropoff_time),
+      service_start_time: formatTime(override?.service_start_time ?? ds?.service_start_time ?? plan.service_start_time),
+      service_end_time: formatTime(override?.service_end_time ?? ds?.service_end_time ?? plan.service_end_time),
     })
     setOpenDayKey(null)
     setDayEditState(null)
@@ -1328,7 +1333,24 @@ export function ChildSchedulePlanner({
                           <div>
                             <label className="text-xs font-medium text-gray-700 mb-1 block">対象日</label>
                             <input type="date" value={dateOverrideDate}
-                              onChange={(e) => setDateOverrideDate(e.target.value)}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setDateOverrideDate(v)
+                                // 新しく作るときは、選んだ日に効いている値（曜日別設定 → 計画）を初期値にする
+                                if (!editingDateOverrideId && v) {
+                                  const ds = getDaySetting(plan.id, new Date(`${v}T00:00:00`).getDay())
+                                  setDateOverrideEditState((p) => p ? {
+                                    ...p,
+                                    transport_type: ds?.transport_type ?? plan.transport_type,
+                                    pickup_location_type: ds?.pickup_location_type ?? plan.pickup_location_type,
+                                    dropoff_location_type: ds?.dropoff_location_type ?? plan.dropoff_location_type,
+                                    pickup_time: formatTime(ds?.pickup_time ?? plan.pickup_time),
+                                    dropoff_time: formatTime(ds?.dropoff_time ?? plan.dropoff_time),
+                                    service_start_time: formatTime(ds?.service_start_time ?? plan.service_start_time),
+                                    service_end_time: formatTime(ds?.service_end_time ?? plan.service_end_time),
+                                  } : p)
+                                }
+                              }}
                               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
                           </div>
 

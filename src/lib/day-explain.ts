@@ -225,7 +225,8 @@ export function explainDay(input: {
     cancelled,
     overrideType: liveOverride?.pickup_location_type,
     daySettingType: daySetting?.pickup_location_type,
-    fallbackPlanType: undefined,
+    // 計画の曜日以外に出席記録だけで足した日は、計画の場所（曜日は問わない・送迎管理と同じ）
+    fallbackPlanType: plan ? undefined : pickPrimaryPlanPerChild(input.plans.filter((p) => p.is_active))[0]?.pickup_location_type,
   }
   const placeItem = (label: string, d: PickupDecision, addressId: string | null | undefined, hasDaySetting: boolean) => {
     const value = placeLabel(places, toPlaceValue(d.type, d.type === 'home' ? addressId : null))
@@ -259,6 +260,7 @@ export function explainDay(input: {
         dayPlanType: plan && !cancelled ? plan.dropoff_location_type : undefined,
         overrideType: liveOverride?.dropoff_location_type,
         daySettingType: daySetting?.dropoff_location_type,
+        fallbackPlanType: plan ? undefined : pickPrimaryPlanPerChild(input.plans.filter((p) => p.is_active))[0]?.dropoff_location_type,
         reservation: reservation ? { dropoff_location_type: liveReservation?.dropoff_location_type ?? null } : null,
       }),
       liveReservation?.dropoff_address_id,
