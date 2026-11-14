@@ -80,7 +80,7 @@ export default async function TransportPage({
   const reservationsPromise = hasTargets
     ? supabase
         .from('usage_reservations')
-        .select('child_id, unit_id, pickup_time, dropoff_time')
+        .select('child_id, unit_id, pickup_time, dropoff_time, pickup_location_type, dropoff_location_type, pickup_address_id, dropoff_address_id')
         .in('unit_id', targetUnitIds)
         .eq('date', today)
         .in('status', ['confirmed', 'reserved'])

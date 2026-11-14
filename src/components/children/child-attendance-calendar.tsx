@@ -13,6 +13,19 @@ import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanes
 import { resolveAssignment, type ServiceAssignmentType } from '@/lib/parent-contact-service'
 import { placeLabel, toPlaceValue, type TransportPlace, type LocationType } from '@/lib/transport-place'
 import { keepAssignment } from '@/components/transport/transport-daytime-panel'
+import { EXPLAIN_SOURCE_LABELS, type DayExplain, type ExplainSource } from '@/lib/day-explain'
+
+/** 「この日はなぜこうなっているか」の元の色（いつもの予定は目立たせない） */
+const EXPLAIN_SOURCE_STYLE: Record<ExplainSource, string> = {
+  plan: 'bg-gray-100 text-gray-600',
+  day: 'bg-gray-100 text-gray-600',
+  override: 'bg-sky-100 text-sky-800',
+  request: 'bg-amber-100 text-amber-800',
+  record: 'bg-green-100 text-green-800',
+  holiday: 'bg-rose-50 text-rose-700',
+  cancel: 'bg-gray-200 text-gray-700',
+  none: 'bg-gray-50 text-gray-400',
+}
 
 export type AttendanceRecord = {
   id: string
@@ -108,6 +121,11 @@ interface Props {
   plannedDateServiceStartTime?: Record<string, string | null>
   plannedDateServiceEndTime?: Record<string, string | null>
   cancelledPlanDates?: Record<string, { planId: string; overrideId: string; unitId: string }>
+  /**
+   * 日ごとの「この日はなぜこうなっているか」（どの予定が効いているか・@/lib/day-explain）。
+   * いつもの予定と違う日はマスに「！」を出し、日を押すと項目ごとの元を出す
+   */
+  dayExplain?: Record<string, DayExplain>
   basePath?: string
   staffMembers?: Array<{ id: string; name: string }>
   vehicles?: Array<{ id: string; name: string }>
@@ -150,7 +168,7 @@ function TimeField({
   )
 }
 
-export function ChildAttendanceCalendar({ year, month, childId, attendances, parentContacts = [], transportPlaces = [], units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, basePath, staffMembers = [], vehicles = [], canCancelPlans = true, canAssignDrivers = true, canEditAttendance = true }: Props) {
+export function ChildAttendanceCalendar({ year, month, childId, attendances, parentContacts = [], transportPlaces = [], units = [], plannedDates = [], plannedDateUnitId = {}, plannedDatePlanId = {}, plannedDatePickupTime = {}, plannedDateDropoffTime = {}, plannedDateServiceStartTime = {}, plannedDateServiceEndTime = {}, cancelledPlanDates = {}, dayExplain = {}, basePath, staffMembers = [], vehicles = [], canCancelPlans = true, canAssignDrivers = true, canEditAttendance = true }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -627,6 +645,15 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
                   isSelected && 'bg-indigo-100 ring-1 ring-inset ring-indigo-400'
                 )}
               >
+                {/* いつもの予定と違う日（左上の！） */}
+                {dayExplain[date]?.hasException && (
+                  <span
+                    className="absolute top-0 left-0.5 text-[10px] font-bold leading-none text-amber-600"
+                    title="いつもの予定と違う日（押すと理由が出ます）"
+                  >
+                    !
+                  </span>
+                )}
                 {/* 保護者からの利用連絡（右上の四角マーカー） */}
                 {contact && (
                   <span
@@ -675,6 +702,9 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-full bg-gray-300" />キャンセル済み予定
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] font-bold text-amber-600">!</span>いつもの予定と違う日
         </div>
         <div className="flex items-center gap-1.5 text-gray-400">
           Ctrl+クリックで複数選択
@@ -878,6 +908,36 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
               <span className="text-xs text-gray-400">記録なし（新規追加）</span>
             )}
           </div>
+
+          {/* この日はなぜこうなっているか（どの予定が効いているか） */}
+          {dayExplain[selectedDate] && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-gray-700">この日の予定（どれが効いているか）</span>
+                <span className="text-[10px] text-gray-400">
+                  優先：出席の記録 ＞ 保護者の利用連絡 ＞ 特定日の変更 ＞ いつもの予定
+                </span>
+              </div>
+              <dl className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1.5 text-xs">
+                {dayExplain[selectedDate].items.map((item) => (
+                  <div key={item.label} className="contents">
+                    <dt className="text-gray-500 pt-0.5">{item.label}</dt>
+                    <dd className="flex flex-wrap items-center gap-1.5 min-w-0">
+                      <span className="font-medium text-gray-900 break-words">{item.value}</span>
+                      <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', EXPLAIN_SOURCE_STYLE[item.source])}>
+                        {EXPLAIN_SOURCE_LABELS[item.source]}
+                      </span>
+                      {item.usual && (
+                        <span className="text-[10px] text-gray-400 line-through decoration-gray-300">
+                          いつも：{item.usual}
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
 
           {/* 保護者からの利用連絡 */}
           {(() => {

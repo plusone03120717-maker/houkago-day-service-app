@@ -16,7 +16,7 @@ import {
   Scissors,
   Merge,
 } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { ALL_UNITS } from '@/lib/attendance-board-data'
 import { rankDrivers, type DriverScores } from '@/lib/driver-ranking'
 import {
@@ -58,6 +58,12 @@ export type TransportRow = {
   isManualGroup: boolean
   schoolName: string | null
   homeAddress: string | null
+  /**
+   * 送迎場所がどこで決まったか（2026-11-14 依頼主：どれが効いているかを見えるように）。
+   * request＝保護者の利用連絡で指定された日、manual＝送迎管理で自宅・学校以外を選んだ日。
+   * いつもの予定どおりなら null
+   */
+  locationTag?: 'request' | 'manual' | null
   /** これまでの記録からの、ドライバーごとの「よく入る」点数（選択肢の並び順に使う） */
   driverScores?: DriverScores
 }
@@ -1055,6 +1061,19 @@ function TransportRowItem({
             </option>
           ))}
         </select>
+        {head.locationTag && (
+          <span
+            className={cn(
+              'ml-1 shrink-0 rounded px-1 py-0.5 text-[10px] font-medium',
+              head.locationTag === 'request' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'
+            )}
+            title={head.locationTag === 'request'
+              ? '保護者の利用連絡でこの日の場所が指定されています（いつもの予定より優先）'
+              : '送迎管理でこの日だけ選んだ場所です'}
+          >
+            {head.locationTag === 'request' ? '保護者の指定' : '手直し'}
+          </span>
+        )}
       </label>
 
       {/* 送迎時間 */}
