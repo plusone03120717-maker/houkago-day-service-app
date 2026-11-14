@@ -257,6 +257,7 @@ export function ChildTransportSettingsForm({ childId, childAddress, schoolName, 
 
       {pickupReview.length > 0 && (
         <PickupReviewDialog
+          key={pickupReview.map((i) => i.id).join(',')}
           childId={childId}
           items={pickupReview}
           onClose={(changed) => {

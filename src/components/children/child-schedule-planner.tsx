@@ -217,7 +217,7 @@ export function ChildSchedulePlanner({
   ) => {
     if (before === after) return
     try {
-      const res = await refreshFuturePickupLocations(childId, { baseChanged })
+      const res = await refreshFuturePickupLocations(childId, { baseChanged, from: before })
       setPickupNote(res.updated > 0 ? `作成ずみの送迎 ${res.updated} 件のお迎え場所もそろえました。` : null)
       if (res.review.length > 0) setPickupReview(res.review)
     } catch {
@@ -383,7 +383,10 @@ export function ChildSchedulePlanner({
     const editingOverride = editingDateOverrideId
       ? dateOverrides.find((o) => o.id === editingDateOverrideId)
       : undefined
-    const pickupBefore = editingOverride?.pickup_location_type ?? plan?.pickup_location_type
+    const overrideDow = dateOverrideDate ? new Date(`${dateOverrideDate}T00:00:00`).getDay() : -1
+    const pickupBefore = editingOverride?.pickup_location_type
+      ?? (plan ? getDaySetting(plan.id, overrideDow)?.pickup_location_type : undefined)
+      ?? plan?.pickup_location_type
     const payload = {
       date: dateOverrideDate,
       transport_type: dateOverrideEditState.transport_type,
@@ -429,7 +432,11 @@ export function ChildSchedulePlanner({
     const { error } = await supabase.from('usage_plan_date_overrides').delete().eq('id', overrideId)
     if (!error && removed) {
       const plan = plans.find((p) => p.id === removed.plan_id)
-      void syncPickupRows(removed.pickup_location_type, plan?.pickup_location_type ?? removed.pickup_location_type, false)
+      const removedDow = new Date(`${removed.date}T00:00:00`).getDay()
+      const after = (plan ? getDaySetting(plan.id, removedDow)?.pickup_location_type : undefined)
+        ?? plan?.pickup_location_type
+        ?? removed.pickup_location_type
+      void syncPickupRows(removed.pickup_location_type, after, false)
     }
     setDateOverrides((prev) => prev.filter((o) => o.id !== overrideId))
     if (editingDateOverrideId === overrideId) closeDateOverrideForm()
@@ -806,7 +813,12 @@ export function ChildSchedulePlanner({
   return (
     <div className="space-y-4">
       {pickupReview.length > 0 && (
-        <PickupReviewDialog childId={childId} items={pickupReview} onClose={closePickupReview} />
+        <PickupReviewDialog
+          key={pickupReview.map((i) => i.id).join(',')}
+          childId={childId}
+          items={pickupReview}
+          onClose={closePickupReview}
+        />
       )}
       {pickupNote && (
         <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
