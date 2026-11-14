@@ -344,11 +344,12 @@ export async function applyPickupReview(childId: string, rowIds: string[]): Prom
     ...plan.auto.map((a) => ({ ...a, date: '', from: null, reason: 'manual' as const, recommended: true })),
   ].filter((r) => chosen.has(r.id))
 
-  const { data: childRow } = await supabase
+  const { data: childRow, error: childError } = await supabase
     .from('children')
     .select('schools(name)')
     .eq('id', childId)
     .maybeSingle()
+  if (childError) throw new Error(`児童の読み取りに失敗しました: ${childError.message}`)
   const schoolValue = (childRow as unknown as { schools: { name: string } | null } | null)?.schools?.name ?? null
   const typeOf = (to: string): PickupLocationType => (to === schoolValue ? 'school' : 'home')
 

@@ -350,16 +350,23 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       pickup_time: string | null
       dropoff_time: string | null
     }>()
-    if (needPlan.length > 0) {
+    // お迎え場所は、記録に時刻があってもなくても、同じユニットの計画（曜日は問わない）の場所を使う。
+    // 作成ずみの行をそろえる処理（transport-location.ts）と同じ決め方にするため
+    // （2026-11-14 プログラマー担当の点検）。送迎区分・時刻に計画を使うのは、時刻が無い児童だけ。
+    const locationPlanByChild = new Map<string, string | null>()
+    {
+      const needPlanSet = new Set(needPlan)
       const { data: ownPlansRaw } = await supabase
         .from('usage_plans')
         .select('id, child_id, start_date, transport_type, pickup_location_type, pickup_time, dropoff_time')
         .eq('unit_id', unitId)
         .eq('is_active', true)
-        .in('child_id', needPlan)
+        .in('child_id', attendanceOnly.map((a) => a.child_id))
       for (const pl of pickPrimaryPlanPerChild(
         (ownPlansRaw ?? []) as unknown as { id: string; child_id: string; start_date: string }[]
       ) as unknown as NonNullable<typeof ownPlansRaw>) {
+        locationPlanByChild.set(pl.child_id as string, pl.pickup_location_type as string | null)
+        if (!needPlanSet.has(pl.child_id as string)) continue
         planByChild.set(pl.child_id as string, {
           transport_type: pl.transport_type as string | null,
           pickup_location_type: pl.pickup_location_type as string | null,
@@ -399,7 +406,7 @@ export async function autoCreateTransportSchedules(unitId: string, date: string)
       pickupTimeMap.set(a.child_id, toHourSlot(recordedPickup ?? plan?.pickup_time ?? null))
       dropoffTimeMap.set(a.child_id, toHourSlot(recordedDropoff ?? plan?.dropoff_time ?? null))
       transportTypeMap.set(a.child_id, transportType)
-      fallbackPickupByChild.set(a.child_id, plan?.pickup_location_type ?? null)
+      fallbackPickupByChild.set(a.child_id, locationPlanByChild.get(a.child_id) ?? null)
     }
   }
 
