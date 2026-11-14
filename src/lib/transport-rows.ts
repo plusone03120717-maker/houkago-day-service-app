@@ -88,6 +88,11 @@ export type TransportReservationRow = {
   unit_id: string
   pickup_time: string | null
   dropoff_time: string | null
+  /** 保護者の利用連絡で指定された場所（指定がない日は空） */
+  pickup_location_type?: string | null
+  dropoff_location_type?: string | null
+  pickup_address_id?: string | null
+  dropoff_address_id?: string | null
 }
 
 type BuildInput = {
@@ -101,6 +106,28 @@ type BuildInput = {
   scheduleDefaults: Record<string, ScheduleDefaults>
   /** ドライバーの選択肢を並べるための点数（管理画面だけが使う） */
   driverScoresFor?: (childId: string, slot: 'pickup' | 'dropoff' | 'daytime_pickup' | 'daytime_dropoff') => DriverScores
+}
+
+/**
+ * 送迎場所がどこで決まったかの札。保護者の利用連絡で指定された日と、
+ * 送迎管理で自宅・学校以外（祖父母宅など）を選んだ日だけに付ける。
+ */
+function locationTagOf(
+  direction: 'pickup' | 'dropoff',
+  reservation: TransportReservationRow | undefined,
+  location: string | null,
+  homeAddress: string | null,
+  schoolName: string | null
+): 'request' | 'manual' | null {
+  const type = direction === 'pickup' ? reservation?.pickup_location_type : reservation?.dropoff_location_type
+  const addressId = direction === 'pickup' ? reservation?.pickup_address_id : reservation?.dropoff_address_id
+  const isAutoValue = location == null || location === homeAddress || location === schoolName
+  // 保護者が指定した場所のままの行だけ「保護者の指定」。送迎管理で選び直した行は「手直し」
+  if (type === 'school' && location === schoolName) return 'request'
+  if (addressId && !isAutoValue) return 'request'
+  if (type === 'home' && !addressId && location === homeAddress) return 'request'
+  if (!isAutoValue) return 'manual'
+  return null
 }
 
 export function buildTransportRows({
@@ -204,6 +231,7 @@ export function buildTransportRows({
         isManualGroup: !!d.trip_group_id,
         schoolName: d.children?.schools?.name ?? null,
         homeAddress: d.children?.address ?? null,
+        locationTag: locationTagOf(direction, reservation, d.pickup_location, d.children?.address ?? null, d.children?.schools?.name ?? null),
         driverScores: driverScoresFor?.(
           d.child_id,
           isDaytime ? (direction === 'pickup' ? 'daytime_pickup' : 'daytime_dropoff') : direction

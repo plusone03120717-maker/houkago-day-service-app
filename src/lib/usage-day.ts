@@ -1,3 +1,4 @@
+import { CANCEL_MARKER_FIELDS } from '@/lib/schedule-defaults'
 import { getBrowserUserId, type createClient } from '@/lib/supabase/client'
 
 type Client = ReturnType<typeof createClient>
@@ -149,13 +150,11 @@ async function cancelUsagePlanForDate(
         .eq('id', existing.id)
       if (error) return error.message
     } else {
+      // 計画の値を写さず、キャンセルの印だけを作る（取り消したときに消せるように）
       const { error } = await supabase.from('usage_plan_date_overrides').insert({
         plan_id: plan.id,
         date,
-        is_cancelled: true,
-        transport_type: plan.transport_type,
-        pickup_location_type: plan.pickup_location_type,
-        dropoff_location_type: plan.dropoff_location_type,
+        ...CANCEL_MARKER_FIELDS,
       })
       if (error) return error.message
     }

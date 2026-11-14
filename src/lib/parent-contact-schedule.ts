@@ -6,7 +6,7 @@ import {
   type ServiceAssignmentType,
 } from '@/lib/parent-contact-service'
 import { getTodayJST } from '@/lib/utils'
-import { resolveTransportSlot } from '@/lib/schedule-defaults'
+import { CANCEL_MARKER_FIELDS, isCancelOnlyOverride, resolveTransportSlot } from '@/lib/schedule-defaults'
 import {
   deriveTransportTimes,
   serviceStartFromPickupArrival,
@@ -254,28 +254,51 @@ export async function checkUnitChoice(
 async function clearPlanCancellation(supabase: Client, childId: string, date: string) {
   const { data: plans } = await supabase
     .from('usage_plans')
-    .select('id, day_of_week, start_date, end_date')
+    .select('id, day_of_week, start_date, end_date, transport_type, pickup_location_type, dropoff_location_type')
     .eq('child_id', childId)
     .eq('is_active', true)
   if (!plans || plans.length === 0) return
 
   const dow = new Date(date + 'T00:00:00').getDay()
-  const targetPlanIds = (plans as {
+  const targetPlans = (plans as {
     id: string
     day_of_week: number[] | null
     start_date: string
     end_date: string | null
+    transport_type: string | null
+    pickup_location_type: string | null
+    dropoff_location_type: string | null
   }[])
     .filter((p) => (p.day_of_week ?? []).includes(dow))
     .filter((p) => date >= p.start_date && (!p.end_date || date <= p.end_date))
-    .map((p) => p.id)
-  if (targetPlanIds.length === 0) return
+  if (targetPlans.length === 0) return
 
-  await supabase
+  const { data: overrides } = await supabase
     .from('usage_plan_date_overrides')
-    .update({ is_cancelled: false })
-    .in('plan_id', targetPlanIds)
+    .select('id, plan_id, is_cancelled, transport_type, pickup_location_type, dropoff_location_type, pickup_time, dropoff_time, service_start_time, service_end_time')
+    .in('plan_id', targetPlans.map((p) => p.id))
     .eq('date', date)
+    .eq('is_cancelled', true)
+  // キャンセルのためだけの行は消して、利用スケジュール本体の設定に戻す。
+  // 印を外すだけだと「特定日の上書き」として古い値が残る（@/lib/schedule-defaults）
+  for (const o of (overrides ?? []) as {
+    id: string
+    plan_id: string
+    transport_type: string | null
+    pickup_location_type: string | null
+    dropoff_location_type: string | null
+    pickup_time: string | null
+    dropoff_time: string | null
+    service_start_time: string | null
+    service_end_time: string | null
+  }[]) {
+    const plan = targetPlans.find((p) => p.id === o.plan_id)
+    if (isCancelOnlyOverride(o, plan)) {
+      await supabase.from('usage_plan_date_overrides').delete().eq('id', o.id)
+    } else {
+      await supabase.from('usage_plan_date_overrides').update({ is_cancelled: false }).eq('id', o.id)
+    }
+  }
 }
 
 /**
@@ -326,13 +349,11 @@ async function cancelPlanForDate(
         .eq('id', (existing as { id: string }).id)
       if (error) return error.message
     } else {
+      // 計画の値を写さず、キャンセルの印だけを作る（取り消したときに消せるように）
       const { error } = await supabase.from('usage_plan_date_overrides').insert({
         plan_id: plan.id,
         date,
-        is_cancelled: true,
-        transport_type: plan.transport_type,
-        pickup_location_type: plan.pickup_location_type,
-        dropoff_location_type: plan.dropoff_location_type,
+        ...CANCEL_MARKER_FIELDS,
       })
       if (error) return error.message
     }

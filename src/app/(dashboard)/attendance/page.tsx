@@ -16,6 +16,7 @@ import {
   type ScheduleDefaults,
   type PlanRow as SchedulePlanRow,
   type OverrideRow as ScheduleOverrideRow,
+  type ReservationRow as ScheduleReservationRow,
 } from '@/lib/schedule-defaults'
 
 /** 送迎・時間系の入力が一つでも入っている行か */
@@ -97,11 +98,14 @@ function buildUnitBoard(data: AttendanceBoardData, unitId: string, today: string
     planRows.filter((p) => !cancelledPlanIds.has(p.id)).map((p) => p.child_id)
   )
 
-  // 優先順位の判断は送迎管理と同じ実装を使う（@/lib/schedule-defaults）
+  // 優先順位の判断は送迎管理と同じ実装を使う（@/lib/schedule-defaults）。
+  // 予約も渡す：保護者の利用連絡で決まった送迎区分・時刻は、計画より優先する
+  // （2026-11-14 依頼主。以前は出席管理だけ計画が勝ち、送迎管理と区分がずれていた）
   const scheduleDefaults = resolveScheduleDefaults(
     planRows as unknown as SchedulePlanRow[],
     data.daySettings as unknown as ScheduleOverrideRow[],
-    overrideRows as unknown as ScheduleOverrideRow[]
+    overrideRows as unknown as ScheduleOverrideRow[],
+    data.reservations as unknown as ScheduleReservationRow[]
   )
 
   // 毎週の利用計画が無い日（保護者の利用連絡を承認した日など）は、

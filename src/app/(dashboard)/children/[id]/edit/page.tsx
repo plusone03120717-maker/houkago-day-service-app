@@ -5,7 +5,7 @@ import { ArrowLeft, Car } from 'lucide-react'
 import { ChildForm } from '@/components/children/child-form'
 import type { School, PhoneEntry } from '@/components/children/child-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ChildTransportSettingsForm } from '@/components/children/child-transport-settings-form'
+import { ChildTransportSummary } from '@/components/children/child-transport-summary'
 import { DeleteChildButton } from '@/components/children/delete-child-button'
 import { getStaffAccess } from '@/lib/require-admin'
 
@@ -35,15 +35,6 @@ type Child = {
   children_units: ChildUnit[]
 }
 
-type TransportSettings = {
-  id: string
-  transport_type: 'none' | 'pickup_only' | 'dropoff_only' | 'both'
-  pickup_location_type: 'home' | 'school'
-  dropoff_location_type: 'home' | 'school'
-  pickup_location_label: string | null
-  notes: string | null
-}
-
 export default async function EditChildPage({
   params,
 }: {
@@ -52,7 +43,7 @@ export default async function EditChildPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: childRaw }, { data: unitsRaw }, { data: schoolsRaw }, { data: transportRaw }, { data: addressesRaw }, { data: phonesRaw }] = await Promise.all([
+  const [{ data: childRaw }, { data: unitsRaw }, { data: schoolsRaw }, { data: addressesRaw }, { data: phonesRaw }] = await Promise.all([
     supabase
       .from('children')
       .select('id, name, name_kana, birth_date, gender, postal_code, address, school_id, school_name, grade, disability_type, daytime_support_category, withdrawal_fee_enabled, diagnosis, allergy_info, medical_info, notes, service_type, childcare_type, children_units(unit_id)')
@@ -60,11 +51,6 @@ export default async function EditChildPage({
       .single(),
     supabase.from('units').select('id, name, service_type').order('name'),
     supabase.from('schools').select('id, municipality, name, address, facility_type').order('municipality').order('name'),
-    supabase
-      .from('child_transport_settings')
-      .select('id, transport_type, pickup_location_type, dropoff_location_type, pickup_location_label, notes')
-      .eq('child_id', id)
-      .maybeSingle(),
     supabase
       .from('child_addresses')
       .select('id, label, postal_code, address, is_default')
@@ -81,13 +67,8 @@ export default async function EditChildPage({
   const child = childRaw as unknown as Child
   const units = (unitsRaw ?? []) as unknown as Unit[]
   const schools = (schoolsRaw ?? []) as unknown as School[]
-  const transportSettings = transportRaw as TransportSettings | null
   const initialAddresses = (addressesRaw ?? []) as unknown as { id: string; label: string; postal_code: string | null; address: string; is_default: boolean }[]
   const initialPhones = (phonesRaw ?? []) as unknown as PhoneEntry[]
-
-  const schoolAddress = child.school_id
-    ? (schools.find((s) => s.id === child.school_id)?.address ?? null)
-    : null
 
   return (
     <div className="space-y-5">
@@ -139,28 +120,11 @@ export default async function EditChildPage({
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Car className="h-4 w-4 text-indigo-500" />
-            送迎設定
+            送迎
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <ChildTransportSettingsForm
-            childId={id}
-            childAddress={child.address}
-            schoolName={child.school_name}
-            schoolAddress={schoolAddress}
-            initial={
-              transportSettings
-                ? {
-                    id: transportSettings.id,
-                    transport_type: transportSettings.transport_type,
-                    pickup_location_type: transportSettings.pickup_location_type,
-                    dropoff_location_type: transportSettings.dropoff_location_type,
-                    pickup_location_label: transportSettings.pickup_location_label ?? '',
-                    notes: transportSettings.notes ?? '',
-                  }
-                : null
-            }
-          />
+          <ChildTransportSummary childId={id} />
         </CardContent>
       </Card>
 

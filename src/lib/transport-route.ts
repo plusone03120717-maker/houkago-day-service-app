@@ -88,9 +88,8 @@ export function buildRouteGroups(children: RouteChildData[], direction: 'pickup'
   const map = new Map<string, RouteGroup>()
 
   for (const c of children) {
-    // 送りの学校指定は、保護者がその日だけ指定した場合にだけ効く。
-    // 利用計画の dropoff_location_type はこれまで送迎の便に反映していなかったため、
-    // ここで拾い始めると既存の便の並びが変わってしまう。
+    // 送り先は decideDropoffLocation（@/lib/pickup-location）で決めた値。
+    // 2026-11-14 から利用スケジュールの「送り：学校」も効く（依頼主）。
     const isSchool =
       direction === 'pickup'
         ? c.pickup_location_type === 'school'

@@ -9,6 +9,7 @@ import { getStaffAccess } from '@/lib/require-admin'
 import { canEditUsagePlans } from '@/lib/roles'
 import { loadTransportPlaces } from '@/lib/parent-usage-contact'
 import { ChildParentRequests, type ParentRequest } from '@/components/children/child-parent-requests'
+import { explainDay, type DayExplain, type ExplainReservation } from '@/lib/day-explain'
 
 // 保護者ポータル・LINE からの利用連絡（予約申請）の列。出席カレンダーと上の一覧の両方で使う
 const PARENT_REQUEST_COLUMNS =
@@ -111,14 +112,16 @@ export default async function ChildSchedulePage({
   }
   const plans = (plansRaw ?? []) as unknown as Plan[]
 
-  const defaultTransportType = (transportSettingRaw?.transport_type as string | null)
-    ?? plans[0]?.transport_type
+  // 新しいスケジュールの初期値は、今の利用スケジュール（いちばん新しい計画）に合わせる。
+  // 計画がまだない児童だけ、前に保存された送迎設定を使う（2026-11-14 送迎設定は表示だけにした）
+  const defaultTransportType = plans[0]?.transport_type
+    ?? (transportSettingRaw?.transport_type as string | null)
     ?? 'both'
-  const defaultPickupLocationType = (transportSettingRaw?.pickup_location_type as string | null)
-    ?? plans[0]?.pickup_location_type
+  const defaultPickupLocationType = plans[0]?.pickup_location_type
+    ?? (transportSettingRaw?.pickup_location_type as string | null)
     ?? 'home'
-  const defaultDropoffLocationType = (transportSettingRaw?.dropoff_location_type as string | null)
-    ?? plans[0]?.dropoff_location_type
+  const defaultDropoffLocationType = plans[0]?.dropoff_location_type
+    ?? (transportSettingRaw?.dropoff_location_type as string | null)
     ?? 'home'
 
   // 曜日別設定・特定日上書き設定を並列取得
@@ -300,6 +303,31 @@ export default async function ChildSchedulePage({
   // 保護者が指定した行き先・帰り先を名前で出すための選択肢
   const transportPlaces = (await loadTransportPlaces(supabase, [childId]))[0]?.places ?? []
 
+  // 日ごとの「この日はなぜこうなっているか」（どの予定が効いているか）。
+  // 決め方は送迎管理・出席管理と同じ関数を使う（@/lib/day-explain）
+  const { data: monthReservationsRaw } = await supabase
+    .from('usage_reservations')
+    .select('unit_id, date, status, child_id, transport_type, pickup_location_type, dropoff_location_type, pickup_address_id, dropoff_address_id, pickup_time, dropoff_time')
+    .eq('child_id', childId)
+    .gte('date', startDate)
+    .lte('date', endDate)
+  const monthReservations = (monthReservationsRaw ?? []) as unknown as ExplainReservation[]
+  const attendanceByDate = new Map(attendances.map((a) => [a.date, a]))
+  const dayExplain: Record<string, DayExplain> = {}
+  for (let d = 1; d <= lastDayNum; d++) {
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const explained = explainDay({
+      date: dateStr,
+      plans: plans.map((p) => ({ ...p, child_id: childId })),
+      daySettings,
+      overrides: dateOverrides,
+      reservations: monthReservations,
+      attendance: attendanceByDate.get(dateStr),
+      places: transportPlaces,
+    })
+    if (explained) dayExplain[dateStr] = explained
+  }
+
   return (
     <div className="space-y-5 max-w-2xl">
       <div className="flex items-center gap-3">
@@ -358,6 +386,7 @@ export default async function ChildSchedulePage({
             plannedDateServiceStartTime={plannedDateServiceStartTime}
             plannedDateServiceEndTime={plannedDateServiceEndTime}
             cancelledPlanDates={cancelledPlanDates}
+            dayExplain={dayExplain}
             staffMembers={staffMembers}
             vehicles={vehicles}
             canCancelPlans={canCancelPlans}

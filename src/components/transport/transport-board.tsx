@@ -16,7 +16,7 @@ import {
   Scissors,
   Merge,
 } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { ALL_UNITS } from '@/lib/attendance-board-data'
 import { rankDrivers, type DriverScores } from '@/lib/driver-ranking'
 import {
@@ -58,6 +58,12 @@ export type TransportRow = {
   isManualGroup: boolean
   schoolName: string | null
   homeAddress: string | null
+  /**
+   * 送迎場所がどこで決まったか（2026-11-14 依頼主：どれが効いているかを見えるように）。
+   * request＝保護者の利用連絡で指定された日、manual＝送迎管理で自宅・学校以外を選んだ日。
+   * いつもの予定どおりなら null
+   */
+  locationTag?: 'request' | 'manual' | null
   /** これまでの記録からの、ドライバーごとの「よく入る」点数（選択肢の並び順に使う） */
   driverScores?: DriverScores
 }
@@ -1040,7 +1046,7 @@ function TransportRowItem({
       </div>
 
       {/* 送迎場所 */}
-      <label className="flex items-center gap-1.5 md:gap-0 min-w-0">
+      <label className="relative flex items-center gap-1.5 md:gap-0 min-w-0">
         <span className="md:hidden text-[11px] text-gray-400 w-16 shrink-0">送迎場所</span>
         <select
           value={head.location ?? ''}
@@ -1055,6 +1061,19 @@ function TransportRowItem({
             </option>
           ))}
         </select>
+        {head.locationTag && (
+          <span
+            className={cn(
+              'pointer-events-none absolute -top-2 right-1 rounded px-1 text-[9px] leading-4 font-medium shadow-sm',
+              head.locationTag === 'request' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'
+            )}
+            title={head.locationTag === 'request'
+              ? '保護者の利用連絡でこの日の場所が指定されています（いつもの予定より優先）'
+              : '送迎管理でこの日だけ選んだ場所です'}
+          >
+            {head.locationTag === 'request' ? '保護者の指定' : '手直し'}
+          </span>
+        )}
       </label>
 
       {/* 送迎時間 */}

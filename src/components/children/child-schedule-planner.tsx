@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Plus, Trash2, Power, CalendarRange, Clock, Pencil, X, Check, CalendarDays, Repeat, Car, ChevronDown, RotateCcw } from 'lucide-react'
 import { formatDate, getTodayJST } from '@/lib/utils'
-import { refreshFuturePickupLocations } from '@/app/actions/transport-location'
+import { refreshFutureDropoffLocations, refreshFuturePickupLocations } from '@/app/actions/transport-location'
 import { PickupReviewDialog } from '@/components/children/pickup-review-dialog'
 import type { PickupReviewItem, PickupSyncScope } from '@/lib/pickup-review'
 import { isSchoolOffDay } from '@/lib/pickup-location'
@@ -235,13 +235,43 @@ export function ChildSchedulePlanner({
         updated += res.updated
         for (const item of res.review) review.set(item.id, item)
       }
-      setPickupNote(updated > 0 ? `作成ずみの送迎 ${updated} 件のお迎え場所もそろえました。` : null)
+      if (updated > 0) {
+        setPickupNote((prev) => `${prev ? `${prev} ` : ''}作成ずみの送迎 ${updated} 件のお迎え場所もそろえました。`)
+      }
       if (review.size > 0) {
         setPickupReview([...review.values()].sort((a, b) => a.date.localeCompare(b.date)))
       }
     } catch {
       setPickupNote('送迎管理への反映に失敗しました。送迎管理の場所の選択から直してください。')
     }
+  }
+
+  /**
+   * 送り先を変えたら、作成ずみの先の日の送りの行もそろえる（前の送り先のままの行だけ。
+   * 確認の一覧は出さない）。2026-11-14 依頼主：利用スケジュールの「送り：学校」を送迎管理に効かせる。
+   */
+  const syncDropoffRows = async (changes: PickupChange[]) => {
+    const todo = changes.filter((c) => c.before !== c.after)
+    if (todo.length === 0) return
+    try {
+      let updated = 0
+      for (const c of todo) {
+        const res = await refreshFutureDropoffLocations(childId, { from: c.before, scope: c.scope })
+        updated += res.updated
+      }
+      if (updated > 0) {
+        setPickupNote((prev) => `${prev ? `${prev} ` : ''}作成ずみの送迎 ${updated} 件の送り先もそろえました。`)
+      }
+    } catch {
+      setPickupNote('送迎管理の送り先への反映に失敗しました。送迎管理の場所の選択から直してください。')
+    }
+  }
+
+  /** 特定日の上書きがないときの、その日の送り先（曜日別設定 → 計画）。土日・祝日の学校は自宅 */
+  const baseDropoffOn = (plan: Plan | undefined, date: string) => {
+    const dow = new Date(`${date}T00:00:00`).getDay()
+    const type = (plan ? getDaySetting(plan.id, dow)?.dropoff_location_type : undefined) ?? plan?.dropoff_location_type
+    return type === 'school' && isSchoolOffDay(date) ? 'home' : type
   }
 
   /**
@@ -325,6 +355,7 @@ export function ChildSchedulePlanner({
     setDaySaving(true)
     const existing = getDaySetting(plan.id, dow)
     const pickupBefore = existing?.pickup_location_type ?? plan.pickup_location_type
+    const dropoffBefore = existing?.dropoff_location_type ?? plan.dropoff_location_type
     const payload = {
       transport_type: dayEditState.transport_type,
       pickup_location_type: dayEditState.pickup_location_type,
@@ -345,6 +376,7 @@ export function ChildSchedulePlanner({
       setDaySaving(false)
       if (!error && data) {
         void syncPickupRows([{ before: pickupBefore, after: payload.pickup_location_type, scope: { planId: plan.id, dayOfWeek: dow } }])
+        void syncDropoffRows([{ before: dropoffBefore, after: payload.dropoff_location_type, scope: { planId: plan.id, dayOfWeek: dow } }])
         setDaySettings((prev) => prev.map((ds) => ds.id === existing.id ? data as unknown as DaySetting : ds))
         setOpenDayKey(null)
         setDayEditState(null)
@@ -358,6 +390,7 @@ export function ChildSchedulePlanner({
       setDaySaving(false)
       if (!error && data) {
         void syncPickupRows([{ before: pickupBefore, after: payload.pickup_location_type, scope: { planId: plan.id, dayOfWeek: dow } }])
+        void syncDropoffRows([{ before: dropoffBefore, after: payload.dropoff_location_type, scope: { planId: plan.id, dayOfWeek: dow } }])
         setDaySettings((prev) => [...prev, data as unknown as DaySetting])
         setOpenDayKey(null)
         setDayEditState(null)
@@ -373,6 +406,11 @@ export function ChildSchedulePlanner({
       void syncPickupRows([{
         before: existing.pickup_location_type ?? plan.pickup_location_type,
         after: plan.pickup_location_type,
+        scope: { planId: plan.id, dayOfWeek: dow },
+      }])
+      void syncDropoffRows([{
+        before: existing.dropoff_location_type ?? plan.dropoff_location_type,
+        after: plan.dropoff_location_type,
         scope: { planId: plan.id, dayOfWeek: dow },
       }])
     }
@@ -391,14 +429,17 @@ export function ChildSchedulePlanner({
     setOpenDateOverridePlanId(plan.id)
     setEditingDateOverrideId(override?.id ?? null)
     setDateOverrideDate(override?.date ?? '')
+    // 新しく作るときの初期値は、その日に効いている値（曜日別設定 → 計画）。
+    // 計画の値を写すと、時刻だけ変えたいのに曜日別の場所（例：火曜は送り：学校）を上書きして固めてしまう
+    const ds = override?.date ? getDaySetting(plan.id, new Date(`${override.date}T00:00:00`).getDay()) : null
     setDateOverrideEditState({
-      transport_type: override?.transport_type ?? plan.transport_type,
-      pickup_location_type: override?.pickup_location_type ?? plan.pickup_location_type,
-      dropoff_location_type: override?.dropoff_location_type ?? plan.dropoff_location_type,
-      pickup_time: formatTime(override?.pickup_time ?? plan.pickup_time),
-      dropoff_time: formatTime(override?.dropoff_time ?? plan.dropoff_time),
-      service_start_time: formatTime(override?.service_start_time ?? plan.service_start_time),
-      service_end_time: formatTime(override?.service_end_time ?? plan.service_end_time),
+      transport_type: override?.transport_type ?? ds?.transport_type ?? plan.transport_type,
+      pickup_location_type: override?.pickup_location_type ?? ds?.pickup_location_type ?? plan.pickup_location_type,
+      dropoff_location_type: override?.dropoff_location_type ?? ds?.dropoff_location_type ?? plan.dropoff_location_type,
+      pickup_time: formatTime(override?.pickup_time ?? ds?.pickup_time ?? plan.pickup_time),
+      dropoff_time: formatTime(override?.dropoff_time ?? ds?.dropoff_time ?? plan.dropoff_time),
+      service_start_time: formatTime(override?.service_start_time ?? ds?.service_start_time ?? plan.service_start_time),
+      service_end_time: formatTime(override?.service_end_time ?? ds?.service_end_time ?? plan.service_end_time),
     })
     setOpenDayKey(null)
     setDayEditState(null)
@@ -454,6 +495,20 @@ export function ChildSchedulePlanner({
               after: payload.pickup_location_type,
               scope: { planId, date: payload.date },
             }])
+        void syncDropoffRows(editingOverride.date !== payload.date
+          ? [
+              {
+                before: editingOverride.dropoff_location_type ?? baseDropoffOn(plan, editingOverride.date),
+                after: baseDropoffOn(plan, editingOverride.date),
+                scope: { planId, date: editingOverride.date },
+              },
+              { before: baseDropoffOn(plan, payload.date), after: payload.dropoff_location_type, scope: { planId, date: payload.date } },
+            ]
+          : [{
+              before: editingOverride.dropoff_location_type ?? baseDropoffOn(plan, payload.date),
+              after: payload.dropoff_location_type,
+              scope: { planId, date: payload.date },
+            }])
       }
       if (!error && data) {
         setDateOverrides((prev) => prev.map((o) => o.id === editingDateOverrideId ? data as unknown as DateOverride : o))
@@ -468,6 +523,7 @@ export function ChildSchedulePlanner({
       setDateOverrideSaving(false)
       if (!error && data) {
         void syncPickupRows([{ before: basePickupOn(plan, payload.date), after: payload.pickup_location_type, scope: { planId, date: payload.date } }])
+        void syncDropoffRows([{ before: baseDropoffOn(plan, payload.date), after: payload.dropoff_location_type, scope: { planId, date: payload.date } }])
         setDateOverrides((prev) => [...prev, data as unknown as DateOverride])
         closeDateOverrideForm()
       }
@@ -482,6 +538,11 @@ export function ChildSchedulePlanner({
       void syncPickupRows([{
         before: removed.pickup_location_type,
         after: basePickupOn(plan, removed.date) ?? removed.pickup_location_type,
+        scope: { planId: removed.plan_id, date: removed.date },
+      }])
+      void syncDropoffRows([{
+        before: removed.dropoff_location_type,
+        after: baseDropoffOn(plan, removed.date) ?? removed.dropoff_location_type,
         scope: { planId: removed.plan_id, date: removed.date },
       }])
     }
@@ -603,6 +664,11 @@ export function ChildSchedulePlanner({
       await syncPickupRows([{
         before: oldPlan?.pickup_location_type,
         after: editState.pickup_location_type,
+        scope: { planId },
+      }])
+      await syncDropoffRows([{
+        before: oldPlan?.dropoff_location_type,
+        after: editState.dropoff_location_type,
         scope: { planId },
       }])
       setPlans((prev) => prev.map((p) => p.id === planId ? data as unknown as Plan : p))
@@ -1267,7 +1333,25 @@ export function ChildSchedulePlanner({
                           <div>
                             <label className="text-xs font-medium text-gray-700 mb-1 block">対象日</label>
                             <input type="date" value={dateOverrideDate}
-                              onChange={(e) => setDateOverrideDate(e.target.value)}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setDateOverrideDate(v)
+                                // 新しく作るときは、選んだ日に効いている値（曜日別設定 → 計画）を初期値にする
+                                if (!editingDateOverrideId && v) {
+                                  const ds = getDaySetting(plan.id, new Date(`${v}T00:00:00`).getDay())
+                                  setDateOverrideEditState((p) => p ? {
+                                    ...p,
+                                    transport_type: ds?.transport_type ?? plan.transport_type,
+                                    // 場所は土日・祝日なら自宅（送迎を作るときの決め方と同じ）
+                                    pickup_location_type: basePickupOn(plan, v) ?? plan.pickup_location_type,
+                                    dropoff_location_type: baseDropoffOn(plan, v) ?? plan.dropoff_location_type,
+                                    pickup_time: formatTime(ds?.pickup_time ?? plan.pickup_time),
+                                    dropoff_time: formatTime(ds?.dropoff_time ?? plan.dropoff_time),
+                                    service_start_time: formatTime(ds?.service_start_time ?? plan.service_start_time),
+                                    service_end_time: formatTime(ds?.service_end_time ?? plan.service_end_time),
+                                  } : p)
+                                }
+                              }}
                               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
                           </div>
 
