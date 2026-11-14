@@ -8,6 +8,11 @@ import { ChildAttendanceCalendar, type AttendanceRecord, type ParentContact } fr
 import { getStaffAccess } from '@/lib/require-admin'
 import { canEditUsagePlans } from '@/lib/roles'
 import { loadTransportPlaces } from '@/lib/parent-usage-contact'
+import { ChildParentRequests, type ParentRequest } from '@/components/children/child-parent-requests'
+
+// 保護者ポータル・LINE からの利用連絡（予約申請）の列。出席カレンダーと上の一覧の両方で使う
+const PARENT_REQUEST_COLUMNS =
+  'id, is_new, date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_location_type, pickup_address_id, dropoff_location_type, dropoff_address_id, note, reported_at, approval_status'
 
 export default async function ChildSchedulePage({
   params,
@@ -233,7 +238,7 @@ export default async function ChildSchedulePage({
     cancelledPlanDates[ov.date] = { planId: ov.plan_id, overrideId: ov.id, unitId: plan.unit_id }
   }
 
-  const [{ data: attendancesRaw }, { data: staffMembersRaw }, { data: vehiclesRaw }, { data: parentContactsRaw }] = await Promise.all([
+  const [{ data: attendancesRaw }, { data: staffMembersRaw }, { data: vehiclesRaw }, { data: parentContactsRaw }, { data: openRequestsRaw }] = await Promise.all([
     supabase
       .from('daily_attendance')
       .select(`
@@ -265,16 +270,33 @@ export default async function ChildSchedulePage({
     // 保護者ポータルからの利用連絡（保護者の申告）
     supabase
       .from('parent_attendance_contacts')
-      .select('date, status, service_type, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, pickup_location_type, pickup_address_id, dropoff_location_type, dropoff_address_id, note, reported_at, approval_status')
+      .select(PARENT_REQUEST_COLUMNS)
       .eq('child_id', childId)
       .gte('date', startDate)
       .lte('date', endDate)
+      .order('date'),
+    // まだ承認・確認していない予約申請は、表示中の月の外のものも上の一覧に出す
+    // （来月分の申請に気づけるように）
+    supabase
+      .from('parent_attendance_contacts')
+      .select(PARENT_REQUEST_COLUMNS)
+      .eq('child_id', childId)
+      .eq('is_new', true)
       .order('date'),
   ])
   const attendances = (attendancesRaw ?? []) as unknown as AttendanceRecord[]
   const staffMembers = (staffMembersRaw ?? []) as { id: string; name: string }[]
   const vehicles = (vehiclesRaw ?? []) as { id: string; name: string }[]
   const parentContacts = (parentContactsRaw ?? []) as unknown as ParentContact[]
+  // 上の「保護者からの予約申請」：承認待ち（どの月でも）＋表示中の月のもの。日付順
+  const requestMap = new Map<string, ParentRequest>()
+  for (const r of [
+    ...((openRequestsRaw ?? []) as unknown as ParentRequest[]),
+    ...((parentContactsRaw ?? []) as unknown as ParentRequest[]),
+  ]) requestMap.set(r.id, r)
+  const parentRequests = [...requestMap.values()].sort((a, b) =>
+    a.date === b.date ? b.reported_at.localeCompare(a.reported_at) : a.date.localeCompare(b.date)
+  )
   // 保護者が指定した行き先・帰り先を名前で出すための選択肢
   const transportPlaces = (await loadTransportPlaces(supabase, [childId]))[0]?.places ?? []
 
@@ -292,6 +314,8 @@ export default async function ChildSchedulePage({
           <p className="text-sm text-gray-500 mt-0.5">{child.name}</p>
         </div>
       </div>
+
+      <ChildParentRequests requests={parentRequests} month={month} transportPlaces={transportPlaces} />
 
       <ChildSchedulePlanner
         childId={childId}
