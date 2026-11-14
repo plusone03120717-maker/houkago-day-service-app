@@ -18,10 +18,13 @@ import {
   type ReservationDeadline,
 } from '@/lib/parent-reservation-deadline'
 import {
+  isCancelMarkerOverride,
+  pickPrimaryPlanPerChild,
   resolveScheduleDefaults,
   type PlanRow as SchedulePlanRow,
   type OverrideRow as ScheduleOverrideRow,
 } from '@/lib/schedule-defaults'
+import { decidePickupLocation } from '@/lib/pickup-location'
 import {
   buildUsageRoster,
   eachDate,
@@ -523,7 +526,7 @@ export async function loadFacilitySchedule(
         supabase
           .from('usage_plan_date_overrides')
           .select(
-            'plan_id, date, is_cancelled, transport_type, pickup_time, dropoff_time, ' +
+            'plan_id, date, is_cancelled, transport_type, pickup_location_type, pickup_time, dropoff_time, ' +
             'service_start_time, service_end_time'
           )
           .in('plan_id', planIds)
@@ -532,7 +535,7 @@ export async function loadFacilitySchedule(
         supabase
           .from('usage_plan_day_settings')
           .select(
-            'plan_id, day_of_week, transport_type, pickup_time, dropoff_time, ' +
+            'plan_id, day_of_week, transport_type, pickup_location_type, pickup_time, dropoff_time, ' +
             'service_start_time, service_end_time'
           )
           .in('plan_id', planIds),
@@ -572,11 +575,12 @@ export async function loadFacilitySchedule(
     pickup_location_type: LocationType | null
     dropoff_location_type: LocationType | null
   }
-  type DaySettingRow = ScheduleOverrideRow & { day_of_week: number }
-  type DateOverrideRow = ScheduleOverrideRow & { date: string }
+  type DaySettingRow = ScheduleOverrideRow & { day_of_week: number; pickup_location_type: LocationType | null }
+  type DateOverrideRow = ScheduleOverrideRow & { date: string; pickup_location_type: LocationType | null }
   type ReservationDetail = {
     child_id: string
     date: string
+    status: string
     transport_type: TransportType | null
     pickup_location_type: LocationType | null
     pickup_address_id: string | null
@@ -629,14 +633,52 @@ export async function loadFacilitySchedule(
     return resolved
   }
 
-  /** 送迎の場所。その日の予約 → 利用スケジュール の順で決める */
+  /**
+   * お迎えの場所。送迎管理（送迎を作るとき・お迎え場所をそろえるとき）と同じ
+   * decidePickupLocation（@/lib/pickup-location）で決める：
+   * 保護者の利用連絡の予約 ＞ 特定日の上書き ＞ 曜日別設定 ＞ 計画。土日・祝日は計画が学校でも自宅。
+   * 以前は「予約 → 計画」だけで決めていて、曜日別設定・特定日の上書き・土日祝が
+   * 送迎管理と食い違っていた（2026-11-14 プログラマー担当の再点検）。
+   * 決める材料がない日（計画も予約もない）は null にして、画面の既定（送迎設定）に任せる。
+   */
+  function pickupPlaceOn(childId: string, date: string): string | null {
+    const res = reservationByKey.get(`${childId}|${date}`)
+    // 送迎管理と同じく、生きている予約だけを見る（キャンセル・キャンセル待ちは除く）
+    const liveRes = res && (res.status === 'confirmed' || res.status === 'reserved') ? res : null
+    const dow = new Date(date + 'T00:00:00').getDay()
+    const childPlans = planRows.filter((p) => p.child_id === childId)
+    const dayPlan = pickPrimaryPlanPerChild(childPlans.filter(
+      (p) =>
+        (p.day_of_week ?? []).includes(dow) &&
+        date >= p.start_date &&
+        (!p.end_date || date <= p.end_date)
+    ))[0]
+    const override = dayPlan ? overrideRows.find((o) => o.plan_id === dayPlan.id && o.date === date) : undefined
+    const cancelled = !!override?.is_cancelled
+    const liveOverride = override && !cancelled && !isCancelMarkerOverride(override) ? override : undefined
+    const decision = decidePickupLocation({
+      date,
+      dayPlanType: dayPlan && !cancelled ? dayPlan.pickup_location_type : undefined,
+      cancelled,
+      overrideType: liveOverride?.pickup_location_type,
+      daySettingType: dayPlan
+        ? daySettingRows.find((d) => d.plan_id === dayPlan.id && d.day_of_week === dow)?.pickup_location_type
+        : null,
+      reservation: liveRes,
+      fallbackPlanType: pickPrimaryPlanPerChild(childPlans)[0]?.pickup_location_type,
+    })
+    if (decision.source === 'none' && !liveRes) return null
+    // 祖父母宅など、保護者がその日だけ指定した住所（自宅へのお迎えのときだけ）
+    return toPlaceValue(decision.type, decision.type === 'home' ? liveRes?.pickup_address_id ?? null : null)
+  }
+
+  /** 送迎の場所。お迎えは pickupPlaceOn、送りはその日の予約 → 利用スケジュール の順で決める */
   function placesOn(childId: string, date: string, planId: string | null) {
     const res = reservationByKey.get(`${childId}|${date}`)
     const plan = planId ? planById.get(planId) : undefined
-    const pickupType = res?.pickup_location_type ?? plan?.pickup_location_type ?? null
     const dropoffType = res?.dropoff_location_type ?? plan?.dropoff_location_type ?? null
     return {
-      pickup: pickupType ? toPlaceValue(pickupType, res?.pickup_address_id ?? null) : null,
+      pickup: pickupPlaceOn(childId, date),
       dropoff: dropoffType ? toPlaceValue(dropoffType, res?.dropoff_address_id ?? null) : null,
     }
   }

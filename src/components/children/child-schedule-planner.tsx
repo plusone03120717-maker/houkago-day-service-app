@@ -10,9 +10,16 @@ import { Plus, Trash2, Power, CalendarRange, Clock, Pencil, X, Check, CalendarDa
 import { formatDate, getTodayJST } from '@/lib/utils'
 import { refreshFuturePickupLocations } from '@/app/actions/transport-location'
 import { PickupReviewDialog } from '@/components/children/pickup-review-dialog'
-import type { PickupReviewItem } from '@/lib/pickup-review'
+import type { PickupReviewItem, PickupSyncScope } from '@/lib/pickup-review'
+import { isSchoolOffDay } from '@/lib/pickup-location'
 
 type Unit = { id: string; name: string; service_type: string }
+/** お迎え場所の変更1つ（前・後の場所と、変えた計画・曜日・日付） */
+type PickupChange = {
+  before: string | null | undefined
+  after: string | null | undefined
+  scope: PickupSyncScope
+}
 type Plan = {
   id: string
   name: string | null
@@ -207,22 +214,44 @@ export function ChildSchedulePlanner({
    * 送迎の行は作ったときの場所を持つため、そのままだと前の場所が残る。
    * 送迎管理で選んだ場所・保護者の利用連絡・特定日の上書き・土日祝の日は、
    * 一覧を出して変えるかどうかを選んでもらう。
-   * baseChanged は計画・曜日別設定（いつもの場所）を変えたか。特定日の上書きだけなら false。
+   *
+   * scope は変えた計画・曜日・日付。その範囲で場所が決まる日の行だけをそろえ、一覧に出す
+   * （関係のない曜日に送迎管理で選び直した日を上書きしないため）。
+   * 特定日の上書き（scope.date）だけを直したときは、ほかの日の指定・土日祝はたずねない。
    * 失敗しても利用スケジュールの保存は済んでいるので、ここでは止めない。
    */
-  const syncPickupRows = async (
-    before: string | null | undefined,
-    after: string,
-    baseChanged = true
-  ) => {
-    if (before === after) return
+  const syncPickupRows = async (changes: PickupChange[]) => {
+    const todo = changes.filter((c) => c.before !== c.after)
+    if (todo.length === 0) return
     try {
-      const res = await refreshFuturePickupLocations(childId, { baseChanged, from: before })
-      setPickupNote(res.updated > 0 ? `作成ずみの送迎 ${res.updated} 件のお迎え場所もそろえました。` : null)
-      if (res.review.length > 0) setPickupReview(res.review)
+      let updated = 0
+      const review = new Map<string, PickupReviewItem>()
+      for (const c of todo) {
+        const res = await refreshFuturePickupLocations(childId, {
+          baseChanged: c.scope.date === undefined,
+          from: c.before,
+          scope: c.scope,
+        })
+        updated += res.updated
+        for (const item of res.review) review.set(item.id, item)
+      }
+      setPickupNote(updated > 0 ? `作成ずみの送迎 ${updated} 件のお迎え場所もそろえました。` : null)
+      if (review.size > 0) {
+        setPickupReview([...review.values()].sort((a, b) => a.date.localeCompare(b.date)))
+      }
     } catch {
       setPickupNote('送迎管理への反映に失敗しました。送迎管理の場所の選択から直してください。')
     }
+  }
+
+  /**
+   * 特定日の上書きがないときの、その日のお迎え場所（曜日別設定 → 計画）。
+   * 土日・祝日は学校が休みなので、学校でも自宅（送迎を作るときの決め方と同じ）
+   */
+  const basePickupOn = (plan: Plan | undefined, date: string) => {
+    const dow = new Date(`${date}T00:00:00`).getDay()
+    const type = (plan ? getDaySetting(plan.id, dow)?.pickup_location_type : undefined) ?? plan?.pickup_location_type
+    return type === 'school' && isSchoolOffDay(date) ? 'home' : type
   }
 
   const closePickupReview = (changed: number) => {
@@ -315,7 +344,7 @@ export function ChildSchedulePlanner({
         .single()
       setDaySaving(false)
       if (!error && data) {
-        void syncPickupRows(pickupBefore, payload.pickup_location_type)
+        void syncPickupRows([{ before: pickupBefore, after: payload.pickup_location_type, scope: { planId: plan.id, dayOfWeek: dow } }])
         setDaySettings((prev) => prev.map((ds) => ds.id === existing.id ? data as unknown as DaySetting : ds))
         setOpenDayKey(null)
         setDayEditState(null)
@@ -328,7 +357,7 @@ export function ChildSchedulePlanner({
         .single()
       setDaySaving(false)
       if (!error && data) {
-        void syncPickupRows(pickupBefore, payload.pickup_location_type)
+        void syncPickupRows([{ before: pickupBefore, after: payload.pickup_location_type, scope: { planId: plan.id, dayOfWeek: dow } }])
         setDaySettings((prev) => [...prev, data as unknown as DaySetting])
         setOpenDayKey(null)
         setDayEditState(null)
@@ -340,7 +369,13 @@ export function ChildSchedulePlanner({
     const existing = getDaySetting(plan.id, dow)
     if (!existing) return
     const { error } = await supabase.from('usage_plan_day_settings').delete().eq('id', existing.id)
-    if (!error) void syncPickupRows(existing.pickup_location_type, plan.pickup_location_type)
+    if (!error) {
+      void syncPickupRows([{
+        before: existing.pickup_location_type ?? plan.pickup_location_type,
+        after: plan.pickup_location_type,
+        scope: { planId: plan.id, dayOfWeek: dow },
+      }])
+    }
     setDaySettings((prev) => prev.filter((ds) => ds.id !== existing.id))
     setOpenDayKey(null)
     setDayEditState(null)
@@ -383,10 +418,6 @@ export function ChildSchedulePlanner({
     const editingOverride = editingDateOverrideId
       ? dateOverrides.find((o) => o.id === editingDateOverrideId)
       : undefined
-    const overrideDow = dateOverrideDate ? new Date(`${dateOverrideDate}T00:00:00`).getDay() : -1
-    const pickupBefore = editingOverride?.pickup_location_type
-      ?? (plan ? getDaySetting(plan.id, overrideDow)?.pickup_location_type : undefined)
-      ?? plan?.pickup_location_type
     const payload = {
       date: dateOverrideDate,
       transport_type: dateOverrideEditState.transport_type,
@@ -407,8 +438,24 @@ export function ChildSchedulePlanner({
         .select(OVERRIDE_SELECT)
         .single()
       setDateOverrideSaving(false)
+      if (!error && data && editingOverride) {
+        // 日付を変えたときは、前の日（上書きがなくなる）と新しい日の両方をそろえる
+        void syncPickupRows(editingOverride.date !== payload.date
+          ? [
+              {
+                before: editingOverride.pickup_location_type ?? basePickupOn(plan, editingOverride.date),
+                after: basePickupOn(plan, editingOverride.date),
+                scope: { planId, date: editingOverride.date },
+              },
+              { before: basePickupOn(plan, payload.date), after: payload.pickup_location_type, scope: { planId, date: payload.date } },
+            ]
+          : [{
+              before: editingOverride.pickup_location_type ?? basePickupOn(plan, payload.date),
+              after: payload.pickup_location_type,
+              scope: { planId, date: payload.date },
+            }])
+      }
       if (!error && data) {
-        void syncPickupRows(pickupBefore, payload.pickup_location_type, false)
         setDateOverrides((prev) => prev.map((o) => o.id === editingDateOverrideId ? data as unknown as DateOverride : o))
         closeDateOverrideForm()
       }
@@ -420,7 +467,7 @@ export function ChildSchedulePlanner({
         .single()
       setDateOverrideSaving(false)
       if (!error && data) {
-        void syncPickupRows(pickupBefore, payload.pickup_location_type, false)
+        void syncPickupRows([{ before: basePickupOn(plan, payload.date), after: payload.pickup_location_type, scope: { planId, date: payload.date } }])
         setDateOverrides((prev) => [...prev, data as unknown as DateOverride])
         closeDateOverrideForm()
       }
@@ -432,11 +479,11 @@ export function ChildSchedulePlanner({
     const { error } = await supabase.from('usage_plan_date_overrides').delete().eq('id', overrideId)
     if (!error && removed) {
       const plan = plans.find((p) => p.id === removed.plan_id)
-      const removedDow = new Date(`${removed.date}T00:00:00`).getDay()
-      const after = (plan ? getDaySetting(plan.id, removedDow)?.pickup_location_type : undefined)
-        ?? plan?.pickup_location_type
-        ?? removed.pickup_location_type
-      void syncPickupRows(removed.pickup_location_type, after, false)
+      void syncPickupRows([{
+        before: removed.pickup_location_type,
+        after: basePickupOn(plan, removed.date) ?? removed.pickup_location_type,
+        scope: { planId: removed.plan_id, date: removed.date },
+      }])
     }
     setDateOverrides((prev) => prev.filter((o) => o.id !== overrideId))
     if (editingDateOverrideId === overrideId) closeDateOverrideForm()
@@ -553,7 +600,11 @@ export function ChildSchedulePlanner({
     setEditSaving(false)
     if (error) return
     if (data) {
-      await syncPickupRows(oldPlan?.pickup_location_type, editState.pickup_location_type)
+      await syncPickupRows([{
+        before: oldPlan?.pickup_location_type,
+        after: editState.pickup_location_type,
+        scope: { planId },
+      }])
       setPlans((prev) => prev.map((p) => p.id === planId ? data as unknown as Plan : p))
       setEditingId(null)
       setEditState(null)
