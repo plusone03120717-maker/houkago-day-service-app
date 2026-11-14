@@ -13,6 +13,7 @@ import {
   validateAssignment,
   type ServiceAssignment,
 } from '@/lib/parent-contact-service'
+import { withParentChangeAck } from '@/lib/schedule-week-confirm-db'
 
 const STATUSES = ['pending', 'approved', 'rejected'] as const
 type ApprovalStatus = (typeof STATUSES)[number]
@@ -84,9 +85,14 @@ export async function POST(req: NextRequest) {
 
     // 予定への反映。反映に失敗しても承認の記録そのものは残す（スタッフが
     // 利用状況画面で手当てできるよう、理由だけ warning として返す）
+    // 承認は保護者が自分で頼んだ変更なので、週の予定の「確認ずみ」は崩さない
+    // （@/lib/schedule-week-confirm-db）。非承認・未承認に戻して予定が元に戻るのは
+    // 保護者の知らない変更なので包まず、「変更後まだ」にする
     const result =
       approvalStatus === 'approved'
-        ? await applyParentContact(supabase, contact, userId, assignment)
+        ? await withParentChangeAck(contact.child_id, contact.date, () =>
+            applyParentContact(supabase, contact, userId, assignment)
+          )
         : await revertParentContact(supabase, contact)
 
     return NextResponse.json({ ok: true, warning: result.error })

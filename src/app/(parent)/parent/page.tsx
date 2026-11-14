@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { BookOpen, CalendarCheck, Receipt } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { ScheduleWeekConfirmCard } from '@/components/parent/schedule-week-confirm-card'
 
 type Child = {
   id: string
@@ -43,6 +44,9 @@ export default async function ParentHomePage() {
 
   return (
     <div className="space-y-5 pb-20 sm:pb-5">
+      {/* 施設から届いた週の予定の確認（届いていなければ何も出ない） */}
+      <ScheduleWeekConfirmCard />
+
       {/* 子供カード */}
       <div className="space-y-3">
         {children.map((child) => (

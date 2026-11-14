@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { withParentChangeAck } from '@/lib/schedule-week-confirm-db'
 import { getSessionUserId } from '@/lib/auth'
 import { hasEditAccess } from '@/lib/require-admin'
 import {
@@ -64,13 +65,16 @@ export async function POST(req: NextRequest) {
     const results: { id: string; applied: boolean; handling?: AbsentHandling; error?: string }[] = []
     for (const contact of contacts) {
       if (contact.status !== 'absent') continue
-      const result = await applyParentContact(
-        supabase,
-        contact,
-        userId,
-        undefined,
-        handling,
-        typeof absenceReason === 'string' ? absenceReason : undefined
+      // 保護者が自分で変えた分なので、週の予定の「確認ずみ」は崩さない
+      const result = await withParentChangeAck(contact.child_id, contact.date, () =>
+        applyParentContact(
+          supabase,
+          contact,
+          userId,
+          undefined,
+          handling,
+          typeof absenceReason === 'string' ? absenceReason : undefined
+        )
       )
       results.push({
         id: contact.id,
