@@ -17,6 +17,21 @@ export type PickupReviewItem = {
   recommended: boolean
 }
 
+/**
+ * 利用スケジュールのどこを変えたか。確認なしで変える行・確認の一覧に出す行を、
+ * この範囲の日（その計画・曜日・日付で場所が決まる日）に絞る。
+ * 関係のない曜日の日を送迎管理で選び直してあっても、上書きしたり一覧に出したりしないため
+ * （2026-11-14 プログラマー担当の再点検）。
+ */
+export type PickupSyncScope = {
+  /** 変えた計画（usage_plans.id） */
+  planId: string
+  /** 曜日別設定を変えたとき、その曜日（0=日〜6=土） */
+  dayOfWeek?: number
+  /** 特定日の上書きを変えたとき、その日 */
+  date?: string
+}
+
 export type PickupSyncResult = {
   /** 確認なしでそろえた行の数 */
   updated: number

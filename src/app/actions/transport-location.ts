@@ -6,7 +6,7 @@ import { canEditTransport, canEditUsagePlans } from '@/lib/roles'
 import { isCancelMarkerOverride, pickPrimaryPlanPerChild } from '@/lib/schedule-defaults'
 import { decidePickupLocation, type PickupLocationType } from '@/lib/pickup-location'
 import { getTodayJST } from '@/lib/utils'
-import type { PickupReviewItem, PickupSyncResult } from '@/lib/pickup-review'
+import type { PickupReviewItem, PickupSyncResult, PickupSyncScope } from '@/lib/pickup-review'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -42,6 +42,12 @@ type PlanOptions = {
    * 渡さないとき（全員の一括のそろえ直し）は、自宅・学校のままの行を確認なしでそろえる。
    */
   from?: PickupLocationType
+  /**
+   * 変えた計画・曜日・日付。渡したときは、その範囲で場所が決まる日の行だけを
+   * 確認なし・一覧の対象にする。ほかの日の行は（今の設定と違っていても）さわらない。
+   * 渡さないとき（送迎設定で全曜日を変えたとき）は、先の日の行すべてが対象。
+   */
+  scope?: PickupSyncScope
 }
 
 /**
@@ -194,15 +200,20 @@ async function planPickupRows(
     const liveOverride = override && !cancelled && !isCancelMarkerOverride(override) ? override : undefined
     const reservation = reservations.find((r) => r.unit_id === unitId && r.date === date) ?? null
     const fallbackPlan = pickPrimaryPlanPerChild(unitPlans)[0]
+    const daySettingType = dayPlan
+      ? daySettings.find((d) => d.plan_id === dayPlan.id && d.day_of_week === dow)?.pickup_location_type
+      : null
+
+    if (options.scope && !inScope(options.scope, { date, dow, dayPlan, daySettingType, reservation, fallbackPlan })) {
+      continue
+    }
 
     const decision = decidePickupLocation({
       date,
       dayPlanType: dayPlan && !cancelled ? dayPlan.pickup_location_type : undefined,
       cancelled,
       overrideType: liveOverride?.pickup_location_type,
-      daySettingType: dayPlan
-        ? daySettings.find((d) => d.plan_id === dayPlan.id && d.day_of_week === dow)?.pickup_location_type
-        : null,
+      daySettingType,
       reservation,
       fallbackPlanType: fallbackPlan?.pickup_location_type,
     })
@@ -219,9 +230,12 @@ async function planPickupRows(
     if (decision.source === 'none' && !requestAddress && current != null) continue
 
     // いつもの場所は学校だが学校が休みの日（土日・祝日）。
-    // 学校のまま（人が選んだ・前からそう）なら戻さない。自宅なら、学校にするかは人が選ぶ
+    // 学校のまま（人が選んだ・前からそう）なら戻さない。自宅なら、学校にするかは人が選ぶ。
+    // ただし、学校にしていた指定（土日の特定日の上書きなど）を消した日で、行がその学校のままなら、
+    // 下で確認なしに自宅へそろえる
     if (decision.schoolOffAdjusted) {
-      if (current === schoolValue) continue
+      const leftFromRemovedSchool = options.from === 'school' && current === fromValue
+      if (current === schoolValue && !leftFromRemovedSchool) continue
       if (current === homeValue || current == null) {
         if (options.baseChanged && schoolValue) {
           result.review.push({ id: row.id, date, from: current, to: schoolValue, reason: 'holiday', recommended: false })
@@ -272,6 +286,32 @@ async function planPickupRows(
   return result
 }
 
+/**
+ * その日の場所が、変えた計画・曜日・日付で決まる日か。
+ *   - 特定日の上書き（date）: その日で、その計画がその日の計画
+ *   - 曜日別設定（dayOfWeek）: その曜日で、その計画がその日の計画
+ *   - 計画（どちらもなし）: その計画がその日の計画で、その曜日に曜日別設定の場所がない日。
+ *     計画の曜日以外に足した日（出席記録だけ）で、その計画の場所を使う日も含める
+ */
+function inScope(
+  scope: PickupSyncScope,
+  day: {
+    date: string
+    dow: number
+    dayPlan: { id: string } | undefined
+    daySettingType: string | null | undefined
+    reservation: unknown
+    fallbackPlan: { id: string } | undefined
+  }
+): boolean {
+  if (scope.date !== undefined) return day.date === scope.date && day.dayPlan?.id === scope.planId
+  if (scope.dayOfWeek !== undefined) return day.dow === scope.dayOfWeek && day.dayPlan?.id === scope.planId
+  if (day.dayPlan) {
+    return day.dayPlan.id === scope.planId && day.daySettingType !== 'home' && day.daySettingType !== 'school'
+  }
+  return !day.reservation && day.fallbackPlan?.id === scope.planId
+}
+
 /** 行の場所を書きかえる。同じ場所へ変える行はまとめて1回で送る */
 async function applyRows(
   supabase: SupabaseServerClient,
@@ -315,13 +355,14 @@ const asLocation = (v: string | null | undefined): PickupLocationType | undefine
  */
 export async function refreshFuturePickupLocations(
   childId: string,
-  options: { baseChanged?: boolean; from?: string | null } = {}
+  options: { baseChanged?: boolean; from?: string | null; scope?: PickupSyncScope } = {}
 ): Promise<PickupSyncResult> {
   if (!(await canSync())) return { updated: 0, review: [] }
   const supabase = await createClient()
   const plan = await planPickupRows(supabase, childId, {
     baseChanged: options.baseChanged ?? true,
     from: asLocation(options.from),
+    scope: options.scope,
   })
   return { updated: await applyRows(supabase, plan.auto), review: toClient(plan.review) }
 }
@@ -353,22 +394,41 @@ export async function applyPickupReview(childId: string, rowIds: string[]): Prom
   const schoolValue = (childRow as unknown as { schools: { name: string } | null } | null)?.schools?.name ?? null
   const typeOf = (to: string): PickupLocationType => (to === schoolValue ? 'school' : 'home')
 
-  for (const r of picked) {
-    if (r.overrideId) {
+  // 書きかえは「その日だけの指定（特定日の上書き・予約）」→「送迎の行」の順にし、
+  // 指定は新しい場所ごとにまとめて送る（1日ずつ送ると、途中で失敗したときに半端な日が多く残る）。
+  // 指定を先に変えるのは、途中で失敗しても次の同期で戻らないため：
+  //   - 指定だけ変わって行が古いまま → 次の同期で新しい指定どおりにそろう
+  //   - 行だけ変わって指定が古いまま → 次の同期で古い指定に戻ってしまう
+  // 指定の書きかえに失敗したら、行は変えずに止める
+  const idsByType = (key: 'overrideId' | 'reservationId') => {
+    const map = new Map<PickupLocationType, string[]>()
+    for (const r of picked) {
+      const id = r[key]
+      if (!id) continue
+      const type = typeOf(r.to)
+      map.set(type, [...(map.get(type) ?? []), id])
+    }
+    return [...map]
+  }
+  const specifierWrites = [
+    ...idsByType('overrideId').map(async ([type, ids]) => {
       const { error } = await supabase
         .from('usage_plan_date_overrides')
-        .update({ pickup_location_type: typeOf(r.to) })
-        .eq('id', r.overrideId)
+        .update({ pickup_location_type: type })
+        .in('id', ids)
       if (error) throw new Error(`特定日の上書きの書きかえに失敗しました: ${error.message}`)
-    }
-    if (r.reservationId) {
+    }),
+    ...idsByType('reservationId').map(async ([type, ids]) => {
       const { error } = await supabase
         .from('usage_reservations')
-        .update({ pickup_location_type: typeOf(r.to), pickup_address_id: null })
-        .eq('id', r.reservationId)
+        .update({ pickup_location_type: type, pickup_address_id: null })
+        .in('id', ids)
       if (error) throw new Error(`利用予定の書きかえに失敗しました: ${error.message}`)
-    }
-  }
+    }),
+  ]
+  // 全部が終わってから失敗を知らせる（途中で返すと、残りが裏で書きかわり続ける）
+  const failed = (await Promise.allSettled(specifierWrites)).find((s) => s.status === 'rejected')
+  if (failed) throw (failed as PromiseRejectedResult).reason
   return { updated: await applyRows(supabase, picked) }
 }
 
