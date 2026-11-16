@@ -412,10 +412,14 @@ function ChildEntryFields({
   <div className="flex items-center gap-1.5 mb-2">
     <Car className="h-3.5 w-3.5 text-indigo-500" />
     <span className="text-xs font-semibold text-gray-600">送迎</span>
-    <span className="text-[10px] text-gray-400">（必要なものを選ぶ）</span>
+    <span className="text-[10px] text-gray-400">（行き・帰りは両方選べます）</span>
   </div>
-  <div className="grid grid-cols-2 gap-2">
+  {/* 「行き」「帰り」を両方外すと送迎なしになるが、それだと分かりにくいという
+      声があったので、1回で選べる「送迎なし」も並べる（選ぶと行き・帰りが外れる） */}
+  <div className="grid grid-cols-3 gap-2">
     <button
+      type="button"
+      aria-pressed={entry.goPickup}
       onClick={() => onChange({ goPickup: !entry.goPickup })}
       className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${
         entry.goPickup
@@ -426,6 +430,8 @@ function ChildEntryFields({
       行き
     </button>
     <button
+      type="button"
+      aria-pressed={entry.goDropoff}
       onClick={() => onChange({ goDropoff: !entry.goDropoff })}
       className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${
         entry.goDropoff
@@ -435,12 +441,19 @@ function ChildEntryFields({
     >
       帰り
     </button>
+    <button
+      type="button"
+      aria-pressed={!entry.goPickup && !entry.goDropoff}
+      onClick={() => onChange({ goPickup: false, goDropoff: false })}
+      className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${
+        !entry.goPickup && !entry.goDropoff
+          ? 'bg-gray-600 text-white shadow-sm'
+          : 'bg-gray-50 text-gray-600 border border-gray-200'
+      }`}
+    >
+      送迎なし
+    </button>
   </div>
-  {!entry.goPickup && !entry.goDropoff && (
-    <p className="mt-2 text-[10px] text-gray-400">
-      どちらも選ばない場合は「送迎なし」として連絡します
-    </p>
-  )}
 
   {/* 時刻は聞かない。施設が利用時間から決める。
       代わりに「どこへ」を選んでもらう */}
