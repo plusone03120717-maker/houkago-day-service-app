@@ -173,7 +173,7 @@ export async function loadStaffWeekOverview(weekStart: string): Promise<StaffWee
  * 「この週の予定を保護者に知らせる」。押した時点の全児童の予定を残す。
  * 2回目からは「変更を知らせる」の意味になり、残す予定を今のものに置きかえる。
  */
-export async function notifyWeek(weekStart: string, userId: string): Promise<{ error?: string }> {
+export async function notifyWeek(weekStart: string, userId: string | null): Promise<{ error?: string }> {
   const admin = getAdminClient()
   const children = await loadActiveChildren(admin)
   const { snapshots } = await loadWeekSchedule(admin, children.map((c) => c.id), weekStart)
@@ -390,4 +390,42 @@ export async function withParentChangeAck<T>(
     console.error('[schedule-week-confirm] 確認の記録を追いつかせられませんでした', err)
   }
   return result
+}
+
+// ─────────────────────── 知らせていない変更（押し忘れの防止） ───────────────────────
+
+export type PendingChangeWeek = {
+  weekStart: string
+  /** 知らせたあとで予定が変わり、まだ知らせ直していない児童 */
+  childNames: string[]
+}
+
+/**
+ * 保護者に知らせた週のうち、そのあとで予定が変わったのに「変更を知らせる」を
+ * まだ押していない週と児童（利用状況のボタン「変更を知らせる（○人）」と同じ数え方）。
+ * fromWeek（月曜）から先の、知らせた週だけを見る。
+ *
+ * スタッフが押し忘れないよう、画面の共通の枠で聞くのと、日曜17時の自動の知らせに使う。
+ */
+export async function loadPendingChangeWeeks(fromWeek: string): Promise<PendingChangeWeek[]> {
+  const admin = getAdminClient()
+  const { data, error } = await admin
+    .from('schedule_week_notices')
+    .select('week_start')
+    .gte('week_start', fromWeek)
+    .order('week_start')
+    .limit(6)
+  if (isMissingTable(error)) return []
+  if (error) throw new Error(error.message)
+
+  const out: PendingChangeWeek[] = []
+  for (const { week_start } of (data ?? []) as { week_start: string }[]) {
+    const overview = await loadStaffWeekOverview(week_start)
+    if (!overview.ready) continue
+    const childNames = overview.rows
+      .filter((r) => r.changedSinceNotice.length > 0)
+      .map((r) => r.childName)
+    if (childNames.length > 0) out.push({ weekStart: week_start, childNames })
+  }
+  return out
 }

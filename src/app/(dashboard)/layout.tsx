@@ -5,6 +5,7 @@ import { getStaffAccess } from '@/lib/require-admin'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 import { PendingRequestsBadge } from '@/components/layout/pending-requests-badge'
+import { ScheduleChangePrompt } from '@/components/layout/schedule-change-prompt'
 
 // 認証ユーザーごとにデータが異なるため、サーバーキャッシュ・ルーターキャッシュを完全に無効化
 export const dynamic = 'force-dynamic'
@@ -27,7 +28,10 @@ export default async function DashboardLayout({
 
   const role = user.role as string
   // 施設長かどうか（お金まわりを外した管理者）。users の読み取りは getSessionUser と共通
-  const canManageMoney = role === 'staff' ? false : (await getStaffAccess())?.canManageMoney ?? false
+  const access = role === 'staff' ? null : await getStaffAccess()
+  const canManageMoney = access?.canManageMoney ?? false
+  // 保護者へ「変更を知らせる」を押せる人（システム管理者）にだけ、押し忘れの確認を出す
+  const canEditOperations = access?.canEditOperations ?? false
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -46,6 +50,7 @@ export default async function DashboardLayout({
           {children}
         </main>
       </div>
+      {canEditOperations && <ScheduleChangePrompt />}
     </div>
   )
 }
