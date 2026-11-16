@@ -24,6 +24,10 @@
       "schedule": "0 22 28-31 * *"
     },
     {
+      "path": "/api/cron/schedule-week-weekly-notify",
+      "schedule": "0 15 * * 5"
+    },
+    {
       "path": "/api/cron/schedule-week-auto-notify",
       "schedule": "0 8 * * 0"
     },
