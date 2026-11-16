@@ -24,6 +24,8 @@ jobs:
       NEXT_PUBLIC_LIFF_ID: build-check-placeholder
       NEXT_PUBLIC_LIFF_STAFF_ID: build-check-placeholder
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: build-check-placeholder
+      # 組み立てのときに作られる部分があるので、サーバー用の Supabase のキーも見本の値を入れる
+      SUPABASE_SERVICE_ROLE_KEY: build-check-placeholder
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
