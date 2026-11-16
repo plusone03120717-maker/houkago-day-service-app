@@ -163,7 +163,7 @@ export function ScheduleWeekPanel({
             )}
           </span>
         ) : (
-          <span className="text-gray-600">この週は、まだ保護者に知らせていません</span>
+          <span className="text-gray-600">この週は、まだ保護者に知らせていません（前の週の金曜の夜中12時に、自動で知らせます）</span>
         )}
       </div>
 
