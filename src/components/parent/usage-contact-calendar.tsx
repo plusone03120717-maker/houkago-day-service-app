@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { Loader2, ChevronLeft, ChevronRight, X, Car, Clock } from 'lucide-react'
 import { AutoTextarea } from '@/components/ui/auto-textarea'
@@ -806,8 +806,22 @@ export function UsageContactCalendar({
     setCancelTarget(null)
   }
 
+  /**
+   * 日付・まとめて申し込むのシートのスクロールする箱（同時に開くのは1つだけ）。
+   * お知らせ（送信しました・エラー）はシートのいちばん上に出るので、
+   * 送信ボタンを押したあとは上まで戻して見せる。戻さないと、
+   * 送れたのか送れなかったのかが分からない（2026-11-16 保護者からの問い合わせ）
+   */
+  const sheetScrollRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (toast) sheetScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [toast])
+
   function updateEntry(childId: string, patch: Partial<EntryState>) {
     setEntries((prev) => ({ ...prev, [childId]: { ...prev[childId], ...patch } }))
+    // 選び直したら、前に出たエラー（「お子さまを選択してください」など）は消す。
+    // 残っていると、直したのにまだ送れないように見えるため
+    setToast((t) => (t && !t.ok ? null : t))
   }
 
   /**
@@ -1368,7 +1382,8 @@ export function UsageContactCalendar({
         <div className="fixed inset-0 z-50 flex flex-col justify-end">
           <div className="absolute inset-0 bg-black/40" onClick={() => setBulkOpen(false)} />
           <div
-            className="relative bg-white rounded-t-3xl shadow-2xl max-h-[85vh] overflow-y-auto mx-auto w-full max-w-2xl"
+            ref={sheetScrollRef}
+            className="relative bg-white rounded-t-3xl shadow-2xl max-h-[85dvh] overflow-y-auto mx-auto w-full max-w-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-center pt-3 pb-2">
@@ -1393,7 +1408,7 @@ export function UsageContactCalendar({
               </button>
             </div>
 
-            <div className="px-4 pt-3 pb-8 space-y-3">
+            <div className="px-4 pt-3 pb-[calc(4rem+env(safe-area-inset-bottom))] space-y-3">
               {toast && (
                 <div className={`rounded-2xl px-4 py-3 text-sm font-medium ${
                   toast.ok ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'
@@ -1521,7 +1536,8 @@ export function UsageContactCalendar({
         <div className="fixed inset-0 z-50 flex flex-col justify-end">
           <div className="absolute inset-0 bg-black/40" onClick={closeSheet} />
           <div
-            className="relative bg-white rounded-t-3xl shadow-2xl max-h-[85vh] overflow-y-auto mx-auto w-full max-w-2xl"
+            ref={sheetScrollRef}
+            className="relative bg-white rounded-t-3xl shadow-2xl max-h-[85dvh] overflow-y-auto mx-auto w-full max-w-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-center pt-3 pb-2">
@@ -1541,7 +1557,7 @@ export function UsageContactCalendar({
               </button>
             </div>
 
-            <div className="px-4 pt-3 pb-8 space-y-3">
+            <div className="px-4 pt-3 pb-[calc(4rem+env(safe-area-inset-bottom))] space-y-3">
               {toast && (
                 <div className={`rounded-2xl px-4 py-3 text-sm font-medium ${
                   toast.ok ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'
