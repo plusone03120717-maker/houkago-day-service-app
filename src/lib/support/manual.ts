@@ -1,41 +1,29 @@
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
+import { MANUAL_HTML } from '@/generated/docs-manual'
 
 /**
  * サポートボットの知識源。docs/manual.html をテキスト化して返す。
  *
- * マニュアルは 4万字ほどあり、これを毎リクエスト読み直すのは無駄なので
- * モジュールスコープにキャッシュする。Vercel の関数インスタンスが生きている
- * 間は再読み込みされない（デプロイのたびに新しいインスタンスになるので、
- * マニュアルを更新して push すれば自動的に反映される）。
+ * マニュアルは 4万字ほどあり、テキスト化を毎リクエストやり直すのは無駄なので
+ * モジュールスコープにキャッシュする。
  *
- * docs/ は public/ の外にあり、そのままでは関数バンドルに含まれない。
- * next.config.ts の outputFileTracingIncludes で明示的に同梱している。
+ * docs/manual.html は、組み立ての前に scripts/gen-docs-module.mjs が
+ * src/generated/docs-manual.ts へ文字列として書き出し、それを取りこむ。
+ * 実行中にファイルを読まないので、Vercel でも Cloudflare Workers でも動く。
+ * マニュアルを更新して push すれば、次の組み立てで両方に反映される。
  */
 let cache: string | null = null
 
-const DOCS_DIRS = [
-  path.join(process.cwd(), 'docs'),
-  // Vercel でトレースの基準がずれた場合の保険
-  path.join(process.cwd(), '..', 'docs'),
-]
+const DOCS: Record<string, string> = {
+  'manual.html': MANUAL_HTML,
+}
 
 /**
- * docs/ 配下のファイルをそのまま読む。見つからなければ null。
+ * docs/ 配下のファイルの中身を返す。取りこんでいないファイルなら null。
  *
  * マニュアルを画面に出す /manual と、ボットの知識源の両方から使う。
- * 同じファイルを見ているので、docs/manual.html を更新して push すれば
- * 両方に反映される。
  */
 export async function readDocsFile(fileName: string): Promise<string | null> {
-  for (const dir of DOCS_DIRS) {
-    try {
-      return await readFile(path.join(dir, fileName), 'utf8')
-    } catch {
-      // 次の候補へ
-    }
-  }
-  return null
+  return DOCS[fileName] ?? null
 }
 
 export async function loadManualText(): Promise<string | null> {

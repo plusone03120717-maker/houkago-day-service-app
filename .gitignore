@@ -62,3 +62,9 @@ build/
 .cache/
 coverage/
 kokuhoren-forms-preview.html
+
+# Cloudflare（OpenNext）
+/src/generated/
+/.open-next/
+/.wrangler/
+.dev.vars*

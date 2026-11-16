@@ -1,16 +1,17 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  // サポートボットの知識源。docs/ は public/ の外にあり、参照が動的なので
-  // 自動トレースでは関数バンドルに含まれない。明示的に同梱する。
-  outputFileTracingIncludes: {
-    '/api/support/chat': ['docs/manual.html'],
-    // 操作マニュアルをそのまま配信するルート。同じ理由で同梱が必要
-    '/manual': ['docs/manual.html'],
-  },
+  // docs/manual.html は実行中に読まず、組み立ての前に src/generated/ へ
+  // 取りこむ（scripts/gen-docs-module.mjs）。Cloudflare Workers でも動くようにするため。
+
+  // worker-mailer は Cloudflare Workers 専用（cloudflare:sockets を使う）。Next の組み立てでは
+  // 中まで読まず、Workers で動くときだけ読みこむ（src/lib/fax/send-jfax.ts）
+  serverExternalPackages: ['worker-mailer'],
   // 既定の .next ディレクトリがファイルシステム破損で削除不能になったため出力先を変更
-  // （ドライブを chkdsk で修復後は .next に戻してよい）
-  distDir: 'build',
+  // （ドライブを chkdsk で修復後は .next に戻してよい）。
+  // Cloudflare 向けの組み立て（scripts/cf.mjs が CF_BUILD=1 を付ける）は、OpenNext が
+  // .next しか読まないので .next に出す
+  distDir: process.env.CF_BUILD === '1' ? '.next' : 'build',
   turbopack: {
     resolveAlias: {
       // jsPDF（PDF保存ボタン）が使う圧縮ライブラリ。Node 用ビルドは worker_threads を

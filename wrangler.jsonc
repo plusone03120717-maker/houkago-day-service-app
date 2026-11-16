@@ -1,0 +1,29 @@
+// Cloudflare Workers の設定（OpenNext で Next.js を動かす）。
+//
+// 本番（houkago-app）と試験（houkago-app-staging）の2つを分けて置く。
+// 環境変数・キーは Cloudflare の管理画面か `wrangler secret bulk` で入れる
+// （このファイルには書かない）。
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "main": "cloudflare/worker.ts",
+  "name": "houkago-app",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": { "enabled": true },
+  // 時刻は UTC（日本時間 − 9時間）。cloudflare/worker.ts の CRON_ROUTES と同じ値にする
+  "triggers": {
+    "crons": ["0 21 * * *", "30 11 * * *", "0 22 28-31 * *"]
+  },
+  "env": {
+    "staging": {
+      "name": "houkago-app-staging",
+      // 試験環境では、決まった時刻の処理を動かさない
+      // （試験中にスタッフへ LINE が届かないように）。確かめるときは手で呼ぶ
+      "triggers": { "crons": [] }
+    }
+  }
+}

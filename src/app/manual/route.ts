@@ -8,12 +8,10 @@ import { readDocsFile } from '@/lib/support/manual'
  *
  * public/ に置くとログインなしで誰でも読めてしまうのと、サポートボットの
  * 知識源と実体が二重になるため、docs/ の1ファイルをここから読んで返す。
- * docs/ は自動トレースでは関数バンドルに含まれないので、next.config.ts の
- * outputFileTracingIncludes に '/manual' を登録している。
+ * 中身は組み立ての前に src/generated/docs-manual.ts へ取りこんである
+ * （scripts/gen-docs-module.mjs）。
  */
 
-// 280KBほどあるので、関数インスタンスが生きている間は読み直さない。
-// デプロイのたびに新しいインスタンスになるため、更新は自動的に反映される。
 let cache: string | null = null
 
 export async function GET(request: NextRequest) {

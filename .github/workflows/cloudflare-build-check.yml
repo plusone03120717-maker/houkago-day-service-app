@@ -1,0 +1,37 @@
+# Cloudflare（OpenNext）向けの組み立てが通るかだけを確かめる。どこにも出さない。
+#
+# Windows では組み立ての最後（部品へのショートカット作り）が権限で止まるので、
+# Linux の GitHub Actions で確かめる。公開の設定（NEXT_PUBLIC_...）は見本の値を使う。
+# 本物の値は使わないので、ここで組み立てたものは動かさない（大きさと組み立ての確認だけ）。
+name: Cloudflare build check
+
+on:
+  push:
+    branches: [feat/cloudflare-migration]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: build-check-placeholder
+      NEXT_PUBLIC_APP_URL: https://example.invalid
+      NEXT_PUBLIC_LIFF_ID: build-check-placeholder
+      NEXT_PUBLIC_LIFF_STAFF_ID: build-check-placeholder
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: build-check-placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run cf:build
+      - name: 大きさを測る（送らない）
+        run: npx wrangler deploy --dry-run --env staging --outdir /tmp/cf-dry | grep -E "Total Upload"
