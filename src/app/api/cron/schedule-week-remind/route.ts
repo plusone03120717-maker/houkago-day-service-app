@@ -14,6 +14,7 @@ export const dynamic = 'force-dynamic'
  * （src/lib/schedule-week-remind.ts）。
  *
  * 試すとき：?dry=1 で送らずに相手と文面だけを返す。?week=YYYY-MM-DD（月曜）で週を選べる。
+ * ?test_child=<児童の id> で、その児童の保護者にだけ試しに送る（名前が「テスト」で始まる児童だけ・記録は残さない）。
  */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
@@ -31,6 +32,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'week は月曜日の日付で指定してください' }, { status: 400 })
   }
   const weekStart = weekParam ?? remindWeekStart(getTodayJST())
+  const testChildId = params.get('test_child') ?? undefined
+  if (testChildId && !/^[0-9a-f-]{36}$/i.test(testChildId)) {
+    return NextResponse.json({ error: 'test_child の指定が正しくありません' }, { status: 400 })
+  }
 
   const token = process.env.LINE_PARENT_CHANNEL_ACCESS_TOKEN ?? null
   if (!dryRun && !token) {
@@ -39,7 +44,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await sendReminders(weekStart, { dryRun, token })
+    const result = await sendReminders(weekStart, { dryRun, token, testChildId })
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

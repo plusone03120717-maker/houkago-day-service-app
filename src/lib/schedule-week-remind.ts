@@ -250,11 +250,43 @@ export type RemindResult = {
  * 催促を送る。dryRun のときは送らずに、送る相手と文面だけを返す。
  * 送ったら schedule_week_reminders に記録し、同じ週に同じ保護者へ2回送らない。
  */
+/**
+ * 試しに送るときの相手。名前が「テスト」で始まる児童の保護者だけに送る
+ * （本物の家庭へ試しの LINE が届かないように）。チェック・知らせた週・確認の状態は見ず、
+ * 送った記録も残さない（日曜の本番の催促を止めないため）。
+ */
+async function planTestReminder(childId: string): Promise<RemindPlan & { error?: string }> {
+  const admin = getAdminClient()
+  const { data: child } = await admin.from('children').select('id, name').eq('id', childId).maybeSingle()
+  const empty = { weekStart: '', notNotified: false, recipients: [], skipped: [] }
+  if (!child) return { ...empty, error: '児童が見つかりません' }
+  const { id, name } = child as { id: string; name: string }
+  if (!name.startsWith('テスト')) return { ...empty, error: '試しに送れるのは、名前が「テスト」で始まる児童だけです' }
+  const { data: links } = await admin
+    .from('guardian_children')
+    .select('guardians!inner(line_user_id)')
+    .eq('child_id', id)
+  const lines = [
+    ...new Set(
+      ((links ?? []) as unknown as { guardians: { line_user_id: string | null } }[])
+        .map((r) => r.guardians.line_user_id)
+        .filter((v): v is string => !!v)
+    ),
+  ]
+  return {
+    ...empty,
+    recipients: lines.map((line) => ({ lineUserId: line, children: [{ id, name, status: 'waiting' as const }] })),
+    skipped: lines.length === 0 ? [{ childName: name, reason: '保護者の LINE の登録がない' }] : [],
+  }
+}
+
 export async function sendReminders(
   weekStart: string,
-  opts: { dryRun: boolean; token: string | null }
+  opts: { dryRun: boolean; token: string | null; testChildId?: string }
 ): Promise<RemindResult> {
-  const plan = await planReminders(weekStart)
+  const test = opts.testChildId ? await planTestReminder(opts.testChildId) : null
+  if (test?.error) throw new Error(test.error)
+  const plan = test ?? (await planReminders(weekStart))
   const url = portalUrl()
   const base: RemindResult = {
     weekStart,
@@ -278,12 +310,14 @@ export async function sendReminders(
   const admin = getAdminClient()
   for (const r of plan.recipients) {
     const childNames = r.children.map((c) => c.name)
-    // 先に記録を作る。2つの実行が重なっても、記録を作れたほうだけが送る
-    const { error: claimError } = await admin.from('schedule_week_reminders').insert({
-      week_start: weekStart,
-      line_user_id: r.lineUserId,
-      child_ids: r.children.map((c) => c.id),
-    })
+    // 先に記録を作る。2つの実行が重なっても、記録を作れたほうだけが送る（試しのときは残さない）
+    const { error: claimError } = test
+      ? { error: null }
+      : await admin.from('schedule_week_reminders').insert({
+          week_start: weekStart,
+          line_user_id: r.lineUserId,
+          child_ids: r.children.map((c) => c.id),
+        })
     if (claimError) {
       base.skipped.push({ childName: childNames.join('・'), reason: 'この週はもう送った' })
       continue
@@ -298,6 +332,8 @@ export async function sendReminders(
     })
     if (res.ok) {
       base.sent++
+    } else if (test) {
+      base.failed.push({ childNames, status: res.status })
     } else {
       // 送れなかったら記録を消し、次の実行でもう一度送れるようにする
       await admin
