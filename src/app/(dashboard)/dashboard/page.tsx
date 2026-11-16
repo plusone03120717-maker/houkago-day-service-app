@@ -30,6 +30,7 @@ type UnpublishedNote = {
   id: string
   date: string
   content: string
+  unit_id: string | null
   children: { id: string; name: string } | null
 }
 
@@ -165,7 +166,7 @@ export default async function DashboardPage() {
     // 未公開の連絡帳
     supabase
       .from('contact_notes')
-      .select('id, date, content, children(id, name)')
+      .select('id, date, content, unit_id, children(id, name)')
       .is('published_at', null)
       .order('date', { ascending: false })
       .limit(20),
@@ -173,7 +174,8 @@ export default async function DashboardPage() {
     // 当日の出席に紐づく記録数（出席IDの取得を待たずに内部結合で数える）
     supabase
       .from('daily_records')
-      .select('id, daily_attendance!inner(date, status)', { count: 'exact', head: true })
+      .select('attendance_id, daily_attendance!inner(date, status)')
+      .eq('record_type', 'daily_record')
       .eq('daily_attendance.date', today)
       .eq('daily_attendance.status', 'attended'),
 
@@ -265,7 +267,10 @@ export default async function DashboardPage() {
   const thisMonthUniqueChildren = uniqueChildIds.size
 
   // 記録済みの件数（上の並列バッチで取得済み）
-  const writtenCount = writtenRecordsResult.count ?? 0
+  // 日常記録のある出席の数（特記・二重保存を数えない）
+  const writtenCount = new Set(
+    ((writtenRecordsResult.data ?? []) as { attendance_id: string }[]).map((r) => r.attendance_id)
+  ).size
   const unwrittenCount = todayAttendedIds.length - writtenCount
 
   const unpublishedNotes = (unpublishedNotesResult.data ?? []) as unknown as UnpublishedNote[]
@@ -583,7 +588,7 @@ export default async function DashboardPage() {
                 {unpublishedNotes.map((note) => (
                   <Link
                     key={note.id}
-                    href={`/records/${note.children?.id}?date=${note.date}`}
+                    href={`/records/${note.children?.id}?date=${note.date}${note.unit_id ? `&unit=${note.unit_id}` : ''}`}
                     className="flex items-center justify-between py-2 px-1 border-b border-gray-100 last:border-0 hover:bg-gray-50 rounded transition-colors"
                   >
                     <div className="flex items-center gap-2 min-w-0">

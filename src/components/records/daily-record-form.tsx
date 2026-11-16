@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -169,7 +169,26 @@ export function DailyRecordForm({
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  const [bulletPoints, setBulletPoints] = useState('')
+  // メモ（箇条書き）は保存の対象ではないので、書きかけをこの端末に残しておく（子ども＋日付ごと）。
+  // 以前はページを離れると消えていた
+  const memoKey = `daily-memo:${child.id}:${date}`
+  const [bulletPoints, setBulletPointsState] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    try { return window.localStorage.getItem(memoKey) ?? '' } catch { return '' }
+  })
+  const setBulletPoints = (v: string) => {
+    setBulletPointsState(v)
+    try {
+      if (v) window.localStorage.setItem(memoKey, v)
+      else window.localStorage.removeItem(memoKey)
+    } catch { /* 残せなくても入力はできる */ }
+  }
+  const clearMemoDraft = () => {
+    try { window.localStorage.removeItem(memoKey) } catch { /* なにもしない */ }
+  }
+  const [saveError, setSaveError] = useState<string | null>(null)
+  // 特記を消すかを聞いた答え（handleSave の中で使う）
+  const lastConfirm = useRef(false)
   const [generatingDaily, setGeneratingDaily] = useState(false)
   const [refiningNotable, setRefiningNotable] = useState(false)
 
@@ -271,63 +290,80 @@ export function DailyRecordForm({
 
   const handleSave = async () => {
     if (!attendance) return
+
+    // 特記のチェックを外した（または本文を空にした）ときは、前の特記を消すかをその場で聞く。
+    // 以前は何もせず、取り消したつもりの特記が残っていた
+    const existingNotable = dailyRecords.find((r) => r.record_type === 'notable')
+    const removeNotable = !!existingNotable && !(hasNotable && notableContent.trim())
+    lastConfirm.current = removeNotable
+      ? window.confirm('前に保存した特記を消しますか？\n「キャンセル」なら特記は残したまま、ほかの内容を保存します。')
+      : false
+    const confirmedRemoveNotable = removeNotable && lastConfirm.current
+
     setSaving(true)
+    setSaveError(null)
+    // どの保存でも、失敗したら覚えておく（以前は結果を見ず、失敗しても「保存しました」と出ていた）
+    const errors: string[] = []
+    const check = (label: string, res: { error: { message: string } | null }) => {
+      if (res.error) errors.push(`${label}：${res.error.message}`)
+    }
 
     const existingDaily = dailyRecords.find((r) => r.record_type === 'daily_record')
     if (dailyContent) {
       if (existingDaily) {
-        await supabase
+        check('日常記録', await supabase
           .from('daily_records')
           .update({ content: dailyContent, has_notable_flag: false })
-          .eq('id', existingDaily.id)
+          .eq('id', existingDaily.id))
       } else {
-        await supabase.from('daily_records').insert({
+        check('日常記録', await supabase.from('daily_records').insert({
           attendance_id: attendance.id,
           record_type: 'daily_record',
           content: dailyContent,
           has_notable_flag: false,
           created_by: staffId,
-        })
+        }))
       }
     }
 
-    const existingNotable = dailyRecords.find((r) => r.record_type === 'notable')
-    if (hasNotable && notableContent) {
+    if (hasNotable && notableContent.trim()) {
       if (existingNotable) {
-        await supabase
+        check('特記', await supabase
           .from('daily_records')
           .update({ content: notableContent, has_notable_flag: true })
-          .eq('id', existingNotable.id)
+          .eq('id', existingNotable.id))
       } else {
-        await supabase.from('daily_records').insert({
+        check('特記', await supabase.from('daily_records').insert({
           attendance_id: attendance.id,
           record_type: 'notable',
           content: notableContent,
           has_notable_flag: true,
           created_by: staffId,
-        })
+        }))
       }
+    } else if (confirmedRemoveNotable && existingNotable) {
+      check('特記の削除', await supabase.from('daily_records').delete().eq('id', existingNotable.id))
     }
 
     for (const programId of selectedPrograms) {
       const existing = activities.find((a) => a.program_id === programId)
       if (existing) {
-        await supabase
+        check('活動記録', await supabase
           .from('daily_activities')
           .update({
             participated: true,
             achievement_level: null,
             evaluation_notes: activityNotes[programId] ?? null,
           })
-          .eq('id', existing.id)
+          .eq('id', existing.id))
       } else {
-        await supabase.from('daily_activities').insert({
+        check('活動記録', await supabase.from('daily_activities').insert({
           attendance_id: attendance.id,
           program_id: programId,
           participated: true,
           achievement_level: null,
           evaluation_notes: activityNotes[programId] ?? null,
-        })
+        }))
       }
     }
 
@@ -338,50 +374,57 @@ export function DailyRecordForm({
       const existing = activities.find((a) => a.program_id === prog.id)
       if (existing) {
         if (existing.participated) {
-          await supabase.from('daily_activities').update({ participated: false }).eq('id', existing.id)
+          check('活動記録', await supabase.from('daily_activities').update({ participated: false }).eq('id', existing.id))
         }
       } else if (usesDefaultPrograms && DEFAULT_PARTICIPATION_PROGRAM_NAMES.includes(prog.name)) {
-        await supabase.from('daily_activities').insert({
+        check('活動記録', await supabase.from('daily_activities').insert({
           attendance_id: attendance.id,
           program_id: prog.id,
           participated: false,
-        })
+        }))
       }
     }
 
     // 日中一時利用の利用時間のみ保存（送迎は一覧側で管理）。
     // 施設長・スタッフは見るだけなので、出欠の行には触れない
     if (canEditAttendance) {
-      await supabase
+      check('日中一時', await supabase
         .from('daily_attendance')
         .update({
           daytime_support: daytimeSupport,
           daytime_support_start_time: daytimeSupport ? (daytimeSupportStartTime || null) : null,
           daytime_support_end_time: daytimeSupport ? (daytimeSupportEndTime || null) : null,
         })
-        .eq('id', attendance.id)
+        .eq('id', attendance.id))
     }
 
     // 連絡帳はシステム管理者だけが書く（施設長・スタッフの保存では連絡帳に触れない）
     if (canEditContactNote && contactNoteContent) {
       if (initialContactNote) {
-        await supabase
+        check('連絡帳', await supabase
           .from('contact_notes')
           .update({ content: contactNoteContent })
-          .eq('id', initialContactNote.id)
+          .eq('id', initialContactNote.id))
       } else {
-        await supabase.from('contact_notes').insert({
+        check('連絡帳', await supabase.from('contact_notes').insert({
           attendance_id: attendance.id,
           child_id: child.id,
           date,
           unit_id: unitId,
           content: contactNoteContent,
           staff_id: staffId,
-        })
+        }))
       }
     }
 
     setSaving(false)
+    if (errors.length > 0) {
+      // 失敗したら「保存しました」は出さず、入力は残したまま赤で知らせる
+      setSaveError(errors.join('\n'))
+      startTransition(() => router.refresh())
+      return
+    }
+    clearMemoDraft()
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
     startTransition(() => router.refresh())
@@ -606,7 +649,7 @@ export function DailyRecordForm({
                   className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Wand2 className="h-3 w-3" />
-                  {refiningNotable ? '整えています...' : 'AI文章生成'}
+                  {refiningNotable ? '整えています...' : '文章を整える'}
                 </button>
               </div>
             )}
@@ -694,6 +737,14 @@ export function DailyRecordForm({
           )}
         </CardContent>
       </Card>
+
+      {/* 保存に失敗したとき（入力は残っているので、もう一度保存できる） */}
+      {saveError && (
+        <div role="alert" className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p className="font-bold">保存できていない内容があります。もう一度「記録を保存」を押してください。</p>
+          <p className="mt-1 whitespace-pre-line text-xs text-red-700">{saveError}</p>
+        </div>
+      )}
 
       {/* 保存ボタン */}
       <div className="flex justify-end gap-3 pb-6">

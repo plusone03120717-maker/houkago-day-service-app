@@ -320,8 +320,12 @@ export default async function RecordsPage({
   const nextDate = new Date(d)
   nextDate.setDate(d.getDate() + 1)
 
-  const writtenCount = records.length
-  const totalCount = attended.filter((a) => a.status === 'attended').length
+  // 日常記録のある出席の数で数える（特記の行や、二重に保存された行を数えない）
+  const attendedIds = new Set(attended.filter((a) => a.status === 'attended').map((a) => a.id))
+  const writtenCount = new Set(
+    records.filter((r) => !r.has_notable_flag && attendedIds.has(r.attendance_id)).map((r) => r.attendance_id)
+  ).size
+  const totalCount = attendedIds.size
 
   return (
     <RecordsListBoard
