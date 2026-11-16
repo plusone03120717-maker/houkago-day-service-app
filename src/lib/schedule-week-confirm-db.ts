@@ -84,7 +84,7 @@ async function loadActiveChildren(admin: Admin): Promise<{ id: string; name: str
   return (data ?? []) as { id: string; name: string }[]
 }
 
-async function loadNotice(admin: Admin, weekStart: string) {
+export async function loadNotice(admin: Admin, weekStart: string) {
   const { data, error } = await admin
     .from('schedule_week_notices')
     .select('week_start, first_notified_at, last_notified_at, notify_count, snapshot')
@@ -93,7 +93,7 @@ async function loadNotice(admin: Admin, weekStart: string) {
   return { notice: (data ?? null) as NoticeRow | null, error }
 }
 
-async function loadConfirmations(admin: Admin, weekStart: string, childIds?: string[]) {
+export async function loadConfirmations(admin: Admin, weekStart: string, childIds?: string[]) {
   let query = admin
     .from('schedule_week_confirmations')
     .select('child_id, week_start, confirmed_at, snapshot')

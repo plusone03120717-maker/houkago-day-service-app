@@ -6,6 +6,7 @@ import { getStaffAccess } from '@/lib/require-admin'
 import { ScheduleWeekPanel } from '@/components/usage/schedule-week-panel'
 import { loadStaffWeekOverview, type StaffWeekOverview } from '@/lib/schedule-week-confirm-db'
 import { addDays, isWeekStart, weekStartOf } from '@/lib/schedule-week-confirm'
+import { loadRemindInfo, type RemindInfo } from '@/lib/schedule-week-remind'
 import { getTodayJST } from '@/lib/utils'
 
 type Unit = { id: string; name: string; capacity: number }
@@ -51,6 +52,11 @@ export default async function UsagePage({
   const weekOverviewPromise: Promise<StaffWeekOverview> = loadStaffWeekOverview(weekStart).catch((err) => {
     console.error('[usage] 週のお知らせを読みこめませんでした', err)
     return { ready: false, reason: 'error' }
+  })
+  // 「LINE で催促」のチェックと、その週に送った記録（migration 188 の前は出さない）
+  const remindInfoPromise: Promise<RemindInfo> = loadRemindInfo(weekStart).catch((err) => {
+    console.error('[usage] 催促のチェックを読みこめませんでした', err)
+    return { ready: false }
   })
 
   const now = new Date()
@@ -202,6 +208,7 @@ export default async function UsagePage({
   }
   // 読みこみに失敗しても利用状況の画面は止めない（欄に「読みこめませんでした」と出す）
   const weekOverview: StaffWeekOverview = await weekOverviewPromise
+  const remindInfo: RemindInfo = await remindInfoPromise
 
   return (
     <div className="space-y-5">
@@ -212,6 +219,7 @@ export default async function UsagePage({
 
       <ScheduleWeekPanel
         overview={weekOverview}
+        remindInfo={remindInfo}
         weekStart={weekStart}
         prevHref={weekHref(addDays(weekStart, -7))}
         nextHref={weekHref(addDays(weekStart, 7))}
