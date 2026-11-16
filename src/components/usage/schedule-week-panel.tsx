@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { BellRing, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { notifyScheduleWeek } from '@/app/actions/schedule-week'
+import { notifyScheduleWeek, setScheduleRemindTarget } from '@/app/actions/schedule-week'
 import {
   STATUS_LABEL,
   shortDate,
@@ -14,6 +14,7 @@ import {
   type ChildWeekStatus,
 } from '@/lib/schedule-week-confirm'
 import type { StaffWeekOverview } from '@/lib/schedule-week-confirm-db'
+import type { RemindInfo } from '@/lib/schedule-week-remind'
 
 const STATUS_STYLE: Record<ChildWeekStatus, string> = {
   no_plan: 'bg-gray-100 text-gray-500',
@@ -41,15 +42,19 @@ function formatDateTime(iso: string): string {
  *
  * 週を選んで「保護者に知らせる」を押すと、保護者の画面に「予定の確認」が出る。
  * 下の一覧で、保護者が「確認しました」を押したかを児童ごとに見られる。
+ * 一覧の「LINE で催促」にチェックした児童の保護者には、日曜18時に、翌週の確認が
+ * まだなら LINE を送る（src/lib/schedule-week-remind.ts）。チェックは外すまで残る。
  */
 export function ScheduleWeekPanel({
   overview,
+  remindInfo,
   weekStart,
   prevHref,
   nextHref,
   canEdit,
 }: {
   overview: StaffWeekOverview
+  remindInfo: RemindInfo
   weekStart: string
   prevHref: string
   nextHref: string
@@ -59,6 +64,30 @@ export function ScheduleWeekPanel({
   const [open, setOpen] = useState(false)
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
   const [pending, startTransition] = useTransition()
+  // 催促のチェック。押したらすぐ画面に出し、保存に失敗したら元に戻す
+  const [remindTargets, setRemindTargets] = useState<Set<string>>(
+    () => new Set(remindInfo.ready ? remindInfo.targets : [])
+  )
+  const [savingRemind, setSavingRemind] = useState<string | null>(null)
+
+  const handleRemindToggle = async (childId: string, on: boolean) => {
+    const apply = (value: boolean) =>
+      setRemindTargets((prev) => {
+        const next = new Set(prev)
+        if (value) next.add(childId)
+        else next.delete(childId)
+        return next
+      })
+    apply(on)
+    setSavingRemind(childId)
+    setMessage(null)
+    const result = await setScheduleRemindTarget(childId, on)
+    setSavingRemind(null)
+    if (result.error) {
+      apply(!on)
+      setMessage({ tone: 'error', text: result.error })
+    }
+  }
 
   const header = (
     <div className="flex flex-wrap items-center gap-2">
@@ -169,6 +198,13 @@ export function ScheduleWeekPanel({
         </p>
       )}
 
+      {remindInfo.ready && (
+        <p className="text-xs text-gray-500">
+          一覧の「LINE で催促」にチェックした児童の保護者には、毎週日曜18時に、翌週の予定の確認がまだなら
+          LINE で催促します（チェック {remindTargets.size}人・外すまで残ります）。
+        </p>
+      )}
+
       {rows.length > 0 && (
         <div>
           <button
@@ -187,6 +223,9 @@ export function ScheduleWeekPanel({
                     <th className="px-3 py-2 font-medium">児童</th>
                     <th className="px-3 py-2 font-medium">保護者の確認</th>
                     <th className="px-3 py-2 font-medium">くわしく</th>
+                    {remindInfo.ready && (
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">LINE で催促</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -206,7 +245,29 @@ export function ScheduleWeekPanel({
                         {r.status !== 'confirmed' && r.changedSinceNotice.length > 0 && (
                           <span className="ml-1 text-orange-700">（まだ知らせていない変更あり）</span>
                         )}
+                        {remindInfo.ready && remindInfo.sent[r.childId] && (
+                          <span className="ml-1 text-indigo-700">
+                            （{formatDateTime(remindInfo.sent[r.childId])} に LINE で催促）
+                          </span>
+                        )}
                       </td>
+                      {remindInfo.ready && (
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <label className="inline-flex items-center gap-1.5 text-xs text-gray-600">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-indigo-600"
+                              aria-label={`${r.childName}の保護者に LINE で催促する`}
+                              checked={remindTargets.has(r.childId)}
+                              disabled={!canEdit || savingRemind === r.childId}
+                              onChange={(e) => handleRemindToggle(r.childId, e.target.checked)}
+                            />
+                            {!remindInfo.withLine.includes(r.childId) && (
+                              <span className="text-gray-400">LINE 未登録</span>
+                            )}
+                          </label>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

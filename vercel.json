@@ -22,6 +22,10 @@
     {
       "path": "/api/cron/billing-month-start",
       "schedule": "0 22 28-31 * *"
+    },
+    {
+      "path": "/api/cron/schedule-week-remind",
+      "schedule": "0 9 * * 0"
     }
   ],
   "headers": [
