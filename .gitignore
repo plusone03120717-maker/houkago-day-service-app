@@ -68,3 +68,7 @@ kokuhoren-forms-preview.html
 /.open-next/
 /.wrangler/
 .dev.vars*
+# 試験・本番の値を入れたファイル（Cloudflare に入れる元）は Git に入れない
+.env.staging
+.env.production
+.env*.local
