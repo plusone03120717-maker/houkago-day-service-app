@@ -6,7 +6,8 @@
  * スクリプトで文字列のモジュールにしておけば、Vercel でも Cloudflare でも
  * 同じように動く。
  *
- * npm run build / npm run dev の前に自動で動く（package.json の prebuild・predev）。
+ * npm install のあと・npm run build / npm run dev の前に自動で動く
+ * （package.json の postinstall・prebuild・predev）。
  * 書き出したファイル（src/generated/）は Git に入れない。
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'

@@ -8,6 +8,7 @@
     "prebuild": "node scripts/gen-docs-module.mjs",
     "build": "next build",
     "start": "next start",
+    "postinstall": "node scripts/gen-docs-module.mjs",
     "lint": "eslint",
     "verify:kokuhoren": "tsx scripts/verify-kokuhoren-csv.ts",
     "verify:service-record": "tsx scripts/verify-service-record-csv.ts",
