@@ -25,7 +25,9 @@
     "cf:build": "node scripts/cf.mjs build",
     "cf:preview": "node scripts/cf.mjs preview",
     "cf:deploy:staging": "node scripts/cf.mjs deploy-staging",
-    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "dev:staging": "node scripts/dev-staging.mjs",
+    "seed:staging": "node scripts/seed-staging.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
