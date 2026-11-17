@@ -122,10 +122,52 @@ check('知らせたあとで予定ができた児童は「まだ」＋知らせ�
   assert.deepEqual(s.changedSinceNotice, ['2026-11-16', '2026-11-18'])
 })
 
-check('保護者に見せる1行', () => {
-  assert.equal(dayLine(day('2026-11-18')), '11/18（水） 14:30〜17:30')
+check('保護者に見せる1行（送迎の区分ごと）', () => {
+  // 行き帰りの送迎：お迎えの時刻（利用開始の10分前）とお送りの出発
+  assert.equal(dayLine(day('2026-11-18')), '11/18（水） お迎え 14:20（学校）／お送り 17:30 出発')
+  // 予定にお迎えの時刻があればそれを使う
+  assert.equal(dayLine(day('2026-11-18', { pickup_time: '14:15:00' })), '11/18（水） お迎え 14:15（学校）／お送り 17:30 出発')
+  assert.equal(
+    dayLine(day('2026-11-18', { transport_type: 'pickup_only', pickup_place: 'home' })),
+    '11/18（水） お迎え 14:20（ご自宅）〜17:30 まで'
+  )
+  assert.equal(dayLine(day('2026-11-18', { transport_type: 'dropoff_only' })), '11/18（水） 14:30 から／お送り 17:30 出発')
+  // 送迎なし：保護者が送り迎えするので利用時間のまま
+  assert.equal(dayLine(day('2026-11-18', { transport_type: 'none', pickup_time: '14:20' })), '11/18（水） 14:30〜17:30')
+  assert.equal(dayLine(day('2026-11-18', { transport_type: null })), '11/18（水） 14:30〜17:30')
   assert.equal(dayLine(day('2026-11-19', { kind: 'absent' })), '11/19（木） お休み')
   assert.equal(dayLine(day('2026-11-20', { service_start_time: null, service_end_time: null })), '11/20（金）')
+  assert.equal(
+    dayLine(day('2026-11-20', { service_start_time: null, service_end_time: null, transport_type: 'none' })),
+    '11/20（金）'
+  )
+})
+
+check('お迎えの時刻だけが変わっても「変更後まだ」', () => {
+  const now = buildWeekSnapshots([day('2026-11-16'), day('2026-11-18', { pickup_time: '14:10' })], '2026-11-16').get('a')!
+  const s = childWeekState({ current: now, notified: true, noticeSnapshot: base, confirmSnapshot: base, today })
+  assert.equal(s.status, 'changed')
+  assert.deepEqual(s.changedSinceConfirm, ['2026-11-18'])
+})
+
+check('送迎なしの日は、使わないお迎えの時刻が変わっても変更にしない', () => {
+  const before = buildWeekSnapshots([day('2026-11-18', { transport_type: 'none' })], '2026-11-16').get('a')!
+  const now = buildWeekSnapshots([day('2026-11-18', { transport_type: 'none', pickup_time: '14:10' })], '2026-11-16').get('a')!
+  assert.deepEqual(changedDates(before, now, today), [])
+})
+
+check('お迎えの時刻を足す前の確認（古い要約）は「変更後まだ」に戻さない', () => {
+  // 11/17 より前の要約は6つまで（お迎えの時刻が無い）
+  const legacy = Object.fromEntries(
+    Object.entries(base).map(([d, sig]) => [d, sig.split('|').slice(0, 6).join('|')])
+  )
+  const s = childWeekState({ current: base, notified: true, noticeSnapshot: legacy, confirmSnapshot: legacy, today })
+  assert.equal(s.status, 'confirmed')
+  // 古い要約でも、利用時間が変われば今までどおり「変更後まだ」
+  const now = buildWeekSnapshots([day('2026-11-16'), day('2026-11-18', { service_end_time: '18:00' })], '2026-11-16').get('a')!
+  assert.deepEqual(changedDates(legacy, now, today), ['2026-11-18'])
+  // お休みの日は今までどおり
+  assert.deepEqual(changedDates({ '2026-11-18': 'absent' }, { '2026-11-18': 'absent' }, today), [])
 })
 
 check('当日の違いは見ない（出席を付けても変わったことにしない）', () => {

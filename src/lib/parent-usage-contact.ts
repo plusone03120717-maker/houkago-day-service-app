@@ -100,6 +100,12 @@ export type FacilityScheduleDay = {
   service_start_time?: string | null
   service_end_time?: string | null
   transport_type?: TransportType | null
+  /**
+   * お迎えの時刻（学校などで子どもと出る時刻）。行きの送迎がある日だけ。
+   * その日の記録の送迎の出発 > 保護者の利用連絡 > 特定日 > 曜日別 > 計画。
+   * どれにも無ければ null（表示する側で利用開始の10分前にする）。
+   */
+  pickup_time?: string | null
   /** 送迎の行き先・帰り先（@/lib/transport-place の値） */
   pickup_place?: string | null
   dropoff_place?: string | null
@@ -571,7 +577,7 @@ export async function loadFacilitySchedule(
         'child_id, date, status, check_in_time, check_out_time, ' +
         'basic_service, service_start_time, service_end_time, ' +
         'daytime_support, daytime_support_start_time, daytime_support_end_time, ' +
-        'pickup_type, units (name)'
+        'pickup_type, pickup_departure_time, units (name)'
       )
       .in('child_id', childIds)
       .gte('date', startDate)
@@ -667,6 +673,8 @@ export async function loadFacilitySchedule(
     daytime_support_start_time: string | null
     daytime_support_end_time: string | null
     pickup_type: TransportType | null
+    /** お迎えの出発＝学校などで子どもと出る時刻（@/lib/transport-timing） */
+    pickup_departure_time: string | null
   }
 
   const planRows = (plans ?? []) as unknown as PlanFull[]
@@ -788,6 +796,11 @@ export async function loadFacilitySchedule(
           ])
         : undefined
 
+      const transportType = (res?.transport_type ?? att?.pickup_type ?? planned?.transportType ?? null) as
+        | TransportType
+        | null
+      const usesPickup = transportType === 'pickup_only' || transportType === 'both'
+
       out.push({
         child_id: e.childId,
         date: e.date,
@@ -798,10 +811,13 @@ export async function loadFacilitySchedule(
         // その日の記録があればそれが最新。無ければ利用スケジュールから引く
         service_start_time: attSpan?.start ?? plannedSpan?.start ?? null,
         service_end_time: attSpan?.end ?? plannedSpan?.end ?? null,
-        transport_type:
-          (res?.transport_type ?? att?.pickup_type ?? planned?.transportType ?? null) as
-            | TransportType
-            | null,
+        transport_type: transportType,
+        // お迎えの時刻。記録がある日は記録だけを見る（記録の利用開始と予定のお迎えが
+        // 食い違うと、古い予定の時刻を見せてしまうため）。記録に無ければ表示側で
+        // 利用開始の10分前にする
+        pickup_time: usesPickup
+          ? (att ? att.pickup_departure_time : planned?.pickupTime) ?? null
+          : null,
         pickup_place: places.pickup,
         dropoff_place: places.dropoff,
         daytime_support: att ? !!att.daytime_support : !!planned?.daytimeSupport,

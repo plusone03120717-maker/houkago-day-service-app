@@ -1,4 +1,5 @@
 import type { FacilityScheduleDay } from '@/components/parent/usage-contact-calendar'
+import { pickupTimeOf, scheduleTimeText } from '@/lib/parent-schedule-text'
 
 /**
  * 週ごとの予定のお知らせと、保護者の「確認しました」の決め方（データベースにさわらない部分）。
@@ -84,8 +85,12 @@ export function monthsOfWeek(weekStart: string): { year: number; month: number }
 }
 
 /**
- * その日の予定の要約。保護者に見せている中身（来るか・利用時間・送迎・場所）だけを使う。
+ * その日の予定の要約。保護者に見せている中身（来るか・利用時間・送迎・場所・お迎えの時刻）だけを使う。
  * 「利用済み」は「利用予定」と同じに扱う（日が過ぎただけで変わったことにしない）。
+ *
+ * お迎えの時刻（7つめ）は 2026-11-17 に足した。それより前に残した要約は6つまでなので、
+ * 比べるときは古い要約に合わせて7つめを見ない（sameDay）。そうしないと、
+ * 確認ずみの週がすべて「変更後まだ」に戻ってしまう。
  */
 export function daySignature(d: FacilityScheduleDay): string {
   if (d.kind === 'absent') return 'absent'
@@ -96,7 +101,20 @@ export function daySignature(d: FacilityScheduleDay): string {
     d.transport_type ?? '',
     d.pickup_place ?? '',
     d.dropoff_place ?? '',
+    pickupTimeOf(d) ?? '',
   ].join('|')
+}
+
+/** お迎えの時刻を足す前の要約の長さ（'plan' と5つの項目） */
+const LEGACY_PLAN_PARTS = 6
+
+/** 2つの要約が同じ予定か。古い要約（お迎えの時刻が無い）とは、その分を見ずに比べる */
+function sameDay(before: string | undefined, current: string | undefined): boolean {
+  if (before === current) return true
+  if (!before || !current || !before.startsWith('plan|') || !current.startsWith('plan|')) return false
+  const prev = before.split('|')
+  if (prev.length !== LEGACY_PLAN_PARTS) return false
+  return current.split('|').slice(0, LEGACY_PLAN_PARTS).join('|') === before
 }
 
 /** 施設の予定（何人分でも）から、その週の児童ごとの要約を作る */
@@ -127,7 +145,7 @@ export function changedDates(
   const prev = before ?? {}
   const dates = new Set([...Object.keys(prev), ...Object.keys(current)])
   return [...dates]
-    .filter((d) => d > today && prev[d] !== current[d])
+    .filter((d) => d > today && !sameDay(prev[d], current[d]))
     .sort()
 }
 
@@ -208,15 +226,17 @@ export function parentWeekState(
   return { ...state, changedSinceConfirm: announced }
 }
 
-/** 保護者に見せる、その日の予定の1行（例：「11/18（火）14:30〜17:30」「11/19（水）お休み」） */
+/**
+ * 保護者に見せる、その日の予定の1行。時刻の言い方は送迎の区分で変わる（@/lib/parent-schedule-text）。
+ * 例：「11/18（水） お迎え 14:20（学校）／お送り 17:30 出発」「11/19（木） お休み」
+ */
 export function dayLine(d: FacilityScheduleDay): string {
   const date = toUtc(d.date)
   const dow = ['日', '月', '火', '水', '木', '金', '土'][date.getUTCDay()]
   const head = `${date.getUTCMonth() + 1}/${date.getUTCDate()}（${dow}）`
   if (d.kind === 'absent') return `${head} お休み`
-  const start = d.service_start_time?.slice(0, 5)
-  const end = d.service_end_time?.slice(0, 5)
-  return start || end ? `${head} ${start ?? ''}〜${end ?? ''}` : head
+  const text = scheduleTimeText(d)
+  return text ? `${head} ${text}` : head
 }
 
 /** 「11/17（月）〜11/23（日）」 */
