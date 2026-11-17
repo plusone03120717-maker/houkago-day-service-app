@@ -181,6 +181,7 @@ export default async function TransportPage({
       scheduleIdsByUnit={scheduleIdsByUnit}
       vehicles={vehicles}
       drivers={drivers}
+      regularDriverIds={driverRanking.regularDriverIds}
       allChildren={allChildren}
       loadError={loadError}
       canEdit={canEdit}
