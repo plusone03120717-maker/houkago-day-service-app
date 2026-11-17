@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
+import { needsDailyRecord } from '@/lib/unit-course'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -223,7 +224,9 @@ export function RecordsListBoard({
                           </div>
                           <div className="flex items-center gap-2">
                             {record?.has_notable_flag && <Flag className="h-4 w-4 text-yellow-500" />}
-                            {hasRecord ? (
+                            {!needsDailyRecord(a.units?.name) && !hasRecord ? (
+                              <span className="text-xs text-gray-400">記録は不要</span>
+                            ) : hasRecord ? (
                               <Badge variant="success" className="text-xs">
                                 <CheckCircle className="h-3 w-3 mr-1" />記録済
                               </Badge>

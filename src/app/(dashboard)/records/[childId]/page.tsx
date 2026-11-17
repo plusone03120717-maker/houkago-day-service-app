@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { RecordsDayView } from '@/components/records/records-day-view'
 import type { RosterItem } from '@/components/records/records-day-layout'
 import { getStaffAccess } from '@/lib/require-admin'
+import { needsDailyRecord } from '@/lib/unit-course'
 
 export default async function RecordPage({
   params,
@@ -53,7 +54,7 @@ export default async function RecordPage({
     // 左の一覧：その日に出席した子（ユニットをまたいで名前順）
     supabase
       .from('daily_attendance')
-      .select('id, child_id, unit_id, children(name, name_kana)')
+      .select('id, child_id, unit_id, children(name, name_kana), units(name)')
       .eq('date', date)
       .eq('status', 'attended'),
   ])
@@ -81,8 +82,15 @@ export default async function RecordPage({
   const medications = (medicationsRaw ?? []).filter((m) => m.is_active)
 
   // 左の一覧の「済・未」。記録済は「日常記録のある出席」で数える（一覧・ダッシュボードと同じ）
-  type RosterRow = { id: string; child_id: string; unit_id: string; children: { name: string; name_kana: string | null } | null }
-  const rosterRows = (rosterRaw ?? []) as unknown as RosterRow[]
+  type RosterRow = {
+    id: string; child_id: string; unit_id: string
+    children: { name: string; name_kana: string | null } | null
+    units: { name: string } | null
+  }
+  // 英会話・プログラミングの子は日々の記録を書かないので一覧に出さない（いま開いている子だけは出す）
+  const rosterRows = ((rosterRaw ?? []) as unknown as RosterRow[]).filter(
+    (r) => needsDailyRecord(r.units?.name) || (r.child_id === childId && r.unit_id === unit)
+  )
   const { data: rosterRecords } = rosterRows.length > 0
     ? await supabase
         .from('daily_records')

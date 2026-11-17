@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getTodayJST } from '@/lib/utils'
 import { RecordsListBoard } from '@/components/records/records-list-board'
 import { getStaffAccess } from '@/lib/require-admin'
+import { needsDailyRecord } from '@/lib/unit-course'
 import {
   comparePlanPriority,
   resolveScheduleDefaults,
@@ -321,7 +322,10 @@ export default async function RecordsPage({
   nextDate.setDate(d.getDate() + 1)
 
   // 日常記録のある出席の数で数える（特記の行や、二重に保存された行を数えない）
-  const attendedIds = new Set(attended.filter((a) => a.status === 'attended').map((a) => a.id))
+  // 英会話・プログラミングの子は日々の記録を書かないので、記録済の数（分母・分子とも）に入れない
+  const attendedIds = new Set(
+    attended.filter((a) => a.status === 'attended' && needsDailyRecord(a.units?.name)).map((a) => a.id)
+  )
   const writtenCount = new Set(
     records.filter((r) => !r.has_notable_flag && attendedIds.has(r.attendance_id)).map((r) => r.attendance_id)
   ).size
