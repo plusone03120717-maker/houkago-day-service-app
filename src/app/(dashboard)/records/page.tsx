@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { keepActive, loadRetired, transportIdsIn } from '@/lib/retired'
 import { getTodayJST } from '@/lib/utils'
 import { RecordsListBoard } from '@/components/records/records-list-board'
 import { getStaffAccess } from '@/lib/require-admin'
@@ -186,6 +187,9 @@ export default async function RecordsPage({
   ])
 
   const attended = (attendedRaw ?? []) as unknown as AttendedChild[]
+  // 辞めた人・使わない車は選ぶ欄から外す。その日の記録に入っている人・車は残す（2026-11-17）
+  const retired = await loadRetired(supabase)
+  const usedTransport = transportIdsIn(attended as unknown[])
 
   // 既存の記録とデフォルト終了時間は独立しているため並列取得
   const attendanceIds = attended.map((a) => a.id)
@@ -337,8 +341,8 @@ export default async function RecordsPage({
       prevDate={prevDate.toISOString().slice(0, 10)}
       nextDate={nextDate.toISOString().slice(0, 10)}
       byUnit={byUnit}
-      staffMembers={(staffMembersRaw ?? []) as { id: string; name: string }[]}
-      vehicles={(vehiclesRaw ?? []) as { id: string; name: string }[]}
+      staffMembers={keepActive((staffMembersRaw ?? []) as { id: string; name: string }[], retired.staff, targetDate, usedTransport.drivers)}
+      vehicles={keepActive((vehiclesRaw ?? []) as { id: string; name: string }[], retired.vehicles, targetDate, usedTransport.vehicles)}
       recordByAttendanceId={recordByAttendanceId}
       writtenCount={writtenCount}
       totalCount={totalCount}

@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
+import { keepActive, loadRetired } from '@/lib/retired'
 import { getTodayJST } from '@/lib/utils'
 import { TransportManageBoard } from '@/components/transport/transport-board'
 import type { UnitChild } from '@/components/transport/transport-board'
@@ -136,8 +137,9 @@ export default async function TransportPage({
     console.error('[transport] 送迎一覧の取得に失敗しました', schedulesError ?? attendanceError)
   }
 
-  const vehicles = (vehiclesRaw ?? []) as Vehicle[]
-  const drivers = (driversRaw ?? []) as Driver[]
+  const vehiclesAll = (vehiclesRaw ?? []) as Vehicle[]
+  const driversAll = (driversRaw ?? []) as Driver[]
+  const retired = await loadRetired(supabase)
   const unitNameById = new Map(units.map((u) => [u.id, u.name]))
 
   const { rows: orderedRows, scheduleIdsByUnit } = buildTransportRows({
@@ -149,6 +151,10 @@ export default async function TransportPage({
     scheduleDefaults,
     driverScoresFor: (childId, slot) => driverRanking.scoresFor(childId, slot),
   })
+
+  // 辞めた人・使わない車は外す。この日の便に入っている人・車は名前が消えないように残す（2026-11-17）
+  const drivers = keepActive(driversAll, retired.staff, today, orderedRows.map((r) => r.driverMemberId))
+  const vehicles = keepActive(vehiclesAll, retired.vehicles, today, orderedRows.map((r) => r.vehicleId))
 
   // ユニット×児童で重複除去（どのユニットの子かも持たせる）
   const allChildrenMap = new Map<string, UnitChild>()

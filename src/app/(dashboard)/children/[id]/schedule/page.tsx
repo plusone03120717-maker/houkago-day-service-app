@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { keepActive, loadRetired, transportIdsIn } from '@/lib/retired'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, CalendarDays } from 'lucide-react'
@@ -261,10 +262,11 @@ export default async function ChildSchedulePage({
       .gte('date', startDate)
       .lte('date', endDate)
       .order('date'),
+    // staff_members に is_active の列はない（前はこれで読みこみが失敗し、ドライバーの一覧が空だった）。
+    // 辞めた人は下で外す（2026-11-17）
     supabase
       .from('staff_members')
       .select('id, name')
-      .eq('is_active', true)
       .order('name'),
     supabase
       .from('transport_vehicles')
@@ -288,8 +290,11 @@ export default async function ChildSchedulePage({
       .order('date'),
   ])
   const attendances = (attendancesRaw ?? []) as unknown as AttendanceRecord[]
-  const staffMembers = (staffMembersRaw ?? []) as { id: string; name: string }[]
-  const vehicles = (vehiclesRaw ?? []) as { id: string; name: string }[]
+  // 辞めた人・使わない車は、その月の初めより前に外れたものを外す。その月の記録に入っている人・車は残す
+  const retired = await loadRetired(supabase)
+  const usedTransport = transportIdsIn(attendances as unknown[])
+  const staffMembers = keepActive((staffMembersRaw ?? []) as { id: string; name: string }[], retired.staff, startDate, usedTransport.drivers)
+  const vehicles = keepActive((vehiclesRaw ?? []) as { id: string; name: string }[], retired.vehicles, startDate, usedTransport.vehicles)
   const parentContacts = (parentContactsRaw ?? []) as unknown as ParentContact[]
   // 上の「保護者からの予約申請」：承認待ち（どの月でも）＋表示中の月のもの。日付順
   const requestMap = new Map<string, ParentRequest>()

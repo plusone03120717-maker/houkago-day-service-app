@@ -1,4 +1,5 @@
 import type { createClient } from '@/lib/supabase/server'
+import { keepActive, loadRetired, transportIdsIn } from '@/lib/retired'
 
 type ServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -78,6 +79,21 @@ type RpcPayload = {
  * マイグレーション適用前でも動作は変わらない（速度だけが従来のまま）。
  */
 export async function loadAttendanceBoardData(
+  supabase: ServerClient,
+  unitIdParam: string | undefined,
+  date: string
+): Promise<AttendanceBoardData> {
+  const [data, retired] = await Promise.all([loadAttendanceBoardDataRaw(supabase, unitIdParam, date), loadRetired(supabase)])
+  // 辞めた人・使わない車は選ぶ欄から外す。その日の記録に入っている人・車は残す（2026-11-17）
+  const used = transportIdsIn(data.attendances)
+  return {
+    ...data,
+    staffMembers: keepActive(data.staffMembers, retired.staff, date, used.drivers),
+    vehicles: keepActive(data.vehicles, retired.vehicles, date, used.vehicles),
+  }
+}
+
+async function loadAttendanceBoardDataRaw(
   supabase: ServerClient,
   unitIdParam: string | undefined,
   date: string

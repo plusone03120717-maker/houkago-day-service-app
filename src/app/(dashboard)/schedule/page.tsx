@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
+import { keepActive, loadRetired, transportIdsIn } from '@/lib/retired'
 import { getTodayJST } from '@/lib/utils'
 import { StaffScheduleBoard } from '@/components/schedule/staff-schedule-board'
 
@@ -76,13 +77,18 @@ export default async function SchedulePage({
     supabase.from('transport_vehicles').select('id, name').order('name'),
   ])
 
+  // 辞めた人・使わない車は外す。その日の送迎・シフトに入っている人・車は残す（2026-11-17）
+  const retired = await loadRetired(supabase)
+  const usedTransport = transportIdsIn((attendanceRaw ?? []) as unknown[])
+  const shiftStaffIds = ((shiftsRaw ?? []) as { staff_id: string | null }[]).map((s) => s.staff_id)
+
   return (
     <StaffScheduleBoard
       date={date}
-      staffMembers={(staffMembersRaw ?? []) as StaffMember[]}
+      staffMembers={keepActive((staffMembersRaw ?? []) as StaffMember[], retired.staff, date, [...usedTransport.drivers, ...shiftStaffIds])}
       shifts={(shiftsRaw ?? []) as StaffShift[]}
       attendance={(attendanceRaw ?? []) as unknown as TransportAttendance[]}
-      vehicles={(vehiclesRaw ?? []) as { id: string; name: string }[]}
+      vehicles={keepActive((vehiclesRaw ?? []) as { id: string; name: string }[], retired.vehicles, date, usedTransport.vehicles)}
     />
   )
 }
