@@ -18,6 +18,7 @@ import {
   type LocationType,
 } from '@/lib/transport-place'
 import { pickupArrivalFromServiceStart } from '@/lib/transport-timing'
+import { scheduleTimeText } from '@/lib/parent-schedule-text'
 
 /**
  * 保護者が利用する日を連絡するカレンダー。
@@ -96,6 +97,8 @@ export type FacilityScheduleDay = {
   service_start_time?: string | null
   service_end_time?: string | null
   transport_type?: TransportType | null
+  /** お迎えの時刻（学校などで子どもと出る時刻）。行きの送迎がある日だけ */
+  pickup_time?: string | null
   pickup_place?: string | null
   dropoff_place?: string | null
 }
@@ -516,12 +519,14 @@ function requestStartOf(sched: FacilityScheduleDay): string | null {
   return start && usesPickup ? pickupArrivalFromServiceStart(start) : start
 }
 
-/** 「14:00〜17:30／行き帰りの送迎」のように、その日の予定の中身を1行で表す */
-function describeScheduleDay(sched: FacilityScheduleDay): string | null {
-  const start = requestStartOf(sched)
-  const end = sched.service_end_time ?? null
-  const time = start || end ? `${start ?? '—'}〜${end ?? '—'}` : null
-  const transport = sched.transport_type ? TRANSPORT_TEXT[sched.transport_type] : null
+/**
+ * 「お迎え 14:20（学校）／お送り 17:30 出発」のように、その日の予定の中身を1行で表す。
+ * 時刻の言い方は「予定の確認」と同じ（@/lib/parent-schedule-text）。
+ * 送迎なしの日だけ「／送迎なし」を足す（時刻だけでは送迎の有無が分からないため）。
+ */
+function describeScheduleDay(sched: FacilityScheduleDay, placeLabel?: (value: string | null | undefined) => string | null): string | null {
+  const time = scheduleTimeText(sched, placeLabel)
+  const transport = sched.transport_type === 'none' ? TRANSPORT_TEXT.none : null
   const parts = [time, transport].filter((v): v is string => !!v)
   return parts.length > 0 ? parts.join('／') : null
 }
@@ -668,6 +673,17 @@ export function UsageContactCalendar({
 
   function placesFor(childId: string): ChildTransportPlaces | undefined {
     return places.find((p) => p.childId === childId)
+  }
+
+  /**
+   * 登録住所（祖父母宅など）の値を、その児童の選択肢の名前にする。
+   * 学校・自宅は「学校」「ご自宅」のままにする（「学校（○○小学校）」だとかっこが重なるため）
+   */
+  function placeLabelOf(childId: string) {
+    return (value: string | null | undefined) =>
+      value?.startsWith('addr:')
+        ? placesFor(childId)?.places.find((p) => p.value === value)?.label ?? null
+        : null
   }
 
   /** その日が施設のお休みなら、その予定名を返す */
@@ -1626,10 +1642,10 @@ export function UsageContactCalendar({
                                 ? '施設の予定では、この日は利用することになっています'
                                 : 'この日はすでに利用予定が入っています。変更がなければ連絡は不要です'}
                               {/* いまの予定の中身。時間を変えるときの「変更前」になる */}
-                              {describeScheduleDay(sched) && (
+                              {describeScheduleDay(sched, placeLabelOf(sched.child_id)) && (
                                 <>
                                   <br />
-                                  いまの予定：{describeScheduleDay(sched)}
+                                  いまの予定：{describeScheduleDay(sched, placeLabelOf(sched.child_id))}
                                 </>
                               )}
                             </>
