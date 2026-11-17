@@ -10,6 +10,7 @@ import type {
   OverrideRow,
   PlanRow,
   ReservationRow,
+  UnappliedContactRow,
 } from './types'
 
 /** 変更履歴を遡る日数。夜間バッチが数日止まっても取りこぼさない長さにしてある */
@@ -70,7 +71,7 @@ export async function runAnomalyCheck(
   const runId = (runRow as { id: string } | null)?.id ?? null
 
   try {
-    const [attendance, plans, reservations, overrides, billingMonths, changeLogs, children] =
+    const [attendance, plans, reservations, overrides, billingMonths, changeLogs, children, unapplied] =
       await Promise.all([
         supabase
           .from('daily_attendance')
@@ -99,6 +100,14 @@ export async function runAnomalyCheck(
           .gte('changed_at', changeLogSince)
           .order('changed_at'),
         supabase.from('children').select('id, name'),
+        supabase
+          .from('parent_attendance_contacts')
+          .select('id, child_id, date, apply_error, apply_error_at')
+          .eq('approval_status', 'approved')
+          .eq('status', 'attending')
+          .not('apply_error', 'is', null)
+          .gte('date', from)
+          .lte('date', to),
       ])
 
     const ctx: CheckContext = {
@@ -114,6 +123,7 @@ export async function runAnomalyCheck(
       overrides: (overrides.data ?? []) as OverrideRow[],
       billingMonths: (billingMonths.data ?? []) as BillingMonthRow[],
       changeLogs: (changeLogs.data ?? []) as ChangeLogRow[],
+      unappliedContacts: (unapplied.data ?? []) as UnappliedContactRow[],
     }
 
     const activeRules = RULES.filter((r) => r.enabled)

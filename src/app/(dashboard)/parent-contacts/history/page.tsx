@@ -42,6 +42,8 @@ type ContactRow = {
   absent_handling: 'absent' | 'delete' | null
   reviewed_at: string | null
   reviewed_by: string | null
+  /** 承認したのに予定へ反映できなかった理由。反映できたら null（migration 189） */
+  apply_error: string | null
   children: { name: string } | null
 }
 
@@ -89,7 +91,7 @@ export default async function ParentContactsHistoryPage({
   const { data } = await supabase
     .from('parent_attendance_contacts')
     .select(
-      'id, date, status, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, note, reported_at, approval_status, absent_handling, reviewed_at, reviewed_by, children (name)'
+      'id, date, status, service_start_time, service_end_time, assigned_service_start_time, assigned_service_end_time, assigned_daytime_start_time, assigned_daytime_end_time, transport_type, note, reported_at, approval_status, absent_handling, reviewed_at, reviewed_by, apply_error, children (name)'
     )
     .eq('is_new', false)
     .gte('date', from)
@@ -197,6 +199,11 @@ export default async function ParentContactsHistoryPage({
                     <td className="px-3 py-2">
                       <span className={`whitespace-nowrap ${result.className}`}>{result.text}</span>
                       {assigned && <p className="mt-0.5 text-xs text-gray-500 whitespace-nowrap">{assigned}</p>}
+                      {c.apply_error && c.approval_status === 'approved' && (
+                        <p className="mt-0.5 text-xs font-bold text-red-600" role="alert">
+                          予定に未反映：{c.apply_error}
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-600">{formatReviewedAt(c.reported_at)}</td>
                     <td className="px-3 py-2 whitespace-nowrap">

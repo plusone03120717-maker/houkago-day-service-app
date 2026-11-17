@@ -133,6 +133,33 @@ async function removeFromTransport(
 }
 
 /**
+ * その日の送迎予定のうち、指定した向き（行き・帰り）の便からだけ外す。
+ * 承認で「送迎なし」「片道」に変わった向きの便に、子が残らないようにする。
+ */
+async function removeFromTransportDirections(
+  supabase: Client,
+  childId: string,
+  unitId: string,
+  date: string,
+  directions: ('pickup' | 'dropoff')[]
+): Promise<string | null> {
+  const { data: schedules, error } = await supabase
+    .from('transport_schedules')
+    .select('id')
+    .eq('unit_id', unitId)
+    .eq('date', date)
+    .in('direction', directions)
+  if (error) return `送迎の便の読みこみに失敗しました: ${error.message}`
+  if (!schedules || schedules.length === 0) return null
+  const { error: deleteError } = await supabase
+    .from('transport_details')
+    .delete()
+    .eq('child_id', childId)
+    .in('schedule_id', (schedules as { id: string }[]).map((s) => s.id))
+  return deleteError ? `送迎の便から外せませんでした: ${deleteError.message}` : null
+}
+
+/**
  * その連絡をどのユニットの予定として入れるかを決める。
  *
  * usage_reservations / daily_attendance はどちらも (児童, ユニット, 日付) が一意なので、
@@ -541,29 +568,51 @@ async function applyAttending(
     'daytime_dropoff_departure_time', 'daytime_dropoff_arrival_time',
   ] as const
 
-  const { data: existingAttendance } = await supabase
+  // 送迎の欄（向き × 放デイ/日中一時）ごとの、時刻・ドライバー・車種の列
+  const SLOT_FIELDS = ['departure_time', 'arrival_time', 'driver_member_id', 'vehicle_id'] as const
+  const SLOT_PREFIXES = {
+    pickup: ['pickup', 'daytime_pickup'],
+    dropoff: ['dropoff', 'daytime_dropoff'],
+  } as const
+  const STAFF_COLUMNS = [
+    'pickup_driver_member_id', 'pickup_vehicle_id',
+    'dropoff_driver_member_id', 'dropoff_vehicle_id',
+    'daytime_pickup_driver_member_id', 'daytime_pickup_vehicle_id',
+    'daytime_dropoff_driver_member_id', 'daytime_dropoff_vehicle_id',
+  ] as const
+
+  const { data: existingAttendance, error: attendanceReadError } = await supabase
     .from('daily_attendance')
     .select(
-      'id, status, basic_service, service_start_time, service_end_time, ' +
+      'id, status, pickup_type, basic_service, service_start_time, service_end_time, ' +
       'daytime_support, daytime_support_start_time, daytime_support_end_time, ' +
-      TRANSPORT_COLUMNS.join(', ')
+      [...TRANSPORT_COLUMNS, ...STAFF_COLUMNS].join(', ')
     )
     .eq('child_id', contact.child_id)
     .eq('unit_id', unitId)
     .eq('date', contact.date)
     .maybeSingle()
+  if (attendanceReadError) {
+    return { error: `出欠記録の読みこみに失敗しました: ${attendanceReadError.message}` }
+  }
+
+  /** 使わなくなった向きの、送迎管理の便から外す */
+  const removedDirections: ('pickup' | 'dropoff')[] = []
+  /** 出欠記録への書きこみの失敗。予約の控え（手順4）は残してから返す */
+  let attendanceError: string | null = null
 
   if (existingAttendance) {
     const row = existingAttendance as unknown as {
       id: string
       status: string
+      pickup_type: string | null
       basic_service: boolean
       service_start_time: string | null
       service_end_time: string | null
       daytime_support: boolean
       daytime_support_start_time: string | null
       daytime_support_end_time: string | null
-    } & Record<(typeof TRANSPORT_COLUMNS)[number], string | null>
+    } & Record<(typeof TRANSPORT_COLUMNS)[number] | (typeof STAFF_COLUMNS)[number], string | null>
     const patch: Record<string, unknown> = {}
     if (row.basic_service !== useBasic) patch.basic_service = useBasic
     if (row.daytime_support !== useDaytime) patch.daytime_support = useDaytime
@@ -617,6 +666,43 @@ async function applyAttending(
       }
     }
 
+    // 使わなくなった送迎を消す（2026-11-17 不具合 A）。
+    //
+    // 上の書きこみは「使う向き・使う欄」だけを埋める。以前「行き帰り」で承認した日や、
+    // 送迎管理でドライバーを決めた日を「送迎なし」「片道」で承認し直すと、
+    // 使わない向きの時刻・ドライバーが残り、送迎加算（到着の時刻で決まる）が付いたうえ、
+    // 送迎管理にもその子が出続けていた。放デイだけ → 両方 の切りかえでは、
+    // 帰りが放デイの欄と日中一時の欄の両方に残り、送迎加算が二重になるもとだった。
+    //
+    // 消し方は送迎管理の「取り下げ」（@/app/actions/transport の clearTransportDirection）と同じ。
+    // 使う向きでも、欄（放デイ/日中一時）が変わったときは、新しい欄が空なら
+    // 前の欄の時刻・ドライバー・車種を移してから消す（決めたドライバーを失わないため）。
+    // 実績の日（過ぎた日の出席）は、今までどおり何も触らない。
+    if (!isRecorded) {
+      for (const direction of ['pickup', 'dropoff'] as const) {
+        const uses = direction === 'pickup' ? usesPickup : usesDropoff
+        const slot = direction === 'pickup' ? pickupSlot : dropoffSlot
+        const [basicPrefix, daytimePrefix] = SLOT_PREFIXES[direction]
+        const target = uses ? (slot === 'daytime' ? daytimePrefix : basicPrefix) : null
+        for (const prefix of [basicPrefix, daytimePrefix]) {
+          if (prefix === target) continue
+          for (const field of SLOT_FIELDS) {
+            const from = `${prefix}_${field}` as keyof typeof row
+            const value = row[from] as string | null
+            if (!value) continue
+            if (target) {
+              const to = `${target}_${field}` as keyof typeof row
+              if (!row[to] && patch[to] === undefined) patch[to] = value
+            }
+            patch[from] = null
+          }
+        }
+        if (!uses) removedDirections.push(direction)
+      }
+      // 送迎区分も連絡のとおりにする（送迎管理は、この区分で送迎の対象かを見る）
+      if (row.pickup_type !== contact.transport_type) patch.pickup_type = contact.transport_type
+    }
+
     // 利用時間は check_in_time / check_out_time にも同じ値を入れる。
     // スタッフの入力欄（送迎・日中一時）と同じ保存の仕方に合わせる
     if (patch.service_start_time !== undefined) patch.check_in_time = patch.service_start_time
@@ -625,7 +711,8 @@ async function applyAttending(
     // お休みとして記録済みの日を「やっぱり利用します」に変えた場合は予定に戻す
     if (row.status === 'absent') patch.status = 'scheduled'
     if (Object.keys(patch).length > 0) {
-      await supabase.from('daily_attendance').update(patch).eq('id', row.id)
+      const { error } = await supabase.from('daily_attendance').update(patch).eq('id', row.id)
+      if (error) attendanceError = `出欠記録（送迎・時間）の更新に失敗しました: ${error.message}`
     }
   } else if (
     useDaytime ||
@@ -634,7 +721,7 @@ async function applyAttending(
   ) {
     // 時間の希望も日中一時の指定も無い連絡で空の記録を作ると、
     // 出席管理が入力済みに見えてしまうので作らない
-    await supabase.from('daily_attendance').insert({
+    const { error } = await supabase.from('daily_attendance').insert({
       child_id: contact.child_id,
       unit_id: unitId,
       date: contact.date,
@@ -651,10 +738,24 @@ async function applyAttending(
       ...transportColumns(),
       created_by: staffUserId,
     })
+    if (error) attendanceError = `出欠記録の作成に失敗しました: ${error.message}`
+  }
+  if (!existingAttendance) {
+    if (!usesPickup) removedDirections.push('pickup')
+    if (!usesDropoff) removedDirections.push('dropoff')
+  }
+
+  // 使わなくなった向きは、送迎管理の便からも外す
+  if (!attendanceError && removedDirections.length > 0) {
+    const problem = await removeFromTransportDirections(
+      supabase, contact.child_id, unitId, contact.date, removedDirections
+    )
+    if (problem) attendanceError = problem
   }
 
   // ── 4. 反映先を控える ──
-  await supabase
+  // 出欠記録に失敗しても、作った予約は控えておく（控えがないと非承認にしても予約が消せない）
+  const { error: markError } = await supabase
     .from('parent_attendance_contacts')
     .update({
       applied_at: new Date().toISOString(),
@@ -662,7 +763,9 @@ async function applyAttending(
       applied_reservation_id: createdReservationId,
     })
     .eq('id', contact.id)
+  if (markError) return { error: `反映の控えの保存に失敗しました: ${markError.message}` }
 
+  if (attendanceError) return { error: attendanceError }
   return { unitId }
 }
 

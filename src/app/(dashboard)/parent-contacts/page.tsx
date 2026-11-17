@@ -1,3 +1,4 @@
+import { getTodayJST } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
 import {
   ParentContactsBoard,
@@ -155,6 +156,28 @@ export default async function ParentContactsPage() {
   // 承認・処理はシステム管理者だけ（施設長・スタッフは閲覧のみ）
   const canEdit = (await getStaffAccess())?.canEditOperations ?? false
 
+  // 承認したのに予定へ反映できなかった連絡（migration 189）。
+  // 画面を閉じると消えていた失敗の理由を、直すまでここに出し続ける。
+  // 過ぎた日は前の月の頭まで（締めの前に気づけるように）
+  const [ty, tm] = getTodayJST().split('-').map(Number)
+  const unappliedFrom = new Date(Date.UTC(ty, tm - 2, 1)).toISOString().slice(0, 10)
+  const { data: unappliedRaw } = await supabase
+    .from('parent_attendance_contacts')
+    .select('id, date, apply_error, children (name)')
+    .eq('approval_status', 'approved')
+    .eq('status', 'attending')
+    .not('apply_error', 'is', null)
+    .gte('date', unappliedFrom)
+    .order('date', { ascending: true })
+  const unappliedContacts = (
+    (unappliedRaw ?? []) as unknown as {
+      id: string
+      date: string
+      apply_error: string
+      children: { name: string } | null
+    }[]
+  ).map((c) => ({ id: c.id, date: c.date, error: c.apply_error, childName: c.children?.name ?? '不明' }))
+
   return (
     <ParentContactsBoard
       unconfirmedContacts={unconfirmedContacts}
@@ -163,6 +186,7 @@ export default async function ParentContactsPage() {
       currentPlans={currentPlans}
       englishChoices={englishChoices}
       canEdit={canEdit}
+      unappliedContacts={unappliedContacts}
     />
   )
 }

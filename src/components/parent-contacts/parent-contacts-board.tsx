@@ -267,7 +267,12 @@ type Props = {
   englishChoices: Record<string, EnglishUnitChoice>
   /** 承認・処理ができるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
   canEdit?: boolean
+  /** 承認したのに予定へ反映できなかった連絡。直すまで上に出し続ける */
+  unappliedContacts?: UnappliedContact[]
 }
+
+/** 承認したのに予定へ反映できなかった連絡（parent_attendance_contacts.apply_error） */
+export type UnappliedContact = { id: string; date: string; error: string; childName: string }
 
 /**
  * 英会話に所属する児童の教室の選択肢。
@@ -781,6 +786,7 @@ export function ParentContactsBoard({
   currentPlans,
   englishChoices,
   canEdit = true,
+  unappliedContacts = [],
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -951,6 +957,25 @@ export function ParentContactsBoard({
   }
 
   /**
+   * 承認ずみなのに予定へ反映できなかった連絡を、もう一度反映する。
+   * 承認したときの割り振り（連絡に保存ずみ）を使う。
+   */
+  async function retryApply(id: string) {
+    if (!canEdit) return
+    setReviewing(true)
+    const res = await fetch('/api/parent-contacts/approval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, approvalStatus: 'approved' }),
+    })
+    const json = (await res.json().catch(() => ({}))) as { warning?: string; error?: string }
+    const problem = json.warning ?? json.error
+    if (problem) setWarnings((prev) => [...new Set([...prev, problem])])
+    setReviewing(false)
+    startTransition(() => router.refresh())
+  }
+
+  /**
    * 1件の連絡の承認状態を変える。
    * forced は、まとめて承認するときに全日へ同じ割り振りを当てるために使う
    * （state の反映を待たずに確実に同じ内容を送るため）。
@@ -1053,6 +1078,39 @@ export function ParentContactsBoard({
           （当日のお休みは従来どおり施設が電話で受けます）。
         </p>
       </div>
+
+      {/* 承認したのに予定へ反映できなかった連絡。画面を閉じても、直すまで出し続ける */}
+      {unappliedContacts.length > 0 && (
+        <div className="rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3" role="alert">
+          <p className="flex items-center gap-1.5 text-sm font-bold text-red-800">
+            <AlertTriangle className="h-4 w-4" />
+            承認したのに、予定に入っていない連絡が {unappliedContacts.length} 件あります
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {unappliedContacts.map((u) => (
+              <li key={u.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-red-800">
+                <span className="font-bold whitespace-nowrap">
+                  {formatDateLabel(u.date)} {u.childName}さん
+                </span>
+                <span className="text-xs text-red-700">{u.error}</span>
+                {canEdit && (
+                  <button
+                    onClick={() => retryApply(u.id)}
+                    disabled={reviewing}
+                    className="rounded-md border border-red-300 bg-white px-2 py-0.5 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    もう一度反映する
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-xs text-red-700">
+            「もう一度反映する」で直らないときは、利用状況ページ・出席管理でその日の予定を直してください。
+            反映できると、この表示は消えます。
+          </p>
+        </div>
+      )}
 
       {/* 予定へ反映できなかったものだけ理由を出す（承認の記録そのものは残っている） */}
       {warnings.length > 0 && (

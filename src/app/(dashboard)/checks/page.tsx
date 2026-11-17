@@ -207,6 +207,12 @@ export default async function ChecksPage() {
                           利用スケジュールを開く
                         </Link>
                       )}
+                      {/* 承認したのに予定に入っていない連絡は、利用連絡の画面の「もう一度反映する」で直す */}
+                      {f.table_name === 'parent_attendance_contacts' && (
+                        <Link href="/parent-contacts" className="text-indigo-600 hover:underline">
+                          利用連絡の画面を開く
+                        </Link>
+                      )}
                     </div>
                   </div>
                   {canEdit && <FindingActions id={f.id} status={f.status} />}
