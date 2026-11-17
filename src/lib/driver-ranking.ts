@@ -42,7 +42,16 @@ type Tally = Map<string, number>
 
 export type DriverRanking = {
   scoresFor: (childId: string, slot: TransportSlot) => DriverScores
+  /**
+   * 最近30日に2回以上運転した人（送迎管理で名前のボタンを出す人）。
+   * 並びは使わない（ボタンの並びはいつも名前順にするため）
+   */
+  regularDriverIds: string[]
 }
+
+/** 名前のボタンを出す人を決める期間と回数 */
+const REGULAR_DAYS = 30
+const REGULAR_MIN_TIMES = 2
 
 function addDays(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00Z`)
@@ -114,6 +123,8 @@ export async function fetchDriverRanking(
   const bySlot = new Map<string, Tally>()
   const byChild = new Map<string, Tally>()
   const all: Tally = new Map()
+  const recent = new Map<string, number>()
+  const recentFrom = addDays(date, -REGULAR_DAYS)
   const lambda = Math.LN2 / HALF_LIFE_DAYS
   for (const r of rows) {
     const childId = r.child_id as string
@@ -124,6 +135,7 @@ export async function fetchDriverRanking(
       add(bySlot, `${childId}|${slot}`, driverId, w)
       add(byChild, childId, driverId, w)
       all.set(driverId, (all.get(driverId) ?? 0) + w)
+      if ((r.date as string) >= recentFrom) recent.set(driverId, (recent.get(driverId) ?? 0) + 1)
     }
   }
 
@@ -135,6 +147,7 @@ export async function fetchDriverRanking(
       shares(all, WEIGHT_ALL, out)
       return Object.fromEntries(out)
     },
+    regularDriverIds: [...recent].filter(([, n]) => n >= REGULAR_MIN_TIMES).map(([id]) => id),
   }
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useSyncExternalStore, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -15,10 +15,20 @@ import {
   GripVertical,
   Scissors,
   Merge,
+  LayoutGrid,
+  ListFilter,
 } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 import { ALL_UNITS } from '@/lib/attendance-board-data'
 import { rankDrivers, type DriverScores } from '@/lib/driver-ranking'
+import {
+  buttonDrivers,
+  driverColor,
+  followVehicle,
+  shortNames,
+  summarizeTrips,
+} from '@/lib/transport-trips'
+import { DriverOverview } from '@/components/transport/driver-overview'
 import {
   deleteAndRecreateTransportSchedules,
   saveTransportRecord,
@@ -97,6 +107,42 @@ interface Props {
   loadError: string | null
   /** 送迎の追加・変更・削除・並び替え・再生成ができるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
   canEdit?: boolean
+  /** 最近よく運転している人（名前のボタンを出す人） */
+  regularDriverIds?: string[]
+}
+
+/**
+ * ドライバーの割り当ての形（2026-11-17）。
+ *  - 'board'：見取り図＋名前のボタン（新しい形・既定）
+ *  - 'classic'：前のプルダウンの形
+ * 「戻してほしい」と言われたら、画面の切りかえでその場で前の形に戻せるようにしておく（依頼主）。
+ * 選んだ形はこのブラウザに覚える。
+ */
+type AssignLayout = 'board' | 'classic'
+const LAYOUT_KEY = 'transport-assign-layout'
+const LAYOUT_EVENT = 'transport-assign-layout-change'
+function readLayout(): AssignLayout {
+  try {
+    return window.localStorage.getItem(LAYOUT_KEY) === 'classic' ? 'classic' : 'board'
+  } catch {
+    return 'board'
+  }
+}
+function writeLayout(next: AssignLayout) {
+  try {
+    window.localStorage.setItem(LAYOUT_KEY, next)
+  } catch {
+    // 覚えられないブラウザでも、この画面の中では切りかわるようにする
+  }
+  window.dispatchEvent(new Event(LAYOUT_EVENT))
+}
+function subscribeLayout(cb: () => void) {
+  window.addEventListener('storage', cb)
+  window.addEventListener(LAYOUT_EVENT, cb)
+  return () => {
+    window.removeEventListener('storage', cb)
+    window.removeEventListener(LAYOUT_EVENT, cb)
+  }
 }
 
 const DIRECTION_LABEL: Record<Direction, string> = { pickup: 'お迎え', dropoff: 'お送り' }
@@ -121,6 +167,8 @@ function DaytimeSlotBadge({ direction }: { direction: Direction }) {
 const MEMBER_COLS = 'md:grid md:grid-cols-[2rem_1.5rem_4.5rem_minmax(5rem,1fr)_minmax(7rem,1.3fr)_6.5rem_2rem] md:items-center md:gap-2'
 /** 便でまとめる列（ドライバー・車種・便の操作）。児童が何人でも1つ分の高さに揃える */
 const TRIP_COL = 'md:w-[21rem] md:shrink-0'
+/** 名前のボタンの形のときの、便の列 */
+const TRIP_COL_BOARD = 'md:w-[27rem] md:shrink-0'
 
 /** 一緒に回る便（同じ車・同じドライバー）としてまとめて表示する行のかたまり */
 type RowGroup = {
@@ -176,7 +224,9 @@ export function TransportManageBoard({
   allChildren,
   loadError,
   canEdit = true,
+  regularDriverIds = [],
 }: Props) {
+  const layout = useSyncExternalStore(subscribeLayout, readLayout, () => 'board' as AssignLayout)
   const router = useRouter()
   // ユニット未選択（＝すべて）。既定はこちらで、ユニットボタンで絞り込む
   const isAllUnits = selectedUnitId === ALL_UNITS
@@ -283,7 +333,25 @@ export function TransportManageBoard({
     fields: { driverMemberId?: string | null; vehicleId?: string | null }
   ) => {
     if (!canEdit) return
+    // 同じ人が同じ時刻のほかの便に車種を入れていれば、この便にも同じ車種を入れる（1台で2か所を回るため）
+    if (fields.driverMemberId && fields.vehicleId === undefined) {
+      const follow = followVehicle(trips, group.key, fields.driverMemberId)
+      if (follow) fields = { ...fields, vehicleId: follow }
+    }
     setBulkSavingKey(group.key)
+    // 押した直後に見取り図・ボタンへ出す（保存が終わるとサーバーの値で置きかわる）
+    const ids = new Set(group.rows.filter((r) => !r.isAbsent).map((r) => r.id))
+    setLocalRows((prev) =>
+      prev.map((r) =>
+        ids.has(r.id)
+          ? {
+              ...r,
+              ...(fields.driverMemberId !== undefined ? { driverMemberId: fields.driverMemberId } : {}),
+              ...(fields.vehicleId !== undefined ? { vehicleId: fields.vehicleId } : {}),
+            }
+          : r
+      )
+    )
     // 欠席として記録済みの児童は書き込み対象外（サーバー側でも弾かれる）
     for (const row of group.rows.filter((r) => !r.isAbsent)) {
       await saveTransportRecord({
@@ -352,6 +420,26 @@ export function TransportManageBoard({
   }
 
   const groups = buildRowGroups(localRows)
+  const trips = summarizeTrips(groups)
+  const driverButtons = buttonDrivers(
+    drivers,
+    regularDriverIds,
+    localRows.map((r) => r.driverMemberId).filter((id): id is string => !!id)
+  )
+  const shortName = shortNames(drivers)
+  const driverOrder = drivers.map((d) => d.id)
+  // 前の形（プルダウン）と見取り図の形の切りかえ。戻してほしいと言われたら、ここでその場で戻せる
+  const layoutToggle = (
+    <button
+      type="button"
+      onClick={() => writeLayout(layout === 'board' ? 'classic' : 'board')}
+      data-testid="layout-toggle"
+      className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50"
+    >
+      {layout === 'board' ? <ListFilter className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
+      {layout === 'board' ? '前の形（プルダウン）にする' : '見取り図とボタンの形にする'}
+    </button>
+  )
 
   // 送迎時間と送迎場所が全員そろっている便は1行にまとめて表示する。
   // ばらばらな便（手動でまとめたものなど）は中身が見えるよう児童ごとの行にする。
@@ -459,6 +547,21 @@ export function TransportManageBoard({
         </p>
       )}
 
+      {!loadError && localRows.length > 0 && (
+        layout === 'board' ? (
+          <DriverOverview
+            trips={trips}
+            drivers={drivers}
+            vehicles={vehicles}
+            shortName={shortName}
+            partial={!isAllUnits}
+            toggle={layoutToggle}
+          />
+        ) : (
+          <div className="flex justify-end">{layoutToggle}</div>
+        )
+      )}
+
       {canEdit && showAddPanel && (
         <AddChildPanel
           date={date}
@@ -498,9 +601,15 @@ export function TransportManageBoard({
               <span>送迎時間</span>
               <span />
             </div>
-            <div className={`${TRIP_COL} flex items-center gap-2 pl-3`}>
-              <span className="flex-1">ドライバー</span>
-              <span className="flex-1">車種</span>
+            <div className={`${layout === 'board' ? TRIP_COL_BOARD : TRIP_COL} flex items-center gap-2 pl-3`}>
+              {layout === 'board' ? (
+                <span className="flex-1">ドライバー・車種（押すと便の全員に入ります）</span>
+              ) : (
+                <>
+                  <span className="flex-1">ドライバー</span>
+                  <span className="flex-1">車種</span>
+                </>
+              )}
               <span className="w-[3.75rem] text-center">便</span>
             </div>
           </div>
@@ -511,7 +620,7 @@ export function TransportManageBoard({
             {(() => {
               let flatIndex = -1
               return groups.map((group) => (
-                <div key={group.key}>
+                <div key={group.key} id={`trip-${group.key}`} className="transition-shadow scroll-mt-24">
                   <div className="md:flex md:items-stretch">
                     {/* 児童の行（同じ送迎時間・送迎場所なら1行にまとまる） */}
                     <div className="flex-1 min-w-0 divide-y divide-gray-100">
@@ -549,6 +658,10 @@ export function TransportManageBoard({
 
                     {/* 便のドライバー・車種（何人いても1つ） */}
                     <TripCell
+                      layout={layout}
+                      driverButtons={driverButtons}
+                      driverOrder={driverOrder}
+                      shortName={shortName}
                       group={group}
                       drivers={drivers}
                       vehicles={vehicles}
@@ -613,6 +726,10 @@ export function TransportManageBoard({
  * 「分解」でひとりずつの便に分け、「まとめる」で他の児童を同じ便に合流させる。
  */
 function TripCell({
+  layout,
+  driverButtons,
+  driverOrder,
+  shortName,
   group,
   drivers,
   vehicles,
@@ -622,6 +739,10 @@ function TripCell({
   onSplit,
   onTogglePicker,
 }: {
+  layout: AssignLayout
+  driverButtons: { buttons: Driver[]; others: Driver[] }
+  driverOrder: string[]
+  shortName: Map<string, string>
   group: RowGroup
   drivers: Driver[]
   vehicles: Vehicle[]
@@ -631,10 +752,16 @@ function TripCell({
   onSplit: () => void
   onTogglePicker: () => void
 }) {
-  const sharedDriver = sharedValue(group.rows, (r) => r.driverMemberId)
-  const sharedVehicle = sharedValue(group.rows, (r) => r.vehicleId)
-  const mixedDriver = sharedDriver === null && group.rows.length > 1
-  const mixedVehicle = sharedVehicle === null && group.rows.length > 1
+  // 名前のボタンの形では、書きこむ相手（欠席でない子）だけで「そろっているか」を見る。
+  // 欠席の子が混じると押しても「混在」のままになるのと、全員が未設定なのに「混在」と出るのを防ぐ
+  const live = group.rows.filter((r) => !r.isAbsent)
+  const judged = layout === 'board' && live.length > 0 ? live : group.rows
+  const sharedDriver = sharedValue(judged, (r) => r.driverMemberId)
+  const sharedVehicle = sharedValue(judged, (r) => r.vehicleId)
+  const mixedDriver =
+    layout === 'board' ? !allEqual(judged, (r) => r.driverMemberId) : sharedDriver === null && group.rows.length > 1
+  const mixedVehicle =
+    layout === 'board' ? !allEqual(judged, (r) => r.vehicleId) : sharedVehicle === null && group.rows.length > 1
   const canSplit = group.rows.length >= 2
   const allAbsent = group.rows.every((r) => r.isAbsent)
   // 便に乗る児童全員の傾向を足して、よく入る人から並べる
@@ -645,6 +772,133 @@ function TripCell({
 
   const selectCls =
     'flex-1 min-w-0 text-xs border rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50'
+
+  if (layout === 'board') {
+    // 選ばれている人が「その他」の人なら、その人もボタンで出す（選んだ人が見えなくならないように）
+    const extra = sharedDriver && !driverButtons.buttons.some((d) => d.id === sharedDriver)
+      ? drivers.filter((d) => d.id === sharedDriver)
+      : []
+    const buttons = [...driverButtons.buttons, ...extra]
+    const others = driverButtons.others.filter((d) => d.id !== sharedDriver)
+    const disabled = saving || allAbsent
+    const pill = 'rounded-md border px-2 py-1 text-xs font-semibold transition-colors disabled:opacity-50'
+    return (
+      <div
+        className={`${TRIP_COL_BOARD} border-t border-gray-100 md:border-t-0 md:border-l md:flex md:items-center px-3 py-2 bg-gray-50/40 md:bg-transparent`}
+      >
+        <div className="w-full flex items-start gap-2">
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-1" role="group" aria-label="この便のドライバー" data-testid="driver-buttons">
+              {mixedDriver && (
+                <span className="rounded border border-dashed border-amber-300 bg-amber-50 px-1.5 py-1 text-[11px] text-amber-800">混在</span>
+              )}
+              {buttons.map((d) => {
+                const on = sharedDriver === d.id
+                const c = driverColor(driverOrder, d.id)
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => !on && onApply({ driverMemberId: d.id })}
+                    disabled={disabled}
+                    aria-pressed={on}
+                    title={d.name}
+                    className={`${pill} ${on ? `${c.solid} border-transparent text-white` : `${c.bg} ${c.text} ${c.border} hover:brightness-95`}`}
+                  >
+                    {shortName.get(d.id) ?? d.name}
+                  </button>
+                )
+              })}
+              {others.length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => e.target.value && onApply({ driverMemberId: e.target.value })}
+                  disabled={disabled}
+                  aria-label="その他のドライバー"
+                  className="max-w-[6rem] text-xs border border-gray-200 rounded px-1 py-1 bg-white text-gray-500 cursor-pointer disabled:opacity-50"
+                >
+                  <option value="">その他</option>
+                  {others.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {sharedDriver && (
+                <button
+                  type="button"
+                  onClick={() => onApply({ driverMemberId: null })}
+                  disabled={disabled}
+                  title="この便のドライバーを外す"
+                  aria-label="この便のドライバーを外す"
+                  className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {!sharedDriver && !mixedDriver && !allAbsent && (
+                <span className="text-[11px] font-semibold text-red-600">未設定</span>
+              )}
+            </div>
+            {vehicles.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1" role="group" aria-label="この便の車種" data-testid="vehicle-buttons">
+                <span className="text-[11px] text-gray-400 mr-0.5">車</span>
+                {mixedVehicle && (
+                  <span className="rounded border border-dashed border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">混在</span>
+                )}
+                {vehicles.map((v) => {
+                  const on = sharedVehicle === v.id
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => onApply({ vehicleId: on ? null : v.id })}
+                      disabled={disabled}
+                      aria-pressed={on}
+                      title={on ? `${v.name}（もう一度押すと外します）` : v.name}
+                      className={`rounded border px-1.5 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                        on ? 'bg-gray-800 border-gray-800 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      {v.name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {saving && <p className="text-[11px] text-gray-400">保存中…</p>}
+          </div>
+          <div className="flex items-center gap-1 shrink-0 w-[3.75rem] justify-end">
+            {canSplit && (
+              <button
+                onClick={onSplit}
+                disabled={saving}
+                title="この便をひとりずつに分解する"
+                aria-label="この便を分解する"
+                className="p-1 rounded border border-gray-200 bg-white text-gray-500 hover:text-orange-600 hover:border-orange-200 hover:bg-orange-50 disabled:opacity-50 transition-colors"
+              >
+                <Scissors className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <button
+              onClick={onTogglePicker}
+              disabled={saving}
+              title="ほかの児童をこの便にまとめる"
+              aria-label="ほかの児童をこの便にまとめる"
+              className={`p-1 rounded border transition-colors disabled:opacity-50 ${
+                pickerOpen
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-gray-500 border-gray-200 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50'
+              }`}
+            >
+              <Merge className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
