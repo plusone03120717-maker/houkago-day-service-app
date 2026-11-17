@@ -17,7 +17,6 @@ import {
   Save,
   CheckCircle,
   Pill,
-  Car,
   Bot,
 } from 'lucide-react'
 import { MedicationLogForm } from '@/components/medications/medication-log-form'
@@ -113,8 +112,6 @@ interface Props {
   holidayServiceEndTime: string
   /** 連絡帳の本文を書けるか。システム管理者だけ true（施設長・スタッフは見るだけ・2026-11-12 依頼主） */
   canEditContactNote?: boolean
-  /** 日中一時の有無と利用時間を変えられるか。システム管理者だけ true（施設長・スタッフは見るだけ・2026-11-12 依頼主） */
-  canEditAttendance?: boolean
   /** 保存していない入力があるかを外へ知らせる（1画面で全員分の左の一覧が、子を変える前に聞くのに使う） */
   onDirtyChange?: (dirty: boolean) => void
   /** 「保存して次の未記録の子へ」を押して保存できたあとに呼ぶ。渡さなければボタンを出さない */
@@ -142,7 +139,6 @@ export function DailyRecordForm({
   defaultServiceEndTime,
   holidayServiceEndTime,
   canEditContactNote = true,
-  canEditAttendance = true,
   onDirtyChange,
   onSaveNext,
   nextName,
@@ -205,18 +201,16 @@ export function DailyRecordForm({
   const [generatingDaily, setGeneratingDaily] = useState(false)
   const [refiningNotable, setRefiningNotable] = useState(false)
 
-  // 日中一時利用
-  const [daytimeSupport, setDaytimeSupport] = useState(attendance?.daytime_support ?? false)
-  const [daytimeSupportStartTime, setDaytimeSupportStartTime] = useState(attendance?.daytime_support_start_time?.slice(0, 5) ?? '')
-  const [daytimeSupportEndTime, setDaytimeSupportEndTime] = useState(attendance?.daytime_support_end_time?.slice(0, 5) ?? '')
+  // 日中一時の有無と利用時間は、この画面では扱わない（2026-11-17 依頼主「いらないので消して大丈夫」）。
+  // 入力と保存は出席管理（かんたん入力）で行う
 
   // ── 保存していない入力があるか ──
-  // 保存の対象（日常記録・特記・活動・日中一時・連絡帳）を、開いたとき（保存したとき）の中身と比べる。
+  // 保存の対象（日常記録・特記・活動・連絡帳）を、開いたとき（保存したとき）の中身と比べる。
   // メモ（箇条書き）は端末に下書きで残るので数えない
   const snapshotOf = () => JSON.stringify([
     dailyContent, hasNotable ? notableContent : '', hasNotable,
     [...selectedPrograms].sort(), Object.entries(activityNotes).filter(([, v]) => v).sort(),
-    contactNoteContent, daytimeSupport, daytimeSupportStartTime, daytimeSupportEndTime,
+    contactNoteContent,
   ])
   const [savedSnapshot, setSavedSnapshot] = useState(snapshotOf)
   const dirty = snapshotOf() !== savedSnapshot
@@ -422,19 +416,6 @@ export function DailyRecordForm({
       }
     }
 
-    // 日中一時利用の利用時間のみ保存（送迎は一覧側で管理）。
-    // 施設長・スタッフは見るだけなので、出欠の行には触れない
-    if (canEditAttendance) {
-      check('日中一時', await supabase
-        .from('daily_attendance')
-        .update({
-          daytime_support: daytimeSupport,
-          daytime_support_start_time: daytimeSupport ? (daytimeSupportStartTime || null) : null,
-          daytime_support_end_time: daytimeSupport ? (daytimeSupportEndTime || null) : null,
-        })
-        .eq('id', attendance.id))
-    }
-
     // 連絡帳はシステム管理者だけが書く（施設長・スタッフの保存では連絡帳に触れない）
     if (canEditContactNote && contactNoteContent) {
       if (initialContactNote) {
@@ -538,57 +519,6 @@ export function DailyRecordForm({
           出席記録がありません。先に出席登録してください。
         </div>
       )}
-
-      {/* 日中一時利用（利用時間のみ）。施設長・スタッフは見るだけ */}
-      <fieldset disabled={!canEditAttendance} className="min-w-0">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={daytimeSupport}
-                onChange={(e) => setDaytimeSupport(e.target.checked)}
-                className="w-4 h-4 accent-purple-600"
-                disabled={!attendance}
-              />
-              <Car className="h-5 w-5 text-purple-500" />
-              日中一時利用
-            </label>
-          </CardTitle>
-        </CardHeader>
-        {daytimeSupport && (
-          <CardContent className="space-y-3">
-            <p className="text-xs font-semibold text-gray-500">利用時間</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">開始時間</label>
-                <input
-                  type="time"
-                  value={daytimeSupportStartTime}
-                  onChange={(e) => setDaytimeSupportStartTime(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">終了時間</label>
-                <input
-                  type="time"
-                  value={daytimeSupportEndTime}
-                  onChange={(e) => setDaytimeSupportEndTime(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
-            </div>
-            <p className="text-xs text-gray-400">
-              {canEditAttendance
-                ? '※ 送迎時間の入力は「日々の記録」一覧の送迎入力から行ってください'
-                : '※ 日中一時の有無と利用時間は見るだけです。変えるのはシステム管理者です'}
-            </p>
-          </CardContent>
-        )}
-      </Card>
-      </fieldset>
 
       {/* 活動プログラム */}
       <Card>
