@@ -13,6 +13,7 @@
  *
  * 2026-11-12 から、施設長とスタッフが編集できるのは「日々の記録」「児童の情報」「ヒヤリハット」
  * だけで、ほかの業務の画面は閲覧のみ（判定は canEditOperations）。
+ * 2026-11-17 から、施設長は「モニタリング」も編集できる（判定は canEditMonitoring）。
  */
 
 /** サービス管理者を表す job_titles の値 */
@@ -76,6 +77,15 @@ export function canEditOperations(role: string | null, jobTitles: string[] | nul
   // role は users テーブルの値。システム管理者だけ（null＝users に行がない人も不可）
   if (role !== 'admin') return false
   return !isFacilityManager(role, jobTitles)
+}
+
+/**
+ * モニタリング（児童管理 → モニタリング：モニタリングの予定と記録）を編集できるか。
+ * システム管理者と施設長。スタッフ（サービス管理者を含む）は閲覧のみ（2026-11-17 依頼主）。
+ * （役職が未設定＝users に行がない人は通さない）
+ */
+export function canEditMonitoring(role: string | null, jobTitles: string[] | null): boolean {
+  return canEditOperations(role, jobTitles) || isFacilityManager(role, jobTitles)
 }
 
 /** 送迎管理を編集できるか。システム管理者だけ（施設長・スタッフは閲覧のみ）。 */

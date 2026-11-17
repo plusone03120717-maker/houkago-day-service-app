@@ -1,7 +1,7 @@
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { getSessionUser, getSessionUserRow } from '@/lib/auth'
-import { canEditOperations, canManageMoney, isFacilityManager } from '@/lib/roles'
+import { canEditMonitoring, canEditOperations, canManageMoney, isFacilityManager } from '@/lib/roles'
 
 /**
  * 管理者（システム管理者・施設長）のみアクセス可能なページで呼ぶ。
@@ -26,6 +26,8 @@ export type StaffAccess = {
   isFacilityManager: boolean
   /** 業務の画面を編集できる＝システム管理者（施設長・スタッフは閲覧のみ） */
   canEditOperations: boolean
+  /** モニタリングの予定と記録を編集できる＝システム管理者と施設長 */
+  canEditMonitoring: boolean
 }
 
 /**
@@ -47,6 +49,7 @@ export const getStaffAccess = cache(async (): Promise<StaffAccess | null> => {
     canManageMoney: canManageMoney(role, jobTitles),
     isFacilityManager: isFacilityManager(role, jobTitles),
     canEditOperations: canEditOperations(role, jobTitles),
+    canEditMonitoring: canEditMonitoring(role, jobTitles),
   }
 })
 
