@@ -121,19 +121,34 @@ export function resolveAssignment(c: AssignmentSource): ServiceAssignment {
 /**
  * 承認画面で区分を切り替えたときの初期値。
  *
- * 'both' は「午前に日中一時 → 午後から放デイ」が学校休業日の通常の形なので、
- * 希望時間の始まりを日中一時の開始、終わりを放デイの終了に当てておく。
- * 切り替え時刻（日中一時の終了＝放デイの開始）は施設が決めるものなので空のまま。
+ * 'both' は「放デイ → 切りかえ → 日中一時」がふつうの形（2026-11-17 依頼主）。
+ * 切りかえ（switchTime）は学校のある日 16:30・休みの日 16:00（@/lib/daytime-switch）を
+ * 呼ぶ側が渡す。希望の時間の中に切りかえが入るときは、放デイ＝希望の開始〜切りかえ、
+ * 日中一時＝切りかえ〜希望の終わりで4つの時刻を入れる。
+ * 入らないとき（切りかえを渡さない・希望の時間が短いなど）は、前の決め方のまま
+ * 希望の始まりを日中一時の開始、終わりを放デイの終了に当て、切りかえは空にして施設に決めてもらう。
  */
 export function defaultAssignment(
   c: AssignmentSource,
-  serviceType: ServiceAssignmentType
+  serviceType: ServiceAssignmentType,
+  switchTime?: string | null
 ): ServiceAssignment {
   const wishStart = toHhmm(c.service_start_time)
   const wishEnd = toHhmm(c.service_end_time)
   const stored = resolveAssignment({ ...c, service_type: serviceType })
 
   if (serviceType === 'both') {
+    const nothingStored =
+      !stored.serviceStartTime && !stored.serviceEndTime && !stored.daytimeStartTime && !stored.daytimeEndTime
+    if (nothingStored && switchTime && wishStart && wishEnd && wishStart < switchTime && switchTime < wishEnd) {
+      return {
+        serviceType: 'both',
+        serviceStartTime: wishStart,
+        serviceEndTime: switchTime,
+        daytimeStartTime: switchTime,
+        daytimeEndTime: wishEnd,
+      }
+    }
     return {
       serviceType: 'both',
       serviceStartTime: stored.serviceStartTime,

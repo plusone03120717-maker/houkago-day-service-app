@@ -20,11 +20,21 @@ import {
   Trash2,
   Loader2,
 } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getTodayJST } from '@/lib/utils'
 import { ALL_UNITS, unitChildKey } from '@/lib/attendance-board-data'
-import { transportTimeOf } from '@/lib/schedule-defaults'
+import { transportTimeOf, shiftTime } from '@/lib/schedule-defaults'
 import { deleteUsageDay, ABSENT_CLEARED_FIELDS } from '@/lib/usage-day'
 import { MonthlyAttendanceView } from './monthly-attendance-view'
+import {
+  EasyAttendancePanel,
+  fieldsFromEasy,
+  easyFromFields,
+  easyError,
+  kindOfServiceType,
+  DEFAULT_SWITCH_TIME,
+  type EasyState,
+} from './easy-attendance-panel'
+import { switchTimeFor, SWITCH_TIME_HOLIDAY } from '@/lib/daytime-switch'
 import { AbsenceReasonInput } from './absence-reason-input'
 import {
   TransportDaytimePanel,
@@ -101,6 +111,14 @@ interface Props {
    * 出席・欠席・一括出席は日々の記録を書き始めるのに要るので、canEdit に関係なく全員が押せる（2026-11-12 依頼主）
    */
   canEdit?: boolean
+  /** 子どもごとの両方の日の切りかえの既定（学校のある日 16:30・休みの日 16:00） */
+  switchTimeByChild?: Record<string, string>
+  /** その日の保護者の連絡で、まだ処理していないもの（児童ID → お休みか利用か） */
+  pendingContactByChild?: Record<string, 'absent' | 'attending'>
+  /** その日の承認ずみの利用連絡の区分（児童ID → service_type） */
+  approvedServiceTypeByChild?: Record<string, string>
+  /** 過ぎた日で、出席も欠席も付いていない記録（予定のまま）の日と件数 */
+  pastUnrecorded?: { date: string; count: number }[]
 }
 
 /** "16:30:00" → "16:30"。未設定・00:00 は空文字として扱う */
@@ -128,6 +146,10 @@ export function AttendanceBoard({
   prevByChildId,
   scheduleDefaultsByKey,
   canEdit = true,
+  switchTimeByChild = {},
+  pendingContactByChild = {},
+  approvedServiceTypeByChild = {},
+  pastUnrecorded = [],
 }: Props) {
   const router = useRouter()
   // ユニット未選択（＝すべて）。既定はこちらで、ユニットボタンで絞り込む
@@ -144,6 +166,14 @@ export function AttendanceBoard({
   const [transportSaving, setTransportSaving] = useState<string | null>(null)
   const [transportSavedIds, setTransportSavedIds] = useState<Set<string>>(new Set())
   const [savedOnce, setSavedOnce] = useState<Set<string>>(new Set())
+  // 「くわしく直す」（今の入力画面）を開いている行
+  const [detailOpen, setDetailOpen] = useState<Set<string>>(new Set())
+  // 「予定どおりで確定」を押している行
+  const [confirming, setConfirming] = useState<string | null>(null)
+  // 前の日までは「予定の確定」、当日からは「出席」にする（試作・安全策）
+  const isFutureDate = date > getTodayJST()
+  // まとめて確定・一括出席の結果（外した子とその理由）
+  const [bulkNote, setBulkNote] = useState<string | null>(null)
 
   // ── 出席・予約はローカル状態として持つ ──
   // 以前は保存のたびに router.refresh() でページ全体（サーバー4往復）を取り直していた。
@@ -247,6 +277,13 @@ export function AttendanceBoard({
     const sched = scheduleDefaultsByKey[unitChildKey(a.unit_id, a.child_id)]
     if (!sched || savedOnce.has(a.id)) return false
     const base = initFields(a, defaultServiceEndTime)
+    // 両方の日の帰りは日中一時の欄に入るので、放デイの帰りが空でも「未入力」ではない
+    if (base.daytimeSupport && (base.daytimeDropoffDepartureTime || base.daytimeDropoffArrivalTime)) {
+      if (isBlankFields(base)) return true
+      const pickupBlank = !base.pickupDepartureTime && !base.pickupArrivalTime &&
+        !base.daytimePickupDepartureTime && !base.daytimePickupArrivalTime
+      return pickupBlank
+    }
     // 送迎の欄だけを埋めた場合も「予定値を表示中」であることに変わりはない
     return isBlankFields(base) || hasBlankTransport(base)
   }
@@ -266,6 +303,175 @@ export function AttendanceBoard({
     const prev = prevByChildId[a.child_id]
     if (!prev) return
     setFieldStates((s) => ({ ...s, [a.id]: initFields(prev, defaultServiceEndTime) }))
+  }
+
+  /** 予定がどこから来たか（保護者の連絡・特定日・いつも） */
+  const sourceLabelOf = (sched: ScheduleDefaults | undefined): string | null => {
+    if (!sched) return null
+    // いつもの予定がなく、承認した連絡の予約だけで入った子は page.tsx で 'request' を付けている
+    const src = Object.values(sched.sources ?? {})
+    if (src.includes('request')) return '保護者の連絡'
+    if (src.includes('override')) return '特定日の変更'
+    return 'いつもどおり'
+  }
+
+  /** その子の両方の日の切りかえの既定（学校のある日 16:30・休みの日 16:00） */
+  const switchOf = (childId: string) => switchTimeByChild[childId] ?? DEFAULT_SWITCH_TIME
+  /** いつもの予定の切りかえを使うときの時刻（休みの日は予定より 16:00 を優先） */
+  const plannedSwitchOf = (childId: string, sched: ScheduleDefaults) =>
+    switchTimeFor(switchOf(childId) === SWITCH_TIME_HOLIDAY, sched.daytimeSupportStartTime)
+
+  /**
+   * 予定から、その日の20欄を組み立てる。
+   * すでに決めてあるドライバー・車種は消さない（夜に送迎管理で決めた分が空になる事故を防ぐ・カード8）
+   */
+  const fieldsFromSchedule = (sched: ScheduleDefaults, childId: string, existing?: Attendance): TransportFields => {
+    const showPickup = sched.transportType === 'pickup_only' || sched.transportType === 'both'
+    const showDropoff = sched.transportType === 'dropoff_only' || sched.transportType === 'both'
+    const prev = existing ? easyFromFields(initFields(existing, defaultServiceEndTime), switchOf(childId)) : null
+    const easy: EasyState = {
+      kind: sched.daytimeSupport ? 'both' : 'hd',
+      switchTime: plannedSwitchOf(childId, sched),
+      order: 'hd_first',
+      noPickup: !showPickup || !sched.pickupTime,
+      pickupTime: showPickup ? fmtTime(sched.pickupTime) : '',
+      pickupDriverId: showPickup ? prev?.pickupDriverId ?? '' : '',
+      pickupVehicleId: showPickup ? prev?.pickupVehicleId ?? '' : '',
+      noDropoff: !showDropoff || !sched.dropoffTime,
+      dropoffTime: showDropoff ? fmtTime(sched.dropoffTime) : '',
+      dropoffDriverId: showDropoff ? prev?.dropoffDriverId ?? '' : '',
+      dropoffVehicleId: showDropoff ? prev?.dropoffVehicleId ?? '' : '',
+    }
+    const blank = initFields({} as TransportRow, defaultServiceEndTime)
+    const base: TransportFields = {
+      ...blank,
+      serviceStartTime: fmtTime(sched.serviceStartTime),
+      serviceEndTime: fmtTime(sched.serviceEndTime) || fmtTime(sched.dropoffTime) || defaultServiceEndTime,
+    }
+    const f = fieldsFromEasy(easy, base, defaultServiceEndTime)
+    // 利用開始は予定の利用時間を優先（なければお迎えの10分後）。カード1と同じ決め方
+    const planned = fmtTime(sched.serviceStartTime)
+    return planned ? { ...f, serviceStartTime: planned } : f
+  }
+
+  /** その日の記録に、承認などで時刻がもう入っているか */
+  const hasPlannedTimes = (att: Attendance | undefined) =>
+    !!att && (hasTime(att.service_start_time) || hasTime(att.daytime_support_start_time))
+
+  /**
+   * 「予定どおりで確定」で保存する20欄。
+   * 承認などで時刻が入っている記録はその中身を正とする（予約には日中一時の区分が無く、
+   * 予定から組み立て直すと承認で決めた「両方」が「放デイだけ」に変わってしまうため）。
+   * 入っていなければ予定から組み立てる。
+   */
+  const confirmFieldsOf = (res: Reservation, sched: ScheduleDefaults): TransportFields => {
+    const existing = attOf(res)
+    if (existing && hasPlannedTimes(existing)) {
+      const base = initFields(existing, defaultServiceEndTime)
+      return fieldsFromEasy(easyFromFields(base, switchOf(res.child_id)), base, defaultServiceEndTime)
+    }
+    return fieldsFromSchedule(sched, res.child_id, existing)
+  }
+
+  /** 確定できない理由（時刻のまちがい・予定がない）。確定できるなら null */
+  const confirmProblemOf = (res: Reservation): string | null => {
+    const sched = scheduleDefaultsByKey[unitChildKey(res.unit_id, res.child_id)]
+    if (!sched) return '予定がありません'
+    const f = confirmFieldsOf(res, sched)
+    return easyError(easyFromFields(f, switchOf(res.child_id)), f)
+  }
+
+  /**
+   * 「予定どおりで確定」。予定の時刻・送迎を、送迎の欄まで実際に保存する。
+   * 前の日までは予定の確定だけ（status は scheduled のまま＝出席の実績にしない）、
+   * 当日からは出席にする。時刻のまちがいがあるときは保存しない（不具合 B）。
+   * 戻り値：保存できたら null、できなければ理由
+   */
+  const confirmAsScheduled = async (res: Reservation, opts: { bulk?: boolean } = {}): Promise<string | null> => {
+    if (!canEdit) return '編集できません'
+    const sched = scheduleDefaultsByKey[unitChildKey(res.unit_id, res.child_id)]
+    if (!sched) return '予定がありません'
+    const problem = confirmProblemOf(res)
+    if (problem) {
+      if (!opts.bulk) alert(`確定できません：${problem}\n「くわしく直す」で時刻を確かめてください。`)
+      return problem
+    }
+    const pending = pendingContactByChild[res.child_id]
+    if (pending && !opts.bulk) {
+      const ok = window.confirm(
+        `この子には、保護者からの${pending === 'absent' ? 'お休み' : '利用'}の連絡がまだ処理されていません。\n` +
+        '先に利用連絡の画面で承認・処理するのがおすすめです。このまま確定しますか？'
+      )
+      if (!ok) return '取りやめ'
+    }
+    const key = unitChildKey(res.unit_id, res.child_id)
+    setConfirming(key)
+    const update = {
+      ...buildTransportUpdate(confirmFieldsOf(res, sched)),
+      status: isFutureDate ? 'scheduled' : 'attended',
+      absence_reason: null,
+    }
+    const existing = attOf(res)
+    const { data, error } = existing
+      ? await supabase.from('daily_attendance').update(update).eq('id', existing.id).select('*').single()
+      : await supabase
+          .from('daily_attendance')
+          .insert({ child_id: res.child_id, unit_id: res.unit_id, date, created_by: staffId, ...update })
+          .select('*')
+          .single()
+    setConfirming(null)
+    if (error) {
+      if (!opts.bulk) alert(`確定エラー: ${error.message}`)
+      return `保存に失敗しました（${error.message}）`
+    }
+    if (data) {
+      applyRow(data as unknown as Attendance)
+      setFieldStates((prev) => { const n = { ...prev }; delete n[(data as { id: string }).id]; return n })
+      setSavedOnce((prev) => new Set(prev).add((data as { id: string }).id))
+    }
+    return null
+  }
+
+  const nameOfRes = (r: Reservation) => r.children?.name ?? '（名前なし）'
+
+  /** まだ確定していない行（記録なし・予定のまま） */
+  const isOpenRow = (res: Reservation) => {
+    const att = attOf(res)
+    return res.status !== 'cancel_waiting' && (!att || att.status === 'scheduled')
+  }
+
+  /** 予定どおりで確定ずみか（予定のままで、送迎か利用時間がすでに保存されている） */
+  const isConfirmedPlan = (att: Attendance | undefined) =>
+    !!att && att.status === 'scheduled' && (hasTime(att.service_start_time) || hasTime(att.daytime_support_start_time))
+
+  /** まとめての確定の対象（いつもどおりで、まだ確定していない子） */
+  const usualOpenRows = () => resList.filter((r) => {
+    if (!isOpenRow(r) || isConfirmedPlan(attOf(r))) return false
+    return sourceLabelOf(scheduleDefaultsByKey[unitChildKey(r.unit_id, r.child_id)]) === 'いつもどおり'
+  })
+
+  /**
+   * 「いつもどおり」の子をまとめて確定（保護者の連絡・特定日の変更がある子は1人ずつ見る）。
+   * 未処理の保護者の連絡がある子と、時刻のまちがいがある子は外して、名前と理由を出す（カード1・不具合 B）
+   */
+  const confirmAllUsual = async () => {
+    setBulkNote(null)
+    const skipped: string[] = []
+    let done = 0
+    for (const r of usualOpenRows()) {
+      const pending = pendingContactByChild[r.child_id]
+      if (pending) {
+        skipped.push(`${nameOfRes(r)}（保護者の${pending === 'absent' ? 'お休み' : '利用'}の連絡が未処理）`)
+        continue
+      }
+      const problem = await confirmAsScheduled(r, { bulk: true })
+      if (problem) skipped.push(`${nameOfRes(r)}（${problem}）`)
+      else done++
+    }
+    setBulkNote(
+      `${done}人を${isFutureDate ? '確定' : '出席に'}しました。` +
+      (skipped.length > 0 ? `1人ずつ確かめてください：${skipped.join('、')}` : '')
+    )
   }
 
   const handleSaveTransport = async (a: Attendance) => {
@@ -315,13 +521,19 @@ export function AttendanceBoard({
     const sched = scheduleDefaultsByKey[unitChildKey(unitId, childId)]
     if (!sched) return {}
     const result: UsageTimes = {}
-    if (sched.pickupTime) {
-      result.service_start_time = sched.pickupTime.slice(0, 5)
-      result.check_in_time = result.service_start_time
+    // ほかの画面（入力パネル・承認・送迎管理）と同じ決め方にそろえる（試作・カード1）。
+    // 開始＝予定の利用時間。なければお迎え（学校などに着く時刻）の10分後＝事業所に着く時刻。
+    // 以前はお迎えの時刻そのままを入れていて、ほかの画面と10分ずれていた
+    const start = fmtTime(sched.serviceStartTime) ||
+      (sched.pickupTime ? fmtTime(shiftTime(sched.pickupTime.slice(0, 5), 10)) : '')
+    const end = fmtTime(sched.serviceEndTime) || fmtTime(sched.dropoffTime)
+    if (start) {
+      result.service_start_time = start
+      result.check_in_time = start
     }
-    if (sched.dropoffTime) {
-      result.service_end_time = sched.dropoffTime.slice(0, 5)
-      result.check_out_time = result.service_end_time
+    if (end) {
+      result.service_end_time = end
+      result.check_out_time = end
     }
     return result
   }
@@ -332,6 +544,14 @@ export function AttendanceBoard({
     childId: string,
     updates: Partial<Attendance>
   ) => {
+    // 安全策（試作）：前の日までに「出席」を付けると、休んだ日に出席が残って請求がまちがう
+    if (updates.status === 'attended' && isFutureDate) {
+      const ok = window.confirm(
+        'まだ当日ではありません。「出席」は実際に来た記録として請求に使われます。\n' +
+        '予定を確定したいだけなら「予定どおりで確定」を使ってください。\n\nこのまま出席にしますか？'
+      )
+      if (!ok) return
+    }
     setSaving(unitChildKey(unitId, childId))
     const existing = attendanceMap[unitChildKey(unitId, childId)]
 
@@ -459,8 +679,26 @@ export function AttendanceBoard({
 
   // 一括出席登録
   const markAllPresent = async () => {
+    if (isFutureDate && !window.confirm(
+      'まだ当日ではありません。「出席」は実際に来た記録として請求に使われます。\n' +
+      '予定を確定したいだけなら「いつもどおりの子をまとめて確定」を使ってください。\n\nこのまま全員を出席にしますか？'
+    )) return
     setSaving('all')
-    const unrecorded = resList.filter((r) => r.status !== 'cancel_waiting' && !attOf(r))
+    setBulkNote(null)
+    // 未処理の保護者の連絡がある子は外す（お休みの連絡を見落として出席にしないように・カード1）
+    const unrecorded = resList.filter(
+      (r) => r.status !== 'cancel_waiting' && !attOf(r) && !pendingContactByChild[r.child_id]
+    )
+    const skippedPending = resList.filter(
+      (r) => r.status !== 'cancel_waiting' && !attOf(r) && pendingContactByChild[r.child_id]
+    )
+    if (skippedPending.length > 0) {
+      setBulkNote(
+        `保護者の連絡が未処理の子は外しました：${skippedPending
+          .map((r) => `${nameOfRes(r)}（${pendingContactByChild[r.child_id] === 'absent' ? 'お休み' : '利用'}の連絡）`)
+          .join('、')}。利用連絡の画面で処理してから付けてください。`
+      )
+    }
 
     // スケジュール時間は props から求まるので、追加の取得往復は発生しない。
     // 他の職員が同じ児童を先に登録していた場合に一括処理ごと失敗しないよう、
@@ -507,13 +745,48 @@ export function AttendanceBoard({
           <h1 className="text-2xl font-bold text-gray-900">出席管理</h1>
           <p className="text-sm text-gray-500 mt-0.5">出席・欠席・利用時間の記録</p>
         </div>
-        {view === 'day' && unrecorded.length > 0 && (
-          <Button onClick={markAllPresent} disabled={saving === 'all'}>
-            <CheckCircle className="h-4 w-4" />
-            未記録を一括出席登録
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {view === 'day' && canEdit && usualOpenRows().length > 0 && (
+            <Button variant="outline" onClick={confirmAllUsual} disabled={confirming !== null}>
+              <CheckCircle className="h-4 w-4" />
+              いつもどおりの子をまとめて{isFutureDate ? '確定' : '出席'}
+            </Button>
+          )}
+          {view === 'day' && unrecorded.length > 0 && (
+            <Button onClick={markAllPresent} disabled={saving === 'all'}>
+              <CheckCircle className="h-4 w-4" />
+              未記録を一括出席登録
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* 過ぎた日で、出席も欠席も付いていない記録（カード3） */}
+      {pastUnrecorded.length > 0 && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+          <p className="font-semibold">
+            過ぎた日で、出席も欠席も付いていない記録が {pastUnrecorded.reduce((n, d) => n + d.count, 0)} 件あります（このままだと請求に出ません）
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {pastUnrecorded.map((d) => (
+              <Link
+                key={d.date}
+                href={`/attendance?date=${d.date}`}
+                className="rounded-full border border-red-300 bg-white px-2.5 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
+              >
+                {Number(d.date.slice(5, 7))}/{Number(d.date.slice(8, 10))} {d.count}人
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {bulkNote && (
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p>{bulkNote}</p>
+          <button type="button" onClick={() => setBulkNote(null)} className="text-xs text-amber-700 hover:underline flex-shrink-0">閉じる</button>
+        </div>
+      )}
 
       {!canEdit && (
         <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
@@ -666,9 +939,13 @@ export function AttendanceBoard({
                 const isAbsent = att?.status === 'absent' || res.status === 'cancel_waiting'
                 const isUnrecorded = !att && res.status !== 'cancel_waiting'
 
-                // 送迎・日中一時入力（出席時のみ・日々の記録と同じUI）
+                // 送迎・日中一時入力（出席の日と、予定どおりで確定した日）
                 const fields = att ? getFields(att) : null
                 const isTransportExpanded = !!att && expanded === att.id
+                const sched = scheduleDefaultsByKey[rowKey]
+                const sourceLabel = sourceLabelOf(sched)
+                const confirmedPlan = isConfirmedPlan(att)
+                const canConfirm = canEdit && !!sched && isOpenRow(res) && !confirmedPlan
 
                 // 送迎時間の表示（お迎え＝学校などに着く時刻 〜 お送り＝事業所を出る時刻）。
                 // 送迎管理の時刻と同じ値を出す（どちらも出発時間の欄。
@@ -726,8 +1003,26 @@ export function AttendanceBoard({
                           {isUnrecorded && (
                             <Badge variant="warning" className="text-xs">未記録</Badge>
                           )}
+                          {confirmedPlan && (
+                            <Badge variant="secondary" className="text-xs bg-indigo-50 text-indigo-700">予定確定ずみ（出席はまだ）</Badge>
+                          )}
+                          {pendingContactByChild[child.id] && (
+                            <Link
+                              href="/parent-contacts"
+                              className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-red-200 hover:bg-red-100"
+                            >
+                              保護者の{pendingContactByChild[child.id] === 'absent' ? 'お休み' : '利用'}の連絡（未処理）
+                            </Link>
+                          )}
                         </div>
-                        <div className="text-xs text-gray-400">{child.name_kana}</div>
+                        <div className="text-xs text-gray-400">
+                          {child.name_kana}
+                          {sourceLabel && (
+                            <span className={`ml-2 ${sourceLabel === 'いつもどおり' ? 'text-gray-400' : 'text-amber-600 font-medium'}`}>
+                              予定の元：{sourceLabel}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -759,6 +1054,19 @@ export function AttendanceBoard({
 
                     {/* 出席/欠席ボタン */}
                     <div className="flex items-center gap-2">
+                      {canConfirm && (
+                        <button
+                          onClick={() => confirmAsScheduled(res)}
+                          disabled={confirming === rowKey}
+                          title={isFutureDate
+                            ? '予定の時刻・送迎を保存します。出席の実績にはなりません'
+                            : '予定の時刻・送迎で出席にします'}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
+                        >
+                          {confirming === rowKey ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                          {isFutureDate ? '予定どおりで確定' : '予定どおり出席'}
+                        </button>
+                      )}
                       {res.status !== 'cancel_waiting' && (
                         <>
                           <button
@@ -837,7 +1145,7 @@ export function AttendanceBoard({
                     )}
 
                     {/* 送迎・日中一時入力トグル（日々の記録と同じUI） */}
-                    {isPresent && att && fields && (
+                    {(isPresent || confirmedPlan) && att && fields && (
                       <TransportDaytimeToggle
                         expanded={isTransportExpanded}
                         onToggle={() => setExpanded(isTransportExpanded ? null : att.id)}
@@ -852,19 +1160,46 @@ export function AttendanceBoard({
                     <Card className="rounded-t-none border-t-0">
                       <CardContent className="p-4">
                         <fieldset disabled={!canEdit} className="contents">
-                        <TransportDaytimePanel
-                          fields={fields}
-                          onChange={(patch) => setField(att, patch)}
-                          staffMembers={staffMembers}
-                          vehicles={vehicles}
-                          defaultServiceEndTime={defaultServiceEndTime}
-                          isSchedulePreset={isSchedulePreset(att)}
-                          previousDate={prevByChildId[child.id]?.date ?? null}
-                          onCopyPrevious={() => handleCopyPrevious(att)}
-                          onSave={() => handleSaveTransport(att)}
-                          saving={transportSaving === att.id}
-                          saved={transportSavedIds.has(att.id)}
-                        />
+                        {detailOpen.has(att.id) ? (
+                          <div className="space-y-3">
+                            <button
+                              type="button"
+                              onClick={() => setDetailOpen((p) => { const n = new Set(p); n.delete(att.id); return n })}
+                              className="text-xs font-medium text-indigo-700 hover:underline"
+                            >
+                              ← かんたん入力に戻る
+                            </button>
+                            <TransportDaytimePanel
+                              fields={fields}
+                              onChange={(patch) => setField(att, patch)}
+                              staffMembers={staffMembers}
+                              vehicles={vehicles}
+                              defaultServiceEndTime={defaultServiceEndTime}
+                              isSchedulePreset={isSchedulePreset(att)}
+                              previousDate={prevByChildId[child.id]?.date ?? null}
+                              onCopyPrevious={() => handleCopyPrevious(att)}
+                              onSave={() => handleSaveTransport(att)}
+                              saving={transportSaving === att.id}
+                              saved={transportSavedIds.has(att.id)}
+                            />
+                          </div>
+                        ) : (
+                          <EasyAttendancePanel
+                            fields={fields}
+                            onChange={(next) => setFieldStates((prev) => ({ ...prev, [att.id]: next }))}
+                            schedule={sched}
+                            staffMembers={staffMembers}
+                            vehicles={vehicles}
+                            defaultServiceEndTime={defaultServiceEndTime}
+                            defaultSwitchTime={switchOf(child.id)}
+                            approvedKind={kindOfServiceType(approvedServiceTypeByChild[child.id])}
+                            onSave={() => handleSaveTransport(att)}
+                            saving={transportSaving === att.id}
+                            saved={transportSavedIds.has(att.id)}
+                            detailOpen={false}
+                            onOpenDetail={() => setDetailOpen((p) => new Set(p).add(att.id))}
+                          />
+                        )}
                         </fieldset>
                       </CardContent>
                     </Card>

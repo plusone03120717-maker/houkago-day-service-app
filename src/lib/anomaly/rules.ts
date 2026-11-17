@@ -492,6 +492,27 @@ const contactNotApplied: Rule = {
 }
 
 /**
+ * 過ぎた日なのに「予定」のままの出欠記録（カード3・2026-11-17）。
+ * かんたん入力の「予定どおりで確定」は、前の日までは出席にせず予定のまま保存する。
+ * 当日に出席・欠席を付け忘れると、請求（出席・欠席だけを数える）から静かに落ちる。
+ */
+const pastStillScheduled: Rule = {
+  key: 'past_still_scheduled',
+  label: '過ぎた日が「予定」のまま',
+  description:
+    '利用日が過ぎたのに、出席も欠席も付いていない記録です。請求は出席・欠席だけを数えるので、このままだとその日は請求に出ません。出席管理でその日を開いて、出席か欠席を付けてください。',
+  enabled: true,
+  run: (ctx) =>
+    ctx.attendance
+      .filter((a) => a.status === 'scheduled' && a.date < ctx.today)
+      .map((a) =>
+        finding('past_still_scheduled', 'high', a, 'daily_attendance',
+          `${label(a.date)} は過ぎた日ですが、出席も欠席も付いていません（予定のまま）`,
+          { status: a.status })
+      ),
+}
+
+/**
  * ルール一覧。追加するときはここに足すだけでよい。
  * 画面（/checks）はこの配列から説明とオン・オフ状況を表示する。
  */
@@ -506,6 +527,7 @@ export const RULES: Rule[] = [
   rapidBulkEntry,
   overlappingPlans,
   contactNotApplied,
+  pastStillScheduled,
 ]
 
 export const RULE_LABELS: Record<string, string> = Object.fromEntries(

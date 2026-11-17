@@ -18,6 +18,7 @@ import {
   type OverrideRow as ScheduleOverrideRow,
   type ReservationRow as ScheduleReservationRow,
 } from '@/lib/schedule-defaults'
+import { defaultSwitchTime, loadHolidayChecker } from '@/lib/daytime-switch'
 
 /** 送迎・時間系の入力が一つでも入っている行か */
 function hasAnyTransportInput(r: PrevAttendanceRow): boolean {
@@ -130,6 +131,8 @@ function buildUnitBoard(data: AttendanceBoardData, unitId: string, today: string
       daytimeSupport: false,
       daytimeSupportStartTime: null,
       daytimeSupportEndTime: null,
+      // 保護者の連絡を承認した予約から作った予定（出席管理の「予定の元」に出す・カード8）
+      sources: { transportType: 'request', pickupTime: 'request', dropoffTime: 'request', serviceTime: 'request' },
     }
   }
 
@@ -274,6 +277,59 @@ export default async function AttendancePage({
     }
   }
 
+  // ── かんたん入力・出席管理のつなぎ目（2026-11-17） ──
+  // ・両方の日の切りかえの既定：学校のある日 16:30・休みの日 16:00（子どもごとの学校休日も見る）
+  // ・その日の保護者の連絡：未処理があれば行に出して、まとめての確定・出席から外す（カード1）
+  //   承認ずみの連絡の区分は、かんたん入力が「予定の区分」として比べる（カード8）
+  // ・過ぎた日で出席も欠席も付いていない記録（予定のまま）の日と人数（カード3）
+  const realToday = getTodayJST()
+  const pastFromDate = new Date(realToday + 'T00:00:00Z')
+  pastFromDate.setUTCDate(pastFromDate.getUTCDate() - 31)
+  const pastFrom = pastFromDate.toISOString().slice(0, 10)
+  const boardChildIds = [...new Set(reservations.map((r) => r.child_id))]
+  const [isHoliday, { data: contactsRaw }, { data: pastRaw }] = await Promise.all([
+    loadHolidayChecker(supabase, boardChildIds, [today]),
+    boardChildIds.length > 0
+      ? supabase
+          .from('parent_attendance_contacts')
+          .select('child_id, status, approval_status, is_new, service_type')
+          .eq('date', today)
+          .in('child_id', boardChildIds)
+      : Promise.resolve({ data: [] }),
+    supabase
+      .from('daily_attendance')
+      .select('date')
+      .eq('status', 'scheduled')
+      .lt('date', realToday)
+      .gte('date', pastFrom),
+  ])
+  const switchTimeByChild: Record<string, string> = {}
+  for (const id of boardChildIds) switchTimeByChild[id] = defaultSwitchTime(isHoliday(id, today))
+
+  type ContactRow = {
+    child_id: string
+    status: 'attending' | 'absent'
+    approval_status: 'pending' | 'approved' | 'rejected'
+    is_new: boolean
+    service_type: string | null
+  }
+  const pendingContactByChild: Record<string, 'absent' | 'attending'> = {}
+  const approvedServiceTypeByChild: Record<string, string> = {}
+  for (const c of (contactsRaw ?? []) as ContactRow[]) {
+    if (c.is_new) pendingContactByChild[c.child_id] = c.status
+    else if (c.status === 'attending' && c.approval_status === 'approved' && c.service_type) {
+      approvedServiceTypeByChild[c.child_id] = c.service_type
+    }
+  }
+
+  const pastCounts = new Map<string, number>()
+  for (const r of (pastRaw ?? []) as { date: string }[]) {
+    pastCounts.set(r.date, (pastCounts.get(r.date) ?? 0) + 1)
+  }
+  const pastUnrecorded = [...pastCounts.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([date, count]) => ({ date, count }))
+
   return (
     <AttendanceBoard
       date={today}
@@ -288,6 +344,10 @@ export default async function AttendancePage({
       prevByChildId={prevByChildId}
       scheduleDefaultsByKey={scheduleDefaultsByKey}
       canEdit={access?.canEditOperations ?? false}
+      switchTimeByChild={switchTimeByChild}
+      pendingContactByChild={pendingContactByChild}
+      approvedServiceTypeByChild={approvedServiceTypeByChild}
+      pastUnrecorded={pastUnrecorded}
     />
   )
 }
