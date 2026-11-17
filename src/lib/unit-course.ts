@@ -12,6 +12,15 @@ export const UNIT_COURSES: { key: UnitCourse; label: string }[] = [
   { key: 'pc', label: 'パソコン' },
 ]
 
+/**
+ * 日々の記録（日常記録）を書く教室か。英会話・プログラミングの子は書かない
+ * （2026-11-17 依頼主「日々の記録は英会話とプログラミングを外して大丈夫」）。
+ * 記録済の数・未記録の数・1画面の一覧から外すのに使う。
+ */
+export function needsDailyRecord(unitName: string | null | undefined): boolean {
+  return unitCourseOf(unitName) === 'day'
+}
+
 export function unitCourseOf(unitName: string | null | undefined): UnitCourse {
   const name = unitName ?? ''
   if (name.includes('英')) return 'english'

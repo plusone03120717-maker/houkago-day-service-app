@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { formatDate, getTodayJST } from '@/lib/utils'
 import { buildUsageRoster } from '@/lib/usage-roster'
+import { needsDailyRecord } from '@/lib/unit-course'
 
 type ExpiringCert = {
   id: string
@@ -113,10 +114,10 @@ export default async function DashboardPage() {
       .order('date', { ascending: true })
       .limit(10),
 
-    // 当日の出席済み・記録未作成カウント
+    // 当日の出席済み・記録未作成カウント（英会話・プログラミングは日々の記録を書かないので数えない）
     supabase
       .from('daily_attendance')
-      .select('id')
+      .select('id, units(name)')
       .eq('date', today)
       .eq('status', 'attended'),
 
@@ -174,7 +175,7 @@ export default async function DashboardPage() {
     // 当日の出席に紐づく記録数（出席IDの取得を待たずに内部結合で数える）
     supabase
       .from('daily_records')
-      .select('attendance_id, daily_attendance!inner(date, status)')
+      .select('attendance_id, daily_attendance!inner(date, status, units(name))')
       .eq('record_type', 'daily_record')
       .eq('daily_attendance.date', today)
       .eq('daily_attendance.status', 'attended'),
@@ -255,7 +256,9 @@ export default async function DashboardPage() {
   const notableRecords = (notableRecordsResult.data ?? []) as unknown as NotableRecord[]
   const pendingReservations = (pendingReservationsResult.data ?? []) as unknown as Reservation[]
   const pendingCount = pendingReservations.length
-  const todayAttendedIds = (unwrittenRecordsResult.data ?? []).map((a: { id: string }) => a.id)
+  const todayAttendedIds = ((unwrittenRecordsResult.data ?? []) as unknown as { id: string; units: { name: string } | null }[])
+    .filter((a) => needsDailyRecord(a.units?.name))
+    .map((a) => a.id)
 
   // 月次統計
   const thisMonthTotal = thisMonthAttendanceResult.count ?? 0
@@ -268,8 +271,11 @@ export default async function DashboardPage() {
 
   // 記録済みの件数（上の並列バッチで取得済み）
   // 日常記録のある出席の数（特記・二重保存を数えない）
+  const todayAttendedIdSet = new Set(todayAttendedIds)
   const writtenCount = new Set(
-    ((writtenRecordsResult.data ?? []) as { attendance_id: string }[]).map((r) => r.attendance_id)
+    ((writtenRecordsResult.data ?? []) as unknown as { attendance_id: string }[])
+      .map((r) => r.attendance_id)
+      .filter((id) => todayAttendedIdSet.has(id))
   ).size
   const unwrittenCount = todayAttendedIds.length - writtenCount
 
