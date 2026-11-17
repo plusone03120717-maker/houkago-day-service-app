@@ -182,17 +182,15 @@ export function shortNames<T extends { id: string; name: string }>(drivers: T[])
 export const CANDIDATE_COUNT = 3
 
 /**
- * 便ごとのボタンの候補。
+ * 便ごとのボタンの候補。ボタンはいつも3人まで＋「その他」（2026-11-17 依頼主「3人プラスその他」）。
  *  1. その便の子のこれまでの記録から「よく入る順」の上位3人
  *  2. 記録が足りず3人にならないときは、最近よく運転している人（名前順）で足す
- *  3. 選ばれている人が候補にいなければ、その人もボタンに出す（だれが選ばれているか見えるように）
- * ほかの人は「その他」から選ぶ。
+ * ほかの人は「その他」から選ぶ。3人に入らない人が選ばれているときは、「その他」の欄にその人を出す。
  */
 export function candidateDrivers<T extends { id: string }>(
   drivers: T[],
   rankedIds: string[],
   regularIds: string[],
-  selectedId: string | null,
   n: number = CANDIDATE_COUNT
 ): { buttons: T[]; others: T[] } {
   const byId = new Map(drivers.map((d) => [d.id, d]))
@@ -201,7 +199,6 @@ export function candidateDrivers<T extends { id: string }>(
     if (picked.length >= n) break
     if (byId.has(id) && !picked.includes(id)) picked.push(id)
   }
-  if (selectedId && byId.has(selectedId) && !picked.includes(selectedId)) picked.push(selectedId)
   return {
     buttons: picked.map((id) => byId.get(id)!),
     others: drivers.filter((d) => !picked.includes(d.id)),
