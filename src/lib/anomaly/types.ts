@@ -63,6 +63,15 @@ export type ChangeLogRow = {
   changed_at: string
 }
 
+/** 承認したのに予定へ反映できなかった保護者の利用連絡（migration 189） */
+export type UnappliedContactRow = {
+  id: string
+  child_id: string
+  date: string
+  apply_error: string
+  apply_error_at: string | null
+}
+
 export type CheckContext = {
   /** JST の今日 (YYYY-MM-DD) */
   today: string
@@ -77,6 +86,8 @@ export type CheckContext = {
   billingMonths: BillingMonthRow[]
   /** 直近の変更履歴（record_change_logs） */
   changeLogs: ChangeLogRow[]
+  /** 承認したのに予定へ反映できなかった利用連絡 */
+  unappliedContacts: UnappliedContactRow[]
 }
 
 export type Finding = {

@@ -95,6 +95,19 @@ export async function POST(req: NextRequest) {
           )
         : await revertParentContact(supabase, contact)
 
+    // 反映できなかった理由を連絡に残す（承認の履歴と毎朝の入力チェックに出す）。
+    // 利用の連絡を承認したときだけ。反映できた・非承認にした・未承認に戻したときは消す
+    const applyError =
+      approvalStatus === 'approved' && contact.status === 'attending' ? result.error ?? null : null
+    const { error: markError } = await supabase
+      .from('parent_attendance_contacts')
+      .update({
+        apply_error: applyError,
+        apply_error_at: applyError ? new Date().toISOString() : null,
+      } as never)
+      .eq('id', id)
+    if (markError) console.error('[parent-contacts/approval] apply_error', markError.message)
+
     return NextResponse.json({ ok: true, warning: result.error })
   } catch (err) {
     console.error('[parent-contacts/approval]', err)

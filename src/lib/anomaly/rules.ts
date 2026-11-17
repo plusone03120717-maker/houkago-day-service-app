@@ -477,6 +477,20 @@ const overlappingPlans: Rule = {
   },
 }
 
+const contactNotApplied: Rule = {
+  key: 'contact_not_applied',
+  label: '承認した利用連絡が予定に入っていない',
+  description:
+    '保護者の利用連絡を承認したのに、出欠記録・送迎へ反映できなかったものです。そのままだと出席管理・送迎管理・請求が保護者の連絡と食い違います。利用連絡の画面の「もう一度反映する」か、利用状況・出席管理で直してください。',
+  enabled: true,
+  run: (ctx) =>
+    ctx.unappliedContacts.map((c) =>
+      finding('contact_not_applied', 'high', c, 'parent_attendance_contacts',
+        `${label(c.date)} の利用連絡は承認ずみですが、予定に入っていません（${c.apply_error}）`,
+        { apply_error: c.apply_error, apply_error_at: c.apply_error_at })
+    ),
+}
+
 /**
  * ルール一覧。追加するときはここに足すだけでよい。
  * 画面（/checks）はこの配列から説明とオン・オフ状況を表示する。
@@ -491,6 +505,7 @@ export const RULES: Rule[] = [
   pastMonthEdit,
   rapidBulkEntry,
   overlappingPlans,
+  contactNotApplied,
 ]
 
 export const RULE_LABELS: Record<string, string> = Object.fromEntries(
