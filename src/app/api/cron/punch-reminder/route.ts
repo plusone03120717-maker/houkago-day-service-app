@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isRetiredOn, loadRetired } from '@/lib/retired'
 import { createClient } from '@supabase/supabase-js'
 import { findMissingPunches, missingPunchNotice } from '@/lib/line/timecard-correction'
 
@@ -41,7 +42,10 @@ export async function GET(request: NextRequest) {
     .from('staff_members')
     .select('id, name, line_user_id')
     .in('id', [...new Set(missing.map((m) => m.staff_member_id))])
-  const staff = (staffRaw ?? []) as { id: string; name: string; line_user_id: string | null }[]
+  // 退職日を過ぎた人には送らない（2026-11-17）
+  const retired = await loadRetired(admin)
+  const staff = ((staffRaw ?? []) as { id: string; name: string; line_user_id: string | null }[])
+    .filter((s) => !isRetiredOn(retired.staff.get(s.id), today))
 
   let notified = 0
   const skipped: string[] = []

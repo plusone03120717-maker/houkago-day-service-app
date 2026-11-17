@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { loadRetired } from '@/lib/retired'
 import { requireAdmin, getStaffAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { ArrowLeft, Car } from 'lucide-react'
@@ -26,6 +27,7 @@ export default async function StaffMemberPage({
   const member = memberRaw as { id: string; name: string; role: string; roles: string[] | null; line_user_id: string | null } | null
 
   if (!member) return <div className="p-4 text-gray-500">スタッフが見つかりません</div>
+  const retired = await loadRetired(supabase)
 
   const memberRoles = member.roles?.length ? member.roles : [member.role]
 
@@ -76,6 +78,7 @@ export default async function StaffMemberPage({
             initialName={member.name}
             initialRoles={memberRoles}
             initialLineUserId={member.line_user_id ?? ''}
+            initialRetiredAt={retired.staff.get(member.id) ?? null}
             canEdit={canEdit}
           />
         </CardContent>

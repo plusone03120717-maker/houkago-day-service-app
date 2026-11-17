@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { loadRetired } from '@/lib/retired'
 import { requireAdmin, getStaffAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -49,7 +50,12 @@ export default async function SettingsStaffPage() {
     .from('staff_members')
     .select('id, name, role, roles, line_user_id')
     .order('name')
-  const memberList = (membersRaw ?? []) as unknown as StaffMember[]
+  // 退職した人は印をつけて下に並べる（2026-11-17）
+  const retired = await loadRetired(supabase)
+  const memberList = ((membersRaw ?? []) as unknown as StaffMember[])
+    .map((m) => ({ ...m, retiredAt: retired.staff.get(m.id) ?? null }))
+    .sort((a, b) => Number(!!a.retiredAt) - Number(!!b.retiredAt))
+  const activeMemberCount = memberList.filter((m) => !m.retiredAt).length
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -120,7 +126,9 @@ export default async function SettingsStaffPage() {
       {memberList.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">ドライバー・その他 ({memberList.length}名)</CardTitle>
+            <CardTitle className="text-base">
+              ドライバー・その他 ({activeMemberCount}名{memberList.length > activeMemberCount ? `・退職 ${memberList.length - activeMemberCount}名` : ''})
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -132,7 +140,14 @@ export default async function SettingsStaffPage() {
                         <Car className="h-4 w-4 text-amber-600" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">{m.name}</p>
+                        <p className={`text-sm font-medium ${m.retiredAt ? 'text-gray-400' : 'text-gray-900'}`}>
+                          {m.name}
+                          {m.retiredAt && (
+                            <span className="ml-2 rounded-full bg-gray-600 px-2 py-0.5 text-[10px] font-bold text-white align-middle" data-testid="member-retired">
+                              退職 {m.retiredAt}
+                            </span>
+                          )}
+                        </p>
                         <p className="text-xs text-gray-400">
                           {m.line_user_id ? 'LINE通知: 設定済み' : 'LINE通知: 未設定'}
                         </p>

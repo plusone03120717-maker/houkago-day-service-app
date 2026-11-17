@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
+import { loadRetired } from '@/lib/retired'
 import { requireAdmin, getStaffAccess } from '@/lib/require-admin'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,11 +12,7 @@ type Vehicle = {
   id: string
   name: string
   capacity: number
-  driver_staff_id: string | null
-  driver: { name: string } | null
 }
-
-type StaffOption = { id: string; name: string }
 
 export default async function VehiclesPage() {
   await requireAdmin()
@@ -23,22 +20,20 @@ export default async function VehiclesPage() {
   const canEdit = (await getStaffAccess())?.canEditOperations ?? false
   const supabase = await createClient()
 
-  const [{ data: facilitiesRaw }, { data: vehiclesRaw }, { data: staffRaw }] = await Promise.all([
+  // 前は「担当ドライバー」の名前を、名前の列がない表（staff_profiles）から読もうとして読みこみ全体が失敗し、
+  // 登録した車があっても「登録された車両がありません」と出ていた（2026-11-17 に気づいて直した）。
+  // 担当ドライバーはほかのどこでも使っていないので、読まない
+  const [{ data: facilitiesRaw }, { data: vehiclesRaw }] = await Promise.all([
     supabase.from('facilities').select('id').order('name').limit(1),
-    supabase
-      .from('transport_vehicles')
-      .select('id, name, capacity, driver_staff_id, driver:driver_staff_id(name)')
-      .order('name'),
-    supabase
-      .from('users')
-      .select('id, name')
-      .in('role', ['admin', 'staff'])
-      .order('name'),
+    supabase.from('transport_vehicles').select('id, name, capacity').order('name'),
   ])
 
   const facilityId = (facilitiesRaw?.[0] as { id: string } | undefined)?.id ?? ''
-  const vehicles = (vehiclesRaw ?? []) as unknown as Vehicle[]
-  const staffOptions = (staffRaw ?? []) as unknown as StaffOption[]
+  // 使わない車は印をつけて下に並べる（2026-11-17）
+  const retired = await loadRetired(supabase)
+  const vehicles = ((vehiclesRaw ?? []) as unknown as Vehicle[])
+    .map((v) => ({ ...v, retired_at: retired.vehicles.get(v.id) ?? null }))
+    .sort((a, b) => Number(!!a.retired_at) - Number(!!b.retired_at))
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -63,7 +58,6 @@ export default async function VehiclesPage() {
           <VehicleForm
             facilityId={facilityId}
             vehicles={vehicles}
-            staffOptions={staffOptions}
             canEdit={canEdit}
           />
         </CardContent>

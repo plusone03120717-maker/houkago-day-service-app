@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isRetiredOn, loadRetired, todayJst } from '@/lib/retired'
 import { createClient } from '@supabase/supabase-js'
 import {
   isFirstDayJST,
@@ -56,10 +57,13 @@ export async function GET(request: NextRequest) {
 
   const { data: staffRaw } = await admin
     .from('staff_members')
-    .select('name, line_user_id')
+    .select('id, name, line_user_id')
     .eq('receives_billing_notice', true)
-  const recipients = ((staffRaw ?? []) as { name: string; line_user_id: string | null }[])
-    .filter((s) => s.line_user_id)
+  // 退職日を過ぎた人には送らない（2026-11-17）
+  const retired = await loadRetired(admin)
+  const todayStr = todayJst()
+  const recipients = ((staffRaw ?? []) as { id: string; name: string; line_user_id: string | null }[])
+    .filter((s) => s.line_user_id && !isRetiredOn(retired.staff.get(s.id), todayStr))
 
   const text = monthStartNotice(report, process.env.NEXT_PUBLIC_APP_URL || PRODUCTION_URL)
   let notified = 0

@@ -3,33 +3,31 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Plus, Trash2 } from 'lucide-react'
-
-type StaffOption = { id: string; name: string }
+import { Plus, Trash2, Ban, RotateCcw } from 'lucide-react'
+import { deleteVehicleIfUnused, setVehicleRetired } from '@/app/actions/retire'
+import { todayJst } from '@/lib/retired'
 
 type Vehicle = {
   id: string
   name: string
   capacity: number
-  driver_staff_id: string | null
-  driver?: { name: string } | null
+  /** 使わなくなった日（使用中は null）。翌日から選ぶ欄から外れる */
+  retired_at?: string | null
 }
 
 interface Props {
   facilityId: string
   vehicles: Vehicle[]
-  staffOptions: StaffOption[]
   /** 車両の追加・削除ができるか。システム管理者だけ true（施設長・スタッフは閲覧のみ） */
   canEdit?: boolean
 }
 
-export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOptions, canEdit = true }: Props) {
+export function VehicleForm({ facilityId, vehicles: initialVehicles, canEdit = true }: Props) {
   const supabase = createClient()
 
   const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles)
   const [name, setName] = useState('')
   const [capacity, setCapacity] = useState(4)
-  const [driverStaffId, setDriverStaffId] = useState('')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -49,9 +47,8 @@ export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOption
         facility_id: facilityId,
         name: name.trim(),
         capacity,
-        driver_staff_id: driverStaffId || null,
       })
-      .select('id, name, capacity, driver_staff_id')
+      .select('id, name, capacity')
       .single()
 
     setSaving(false)
@@ -60,33 +57,40 @@ export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOption
       return
     }
     // ローカル状態を即時更新
-    const driver = driverStaffId
-      ? staffOptions.find((s) => s.id === driverStaffId) ?? null
-      : null
-    setVehicles((prev) => [
-      ...prev,
-      { ...data, driver: driver ? { name: driver.name } : null },
-    ])
+    setVehicles((prev) => [...prev, { ...data, retired_at: null }])
     setName('')
     setCapacity(4)
-    setDriverStaffId('')
   }
 
-  const handleDelete = async (id: string) => {
+  /** 削除は、記録が1件もないとき（まちがえて登録したときなど）だけ。記録があればサーバーが断る */
+  const handleDelete = async (v: Vehicle) => {
     if (!canEdit) return
-    setDeleting(id)
+    if (!confirm(`「${v.name}」を削除しますか？\n記録が1件もないときだけ削除できます。使わなくなった車は「使わない」にしてください。`)) return
+    setDeleting(v.id)
     setError(null)
-    const { error: deleteError } = await supabase
-      .from('transport_vehicles')
-      .delete()
-      .eq('id', id)
+    const res = await deleteVehicleIfUnused(v.id)
     setDeleting(null)
-    if (deleteError) {
-      setError(deleteError.message)
+    if (!res.ok) {
+      setError(res.message)
       return
     }
     // ローカル状態を即時更新
-    setVehicles((prev) => prev.filter((v) => v.id !== id))
+    setVehicles((prev) => prev.filter((x) => x.id !== v.id))
+  }
+
+  /** 使わないにする（今日の日付）／使用中に戻す。記録は残り、翌日から選ぶ欄から外れる */
+  const handleRetire = async (v: Vehicle, next: string | null) => {
+    if (!canEdit) return
+    if (next && !confirm(`「${v.name}」を ${next} で使わないにしますか？\n翌日から、送迎の車種のボタンや選ぶ欄から外れます。送迎の記録は残ります。`)) return
+    setDeleting(v.id)
+    setError(null)
+    const res = await setVehicleRetired(v.id, next)
+    setDeleting(null)
+    if (!res.ok) {
+      setError(res.message)
+      return
+    }
+    setVehicles((prev) => prev.map((x) => (x.id === v.id ? { ...x, retired_at: next } : x)))
   }
 
   return (
@@ -106,20 +110,49 @@ export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOption
               className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100"
             >
               <div>
-                <p className="text-sm font-medium text-gray-900">{v.name}</p>
+                <p className={`text-sm font-medium ${v.retired_at ? 'text-gray-400' : 'text-gray-900'}`}>
+                  {v.name}
+                  {v.retired_at && (
+                    <span className="ml-2 rounded-full bg-gray-600 px-2 py-0.5 text-[10px] font-bold text-white align-middle" data-testid="vehicle-retired">
+                      使わない {v.retired_at}
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs text-gray-400 mt-0.5">
                   定員 {v.capacity}名
-                  {v.driver?.name && ` ・ ドライバー: ${v.driver.name}`}
                 </p>
               </div>
               {canEdit && (
-                <button
-                  onClick={() => handleDelete(v.id)}
-                  disabled={deleting === v.id}
-                  className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  {v.retired_at ? (
+                    <button
+                      onClick={() => handleRetire(v, null)}
+                      disabled={deleting === v.id}
+                      className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      使うに戻す
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleRetire(v, todayJst())}
+                      disabled={deleting === v.id}
+                      className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                    >
+                      <Ban className="h-3.5 w-3.5" />
+                      使わないにする
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDelete(v)}
+                    disabled={deleting === v.id}
+                    title="削除（記録が1件もないときだけ）"
+                    aria-label={`${v.name} を削除`}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               )}
             </div>
           ))}
@@ -164,20 +197,6 @@ export function VehicleForm({ facilityId, vehicles: initialVehicles, staffOption
             onChange={(e) => setCapacity(parseInt(e.target.value) || 1)}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
-        </div>
-
-        <div>
-          <label className="text-xs font-medium text-gray-700 block mb-1">担当ドライバー（任意）</label>
-          <select
-            value={driverStaffId}
-            onChange={(e) => setDriverStaffId(e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          >
-            <option value="">未設定</option>
-            {staffOptions.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
         </div>
 
         <Button
