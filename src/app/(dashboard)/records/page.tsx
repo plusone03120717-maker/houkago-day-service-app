@@ -1,6 +1,9 @@
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getTodayJST } from '@/lib/utils'
 import { RecordsListBoard } from '@/components/records/records-list-board'
+import { RecordsDayLayout } from '@/components/records/records-day-layout'
 import { getStaffAccess } from '@/lib/require-admin'
 import { needsDailyRecord } from '@/lib/unit-course'
 import {
@@ -149,15 +152,67 @@ function hasAnyTransportInput(r: PrevAttendanceRow): boolean {
   )
 }
 
+/**
+ * その日に最初に開く子（まだ記録していない最初の子。全員済みなら先頭の子）。
+ * 並び・数え方は1画面の左の一覧（records/[childId]）と同じ：出席した子だけ・名前順・
+ * 英会話とプログラミングの子は外す・「済」は日常記録のある出席。
+ */
+async function findFirstChildToWrite(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  date: string,
+): Promise<{ childId: string; unitId: string } | null> {
+  const { data: rosterRaw } = await supabase
+    .from('daily_attendance')
+    .select('id, child_id, unit_id, children(name, name_kana), units(name)')
+    .eq('date', date)
+    .eq('status', 'attended')
+  type Row = {
+    id: string; child_id: string; unit_id: string
+    children: { name: string; name_kana: string | null } | null
+    units: { name: string } | null
+  }
+  const sortKey = (r: Row) => r.children?.name_kana ?? r.children?.name ?? '（名前なし）'
+  const rows = ((rosterRaw ?? []) as unknown as Row[])
+    .filter((r) => needsDailyRecord(r.units?.name))
+    .sort((a, b) => sortKey(a).localeCompare(sortKey(b), 'ja'))
+  if (rows.length === 0) return null
+  const { data: recorded } = await supabase
+    .from('daily_records')
+    .select('attendance_id')
+    .eq('record_type', 'daily_record')
+    .in('attendance_id', rows.map((r) => r.id))
+  const recordedIds = new Set(((recorded ?? []) as { attendance_id: string }[]).map((r) => r.attendance_id))
+  const first = rows.find((r) => !recordedIds.has(r.id)) ?? rows[0]
+  return { childId: first.child_id, unitId: first.unit_id }
+}
+
 export default async function RecordsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>
+  searchParams: Promise<{ date?: string; view?: string }>
 }) {
   const params = await searchParams
   const supabase = await createClient()
 
   const targetDate = params.date ?? getTodayJST()
+
+  // 「日々の記録」を開いたら、はじめから1画面の入力（左に一覧・右に入力）を出す。
+  // 前の一覧（出欠・送迎の入力つき）は ?view=list のときだけ出す（2026-11-17 依頼主）
+  if (params.view !== 'list') {
+    const entry = await findFirstChildToWrite(supabase, targetDate)
+    if (entry) redirect(`/records/${entry.childId}?date=${targetDate}&unit=${entry.unitId}`)
+    return (
+      <RecordsDayLayout roster={[]} date={targetDate} current={{ childId: '', unitId: '' }} dirty={false}>
+        <div className="rounded-lg border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-600">
+          <p>この日に出席した子はいません。</p>
+          <p className="mt-1 text-xs text-gray-500">
+            <Link href={`/attendance?date=${targetDate}`} className="text-indigo-600 hover:underline">出席管理</Link>
+            で出席をつけると、ここに名前が出ます。
+          </p>
+        </div>
+      </RecordsDayLayout>
+    )
+  }
 
   const [
     { data: attendedRaw },

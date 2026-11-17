@@ -11,15 +11,18 @@ type Props = {
   nextDate: string
   basePath: string
   extraParams?: string
+  /** 日付を変える前に呼ぶ。false を返したら移らない（保存していない入力があるときに聞くのに使う） */
+  confirmLeave?: () => boolean
 }
 
-export function DateNav({ targetDate, prevDate, nextDate, basePath, extraParams = '' }: Props) {
+export function DateNav({ targetDate, prevDate, nextDate, basePath, extraParams = '', confirmLeave }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
 
   const holidayName = getJapaneseHolidayName(targetDate)
 
   const navigate = (date: string) => {
+    if (confirmLeave && !confirmLeave()) return
     startTransition(() => {
       router.push(`${basePath}?date=${date}${extraParams}`)
       router.refresh()

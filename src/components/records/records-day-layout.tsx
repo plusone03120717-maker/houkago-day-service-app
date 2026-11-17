@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, Circle, PencilLine } from 'lucide-react'
+import { DateNav } from '@/components/ui/date-nav'
 
 /**
  * 日々の記録を「1画面で全員分」書くための外枠（2026-11-17 施設長の了承・C案）。
@@ -13,6 +14,10 @@ import { CheckCircle2, Circle, PencilLine } from 'lucide-react'
  *  - 子を変えるとフォームを作り直す（key が変わる）ので、前の子の文は残らない
  *  - 保存していない入力があるときに別の子を選ぶと「保存していません」と聞く
  *  - ブラウザを閉じる・別のページへ移るときも、保存していなければブラウザが聞く
+ *  - 日付を変える・前の一覧へ移るときも、保存していなければ聞く
+ *
+ * 「日々の記録」を開くと、はじめからこの画面が出る（/records がその日の最初の未記録の子へ送る）。
+ * 日付は上の切りかえで変える。出欠・送迎の入力がある前の一覧は、右上のリンクから開ける。
  */
 
 export type RosterItem = {
@@ -28,6 +33,13 @@ export const UNSAVED_MESSAGE = 'この子の記録を保存していません。
 
 export function recordHref(item: Pick<RosterItem, 'childId' | 'unitId'>, date: string) {
   return `/records/${item.childId}?date=${date}&unit=${item.unitId}`
+}
+
+/** YYYY-MM-DD の n 日あと（時差でずれないよう UTC で数える） */
+function shiftDate(date: string, days: number) {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
 }
 
 /** 今の子のあとで、まだ記録していない最初の子（なければ前に戻って探す）。いなければ null */
@@ -72,9 +84,33 @@ export function RecordsDayLayout({ roster, date, current, dirty, children }: Pro
 
   const done = roster.filter((r) => r.recorded).length
   const left = roster.length - done
+  const confirmLeave = () => !dirtyRef.current || window.confirm(UNSAVED_MESSAGE)
+  const openList = () => {
+    if (!confirmLeave()) return
+    router.push(`/records?date=${date}&view=list`)
+  }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto space-y-4">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <h1 className="text-2xl font-bold text-gray-900">日々の記録</h1>
+      <DateNav
+        targetDate={date}
+        prevDate={shiftDate(date, -1)}
+        nextDate={shiftDate(date, 1)}
+        basePath="/records"
+        confirmLeave={confirmLeave}
+      />
+      <button
+        type="button"
+        onClick={openList}
+        className="ml-auto text-sm text-indigo-600 hover:underline"
+        data-testid="open-records-list"
+      >
+        出欠・送迎の一覧をひらく
+      </button>
+    </div>
+    <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="lg:sticky lg:top-4 lg:self-start space-y-2" aria-label="その日の子の一覧">
         <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">
           <p className="font-semibold text-gray-800">その日に出席した子</p>
@@ -121,6 +157,7 @@ export function RecordsDayLayout({ roster, date, current, dirty, children }: Pro
         </ul>
       </aside>
       <div className="min-w-0">{children}</div>
+    </div>
     </div>
   )
 }

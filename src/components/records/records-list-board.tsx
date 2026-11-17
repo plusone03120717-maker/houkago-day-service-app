@@ -163,8 +163,13 @@ export function RecordsListBoard({
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">日々の記録</h1>
-        <p className="text-sm text-gray-500 mt-0.5">児童ごとの日報・活動記録・連絡帳</p>
+        <h1 className="text-2xl font-bold text-gray-900">日々の記録（出欠・送迎の一覧）</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          出席・欠席の切りかえと、送迎・利用時間の入力ができます。
+          <Link href={`/records?date=${targetDate}`} className="ml-2 text-indigo-600 hover:underline">
+            ← 記録を書く画面にもどる
+          </Link>
+        </p>
       </div>
 
       <div className="flex items-center gap-3">
@@ -173,6 +178,7 @@ export function RecordsListBoard({
           prevDate={prevDate}
           nextDate={nextDate}
           basePath="/records"
+          extraParams="&view=list"
         />
         <span className="text-sm text-gray-500">{formatDate(targetDate, 'yyyy年MM月dd日')}</span>
         <span className="ml-auto text-sm text-gray-500">
