@@ -103,6 +103,10 @@ export type FacilityScheduleDay = {
   /** 送迎の行き先・帰り先（@/lib/transport-place の値） */
   pickup_place?: string | null
   dropoff_place?: string | null
+  /** その日（記録 > 予定）に日中一時も使うか。承認画面で「いつもは両方」を初期値にするのに使う */
+  daytime_support?: boolean
+  /** 日中一時の開始（両方の日の切りかえ） */
+  daytime_support_start_time?: string | null
 }
 
 /** 受給者証の給付日数上限（児童ごと） */
@@ -292,9 +296,49 @@ export async function saveUsageContactsForDates(
     }
   }))
 
+  // 承認ずみと同じ中身の出し直しは、承認待ちに戻さない（カード6・2026-11-17）。
+  // まとめて申しこむと承認ずみの日も混ざり、同じ承認をやり直すことになっていた。
+  // 時間・送迎・場所・メモのどれかが違えば、今までどおり承認待ちに戻す
+  const childIds = [...new Set(records.map((r) => r.child_id))]
+  const { data: existingRaw } = await supabase
+    .from('parent_attendance_contacts')
+    .select(
+      'child_id, date, status, approval_status, service_start_time, service_end_time, transport_type, ' +
+      'pickup_location_type, pickup_address_id, dropoff_location_type, dropoff_address_id, note'
+    )
+    .in('child_id', childIds)
+    .in('date', dates)
+    .eq('approval_status', 'approved')
+    .eq('status', 'attending')
+  type Existing = {
+    child_id: string; date: string; service_start_time: string | null; service_end_time: string | null
+    transport_type: string | null; pickup_location_type: string | null; pickup_address_id: string | null
+    dropoff_location_type: string | null; dropoff_address_id: string | null; note: string | null
+  }
+  const approvedByKey = new Map(
+    ((existingRaw ?? []) as unknown as Existing[]).map((e) => [`${e.child_id}|${e.date}`, e])
+  )
+  const t5 = (v: string | null | undefined) => (v ? v.slice(0, 5) : null)
+  const sameAsApproved = (r: (typeof records)[number]) => {
+    const e = approvedByKey.get(`${r.child_id}|${r.date}`)
+    if (!e || r.status !== 'attending') return false
+    return (
+      t5(e.service_start_time) === t5(r.service_start_time) &&
+      t5(e.service_end_time) === t5(r.service_end_time) &&
+      e.transport_type === r.transport_type &&
+      e.pickup_location_type === r.pickup_location_type &&
+      (e.pickup_address_id ?? null) === (r.pickup_address_id ?? null) &&
+      e.dropoff_location_type === r.dropoff_location_type &&
+      (e.dropoff_address_id ?? null) === (r.dropoff_address_id ?? null) &&
+      (e.note ?? '') === (r.note ?? '')
+    )
+  }
+  const changed = records.filter((r) => !sameAsApproved(r))
+  if (changed.length === 0) return {}
+
   const { error } = await supabase
     .from('parent_attendance_contacts')
-    .upsert(records, { onConflict: 'child_id,date' })
+    .upsert(changed, { onConflict: 'child_id,date' })
 
   if (error) {
     console.error('[parent-usage-contact] upsert error:', error)
@@ -760,6 +804,9 @@ export async function loadFacilitySchedule(
             | null,
         pickup_place: places.pickup,
         dropoff_place: places.dropoff,
+        daytime_support: att ? !!att.daytime_support : !!planned?.daytimeSupport,
+        daytime_support_start_time:
+          (att ? (att.daytime_support ? att.daytime_support_start_time : null) : planned?.daytimeSupportStartTime) ?? null,
       })
     }
   }

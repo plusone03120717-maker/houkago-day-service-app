@@ -5,8 +5,10 @@ import {
   type CurrentPlan,
   type EnglishUnitChoice,
 } from '@/components/parent-contacts/parent-contacts-board'
+import { defaultSwitchTime, loadHolidayChecker, switchTimeFor } from '@/lib/daytime-switch'
 import {
   attendanceToAssignment,
+  defaultAssignment,
   ENGLISH_UNIT_NAME,
   type AttendanceAssignmentSource,
   type ServiceAssignment,
@@ -115,6 +117,32 @@ export default async function ParentContactsPage() {
     }
   }
 
+  // 両方の日の切りかえの既定（学校のある日 16:30・休みの日 16:00）と、
+  // いつもの予定が「両方」の子の初期値（カード2・2026-11-17）。
+  // 出席記録に割り振りが入っていない連絡だけ、いつもの予定から「両方」を先に選んでおく。
+  // 承認するときに区分を選び直す手間と、両方の子を放デイだけで承認するまちがいを減らす
+  const isHoliday = await loadHolidayChecker(supabase, childIds, days)
+  const switchTimes: Record<string, string> = {}
+  const usualAssignments: Record<string, ServiceAssignment> = {}
+  const usualHints: Record<string, string> = {}
+  for (const c of unconfirmedContacts) {
+    const sw = defaultSwitchTime(isHoliday(c.child_id, c.date))
+    switchTimes[c.id] = sw
+    if (c.status !== 'attending' || initialAssignments[c.id]) continue
+    const storedSomething = c.assigned_service_start_time || c.assigned_service_end_time ||
+      c.assigned_daytime_start_time || c.assigned_daytime_end_time
+    if (storedSomething) continue
+    const day = scheduleDays.find(
+      (d) => d.child_id === c.child_id && d.date === c.date && d.kind === 'planned'
+    )
+    if (!day?.daytime_support) continue
+    const usualSwitch = switchTimeFor(isHoliday(c.child_id, c.date), day.daytime_support_start_time)
+    const a = defaultAssignment(c, 'both', usualSwitch)
+    if (a.serviceEndTime !== usualSwitch) continue // 希望の時間の中に切りかえが入らない日は選ばない
+    usualAssignments[c.id] = a
+    usualHints[c.id] = `いつもは両方（${usualSwitch} 切りかえ）なので、いつもの予定から「両方」を入れました`
+  }
+
   // 英会話に所属する児童は、承認画面で「英会話」を区分として選べるようにする。
   // 何もしなければ自動で決まる教室（resolveUnitIds）を初期値にする
   const { data: childUnitsRaw } = childIds.length > 0
@@ -187,6 +215,9 @@ export default async function ParentContactsPage() {
       englishChoices={englishChoices}
       canEdit={canEdit}
       unappliedContacts={unappliedContacts}
+      switchTimes={switchTimes}
+      usualAssignments={usualAssignments}
+      usualHints={usualHints}
     />
   )
 }

@@ -269,6 +269,12 @@ type Props = {
   canEdit?: boolean
   /** 承認したのに予定へ反映できなかった連絡。直すまで上に出し続ける */
   unappliedContacts?: UnappliedContact[]
+  /** 連絡IDごとの、両方の日の切りかえの既定（学校のある日 16:30・休みの日 16:00） */
+  switchTimes?: Record<string, string>
+  /** 出席記録に割り振りが無く、いつもの予定が「両方」の連絡の初期値（カード2） */
+  usualAssignments?: Record<string, ServiceAssignment>
+  /** usualAssignments を入れた連絡に出す説明 */
+  usualHints?: Record<string, string>
 }
 
 /** 承認したのに予定へ反映できなかった連絡（parent_attendance_contacts.apply_error） */
@@ -351,12 +357,18 @@ function AssignmentEditor({
   contact,
   value,
   english,
+  switchTime,
+  hint,
   onChange,
 }: {
   contact: Contact
   value: ServiceAssignment
   /** 英会話に所属する児童のときだけ渡す */
   english?: EnglishUnitChoice
+  /** 「両方」を押したときの切りかえの既定（学校のある日 16:30・休みの日 16:00） */
+  switchTime?: string
+  /** いつもの予定から入れたときの説明 */
+  hint?: string
   onChange: (next: ServiceAssignment) => void
 }) {
   const showBasic = value.serviceType !== 'daytime_support'
@@ -384,6 +396,9 @@ function AssignmentEditor({
   return (
     <div className="mt-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
       <p className="text-[11px] font-semibold text-gray-600">サービス区分を決める</p>
+      {hint && value.serviceType === 'both' && (
+        <p className="mt-1 rounded bg-indigo-50 px-2 py-1 text-[11px] text-indigo-700">{hint}</p>
+      )}
       <div className="flex flex-wrap gap-1.5 mt-1.5">
         {types.map((t) => (
           <button
@@ -391,8 +406,8 @@ function AssignmentEditor({
             onClick={() =>
               onChange(
                 english
-                  ? { ...defaultAssignment(contact, t), unitId: english.otherUnitId }
-                  : defaultAssignment(contact, t)
+                  ? { ...defaultAssignment(contact, t, switchTime), unitId: english.otherUnitId }
+                  : defaultAssignment(contact, t, switchTime)
               )
             }
             className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
@@ -469,6 +484,8 @@ function ContactCard({
   onAssignmentChange,
   onReviewed,
   onApproval,
+  switchTime,
+  hint,
 }: {
   contact: Contact
   approval: ApprovalStatus
@@ -491,6 +508,8 @@ function ContactCard({
   onAssignmentChange: (next: ServiceAssignment) => void
   onReviewed: (id: string, handling: AbsentHandling, absenceReason?: string) => void
   onApproval: (id: string, next: ApprovalStatus) => void
+  switchTime?: string
+  hint?: string
 }) {
   const editable = needsApproval(c) && approval === 'pending'
   // 「欠席として記録」で出席管理に入る欠席理由。保護者のメモを初期値にする
@@ -664,6 +683,8 @@ function ContactCard({
               contact={c}
               value={assignment}
               english={english}
+              switchTime={switchTime}
+              hint={hint}
               onChange={onAssignmentChange}
             />
             {/* 予定の変更は、ご希望の時刻が最初から入っている（withRequestedTimes）。
@@ -787,6 +808,9 @@ export function ParentContactsBoard({
   englishChoices,
   canEdit = true,
   unappliedContacts = [],
+  switchTimes = {},
+  usualAssignments = {},
+  usualHints = {},
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -830,7 +854,7 @@ export function ParentContactsBoard({
     const planned = initialAssignments[c.id]
     const initial =
       planned && planChange(c, currentPlans[c.id])?.changed ? withRequestedTimes(c, planned) : planned
-    const a = assignments[c.id] ?? initial ?? resolveAssignment(c)
+    const a = assignments[c.id] ?? initial ?? usualAssignments[c.id] ?? resolveAssignment(c)
     const english = englishChoices[c.child_id]
     if (!english || a.unitId !== undefined) return a
     return { ...a, unitId: english.defaultUnitIds[c.id] ?? english.englishUnitId }
@@ -923,6 +947,16 @@ export function ParentContactsBoard({
    */
   async function markReviewed(ids: string[], handling: AbsentHandling, absenceReason?: string) {
     if (!canEdit || ids.length === 0) return
+    // 「予定から削除」は元に戻せない。欠席として残すか消すかで欠席時対応加算も変わるので1回聞く（カード6）
+    if (handling === 'delete') {
+      const targets = visible.filter((c) => ids.includes(c.id))
+      const what = targets.map((c) => `${c.children?.name ?? '不明'}さん ${formatDateLabel(c.date)}`).join('、')
+      const ok = window.confirm(
+        `${what || `${ids.length}件`}の予定と出欠の記録を消します。元に戻せません。\n` +
+        '欠席として残す場合は「欠席として記録」を選んでください。\n\n予定から削除しますか？'
+      )
+      if (!ok) return
+    }
     setReviewing(true)
     const res = await fetch('/api/parent-contacts/reviewed', {
       method: 'POST',
@@ -1041,7 +1075,24 @@ export function ParentContactsBoard({
    * 変わるため、まとめ処理で決め打ちにせず1件ずつ選んでもらう。
    */
   async function reviewAll(list: Contact[]) {
-    for (const c of list.filter(needsApproval)) await setApproval(c.id, 'approved')
+    const targets = list.filter(needsApproval)
+    // いつもと区分が違う連絡と、いまの予定を変える連絡は、まとめて押す前に名前を見せる（カード2）
+    const attention = targets.filter((c) => {
+      const usual = usualAssignments[c.id] ?? initialAssignments[c.id]
+      const kindDiffers = !!usual && usual.serviceType !== assignmentOf(c).serviceType
+      return kindDiffers || !!planChange(c, currentPlans[c.id])?.changed
+    })
+    if (attention.length > 0) {
+      const names = attention
+        .map((c) => `・${c.children?.name ?? '不明'}さん ${formatDateLabel(c.date)}`)
+        .join('\n')
+      const ok = window.confirm(
+        `${targets.length}件を承認します。このうち${attention.length}件は、いつもと区分が違うか、いまの予定を変える連絡です。\n` +
+        `${names}\n\n中身を確かめてから承認するのがおすすめです。このまま全部を承認しますか？`
+      )
+      if (!ok) return
+    }
+    for (const c of targets) await setApproval(c.id, 'approved')
   }
 
   return (
@@ -1240,6 +1291,7 @@ export function ParentContactsBoard({
                     contact={c}
                     value={assignment}
                     english={englishChoices[c.child_id]}
+                    switchTime={switchTimes[c.id]}
                     onChange={(next) => setGroupAssignments((prev) => ({ ...prev, [g.key]: next }))}
                   />
 
@@ -1317,6 +1369,8 @@ export function ParentContactsBoard({
                         }
                         onReviewed={(id, handling, reason) => markReviewed([id], handling, reason)}
                         onApproval={setApproval}
+                        switchTime={switchTimes[c.id]}
+                        hint={assignments[c.id] ? undefined : usualHints[c.id]}
                       />
                     ))}
                   </div>

@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { AlertTriangle, Check, ChevronDown, ChevronUp, Home, School } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { addMinutes, TRANSPORT_TRAVEL_MINUTES } from '@/lib/transport-timing'
+import { resolveTransportSlot } from '@/lib/schedule-defaults'
+import { SWITCH_TIME_HOLIDAY, SWITCH_TIME_SCHOOL_DAY, switchTimeFor } from '@/lib/daytime-switch'
 import {
   fmtTime,
   type ScheduleDefaults,
@@ -13,7 +15,7 @@ import {
 } from '@/components/transport/transport-daytime-panel'
 
 /**
- * 出席管理の「かんたん入力」（試作・2026-11-16 依頼主の検討用。本番にはまだ入れない）。
+ * 出席管理の「かんたん入力」（2026-11-16 試作 → 11/17 依頼主の許可で本番へ）。
  *
  * 入れるのは「区分（放デイ／日中一時／両方）」「お迎えの時刻・ドライバー・車種」
  * 「帰りの時刻・ドライバー・車種」だけ。残りの欄（到着の時刻・利用時間・
@@ -23,16 +25,23 @@ import {
  * 決め方（今の画面・承認・送迎管理と同じ考え方）:
  *  - 到着＝出発の10分後（TRANSPORT_TRAVEL_MINUTES）
  *  - 利用開始＝お迎えの到着（お迎えがない日は今の開始のまま）、利用終了＝帰りの出発
- *  - 両方の日は「放デイ 開始〜切りかえ」「日中一時 切りかえ〜終了」。お迎えは放デイの欄、帰りは日中一時の欄
+ *  - 両方の日はふつう「放デイ 開始〜切りかえ」「日中一時 切りかえ〜終了」。お迎えは放デイの欄、帰りは日中一時の欄。
+ *    切りかえの既定は学校のある日 16:30・休みの日 16:00（@/lib/daytime-switch）。
+ *    日中一時が先の日（記録の時刻がそうなっている日）は、順番を逆にして読み書きする。
+ *    どちらの欄に書くかは送迎管理と同じ resolveTransportSlot で決める（不具合 B）
  *  - 日中一時だけの日は放デイの時刻と送迎を消す（使わない側の時刻が残ると、放デイの基本報酬が立つため）
  */
 
 export type DayKind = 'hd' | 'ni' | 'both'
+/** 両方の日の順番。hd_first＝放デイ → 日中一時（ふつう）／ni_first＝日中一時 → 放デイ */
+export type BothOrder = 'hd_first' | 'ni_first'
 
 export type EasyState = {
   kind: DayKind
-  /** 両方の日の切りかえ時刻（放デイの終わり＝日中一時の始まり） */
+  /** 両方の日の切りかえ時刻（先のサービスの終わり＝あとのサービスの始まり） */
   switchTime: string
+  /** 両方の日の順番 */
+  order: BothOrder
   noPickup: boolean
   pickupTime: string
   pickupDriverId: string
@@ -43,8 +52,8 @@ export type EasyState = {
   dropoffVehicleId: string
 }
 
-/** 両方の日の切りかえ。9〜11月の記録の92%が16:30（2026-11-16 調べ） */
-export const DEFAULT_SWITCH_TIME = '16:30'
+/** 両方の日の切りかえの既定（学校のある日）。休みの日は呼ぶ側が 16:00 を渡す */
+export const DEFAULT_SWITCH_TIME = SWITCH_TIME_SCHOOL_DAY
 
 export const KIND_LABEL: Record<DayKind, string> = {
   hd: '放課後デイ',
@@ -64,19 +73,63 @@ export function scheduleKindOf(s: ScheduleDefaults | undefined): DayKind | null 
   return s.daytimeSupport ? 'both' : 'hd'
 }
 
-/** 今の20欄から、かんたん入力の状態を読み取る */
-export function easyFromFields(f: TransportFields): EasyState {
+/** 承認した保護者の連絡の区分（parent_attendance_contacts.service_type）を、かんたん入力の区分に */
+export function kindOfServiceType(t: string | null | undefined): DayKind | null {
+  if (t === 'both') return 'both'
+  if (t === 'daytime_support') return 'ni'
+  if (t === 'regular') return 'hd'
+  return null
+}
+
+/** 両方の日の順番を、記録の時刻から見分ける（日中一時の開始が放デイの開始より前なら日中一時が先） */
+export function bothOrderOf(f: Pick<TransportFields, 'serviceStartTime' | 'daytimeSupportStartTime'>): BothOrder {
+  const hd = f.serviceStartTime
+  const ni = f.daytimeSupportStartTime
+  return hd && ni && ni < hd ? 'ni_first' : 'hd_first'
+}
+
+/** 送迎管理と同じ決め方で、その向きの送迎を放デイ・日中一時のどちらの欄に書くか */
+function slotOf(direction: 'pickup' | 'dropoff', f: TransportFields): 'basic' | 'daytime' {
+  return resolveTransportSlot(direction, {
+    basic_service: f.basicService,
+    daytime_support: f.daytimeSupport,
+    service_start_time: f.serviceStartTime || null,
+    service_end_time: f.serviceEndTime || null,
+    daytime_support_start_time: f.daytimeSupportStartTime || null,
+    daytime_support_end_time: f.daytimeSupportEndTime || null,
+  }) === 'daytime' ? 'daytime' : 'basic'
+}
+
+/**
+ * 今の20欄から、かんたん入力の状態を読み取る。
+ * 決めた欄が空で、もう一方の欄に入っているとき（前の入力・承認の名残り）は、そちらを読む。
+ * そうしないと、開いただけで「送迎なし」に見え、保存すると送迎が消える（不具合 B）。
+ */
+export function easyFromFields(f: TransportFields, defaultSwitch: string = DEFAULT_SWITCH_TIME): EasyState {
   const kind = kindOf(f)
-  // お迎えは日中一時だけの日は日中一時の欄、それ以外は放デイの欄。帰りは放デイだけの日だけ放デイの欄
-  const pDep = kind === 'ni' ? f.daytimePickupDepartureTime : f.pickupDepartureTime
-  const pDrv = kind === 'ni' ? f.daytimePickupDriverId : f.pickupDriverId
-  const pVeh = kind === 'ni' ? f.daytimePickupVehicleId : f.pickupVehicleId
-  const dDep = kind === 'hd' ? f.dropoffDepartureTime : f.daytimeDropoffDepartureTime
-  const dDrv = kind === 'hd' ? f.dropoffDriverId : f.daytimeDropoffDriverId
-  const dVeh = kind === 'hd' ? f.dropoffVehicleId : f.daytimeDropoffVehicleId
+  const order: BothOrder = kind === 'both' ? bothOrderOf(f) : 'hd_first'
+  const pick = (direction: 'pickup' | 'dropoff') => {
+    const basic = direction === 'pickup'
+      ? { dep: f.pickupDepartureTime, drv: f.pickupDriverId, veh: f.pickupVehicleId }
+      : { dep: f.dropoffDepartureTime, drv: f.dropoffDriverId, veh: f.dropoffVehicleId }
+    const day = direction === 'pickup'
+      ? { dep: f.daytimePickupDepartureTime, drv: f.daytimePickupDriverId, veh: f.daytimePickupVehicleId }
+      : { dep: f.daytimeDropoffDepartureTime, drv: f.daytimeDropoffDriverId, veh: f.daytimeDropoffVehicleId }
+    const [main, other] = slotOf(direction, f) === 'daytime' ? [day, basic] : [basic, day]
+    const has = (x: typeof main) => !!(x.dep || x.drv || x.veh)
+    return has(main) ? main : has(other) ? other : main
+  }
+  const p = pick('pickup')
+  const d = pick('dropoff')
+  const pDep = p.dep, pDrv = p.drv, pVeh = p.veh
+  const dDep = d.dep, dDrv = d.drv, dVeh = d.veh
+  const storedSwitch = order === 'hd_first'
+    ? f.serviceEndTime || f.daytimeSupportStartTime
+    : f.daytimeSupportEndTime || f.serviceStartTime
   return {
     kind,
-    switchTime: (kind === 'both' && (f.serviceEndTime || f.daytimeSupportStartTime)) || DEFAULT_SWITCH_TIME,
+    order,
+    switchTime: (kind === 'both' && storedSwitch) || defaultSwitch,
     noPickup: !pDep && !pDrv && !pVeh,
     pickupTime: pDep,
     pickupDriverId: pDrv,
@@ -109,19 +162,27 @@ export function fieldsFromEasy(s: EasyState, base: TransportFields, fallbackEnd:
     : { dep: s.dropoffTime, arr: addMinutes(s.dropoffTime, TRANSPORT_TRAVEL_MINUTES), drv: s.dropoffDriverId, veh: s.dropoffVehicleId }
   const none = { dep: '', arr: '', drv: '', veh: '' }
 
-  const basicPickup = s.kind === 'ni' ? none : pickup
-  const basicDropoff = s.kind === 'hd' ? dropoff : none
-  const dayPickup = s.kind === 'ni' ? pickup : none
-  const dayDropoff = s.kind === 'hd' ? none : dropoff
+  // お迎えは最初に使うサービスの欄、帰りは最後に使うサービスの欄
+  const niFirst = s.kind === 'both' && s.order === 'ni_first'
+  const pickupInDaytime = s.kind === 'ni' || niFirst
+  const dropoffInDaytime = s.kind === 'ni' || (s.kind === 'both' && !niFirst)
+  const basicPickup = pickupInDaytime ? none : pickup
+  const basicDropoff = dropoffInDaytime ? none : dropoff
+  const dayPickup = pickupInDaytime ? pickup : none
+  const dayDropoff = dropoffInDaytime ? dropoff : none
+
+  // 時間の切り分け。両方の日は順番で「開始〜切りかえ」「切りかえ〜終了」を入れかえる
+  const hdRange = s.kind === 'ni' ? ['', ''] : s.kind === 'hd' ? [start, end] : niFirst ? [s.switchTime, end] : [start, s.switchTime]
+  const niRange = s.kind === 'hd' ? ['', ''] : s.kind === 'ni' ? [start, end] : niFirst ? [start, s.switchTime] : [s.switchTime, end]
 
   return {
     ...base,
     basicService: s.kind !== 'ni',
     daytimeSupport: s.kind !== 'hd',
-    serviceStartTime: s.kind === 'ni' ? '' : start,
-    serviceEndTime: s.kind === 'ni' ? '' : s.kind === 'both' ? s.switchTime : end,
-    daytimeSupportStartTime: s.kind === 'hd' ? '' : s.kind === 'both' ? s.switchTime : start,
-    daytimeSupportEndTime: s.kind === 'hd' ? '' : end,
+    serviceStartTime: hdRange[0],
+    serviceEndTime: hdRange[1],
+    daytimeSupportStartTime: niRange[0],
+    daytimeSupportEndTime: niRange[1],
     pickupDepartureTime: basicPickup.dep,
     pickupArrivalTime: basicPickup.arr,
     pickupDriverId: basicPickup.drv,
@@ -180,6 +241,10 @@ interface Props {
   staffMembers: StaffMember[]
   vehicles: Vehicle[]
   defaultServiceEndTime: string
+  /** 両方に切りかえたときの切りかえの既定（学校のある日 16:30・休みの日 16:00） */
+  defaultSwitchTime?: string
+  /** 承認した保護者の連絡で決めた区分。あれば、いつもの予定より優先して「予定」として比べる */
+  approvedKind?: DayKind | null
   onSave: () => void
   saving: boolean
   saved: boolean
@@ -195,19 +260,24 @@ export function EasyAttendancePanel({
   staffMembers,
   vehicles,
   defaultServiceEndTime,
+  defaultSwitchTime = DEFAULT_SWITCH_TIME,
+  approvedKind,
   onSave,
   saving,
   saved,
   onOpenDetail,
   detailOpen,
 }: Props) {
-  const [s, setS] = useState<EasyState>(() => easyFromFields(fields))
-  const plannedKind = scheduleKindOf(schedule)
+  const [s, setS] = useState<EasyState>(() => easyFromFields(fields, defaultSwitchTime))
+  // 承認で決めた区分を先に見る（承認で放デイだけにした日に「予定は両方」と出つづけないように）
+  const plannedKind = approvedKind ?? scheduleKindOf(schedule)
 
   const update = (patch: Partial<EasyState>) => {
     const next = { ...s, ...patch }
     if (patch.kind === 'both' && s.kind !== 'both') {
-      next.switchTime = fmtTime(schedule?.daytimeSupportStartTime) || DEFAULT_SWITCH_TIME
+      // いつもの予定は学校のある日の形。休みの日は予定より 16:00 を優先する
+      next.switchTime = switchTimeFor(defaultSwitchTime === SWITCH_TIME_HOLIDAY, fmtTime(schedule?.daytimeSupportStartTime) || defaultSwitchTime)
+      next.order = 'hd_first'
     }
     setS(next)
     onChange(fieldsFromEasy(next, fields, defaultServiceEndTime))
@@ -323,8 +393,10 @@ export function EasyAttendancePanel({
           ))}
         </div>
         {s.kind === 'both' && (
-          <div className="mt-2 flex items-center gap-2 text-sm">
-            <span className="text-gray-600">放課後デイ → 日中一時に切りかえる時刻</span>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-gray-600">
+              {s.order === 'ni_first' ? '日中一時 → 放課後デイ' : '放課後デイ → 日中一時'}に切りかえる時刻
+            </span>
             <input
               type="time"
               aria-label="切りかえの時刻"
@@ -332,6 +404,13 @@ export function EasyAttendancePanel({
               onChange={(e) => update({ switchTime: e.target.value })}
               className="border border-gray-200 rounded-lg px-2 py-1 text-sm"
             />
+            <button
+              type="button"
+              onClick={() => update({ order: s.order === 'ni_first' ? 'hd_first' : 'ni_first' })}
+              className="text-xs font-medium text-indigo-700 hover:underline"
+            >
+              {s.order === 'ni_first' ? '放課後デイを先にする' : '日中一時を先にする'}
+            </button>
           </div>
         )}
         {kindDiffers && (
@@ -374,7 +453,7 @@ export function EasyAttendancePanel({
         {lines.map((l) => <div key={l} className="font-medium text-gray-800">{l}</div>)}
         <div className="text-gray-600 text-xs mt-1">{pickupText}　{dropoffText}</div>
         <div className="text-gray-500 text-xs mt-0.5">
-          送迎加算 {transportCount}回（{s.kind === 'ni' ? '日中一時の請求' : s.kind === 'both' ? 'お迎え＝放デイ・帰り＝日中一時' : '国保連の請求'}）
+          送迎加算 {transportCount}回（{s.kind === 'ni' ? '日中一時の請求' : s.kind === 'both' ? (s.order === 'ni_first' ? 'お迎え＝日中一時・帰り＝放デイ' : 'お迎え＝放デイ・帰り＝日中一時') : '国保連の請求'}）
         </div>
       </div>
       {error && <p className="text-xs font-medium text-red-600" role="alert">{error}</p>}
