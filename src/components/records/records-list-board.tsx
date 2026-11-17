@@ -1,31 +1,31 @@
 'use client'
 
-import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { needsDailyRecord } from '@/lib/unit-course'
-import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import {
-  BookOpen, ChevronRight, CheckCircle, Flag,
-  UserCheck, UserX,
-} from 'lucide-react'
+import { BookOpen, ChevronRight, CheckCircle, Flag, Car, ExternalLink } from 'lucide-react'
 import { DateNav } from '@/components/ui/date-nav'
 import { formatDate } from '@/lib/utils'
 import {
-  TransportDaytimePanel,
-  TransportDaytimeToggle,
   initFields,
-  isBlankFields,
-  applyScheduleDefaults,
-  buildTransportUpdate,
-  keepAssignment,
   type TransportRow,
   type TransportFields,
   type ScheduleDefaults,
   type StaffMember,
   type Vehicle,
 } from '@/components/transport/transport-daytime-panel'
+
+/**
+ * 日々の記録の「出欠・送迎の一覧」（?view=list）。
+ *
+ * 2026-11-18 依頼主「おすすめのものを実装して」（案 D）：この一覧から出欠の切りかえと送迎の入力を外し、見るだけにした。
+ * 入力は出席管理（かんたん入力）だけにする。
+ *  - ここの出欠の切りかえは、権限を見ず・欠席の理由も聞かず・保存の失敗も知らせず、
+ *    欠席にしても送迎の担当（ドライバー・車種）や時刻を消していなかった
+ *    （欠席なのにドライバーが残る枠が月2件ほどあった元）
+ *  - 送迎の入力も、出席管理と2か所に分かれていた
+ */
 
 type AttendedChild = TransportRow & {
   id: string
@@ -58,13 +58,28 @@ interface Props {
   writtenCount: number
   totalCount: number
   defaultServiceEndTime: string
-  prevByChildId: Record<string, PrevAttendanceRow>
-  scheduleDefaultsByAttendanceId: Record<string, ScheduleDefaults>
-  /**
-   * 送迎・利用時間・日中一時の欄（送迎パネル全体）を変えられるか。システム管理者だけ true。
-   * 施設長・スタッフは見るだけ（2026-11-12 依頼主：保護者の LINE の申請を優先し、管理者以外は変えない）
-   */
+  /** 入力をやめたので使わない（呼び出し側との互換のために残す） */
+  prevByChildId?: Record<string, PrevAttendanceRow>
+  /** 入力をやめたので使わない（呼び出し側との互換のために残す） */
+  scheduleDefaultsByAttendanceId?: Record<string, ScheduleDefaults>
+  /** 入力をやめたので使わない（呼び出し側との互換のために残す） */
   canAssignDrivers?: boolean
+}
+
+/** 送迎の1行の要約（記録に入っている値だけ。入っていなければ出さない） */
+function transportSummary(f: TransportFields, nameOf: (id: string) => string | null): string[] {
+  const leg = (label: string, time: string, driverId: string) => {
+    if (!time && !driverId) return null
+    const driver = driverId ? nameOf(driverId) : null
+    return `${label} ${time || '時刻なし'}${driver ? `（${driver}）` : ''}`
+  }
+  return [
+    leg('迎え', f.pickupDepartureTime, f.pickupDriverId),
+    leg('送り', f.dropoffDepartureTime, f.dropoffDriverId),
+    f.daytimeSupport ? '日中一時あり' : null,
+    leg('迎え（日中一時）', f.daytimePickupDepartureTime, f.daytimePickupDriverId),
+    leg('送り（日中一時）', f.daytimeDropoffDepartureTime, f.daytimeDropoffDriverId),
+  ].filter((s): s is string => !!s)
 }
 
 export function RecordsListBoard({
@@ -73,103 +88,37 @@ export function RecordsListBoard({
   nextDate,
   byUnit,
   staffMembers,
-  vehicles,
   recordByAttendanceId,
   writtenCount,
   totalCount,
   defaultServiceEndTime,
-  prevByChildId,
-  scheduleDefaultsByAttendanceId,
-  canAssignDrivers = true,
 }: Props) {
-  const supabase = createClient()
-  const [, startTransition] = useTransition()
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const [fieldStates, setFieldStates] = useState<Record<string, TransportFields>>({})
-  const [saving, setSaving] = useState<string | null>(null)
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
-  // 出席状態のローカルオーバーライド（楽観的更新）
-  const [localStatus, setLocalStatus] = useState<Record<string, string>>({})
-  const [statusSaving, setStatusSaving] = useState<Set<string>>(new Set())
-
   const allItems = Object.values(byUnit).flatMap((u) => u.items)
-
-  // DBの値が空の場合は利用スケジュールの初期値を自動セット
-  const buildInitialFields = (a: AttendedChild): TransportFields => {
-    const base = initFields(a, defaultServiceEndTime)
-    const sched = scheduleDefaultsByAttendanceId[a.id]
-    if (sched && isBlankFields(base)) {
-      return applyScheduleDefaults(base, sched, defaultServiceEndTime)
-    }
-    return base
-  }
-
-  // このセッションで保存済みのID（保存後はプリセット表示を解除するため）
-  const [savedOnce, setSavedOnce] = useState<Set<string>>(new Set())
-
-  // スケジュール初期値が表示中（未保存）かどうか
-  const isSchedulePreset = (a: AttendedChild): boolean => {
-    const sched = scheduleDefaultsByAttendanceId[a.id]
-    return !!sched && !savedOnce.has(a.id) && isBlankFields(initFields(a, defaultServiceEndTime))
-  }
-
-  const getFields = (a: AttendedChild): TransportFields =>
-    fieldStates[a.id] ?? buildInitialFields(a)
-
-  // 前回（直近の出席日）の入力内容をまるごと複写
-  const handleCopyPrevious = (a: AttendedChild) => {
-    const prev = prevByChildId[a.child_id]
-    if (!prev) return
-    setFieldStates((s) => ({ ...s, [a.id]: initFields(prev, defaultServiceEndTime) }))
-  }
-
-  const getStatus = (a: AttendedChild): string =>
-    localStatus[a.id] ?? a.status
-
-  const setField = (attendanceId: string, patch: Partial<TransportFields>, a: AttendedChild) => {
-    setFieldStates((prev) => ({
-      ...prev,
-      [attendanceId]: { ...(prev[attendanceId] ?? buildInitialFields(a)), ...patch },
-    }))
-  }
-
-  const handleToggleStatus = async (a: AttendedChild) => {
-    const current = getStatus(a)
-    const next = current === 'attended' ? 'absent' : 'attended'
-    setLocalStatus((prev) => ({ ...prev, [a.id]: next }))
-    setStatusSaving((prev) => new Set(prev).add(a.id))
-    await supabase.from('daily_attendance').update({ status: next }).eq('id', a.id)
-    setStatusSaving((prev) => { const s = new Set(prev); s.delete(a.id); return s })
-    startTransition(() => {})
-  }
-
-  const handleSave = async (a: AttendedChild) => {
-    if (!canAssignDrivers) return
-    setSaving(a.id)
-    const update = buildTransportUpdate(getFields(a))
-    await supabase
-      .from('daily_attendance')
-      // 担当者・車種を変えられない人は、元の担当者・車種のまま保存する
-      .update(canAssignDrivers ? update : keepAssignment(update, buildTransportUpdate(initFields(a, defaultServiceEndTime))))
-      .eq('id', a.id)
-
-    setSaving(null)
-    setSavedOnce((prev) => new Set(prev).add(a.id))
-    setSavedIds((prev) => new Set(prev).add(a.id))
-    setTimeout(() => setSavedIds((prev) => { const s = new Set(prev); s.delete(a.id); return s }), 2000)
-    startTransition(() => {})
-  }
+  const staffName = new Map(staffMembers.map((s) => [s.id, s.name]))
+  const nameOf = (id: string) => staffName.get(id) ?? null
+  const attendanceHref = `/attendance?date=${targetDate}`
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">日々の記録（出欠・送迎の一覧）</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          出席・欠席の切りかえと、送迎・利用時間の入力ができます。
+          その日の出欠・送迎と、記録を書いたかを見る画面です。
           <Link href={`/records?date=${targetDate}`} className="ml-2 text-indigo-600 hover:underline">
             ← 記録を書く画面にもどる
           </Link>
         </p>
+      </div>
+
+      <div
+        className="flex flex-wrap items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-900"
+        data-testid="attendance-moved-note"
+      >
+        出欠・送迎の入力は、出席管理（かんたん入力）でします。
+        <Link href={attendanceHref} className="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:underline">
+          出席管理をひらく
+          <ExternalLink className="h-3.5 w-3.5" />
+        </Link>
       </div>
 
       <div className="flex items-center gap-3">
@@ -198,122 +147,66 @@ export function RecordsListBoard({
               {items.map((a) => {
                 const record = recordByAttendanceId[a.id]
                 const hasRecord = !!record
-                const currentStatus = getStatus(a)
-                const isAbsent = currentStatus === 'absent'
-                const isExpanded = expanded === a.id
-                const f = getFields(a)
-                const isStatusSaving = statusSaving.has(a.id)
+                const isAbsent = a.status === 'absent'
+                const summary = isAbsent ? [] : transportSummary(initFields(a, defaultServiceEndTime), nameOf)
 
                 return (
-                  <div key={a.id}>
-                    <Card className={`${isAbsent ? 'opacity-70' : ''} ${isExpanded ? 'rounded-b-none border-b-0' : ''} overflow-hidden`}>
-                      {/* 名前・記録状態 → 詳細ページへのリンク */}
-                      <Link href={`/records/${a.child_id}?date=${targetDate}&unit=${a.unit_id}`}>
-                        <CardContent className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                              hasRecord ? 'bg-green-100' : isAbsent ? 'bg-gray-100' : 'bg-orange-100'
-                            }`}>
-                              <BookOpen className={`h-4 w-4 ${
-                                hasRecord ? 'text-green-600' : isAbsent ? 'text-gray-400' : 'text-orange-500'
-                              }`} />
-                            </div>
-                            <div>
-                              <p className="font-medium text-gray-900">{a.children?.name ?? '—'}</p>
-                              {(a.children?.name_kana || a.units?.name) && (
-                                <p className="text-xs text-gray-400">
-                                  {a.children?.name_kana}
-                                  {a.units?.name && <span className="ml-1.5">（{a.units.name}）</span>}
-                                </p>
-                              )}
-                            </div>
+                  <Card key={a.id} className={`${isAbsent ? 'opacity-70' : ''} overflow-hidden`}>
+                    {/* 名前・記録状態 → 記録を書く画面へ */}
+                    <Link href={`/records/${a.child_id}?date=${targetDate}&unit=${a.unit_id}`}>
+                      <CardContent className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            hasRecord ? 'bg-green-100' : isAbsent ? 'bg-gray-100' : 'bg-orange-100'
+                          }`}>
+                            <BookOpen className={`h-4 w-4 ${
+                              hasRecord ? 'text-green-600' : isAbsent ? 'text-gray-400' : 'text-orange-500'
+                            }`} />
                           </div>
-                          <div className="flex items-center gap-2">
-                            {record?.has_notable_flag && <Flag className="h-4 w-4 text-yellow-500" />}
-                            {!needsDailyRecord(a.units?.name) && !hasRecord ? (
-                              <span className="text-xs text-gray-400">記録は不要</span>
-                            ) : hasRecord ? (
-                              <Badge variant="success" className="text-xs">
-                                <CheckCircle className="h-3 w-3 mr-1" />記録済
-                              </Badge>
-                            ) : !isAbsent ? (
-                              <Badge variant="warning" className="text-xs">未記録</Badge>
-                            ) : null}
-                            <ChevronRight className="h-4 w-4 text-gray-400" />
+                          <div>
+                            <p className="font-medium text-gray-900">{a.children?.name ?? '—'}</p>
+                            {(a.children?.name_kana || a.units?.name) && (
+                              <p className="text-xs text-gray-400">
+                                {a.children?.name_kana}
+                                {a.units?.name && <span className="ml-1.5">（{a.units.name}）</span>}
+                              </p>
+                            )}
                           </div>
-                        </CardContent>
-                      </Link>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {record?.has_notable_flag && <Flag className="h-4 w-4 text-yellow-500" />}
+                          {!needsDailyRecord(a.units?.name) && !hasRecord ? (
+                            <span className="text-xs text-gray-400">記録は不要</span>
+                          ) : hasRecord ? (
+                            <Badge variant="success" className="text-xs">
+                              <CheckCircle className="h-3 w-3 mr-1" />記録済
+                            </Badge>
+                          ) : !isAbsent ? (
+                            <Badge variant="warning" className="text-xs">未記録</Badge>
+                          ) : null}
+                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                        </div>
+                      </CardContent>
+                    </Link>
 
-                      {/* 出席・欠席トグル */}
-                      <div className="border-t border-gray-100 px-4 py-2 flex items-center gap-2">
-                        <span className="text-xs text-gray-500 mr-1">出席状態：</span>
-                        <button
-                          type="button"
-                          disabled={isStatusSaving}
-                          onClick={() => { if (isAbsent) handleToggleStatus(a) }}
-                          className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                            !isAbsent
-                              ? 'bg-green-100 text-green-700 border-green-300'
-                              : 'bg-white text-gray-400 border-gray-200 hover:bg-green-50 hover:text-green-600'
-                          }`}
-                        >
-                          <UserCheck className="h-3.5 w-3.5" />出席
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isStatusSaving}
-                          onClick={() => !isAbsent && handleToggleStatus(a)}
-                          className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                            isAbsent
-                              ? 'bg-gray-200 text-gray-600 border-gray-300'
-                              : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-100 hover:text-gray-600'
-                          }`}
-                        >
-                          <UserX className="h-3.5 w-3.5" />欠席
-                        </button>
-                        {isStatusSaving && <span className="text-xs text-gray-400 ml-1">更新中...</span>}
-                      </div>
-
-                      {/* 送迎・日中一時入力トグル */}
+                    {/* 出欠・送迎（見るだけ） */}
+                    <div className="border-t border-gray-100 px-4 py-2 flex flex-wrap items-center gap-2 text-xs" data-testid="list-status-row">
+                      <span
+                        className={`rounded-full border px-2.5 py-0.5 font-medium ${
+                          isAbsent ? 'bg-gray-100 text-gray-600 border-gray-300' : 'bg-green-50 text-green-700 border-green-200'
+                        }`}
+                        data-testid="list-status"
+                      >
+                        {isAbsent ? '欠席' : '出席'}
+                      </span>
                       {!isAbsent && (
-                        <TransportDaytimeToggle
-                          expanded={isExpanded}
-                          onToggle={() => setExpanded(isExpanded ? null : a.id)}
-                          fields={f}
-                          isSchedulePreset={isSchedulePreset(a)}
-                        />
+                        <span className="flex items-center gap-1 text-gray-600">
+                          <Car className="h-3.5 w-3.5 text-teal-500" />
+                          {summary.length > 0 ? summary.join('・') : '送迎なし（または未入力）'}
+                        </span>
                       )}
-                    </Card>
-
-                    {/* 展開された入力エリア */}
-                    {isExpanded && !isAbsent && (
-                      <Card className="rounded-t-none border-t-0">
-                        <CardContent className="p-4">
-                          {!canAssignDrivers && (
-                            <p className="mb-3 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                              送迎・利用時間・日中一時は見るだけです。変えるのはシステム管理者です。
-                            </p>
-                          )}
-                          <fieldset disabled={!canAssignDrivers} className="min-w-0">
-                          <TransportDaytimePanel
-                            fields={f}
-                            onChange={(patch) => setField(a.id, patch, a)}
-                            staffMembers={staffMembers}
-                            vehicles={vehicles}
-                            defaultServiceEndTime={defaultServiceEndTime}
-                            isSchedulePreset={isSchedulePreset(a)}
-                            previousDate={prevByChildId[a.child_id]?.date ?? null}
-                            onCopyPrevious={() => handleCopyPrevious(a)}
-                            onSave={() => handleSave(a)}
-                            saving={saving === a.id}
-                            saved={savedIds.has(a.id)}
-                            lockAssignment={!canAssignDrivers}
-                          />
-                          </fieldset>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </div>
+                    </div>
+                  </Card>
                 )
               })}
             </div>
