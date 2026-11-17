@@ -151,23 +151,6 @@ export function followVehicle(trips: TripSummary[], tripKey: string, driverId: s
   return other?.vehicleId ?? null
 }
 
-/**
- * ボタンで出すドライバー。並びはいつも名前順（スタッフの登録の順）で、
- * 最近よく運転している人＋その日にもう入っている人だけ。ほかの人は「その他」から選ぶ。
- */
-export function buttonDrivers<T extends { id: string }>(drivers: T[], regularIds: string[], assignedIds: string[]): {
-  buttons: T[]
-  others: T[]
-} {
-  const show = new Set([...regularIds, ...assignedIds])
-  // 記録がまだない（新しい施設・試験用の環境など）ときは全員をボタンにする
-  if (show.size === 0) return { buttons: drivers, others: [] }
-  return {
-    buttons: drivers.filter((d) => show.has(d.id)),
-    others: drivers.filter((d) => !show.has(d.id)),
-  }
-}
-
 /** ドライバーの色。名前順の位置で決めるので、日をまたいでも同じ色になる */
 export const DRIVER_COLORS = [
   { bg: 'bg-sky-100', text: 'text-sky-900', border: 'border-sky-300', solid: 'bg-sky-600' },
@@ -193,4 +176,31 @@ export function shortNames<T extends { id: string; name: string }>(drivers: T[])
   const count = new Map<string, number>()
   for (const d of drivers) count.set(family(d.name), (count.get(family(d.name)) ?? 0) + 1)
   return new Map(drivers.map((d) => [d.id, (count.get(family(d.name)) ?? 0) > 1 ? d.name : family(d.name)]))
+}
+
+/** ボタンで出す候補の人数（2026-11-17 依頼主「予測される候補上位3人」） */
+export const CANDIDATE_COUNT = 3
+
+/**
+ * 便ごとのボタンの候補。ボタンはいつも3人まで＋「その他」（2026-11-17 依頼主「3人プラスその他」）。
+ *  1. その便の子のこれまでの記録から「よく入る順」の上位3人
+ *  2. 記録が足りず3人にならないときは、最近よく運転している人（名前順）で足す
+ * ほかの人は「その他」から選ぶ。3人に入らない人が選ばれているときは、「その他」の欄にその人を出す。
+ */
+export function candidateDrivers<T extends { id: string }>(
+  drivers: T[],
+  rankedIds: string[],
+  regularIds: string[],
+  n: number = CANDIDATE_COUNT
+): { buttons: T[]; others: T[] } {
+  const byId = new Map(drivers.map((d) => [d.id, d]))
+  const picked: string[] = []
+  for (const id of [...rankedIds, ...drivers.map((d) => d.id).filter((id) => regularIds.includes(id))]) {
+    if (picked.length >= n) break
+    if (byId.has(id) && !picked.includes(id)) picked.push(id)
+  }
+  return {
+    buttons: picked.map((id) => byId.get(id)!),
+    others: drivers.filter((d) => !picked.includes(d.id)),
+  }
 }

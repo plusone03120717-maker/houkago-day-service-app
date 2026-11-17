@@ -22,7 +22,7 @@ import { cn, formatDate } from '@/lib/utils'
 import { ALL_UNITS } from '@/lib/attendance-board-data'
 import { rankDrivers, type DriverScores } from '@/lib/driver-ranking'
 import {
-  buttonDrivers,
+  candidateDrivers,
   driverColor,
   followVehicle,
   shortNames,
@@ -421,11 +421,6 @@ export function TransportManageBoard({
 
   const groups = buildRowGroups(localRows)
   const trips = summarizeTrips(groups)
-  const driverButtons = buttonDrivers(
-    drivers,
-    regularDriverIds,
-    localRows.map((r) => r.driverMemberId).filter((id): id is string => !!id)
-  )
   const shortName = shortNames(drivers)
   const driverOrder = drivers.map((d) => d.id)
   // 前の形（プルダウン）と見取り図の形の切りかえ。戻してほしいと言われたら、ここでその場で戻せる
@@ -659,7 +654,7 @@ export function TransportManageBoard({
                     {/* 便のドライバー・車種（何人いても1つ） */}
                     <TripCell
                       layout={layout}
-                      driverButtons={driverButtons}
+                      regularDriverIds={regularDriverIds}
                       driverOrder={driverOrder}
                       shortName={shortName}
                       group={group}
@@ -727,7 +722,7 @@ export function TransportManageBoard({
  */
 function TripCell({
   layout,
-  driverButtons,
+  regularDriverIds,
   driverOrder,
   shortName,
   group,
@@ -740,7 +735,7 @@ function TripCell({
   onTogglePicker,
 }: {
   layout: AssignLayout
-  driverButtons: { buttons: Driver[]; others: Driver[] }
+  regularDriverIds: string[]
   driverOrder: string[]
   shortName: Map<string, string>
   group: RowGroup
@@ -774,12 +769,15 @@ function TripCell({
     'flex-1 min-w-0 text-xs border rounded px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50'
 
   if (layout === 'board') {
-    // 選ばれている人が「その他」の人なら、その人もボタンで出す（選んだ人が見えなくならないように）
-    const extra = sharedDriver && !driverButtons.buttons.some((d) => d.id === sharedDriver)
-      ? drivers.filter((d) => d.id === sharedDriver)
-      : []
-    const buttons = [...driverButtons.buttons, ...extra]
-    const others = driverButtons.others.filter((d) => d.id !== sharedDriver)
+    // ボタンは、この便の子のこれまでの記録から「よく入る順」の上位3人＋「その他」（2026-11-17 依頼主）。
+    // 3人に入らない人が選ばれているときは、「その他」の欄にその人の名前をその人の色で出す
+    const { buttons, others } = candidateDrivers(
+      drivers,
+      rankedDrivers.frequent.map((d) => d.id),
+      regularDriverIds
+    )
+    const otherSelected = sharedDriver && others.some((d) => d.id === sharedDriver) ? sharedDriver : null
+    const otherColor = otherSelected ? driverColor(driverOrder, otherSelected) : null
     const disabled = saving || allAbsent
     const pill = 'rounded-md border px-2 py-1 text-xs font-semibold transition-colors disabled:opacity-50'
     return (
@@ -803,23 +801,34 @@ function TripCell({
                     disabled={disabled}
                     aria-pressed={on}
                     title={d.name}
-                    className={`${pill} ${on ? `${c.solid} border-transparent text-white` : `${c.bg} ${c.text} ${c.border} hover:brightness-95`}`}
+                    className={`${pill} inline-flex items-center gap-1 ${
+                      on
+                        ? `${c.solid} border-transparent text-white shadow-sm`
+                        : 'bg-transparent border-gray-300 text-gray-700 hover:bg-gray-100'
+                    }`}
                   >
+                    {/* 選ばれていないときも、その人の色の点だけは出す（見取り図の色と対応させる） */}
+                    {!on && <span className={`h-2 w-2 rounded-full ${c.solid}`} aria-hidden />}
                     {shortName.get(d.id) ?? d.name}
                   </button>
                 )
               })}
               {others.length > 0 && (
                 <select
-                  value=""
-                  onChange={(e) => e.target.value && onApply({ driverMemberId: e.target.value })}
+                  value={otherSelected ?? ''}
+                  onChange={(e) => e.target.value && e.target.value !== otherSelected && onApply({ driverMemberId: e.target.value })}
                   disabled={disabled}
                   aria-label="その他のドライバー"
-                  className="max-w-[6rem] text-xs border border-gray-200 rounded px-1 py-1 bg-white text-gray-500 cursor-pointer disabled:opacity-50"
+                  data-selected={otherSelected ? 'true' : undefined}
+                  className={`max-w-[7rem] text-xs rounded px-1 py-1 cursor-pointer disabled:opacity-50 ${
+                    otherColor
+                      ? `${otherColor.solid} border border-transparent text-white font-semibold shadow-sm`
+                      : 'bg-transparent border border-gray-300 text-gray-500'
+                  }`}
                 >
-                  <option value="">その他</option>
+                  <option value="" className="bg-white text-gray-500">その他</option>
                   {others.map((d) => (
-                    <option key={d.id} value={d.id}>
+                    <option key={d.id} value={d.id} className="bg-white text-gray-800">
                       {d.name}
                     </option>
                   ))}
