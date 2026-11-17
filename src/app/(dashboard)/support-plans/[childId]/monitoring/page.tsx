@@ -51,8 +51,8 @@ export default async function MonitoringPage({
 }) {
   const { childId } = await params
   const supabase = await createClient()
-  // 編集できるのはシステム管理者だけ。施設長・スタッフは閲覧のみ（2026-11-12 依頼主）
-  const isReadOnly = !((await getStaffAccess())?.canEditOperations ?? false)
+  // 編集できるのはシステム管理者と施設長。スタッフは閲覧のみ（2026-11-12／11-17 依頼主）
+  const isReadOnly = !((await getStaffAccess())?.canEditMonitoring ?? false)
 
   // 児童・支援計画・モニタリング予定・施設・記録は互いに独立しているため並列取得
   const [
