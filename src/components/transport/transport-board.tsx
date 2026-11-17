@@ -32,6 +32,7 @@ import { DriverOverview } from '@/components/transport/driver-overview'
 import {
   deleteAndRecreateTransportSchedules,
   saveTransportRecord,
+  saveTransportRecords,
   clearTransportDirection,
 } from '@/app/actions/transport'
 
@@ -352,16 +353,13 @@ export function TransportManageBoard({
           : r
       )
     )
-    // 欠席として記録済みの児童は書き込み対象外（サーバー側でも弾かれる）
-    for (const row of group.rows.filter((r) => !r.isAbsent)) {
-      await saveTransportRecord({
-        childId: row.childId,
-        unitId: row.unitId,
-        date,
-        direction: row.direction,
-        ...fields,
-      })
-    }
+    // 欠席として記録済みの児童は書き込み対象外（サーバー側でも弾かれる）。
+    // 便の子をまとめて1回で保存する（前は1人ずつ順番に保存していて、人数分待っていた）
+    await saveTransportRecords(
+      group.rows
+        .filter((r) => !r.isAbsent)
+        .map((row) => ({ childId: row.childId, unitId: row.unitId, date, direction: row.direction, ...fields }))
+    )
     setBulkSavingKey(null)
     refresh()
   }
@@ -402,16 +400,16 @@ export function TransportManageBoard({
     const vehicleId = sharedValue(group.rows, (r) => r.vehicleId)
     if (driverMemberId || vehicleId) {
       const joined = localRows.filter((r) => targetRowIds.includes(r.id) && !r.isAbsent)
-      for (const row of joined) {
-        await saveTransportRecord({
+      await saveTransportRecords(
+        joined.map((row) => ({
           childId: row.childId,
           unitId: row.unitId,
           date,
           direction: row.direction,
           ...(driverMemberId ? { driverMemberId } : {}),
           ...(vehicleId ? { vehicleId } : {}),
-        })
-      }
+        }))
+      )
     }
 
     setBulkSavingKey(null)
@@ -1154,15 +1152,9 @@ function TransportRowItem({
   /** 時刻はその日の記録（daily_attendance）に保存する。行の全員に同じ値を入れる */
   const saveRecord = async (fields: { time?: string | null }) => {
     setSaving(true)
-    for (const row of writable) {
-      await saveTransportRecord({
-        childId: row.childId,
-        unitId: row.unitId,
-        date,
-        direction: row.direction,
-        ...fields,
-      })
-    }
+    await saveTransportRecords(
+      writable.map((row) => ({ childId: row.childId, unitId: row.unitId, date, direction: row.direction, ...fields }))
+    )
     setSaving(false)
     onSaved()
   }
