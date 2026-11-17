@@ -22,7 +22,8 @@ export function RecordsDayView({ roster, form }: { roster: RosterItem[]; form: F
 
   const onSaveNext = () => {
     setDirty(false)
-    router.push(next ? recordHref(next, form.date) : `/records?date=${form.date}`)
+    // 全員済みなら、今の子の画面のまま（左の一覧で全員「済」と分かる）
+    if (next) router.push(recordHref(next, form.date))
   }
 
   return (

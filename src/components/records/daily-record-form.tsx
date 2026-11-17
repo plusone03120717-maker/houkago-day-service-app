@@ -2,12 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
-  ChevronLeft,
   ChevronRight,
   AlertTriangle,
   FileText,
@@ -466,14 +464,8 @@ export function DailyRecordForm({
 
   return (
     <div className="space-y-5 max-w-3xl mx-auto">
-      {/* 戻るボタン・ヘッダー */}
+      {/* ヘッダー（日付の切りかえと前の一覧へのリンクは、外枠 RecordsDayLayout の上の行にある） */}
       <div className="flex items-center gap-3">
-        <Link
-          href={`/records?date=${date}`}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </Link>
         <div>
           <h1 className="text-xl font-bold text-gray-900">{child.name} さんの記録</h1>
           <p className="text-sm text-gray-500">{formatDate(date, 'yyyy年MM月dd日')}</p>
@@ -778,7 +770,7 @@ export function DailyRecordForm({
         </Button>
         {onSaveNext && (
           <Button onClick={() => { void handleSaveNext() }} disabled={saving || !attendance} className="px-6">
-            {nextName ? `保存して次の未記録の子へ（${nextName}さん）` : '保存して一覧へ（全員済み）'}
+            {nextName ? `保存して次の未記録の子へ（${nextName}さん）` : '保存する（これで全員済み）'}
             <ChevronRight className="h-4 w-4" />
           </Button>
         )}
