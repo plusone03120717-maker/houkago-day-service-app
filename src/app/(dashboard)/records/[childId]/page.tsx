@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSessionUserId } from '@/lib/auth'
 import { notFound } from 'next/navigation'
-import { DailyRecordForm } from '@/components/records/daily-record-form'
+import { RecordsDayView } from '@/components/records/records-day-view'
+import type { RosterItem } from '@/components/records/records-day-layout'
 import { getStaffAccess } from '@/lib/require-admin'
 
 export default async function RecordPage({
@@ -28,6 +29,7 @@ export default async function RecordPage({
     { data: schoolHolidaysRaw },
     { data: facilityRaw },
     userId,
+    { data: rosterRaw },
   ] = await Promise.all([
     supabase
       .from('children')
@@ -48,6 +50,12 @@ export default async function RecordPage({
     supabase.from('child_school_holidays').select('start_date, end_date').eq('child_id', childId),
     supabase.from('facilities').select('id').limit(1).single(),
     getSessionUserId(),
+    // 左の一覧：その日に出席した子（ユニットをまたいで名前順）
+    supabase
+      .from('daily_attendance')
+      .select('id, child_id, unit_id, children(name, name_kana)')
+      .eq('date', date)
+      .eq('status', 'attended'),
   ])
 
   if (!child) notFound()
@@ -72,6 +80,27 @@ export default async function RecordPage({
 
   const medications = (medicationsRaw ?? []).filter((m) => m.is_active)
 
+  // 左の一覧の「済・未」。記録済は「日常記録のある出席」で数える（一覧・ダッシュボードと同じ）
+  type RosterRow = { id: string; child_id: string; unit_id: string; children: { name: string; name_kana: string | null } | null }
+  const rosterRows = (rosterRaw ?? []) as unknown as RosterRow[]
+  const { data: rosterRecords } = rosterRows.length > 0
+    ? await supabase
+        .from('daily_records')
+        .select('attendance_id')
+        .eq('record_type', 'daily_record')
+        .in('attendance_id', rosterRows.map((r) => r.id))
+    : { data: [] }
+  const recordedIds = new Set(((rosterRecords ?? []) as { attendance_id: string }[]).map((r) => r.attendance_id))
+  const roster: RosterItem[] = rosterRows
+    .map((r) => ({
+      childId: r.child_id,
+      unitId: r.unit_id,
+      name: r.children?.name ?? '（名前なし）',
+      nameKana: r.children?.name_kana ?? null,
+      recorded: recordedIds.has(r.id),
+    }))
+    .sort((a, b) => (a.nameKana ?? a.name).localeCompare(b.nameKana ?? b.name, 'ja'))
+
   const isSchoolHoliday = (schoolHolidaysRaw ?? []).some(
     (h: { start_date: string; end_date: string }) => date >= h.start_date && date <= h.end_date
   )
@@ -79,24 +108,28 @@ export default async function RecordPage({
   const defaultServiceEndTime = (notifSettings?.default_service_end_time as string | null)?.slice(0, 5) ?? '16:30'
   const holidayServiceEndTime = (notifSettings?.holiday_service_end_time as string | null)?.slice(0, 5) ?? '16:00'
 
+  const access = await getStaffAccess()
   return (
-    <DailyRecordForm
-      child={child}
-      attendance={attendance ?? null}
-      date={date}
-      unitId={unit}
-      dailyRecords={dailyRecords ?? []}
-      activities={activities ?? []}
-      programs={programs ?? []}
-      contactNote={contactNote ?? null}
-      staffId={userId ?? ''}
-      medications={medications ?? []}
-      medicationLogs={medicationLogs ?? []}
-      isSchoolHoliday={isSchoolHoliday}
-      defaultServiceEndTime={defaultServiceEndTime}
-      holidayServiceEndTime={holidayServiceEndTime}
-      canEditContactNote={(await getStaffAccess())?.canEditOperations ?? false}
-      canEditAttendance={(await getStaffAccess())?.canEditOperations ?? false}
+    <RecordsDayView
+      roster={roster}
+      form={{
+      child,
+      attendance: attendance ?? null,
+      date: date,
+      unitId: unit,
+      dailyRecords: dailyRecords ?? [],
+      activities: activities ?? [],
+      programs: programs ?? [],
+      contactNote: contactNote ?? null,
+      staffId: userId ?? '',
+      medications: medications ?? [],
+      medicationLogs: medicationLogs ?? [],
+      isSchoolHoliday: isSchoolHoliday,
+      defaultServiceEndTime: defaultServiceEndTime,
+      holidayServiceEndTime: holidayServiceEndTime,
+      canEditContactNote: access?.canEditOperations ?? false,
+      canEditAttendance: access?.canEditOperations ?? false,
+      }}
     />
   )
 }

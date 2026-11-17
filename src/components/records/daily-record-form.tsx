@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
   ChevronLeft,
+  ChevronRight,
   AlertTriangle,
   FileText,
   BookOpen,
@@ -114,6 +115,14 @@ interface Props {
   canEditContactNote?: boolean
   /** 日中一時の有無と利用時間を変えられるか。システム管理者だけ true（施設長・スタッフは見るだけ・2026-11-12 依頼主） */
   canEditAttendance?: boolean
+  /** 保存していない入力があるかを外へ知らせる（1画面で全員分の左の一覧が、子を変える前に聞くのに使う） */
+  onDirtyChange?: (dirty: boolean) => void
+  /** 「保存して次の未記録の子へ」を押して保存できたあとに呼ぶ。渡さなければボタンを出さない */
+  onSaveNext?: () => void
+  /** 次の未記録の子の名前（ボタンに出す）。いなければ null */
+  nextName?: string | null
+  /** 帯に出す「3人目 / 6名」など */
+  positionLabel?: string
 }
 
 
@@ -134,6 +143,10 @@ export function DailyRecordForm({
   holidayServiceEndTime,
   canEditContactNote = true,
   canEditAttendance = true,
+  onDirtyChange,
+  onSaveNext,
+  nextName,
+  positionLabel,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -196,6 +209,30 @@ export function DailyRecordForm({
   const [daytimeSupport, setDaytimeSupport] = useState(attendance?.daytime_support ?? false)
   const [daytimeSupportStartTime, setDaytimeSupportStartTime] = useState(attendance?.daytime_support_start_time?.slice(0, 5) ?? '')
   const [daytimeSupportEndTime, setDaytimeSupportEndTime] = useState(attendance?.daytime_support_end_time?.slice(0, 5) ?? '')
+
+  // ── 保存していない入力があるか ──
+  // 保存の対象（日常記録・特記・活動・日中一時・連絡帳）を、開いたとき（保存したとき）の中身と比べる。
+  // メモ（箇条書き）は端末に下書きで残るので数えない
+  const snapshotOf = () => JSON.stringify([
+    dailyContent, hasNotable ? notableContent : '', hasNotable,
+    [...selectedPrograms].sort(), Object.entries(activityNotes).filter(([, v]) => v).sort(),
+    contactNoteContent, daytimeSupport, daytimeSupportStartTime, daytimeSupportEndTime,
+  ])
+  const [savedSnapshot, setSavedSnapshot] = useState(snapshotOf)
+  const dirty = snapshotOf() !== savedSnapshot
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
+
+  // ── 活動は「いつもどおり」なら1行にたたむ（施設長への提案の4） ──
+  // いつもどおり＝既定の活動（おやつ・学習教材）だけにチェックがあり、コメントが無い
+  const defaultProgramIds = useMemo(
+    () => programs.filter((p) => DEFAULT_PARTICIPATION_PROGRAM_NAMES.includes(p.name)).map((p) => p.id).sort(),
+    [programs]
+  )
+  const isUsualActivities =
+    usesDefaultPrograms &&
+    JSON.stringify([...selectedPrograms].sort()) === JSON.stringify(defaultProgramIds) &&
+    selectedPrograms.every((id) => !activityNotes[id])
+  const [activitiesOpen, setActivitiesOpen] = useState(!isUsualActivities)
 
   const generateDailyRecord = async () => {
     if (!bulletPoints.trim()) return
@@ -288,8 +325,8 @@ export function DailyRecordForm({
     }
   }
 
-  const handleSave = async () => {
-    if (!attendance) return
+  const handleSave = async (): Promise<boolean> => {
+    if (!attendance) return false
 
     // 特記のチェックを外した（または本文を空にした）ときは、前の特記を消すかをその場で聞く。
     // 以前は何もせず、取り消したつもりの特記が残っていた
@@ -422,12 +459,21 @@ export function DailyRecordForm({
       // 失敗したら「保存しました」は出さず、入力は残したまま赤で知らせる
       setSaveError(errors.join('\n'))
       startTransition(() => router.refresh())
-      return
+      return false
     }
     clearMemoDraft()
+    // 保存できた中身を「保存ずみ」にする（これで子を変えても聞かれない）
+    setSavedSnapshot(snapshotOf())
+    onDirtyChange?.(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
     startTransition(() => router.refresh())
+    return true
+  }
+
+  const handleSaveNext = async () => {
+    const ok = await handleSave()
+    if (ok) onSaveNext?.()
   }
 
   const programsByCategory = programs.reduce<Record<string, Program[]>>((acc, p) => {
@@ -451,6 +497,23 @@ export function DailyRecordForm({
           <h1 className="text-xl font-bold text-gray-900">{child.name} さんの記録</h1>
           <p className="text-sm text-gray-500">{formatDate(date, 'yyyy年MM月dd日')}</p>
         </div>
+      </div>
+
+      {/* 書いている子の名前と日付を、いつも上に出す（取り違えを防ぐ） */}
+      <div
+        className="sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border-2 border-indigo-500 bg-indigo-50 px-4 py-2"
+        data-testid="record-band"
+      >
+        <span className="text-lg font-black text-gray-900">{child.name} さん</span>
+        <span className="text-sm font-semibold text-indigo-800">{formatDate(date, 'MM/dd')}</span>
+        {positionLabel && <span className="text-xs font-medium text-indigo-700">{positionLabel}</span>}
+        {attendance && (
+          <span className="ml-auto text-xs text-indigo-700">
+            送迎 {({ both: '行き帰り', pickup_only: '行きだけ', dropoff_only: '帰りだけ', none: 'なし' } as Record<string, string>)[attendance.pickup_type] ?? 'なし'}
+            {attendance.daytime_support ? '・日中一時あり' : ''}
+          </span>
+        )}
+        {dirty && <span className="w-full text-[11px] font-semibold text-amber-700">保存していない入力があります</span>}
       </div>
 
       {/* 基本情報 */}
@@ -536,7 +599,24 @@ export function DailyRecordForm({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {Object.entries(programsByCategory).map(([category, progs]) => (
+          {!activitiesOpen && (
+            <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="activities-usual">
+              <span className="text-gray-600">いつもどおり：</span>
+              {selectedPrograms.map((pid) => (
+                <span key={pid} className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+                  {programs.find((p) => p.id === pid)?.name}
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={() => setActivitiesOpen(true)}
+                className="ml-auto text-xs font-medium text-indigo-700 hover:underline"
+              >
+                変える
+              </button>
+            </div>
+          )}
+          {activitiesOpen && Object.entries(programsByCategory).map(([category, progs]) => (
             <div key={category}>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{category}</p>
               <div className="space-y-2">
@@ -571,7 +651,7 @@ export function DailyRecordForm({
               </div>
             </div>
           ))}
-          {programs.length === 0 && (
+          {activitiesOpen && programs.length === 0 && (
             <p className="text-sm text-gray-400 text-center py-4">
               活動プログラムがまだ登録されていません
             </p>
@@ -747,9 +827,10 @@ export function DailyRecordForm({
       )}
 
       {/* 保存ボタン */}
-      <div className="flex justify-end gap-3 pb-6">
+      <div className="flex flex-wrap justify-end gap-3 pb-6">
         <Button
-          onClick={handleSave}
+          variant={onSaveNext ? 'outline' : undefined}
+          onClick={() => { void handleSave() }}
           disabled={saving || !attendance}
           className="px-8"
         >
@@ -761,10 +842,16 @@ export function DailyRecordForm({
           ) : (
             <>
               <Save className="h-4 w-4" />
-              {saving ? '保存中...' : '記録を保存'}
+              {saving ? '保存中...' : onSaveNext ? '保存だけ' : '記録を保存'}
             </>
           )}
         </Button>
+        {onSaveNext && (
+          <Button onClick={() => { void handleSaveNext() }} disabled={saving || !attendance} className="px-6">
+            {nextName ? `保存して次の未記録の子へ（${nextName}さん）` : '保存して一覧へ（全員済み）'}
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        )}
       </div>
     </div>
   )
