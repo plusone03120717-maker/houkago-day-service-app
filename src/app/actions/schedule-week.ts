@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getStaffAccess } from '@/lib/require-admin'
-import { notifyWeek } from '@/lib/schedule-week-confirm-db'
+import { notifyWeek, skipWeekChanges } from '@/lib/schedule-week-confirm-db'
 import { isWeekStart } from '@/lib/schedule-week-confirm'
 import { setRemindTarget } from '@/lib/schedule-week-remind'
 
@@ -20,7 +20,22 @@ export async function notifyScheduleWeek(weekStart: string): Promise<{ error?: s
   return result
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/**
+ * 右下の確認の「送らない」。その週の、まだ知らせていない予定の変更を、保護者に知らせないことにする。
+ * 日曜17時の自動の知らせにも入らなくなる。知らせるボタンを押せる人（システム管理者）だけ。
+ */
+export async function skipScheduleWeekChanges(weekStart: string): Promise<{ error?: string }> {
+  const access = await getStaffAccess()
+  if (!access?.canEditOperations) return { error: '保護者へのお知らせはシステム管理者だけが決められます' }
+  if (!isWeekStart(weekStart)) return { error: '週の指定が正しくありません' }
+
+  const result = await skipWeekChanges(weekStart)
+  if (result.error) return { error: result.error }
+  revalidatePath('/usage')
+  return {}
+}
+
+const UUID_RE =/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * 「LINE で催促」のチェック。チェックした児童の保護者には、日曜18時に

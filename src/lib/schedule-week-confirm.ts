@@ -149,6 +149,26 @@ export function changedDates(
     .sort()
 }
 
+/**
+ * 要約のうち、指定した日だけを今の中身に追いつかせる（その日の予定がなくなっていたら消す）。
+ * ほかの日はそのまま残す。
+ *
+ * スタッフが「この変更は保護者に知らせない」と決めたときに、知らせたとき・確認したときの
+ * 記録に使う。追いつかせた日は、変更として数えなくなる。
+ */
+export function withDatesCaughtUp(
+  snapshot: DaySnapshot | null | undefined,
+  current: DaySnapshot,
+  dates: string[]
+): DaySnapshot {
+  const next = { ...(snapshot ?? {}) }
+  for (const date of dates) {
+    if (current[date] === undefined) delete next[date]
+    else next[date] = current[date]
+  }
+  return next
+}
+
 /** 予定がある日（お休みの日も含む）が1日でもあるか */
 export function hasPlan(current: DaySnapshot | undefined): boolean {
   return !!current && Object.keys(current).length > 0

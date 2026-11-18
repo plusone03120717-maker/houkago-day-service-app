@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { BellRing, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { notifyScheduleWeek } from '@/app/actions/schedule-week'
+import { notifyScheduleWeek, skipScheduleWeekChanges } from '@/app/actions/schedule-week'
 import { weekLabel } from '@/lib/schedule-week-confirm'
 
 type PendingWeek = { weekStart: string; childNames: string[] }
@@ -43,6 +43,10 @@ function writeDismissed(value: string) {
  *
  * 「あとで」を押すと、変わった児童が増えるまで出さない。
  * 押し忘れても、日曜17時に自動で知らせる（/api/cron/schedule-week-auto-notify）。
+ *
+ * 「送らない」は、電話などで伝えてあって知らせなくてよい変更のため。押すと、その変更は
+ * 日曜17時の自動の知らせにも入らない。押し間違えると保護者に届かないままになるので、
+ * 押したあとにもう一度だけ聞く（出ている中身が変わったら、聞き直す）。
  * 知らせるボタンを押せる人（システム管理者）の画面にだけ置く。
  */
 export function ScheduleChangePrompt() {
@@ -54,6 +58,8 @@ export function ScheduleChangePrompt() {
     typeof window === 'undefined' ? null : readDismissed()
   )
   const [sending, setSending] = useState(false)
+  // 「送らない」を押したときの中身。出ている中身が変わったら、はじめの聞き方に戻る
+  const [skipAsked, setSkipAsked] = useState<string | null>(null)
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
   const inFlight = useRef(false)
 
@@ -95,10 +101,33 @@ export function ScheduleChangePrompt() {
   const visible = (weeks.length > 0 && sig !== dismissed) || message !== null
   if (!visible) return null
 
+  const confirmingSkip = skipAsked !== null && skipAsked === sig
+
   const later = () => {
     writeDismissed(sig)
     setDismissed(sig)
+    setSkipAsked(null)
     setMessage(null)
+  }
+
+  const skipNow = async () => {
+    setSending(true)
+    setMessage(null)
+    const errors: string[] = []
+    for (const w of weeks) {
+      const result = await skipScheduleWeekChanges(w.weekStart)
+      if (result.error) errors.push(`${weekLabel(w.weekStart)}：${result.error}`)
+    }
+    setSending(false)
+    setSkipAsked(null)
+    if (errors.length > 0) {
+      setMessage({ tone: 'error', text: errors.join('\n') })
+      return
+    }
+    setWeeks([])
+    setMessage({ tone: 'ok', text: 'この変更は保護者に知らせないことにしました' })
+    router.refresh()
+    window.setTimeout(() => setMessage(null), 4000)
   }
 
   const notifyNow = async () => {
@@ -124,7 +153,7 @@ export function ScheduleChangePrompt() {
     <div
       role="dialog"
       aria-labelledby="schedule-change-prompt-title"
-      className="fixed bottom-5 right-5 z-50 w-[22rem] max-w-[calc(100vw-2.5rem)] rounded-2xl border border-indigo-200 bg-white p-4 shadow-xl"
+      className="fixed bottom-5 right-5 z-50 w-[25rem] max-w-[calc(100vw-2.5rem)] rounded-2xl border border-indigo-200 bg-white p-4 shadow-xl"
     >
       {weeks.length > 0 && sig !== dismissed ? (
         <>
@@ -146,18 +175,46 @@ export function ScheduleChangePrompt() {
               </li>
             ))}
           </ul>
-          <p className="mt-2 pl-6 text-[11px] text-gray-400">
-            いくつか直す途中なら「あとで」。知らせ忘れても、日曜17時に自動で知らせます。
-          </p>
-          <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={later} disabled={sending}>
-              あとでまとめて知らせる
-            </Button>
-            <Button size="sm" onClick={notifyNow} disabled={sending}>
-              {sending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              今すぐ知らせる
-            </Button>
-          </div>
+          {confirmingSkip ? (
+            <>
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+                この変更は保護者に知らせません。日曜17時の自動のお知らせにも入りません。よろしいですか？
+              </p>
+              <div className="mt-3 flex justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={() => setSkipAsked(null)} disabled={sending}>
+                  もどる
+                </Button>
+                <Button size="sm" onClick={skipNow} disabled={sending}>
+                  {sending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  送らない
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mt-2 pl-6 text-[11px] text-gray-400">
+                いくつか直す途中なら「あとで」。知らせ忘れても、日曜17時に自動で知らせます。電話などで伝えてあるときは「送らない」。
+              </p>
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mr-auto"
+                  onClick={() => setSkipAsked(sig)}
+                  disabled={sending}
+                >
+                  送らない
+                </Button>
+                <Button size="sm" variant="outline" onClick={later} disabled={sending}>
+                  あとでまとめて知らせる
+                </Button>
+                <Button size="sm" onClick={notifyNow} disabled={sending}>
+                  {sending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  今すぐ知らせる
+                </Button>
+              </div>
+            </>
+          )}
         </>
       ) : null}
       {message && (

@@ -17,6 +17,7 @@ import {
   weekDates,
   weekLabel,
   weekStartOf,
+  withDatesCaughtUp,
 } from '../src/lib/schedule-week-confirm'
 
 let passed = 0
@@ -196,6 +197,56 @@ check('保護者には「変更を知らせる」を押すまで変更を出さ�
   )
   assert.equal(after.status, 'changed')
   assert.deepEqual(after.changedSinceConfirm, ['2026-11-18'])
+})
+
+check('「送らない」：変わった日だけ記録を追いつかせると、知らせていない変更が消えて「確認ずみ」', () => {
+  const now = buildWeekSnapshots([day('2026-11-16'), day('2026-11-18', { service_end_time: '18:00' })], '2026-11-16').get('a')!
+  const before = childWeekState({ current: now, notified: true, noticeSnapshot: base, confirmSnapshot: base, today })
+  assert.deepEqual(before.changedSinceNotice, ['2026-11-18'])
+  const notice = withDatesCaughtUp(base, now, before.changedSinceNotice)
+  const confirm = withDatesCaughtUp(base, now, before.changedSinceNotice)
+  assert.deepEqual(notice, now)
+  // 元の記録は書きかえない
+  assert.notDeepEqual(base, now)
+  const after = childWeekState({ current: now, notified: true, noticeSnapshot: notice, confirmSnapshot: confirm, today })
+  assert.equal(after.status, 'confirmed')
+  assert.deepEqual(after.changedSinceNotice, [])
+  // まだ確認していない保護者は「まだ」のまま、知らせていない変更だけが消える
+  const waiting = childWeekState({ current: now, notified: true, noticeSnapshot: notice, confirmSnapshot: undefined, today })
+  assert.equal(waiting.status, 'waiting')
+  assert.deepEqual(waiting.changedSinceNotice, [])
+})
+
+check('「送らない」：もう知らせてある日（確認待ち）はそのまま残す', () => {
+  // 11/18 の変更は知らせずみ（保護者の確認待ち）。そのあと 11/20 を足して「送らない」
+  const notified = buildWeekSnapshots([day('2026-11-16'), day('2026-11-18', { service_end_time: '18:00' })], '2026-11-16').get('a')!
+  const now = buildWeekSnapshots(
+    [day('2026-11-16'), day('2026-11-18', { service_end_time: '18:00' }), day('2026-11-20')],
+    '2026-11-16'
+  ).get('a')!
+  const before = childWeekState({ current: now, notified: true, noticeSnapshot: notified, confirmSnapshot: base, today })
+  assert.deepEqual(before.changedSinceNotice, ['2026-11-20'])
+  const notice = withDatesCaughtUp(notified, now, before.changedSinceNotice)
+  const confirm = withDatesCaughtUp(base, now, before.changedSinceNotice)
+  const after = childWeekState({ current: now, notified: true, noticeSnapshot: notice, confirmSnapshot: confirm, today })
+  assert.equal(after.status, 'changed')
+  assert.deepEqual(after.changedSinceConfirm, ['2026-11-18'])
+  assert.deepEqual(after.changedSinceNotice, [])
+  // 保護者の画面に出る変わった日も 11/18 だけ
+  const parent = parentWeekState(after, {
+    noticeSnapshot: notice, confirmSnapshot: confirm,
+    lastNotifiedAt: '2026-11-14T08:00:00Z', confirmedAt: '2026-11-13T09:00:00Z', today,
+  })
+  assert.deepEqual(parent.changedSinceConfirm, ['2026-11-18'])
+})
+
+check('「送らない」：なくなった日は記録からも消す（予定がすべてなくなれば一覧から消える）', () => {
+  const before = childWeekState({ current: {}, notified: true, noticeSnapshot: base, confirmSnapshot: base, today })
+  assert.deepEqual(before.changedSinceNotice, ['2026-11-16', '2026-11-18'])
+  const notice = withDatesCaughtUp(base, {}, before.changedSinceNotice)
+  assert.deepEqual(notice, {})
+  const after = childWeekState({ current: {}, notified: true, noticeSnapshot: notice, confirmSnapshot: notice, today })
+  assert.equal(after.status, 'no_plan')
 })
 
 console.log(`\nすべて通りました（${passed}件）`)
