@@ -10,6 +10,7 @@ import {
   parentWeekState,
   weekEnd,
   weekStartOf,
+  withDatesCaughtUp,
   type ChildWeekState,
   type DaySnapshot,
 } from '@/lib/schedule-week-confirm'
@@ -428,4 +429,72 @@ export async function loadPendingChangeWeeks(fromWeek: string): Promise<PendingC
     if (childNames.length > 0) out.push({ weekStart: week_start, childNames })
   }
   return out
+}
+
+/**
+ * 「送らない」。知らせたあとで変わった予定を、保護者に知らせないことにする。
+ *
+ * まだ知らせていない変更がある児童の、変わった日だけを、知らせたときの記録と
+ * 保護者が確認したときの記録の両方で今の中身に追いつかせる（数え方は loadPendingChangeWeeks と同じ）。
+ * これで右下の確認にも、日曜17時の自動の知らせにも出なくなり、保護者の画面にも
+ * 「変更があります」が出ない。知らせた日時・回数は変えない（知らせていないため）。
+ *
+ * すでに「変更を知らせる」で知らせた日（保護者の確認待ち）は、そのまま残す。
+ * このあとでまた予定を変えれば、その変更はあらためて聞く。
+ */
+export async function skipWeekChanges(weekStart: string): Promise<{ error?: string; skipped: number }> {
+  const admin = getAdminClient()
+  const [{ notice, error: noticeError }, { rows: confirmations, error: confirmError }] = await Promise.all([
+    loadNotice(admin, weekStart),
+    loadConfirmations(admin, weekStart),
+  ])
+  if (isMissingTable(noticeError) || isMissingTable(confirmError)) return { error: 'この機能は準備中です', skipped: 0 }
+  if (noticeError) return { error: noticeError.message, skipped: 0 }
+  if (confirmError) return { error: confirmError.message, skipped: 0 }
+  if (!notice) return { skipped: 0 }
+
+  const children = await loadActiveChildren(admin)
+  const { snapshots } = await loadWeekSchedule(admin, children.map((c) => c.id), weekStart)
+  const confirmByChild = new Map(confirmations.map((c) => [c.child_id, c]))
+  const today = getTodayJST()
+
+  const targets: { childId: string; current: DaySnapshot; dates: string[] }[] = []
+  for (const child of children) {
+    const state = childWeekState({
+      current: snapshots.get(child.id),
+      notified: true,
+      noticeSnapshot: notice.snapshot?.[child.id],
+      confirmSnapshot: confirmByChild.get(child.id)?.snapshot,
+      today,
+    })
+    if (state.status === 'no_plan' || state.changedSinceNotice.length === 0) continue
+    targets.push({ childId: child.id, current: snapshots.get(child.id) ?? {}, dates: state.changedSinceNotice })
+  }
+  if (targets.length === 0) return { skipped: 0 }
+
+  // 先に確認の記録を直す。ここで失敗しても知らせたときの記録は元のままなので、
+  // 右下の確認がもう一度出て、やり直せる
+  for (const t of targets) {
+    const confirmation = confirmByChild.get(t.childId)
+    if (!confirmation) continue
+    const { error } = await admin
+      .from('schedule_week_confirmations')
+      .update({ snapshot: withDatesCaughtUp(confirmation.snapshot, t.current, t.dates) })
+      .eq('child_id', t.childId)
+      .eq('week_start', weekStart)
+    if (error) return { error: error.message, skipped: 0 }
+  }
+
+  // ほかの児童の分は触らない。書く直前に読み直して、重なった書きこみで消さないようにする
+  const { notice: latest, error: latestError } = await loadNotice(admin, weekStart)
+  if (latestError) return { error: latestError.message, skipped: 0 }
+  const snapshot: Record<string, DaySnapshot> = { ...(latest ?? notice).snapshot }
+  for (const t of targets) {
+    snapshot[t.childId] = withDatesCaughtUp(snapshot[t.childId], t.current, t.dates)
+  }
+  const { error } = await admin
+    .from('schedule_week_notices')
+    .update({ snapshot })
+    .eq('week_start', weekStart)
+  return error ? { error: error.message, skipped: 0 } : { skipped: targets.length }
 }
