@@ -201,6 +201,40 @@ export function attendanceToAssignment(
   }
 }
 
+/** いつもの予定（利用計画・曜日ごとの設定・特定日の変更）から決まる、その日の時間 */
+export type PlannedTimes = {
+  serviceStartTime: string | null
+  serviceEndTime: string | null
+  daytimeSupport: boolean
+  daytimeSupportStartTime: string | null
+  daytimeSupportEndTime: string | null
+}
+
+/**
+ * その日の出席記録が、いつもの予定から前もって作られただけのものか。
+ *
+ * 記録の時間がいつもの予定と同じなら、スタッフが手で入れた時刻ではない。
+ * そうした記録を承認画面の初期値にすると、保護者が希望した時間が初期値に出ず、
+ * そのまま承認すると希望が反映されない（2026-11-20、時間変更を承認したのに
+ * 反映されないという問い合わせ）。この場合は初期値に記録を使わず、保護者の希望を使う。
+ * いつもの予定と違う時間が入っていれば、スタッフの入力として今までどおり守る。
+ */
+export function isPremadeFromPlan(
+  att: AttendanceAssignmentSource | null | undefined,
+  plan: PlannedTimes | null | undefined
+): boolean {
+  if (!att || !plan) return false
+  const same = (a: string | null | undefined, b: string | null | undefined) => toHhmm(a) === toHhmm(b)
+  if (!!att.daytime_support !== !!plan.daytimeSupport) return false
+  if (!same(att.service_start_time, plan.serviceStartTime)) return false
+  if (!same(att.service_end_time, plan.serviceEndTime)) return false
+  if (att.daytime_support) {
+    if (!same(att.daytime_support_start_time, plan.daytimeSupportStartTime)) return false
+    if (!same(att.daytime_support_end_time, plan.daytimeSupportEndTime)) return false
+  }
+  return true
+}
+
 /** 割り振りを DB の列に落とす */
 export function assignmentToColumns(a: ServiceAssignment) {
   return {
