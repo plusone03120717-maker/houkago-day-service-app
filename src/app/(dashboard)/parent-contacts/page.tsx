@@ -9,6 +9,7 @@ import { defaultSwitchTime, loadHolidayChecker, switchTimeFor } from '@/lib/dayt
 import {
   attendanceToAssignment,
   defaultAssignment,
+  isPremadeFromPlan,
   ENGLISH_UNIT_NAME,
   type AttendanceAssignmentSource,
   type ServiceAssignment,
@@ -18,6 +19,7 @@ import { loadTransportPlaces, loadFacilitySchedule } from '@/lib/parent-usage-co
 import { resolveUnitIds, type AbsentHandling } from '@/lib/parent-contact-schedule'
 import type { LocationType } from '@/lib/transport-place'
 import { getStaffAccess } from '@/lib/require-admin'
+import { fetchScheduleDefaults } from '@/lib/schedule-defaults'
 
 export default async function ParentContactsPage() {
   const supabase = await createClient()
@@ -69,22 +71,37 @@ export default async function ParentContactsPage() {
     ? await supabase
         .from('daily_attendance')
         .select(
-          'child_id, date, basic_service, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time'
+          'child_id, unit_id, date, basic_service, service_start_time, service_end_time, daytime_support, daytime_support_start_time, daytime_support_end_time'
         )
         .in('child_id', childIds)
         .in('date', days)
     : { data: [] }
 
-  type AttendanceRow = AttendanceAssignmentSource & { child_id: string; date: string }
+  type AttendanceRow = AttendanceAssignmentSource & { child_id: string; unit_id: string; date: string }
   const byChildDate = new Map<string, AttendanceRow>()
   for (const row of (attendanceRaw ?? []) as unknown as AttendanceRow[]) {
     byChildDate.set(`${row.child_id}|${row.date}`, row)
   }
 
+  // いつもの予定から決まる時間（ユニット×日ごと）。記録がいつもの予定と同じ＝前もって
+  // 作られただけの記録なら、初期値に使わず保護者の希望を出す（isPremadeFromPlan）
+  const unitDays = [...new Set([...byChildDate.values()].map((r) => `${r.unit_id}|${r.date}`))]
+  const plannedByUnitDay = new Map(
+    await Promise.all(
+      unitDays.map(async (key) => {
+        const [unitId, date] = key.split('|')
+        return [key, await fetchScheduleDefaults(supabase, unitId, date)] as const
+      })
+    )
+  )
+
   const initialAssignments: Record<string, ServiceAssignment> = {}
   for (const c of unconfirmedContacts) {
-    const fromPlan = attendanceToAssignment(byChildDate.get(`${c.child_id}|${c.date}`))
-    if (fromPlan) initialAssignments[c.id] = fromPlan
+    const att = byChildDate.get(`${c.child_id}|${c.date}`)
+    const planned = att ? plannedByUnitDay.get(`${att.unit_id}|${att.date}`)?.[c.child_id] : undefined
+    if (isPremadeFromPlan(att, planned)) continue
+    const fromRecord = attendanceToAssignment(att)
+    if (fromRecord) initialAssignments[c.id] = fromRecord
   }
 
   // 保護者が指定した行き先・帰り先を名前で出すための選択肢
