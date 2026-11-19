@@ -3,6 +3,7 @@ import { fetchScheduleDefaults, type ScheduleDefaults } from '@/lib/schedule-def
 import { unitChildKey, loadAttendanceBoardData } from '@/lib/attendance-board-data'
 import { unitCourseOf, type UnitCourse } from '@/lib/unit-course'
 import { buildNoTransport, type LiffNoTransportChild } from '@/lib/liff-no-transport'
+import { expectedChildIds, splitByExpected } from '@/lib/transport-expected'
 import {
   buildTransportRows,
   TRANSPORT_ATTENDANCE_SELECT,
@@ -96,7 +97,7 @@ export async function loadLiffTransport(
     }
   })
 
-  const { rows } = buildTransportRows({
+  const { rows: allRows } = buildTransportRows({
     unitIds,
     unitNameById: new Map(units.map((u) => [u.id, u.name])),
     schedules: (schedulesRaw ?? []) as unknown as RawTransportSchedule[],
@@ -104,6 +105,9 @@ export async function loadLiffTransport(
     reservations: (reservationsRaw ?? []) as unknown as TransportReservationRow[],
     scheduleDefaults,
   })
+  // その日に来ない子（出席管理に出ない子）の送迎の行は出さない。前もって作った行が、
+  // いつもの予定から曜日が外れたあとも残り、「時間未定」で出ていた（2026-11-19）
+  const { coming: rows } = splitByExpected(allRows, expectedChildIds(unitIds, boardDataList, date))
 
   const vehicleName = new Map(((vehiclesRaw ?? []) as { id: string; name: string }[]).map((v) => [v.id, v.name]))
   const staffName = new Map(((staffRaw ?? []) as { id: string; name: string }[]).map((s) => [s.id, s.name]))

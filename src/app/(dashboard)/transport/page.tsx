@@ -17,7 +17,8 @@ import {
   type TransportAttendanceRow,
   type TransportReservationRow,
 } from '@/lib/transport-rows'
-import { ALL_UNITS, unitChildKey } from '@/lib/attendance-board-data'
+import { ALL_UNITS, unitChildKey, loadAttendanceBoardData } from '@/lib/attendance-board-data'
+import { expectedChildIds, splitByExpected } from '@/lib/transport-expected'
 import { fetchDriverRanking } from '@/lib/driver-ranking'
 
 type Unit = { id: string; name: string; service_type: string }
@@ -100,6 +101,18 @@ export default async function TransportPage({
     return byKey
   })
 
+  // その日に来る子（出席管理と同じ顔ぶれ）。前もって作った送迎の行のうち、いつもの予定から
+  // 曜日が外れた子など、その日に来ない子の行を便の一覧から分けるのに使う（2026-11-19）。
+  // 読めなかったときは null にして、分けずに今までどおり全部を出す
+  const expectedPromise = hasTargets
+    ? Promise.all(targetUnitIds.map((id) => loadAttendanceBoardData(supabase, id, today)))
+        .then((list) => expectedChildIds(targetUnitIds, list, today))
+        .catch((e) => {
+          console.error('[transport] 出席管理の顔ぶれを読めなかったので、来ない子の行を分けません', e)
+          return null
+        })
+    : Promise.resolve(null)
+
   await autoCreatePromise
   const schedulesPromise = hasTargets
     ? supabase
@@ -119,6 +132,7 @@ export default async function TransportPage({
     { data: reservationsRaw },
     scheduleDefaults,
     driverRanking,
+    expected,
   ] = await Promise.all([
     schedulesPromise,
     vehiclesPromise,
@@ -128,6 +142,7 @@ export default async function TransportPage({
     reservationsPromise,
     scheduleDefaultsPromise,
     driverRankingPromise,
+    expectedPromise,
   ])
 
   // 取得に失敗したときは「0件」として黙って空表示にせず、原因をそのまま画面に出す。
@@ -142,7 +157,7 @@ export default async function TransportPage({
   const retired = await loadRetired(supabase)
   const unitNameById = new Map(units.map((u) => [u.id, u.name]))
 
-  const { rows: orderedRows, scheduleIdsByUnit } = buildTransportRows({
+  const { rows: builtRows, scheduleIdsByUnit } = buildTransportRows({
     unitIds: targetUnitIds,
     unitNameById,
     schedules: (schedulesRaw ?? []) as unknown as RawTransportSchedule[],
@@ -151,6 +166,8 @@ export default async function TransportPage({
     scheduleDefaults,
     driverScoresFor: (childId, slot) => driverRanking.scoresFor(childId, slot),
   })
+  // その日に来ない子の行は便の一覧・人数に入れず、下にまとめて見せる
+  const { coming: orderedRows, notComing: notComingRows } = splitByExpected(builtRows, expected)
 
   // 辞めた人・使わない車は外す。この日の便に入っている人・車は名前が消えないように残す（2026-11-17）
   const drivers = keepActive(driversAll, retired.staff, today, orderedRows.map((r) => r.driverMemberId))
@@ -184,6 +201,7 @@ export default async function TransportPage({
       units={units}
       selectedUnitId={selectedUnitId}
       rows={orderedRows}
+      notComingRows={notComingRows}
       scheduleIdsByUnit={scheduleIdsByUnit}
       vehicles={vehicles}
       drivers={drivers}
