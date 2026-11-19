@@ -98,6 +98,11 @@ interface Props {
   /** 選択中のユニットID。ALL_UNITS（'all'）なら全ユニットまとめて表示 */
   selectedUnitId: string
   rows: TransportRow[]
+  /**
+   * その日に来ない子（出席管理に出ない子）の送迎の行。前もって作った行が、いつもの予定から
+   * 曜日が外れたあとも残っているもの。便の一覧・人数には入れず、下にまとめて見せる（2026-11-19）
+   */
+  notComingRows?: TransportRow[]
   /** ユニットID → 方向ごとの入れ物スケジュール */
   scheduleIdsByUnit: Record<string, ScheduleIds>
   vehicles: Vehicle[]
@@ -218,6 +223,7 @@ export function TransportManageBoard({
   units,
   selectedUnitId,
   rows,
+  notComingRows = [],
   scheduleIdsByUnit,
   vehicles,
   drivers,
@@ -684,6 +690,42 @@ export function TransportManageBoard({
             })()}
           </div>
           </fieldset>
+        </div>
+      )}
+
+      {notComingRows.length > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
+          <p className="text-sm font-bold text-gray-700">この日に来ない子の送迎の行（{notComingRows.length}件）</p>
+          <p className="text-xs text-gray-500">
+            いつもの予定・利用の予定・出席の記録のどれも無い子です。前もって作った送迎の行が残っています。
+            お迎え・お送りの人数と、スタッフ LINE の送迎には入れていません。
+            {canEdit ? '要らなければ「消す」を押してください。' : '消すときは、システム管理者に頼んでください。'}
+          </p>
+          <ul className="divide-y divide-gray-200">
+            {notComingRows.map((row) => (
+              <li key={row.id} className="flex items-center gap-2 py-1.5 text-sm">
+                <span
+                  className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold ${
+                    row.direction === 'pickup' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'
+                  }`}
+                >
+                  {DIRECTION_LABEL[row.direction]}
+                </span>
+                <span className="text-gray-800">{row.name}</span>
+                {isAllUnits && <span className="text-xs text-gray-400">{row.unitName}</span>}
+                <span className="truncate text-xs text-gray-400">{row.location ?? ''}</span>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => void handleRemove(row)}
+                    className="ml-auto shrink-0 rounded-md border border-gray-300 bg-white px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
+                  >
+                    消す
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
