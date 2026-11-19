@@ -18,7 +18,8 @@
     "verify:parent-deadline": "tsx scripts/verify-parent-deadline.ts",
     "verify:line-punch": "tsx scripts/verify-line-punch-report.ts",
     "verify:break": "tsx scripts/verify-break-requests.ts",
-    "verify:schedule-week": "tsx scripts/verify-schedule-week-confirm.ts"
+    "verify:schedule-week": "tsx scripts/verify-schedule-week-confirm.ts",
+    "verify:unsaved-label": "tsx scripts/verify-unsaved-label.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
