@@ -155,6 +155,31 @@ export function hasBlankTransport(f: TransportFields): boolean {
   return pickupBlank || dropoffBlank
 }
 
+/** 2つの入力内容がすべての欄で同じか */
+export function sameTransportFields(a: TransportFields, b: TransportFields): boolean {
+  return (Object.keys(a) as (keyof TransportFields)[]).every((k) => a[k] === b[k])
+}
+
+/**
+ * 画面に出している内容が「予定から埋めたまま、まだ保存していない」状態か。
+ * base は記録そのままの欄、shown は予定で空いた欄を埋めて画面に出す欄。
+ *
+ * 予定で埋めた欄が1つもない（base と shown が同じ）なら、画面は記録のままなので false。
+ * 以前は「お迎えか帰りのどちらかが空」だけで true にしていたため、いつも行きだけ・帰りだけの子は、
+ * 保存したあとも「予定から自動入力（未保存）」と出つづけ、保存できていないように見えた（2026-11-19 スタッフから）。
+ */
+export function isSchedulePresetFields(base: TransportFields, shown: TransportFields): boolean {
+  if (sameTransportFields(base, shown)) return false
+  // 両方の日の帰りは日中一時の欄に入るので、放デイの帰りが空でも「未入力」ではない
+  if (base.daytimeSupport && (base.daytimeDropoffDepartureTime || base.daytimeDropoffArrivalTime)) {
+    if (isBlankFields(base)) return true
+    return !base.pickupDepartureTime && !base.pickupArrivalTime &&
+      !base.daytimePickupDepartureTime && !base.daytimePickupArrivalTime
+  }
+  // 送迎の欄だけを埋めた場合も「予定値を表示中」であることに変わりはない
+  return isBlankFields(base) || hasBlankTransport(base)
+}
+
 /**
  * 送迎の欄だけを予定値で埋める（空いている方向のみ）。
  *

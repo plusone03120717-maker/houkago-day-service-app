@@ -43,7 +43,7 @@ import {
   isBlankFields,
   applyScheduleDefaults,
   applyTransportDefaults,
-  hasBlankTransport,
+  isSchedulePresetFields,
   buildTransportUpdate,
   type TransportRow,
   type TransportFields,
@@ -276,16 +276,8 @@ export function AttendanceBoard({
   const isSchedulePreset = (a: Attendance): boolean => {
     const sched = scheduleDefaultsByKey[unitChildKey(a.unit_id, a.child_id)]
     if (!sched || savedOnce.has(a.id)) return false
-    const base = initFields(a, defaultServiceEndTime)
-    // 両方の日の帰りは日中一時の欄に入るので、放デイの帰りが空でも「未入力」ではない
-    if (base.daytimeSupport && (base.daytimeDropoffDepartureTime || base.daytimeDropoffArrivalTime)) {
-      if (isBlankFields(base)) return true
-      const pickupBlank = !base.pickupDepartureTime && !base.pickupArrivalTime &&
-        !base.daytimePickupDepartureTime && !base.daytimePickupArrivalTime
-      return pickupBlank
-    }
-    // 送迎の欄だけを埋めた場合も「予定値を表示中」であることに変わりはない
-    return isBlankFields(base) || hasBlankTransport(base)
+    // 予定で埋めた欄があるときだけ「未保存」。いつも行きだけ・帰りだけの子が、保存後も「未保存」と出ないように
+    return isSchedulePresetFields(initFields(a, defaultServiceEndTime), buildInitialFields(a))
   }
 
   const getFields = (a: Attendance): TransportFields =>
