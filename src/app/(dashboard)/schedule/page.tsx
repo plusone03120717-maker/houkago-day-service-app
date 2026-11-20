@@ -4,6 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { keepActive, loadRetired, transportIdsIn } from '@/lib/retired'
 import { getStaffAccess } from '@/lib/require-admin'
+import { loadDayUsers } from '@/lib/day-users'
 import { getTodayJST } from '@/lib/utils'
 import { StaffScheduleBoard } from '@/components/schedule/staff-schedule-board'
 import type { CalendarEvent, ChildOption, FacilityDay } from '@/components/schedule/schedule-events-types'
@@ -89,7 +90,7 @@ export default async function SchedulePage({
     supabase.from('transport_vehicles').select('id, name').order('name'),
   ])
 
-  const [{ data: eventsRaw }, { data: facilityRaw }, { data: childrenRaw }] = await Promise.all([
+  const [{ data: eventsRaw }, { data: facilityRaw }, { data: childrenRaw }, dayUsers] = await Promise.all([
     supabase
       .from('schedule_events')
       .select('id, title, event_type, event_date, start_time, end_time, all_day, location, note, child_id')
@@ -110,6 +111,11 @@ export default async function SchedulePage({
           .eq('is_active', true)
           .order('name_kana')
       : Promise.resolve({ data: [] }),
+    // 選んだ日の利用者（ダッシュボードの「本日の利用予定」・出席管理と同じ顔ぶれ）
+    loadDayUsers(supabase, date).catch((e) => {
+      console.error('[schedule] day users', e)
+      return null
+    }),
   ])
 
   // 参加スタッフ・付いている子の表は、ブラウザ（ログイン中の人）からは読めない決まり（migration 175）なので
@@ -183,6 +189,7 @@ export default async function SchedulePage({
         .filter((s) => !!s.user_id)
         .map((s) => ({ userId: s.user_id!, name: s.name }))}
       canEdit={canEdit}
+      dayUsers={dayUsers}
     />
   )
 }

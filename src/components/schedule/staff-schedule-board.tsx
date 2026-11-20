@@ -10,6 +10,7 @@ import { ChevronDown, ChevronUp, User, Car, Clock, ArrowRight } from 'lucide-rea
 import type { StaffMember, StaffShift, TransportAttendance } from '@/app/(dashboard)/schedule/page'
 import type { CalendarEvent, ChildOption, FacilityDay, StaffOption } from './schedule-events-types'
 import { ScheduleEventsPanel } from './schedule-events-panel'
+import type { DayUser } from '@/lib/day-users'
 
 const SHIFT_LABELS: Record<string, { label: string; color: string }> = {
   full:      { label: '全日', color: 'bg-indigo-100 text-indigo-700' },
@@ -31,6 +32,8 @@ interface Props {
   staffOptions: StaffOption[]
   /** 予定を足す・直す・消すことができる（システム管理者） */
   canEdit: boolean
+  /** 選んだ日の利用者。読めなかったときは null */
+  dayUsers: { users: DayUser[]; absent: DayUser[] } | null
 }
 
 type TransportItem = {
@@ -108,7 +111,7 @@ function fmtTime(t: string | null): string {
 }
 
 export function StaffScheduleBoard({
-  date, staffMembers, shifts, attendance, vehicles, events, facilityDays, childOptions, staffOptions, canEdit,
+  date, staffMembers, shifts, attendance, vehicles, events, facilityDays, childOptions, staffOptions, canEdit, dayUsers,
 }: Props) {
   const router = useRouter()
   const today = getTodayJST()
@@ -141,6 +144,7 @@ export function StaffScheduleBoard({
         childOptions={childOptions}
         staffOptions={staffOptions}
         canEdit={canEdit}
+        dayUsers={dayUsers}
       />
 
       <h2 className="font-bold text-gray-900 pt-2">この日のスタッフ（シフト・送迎）</h2>
