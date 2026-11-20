@@ -813,6 +813,18 @@ function transportTimePatch(
  * 出席管理・日々の記録の表示も請求の送迎加算もこの欄の区別で動いているため、
  * 送迎管理の表示（transport/page.tsx）とまったく同じ判定を使う。
  */
+/**
+ * 便の子をまとめて保存する（2026-11-18 依頼主「おすすめのものを実装して」・案 C）。
+ * 前は画面から子ども1人ずつ順番に呼んでいて、5人の便なら往復が5回あった。
+ * ここでは1回の呼び出しで受け取り、子どもごとの保存をサーバーの中で同時に進める。
+ * 子どもごとの行は別々なので、同時に書いても互いに上書きしない（同じ子の同じ向きは1つの便に1行だけ）。
+ */
+export async function saveTransportRecords(inputs: TransportRecordInput[]) {
+  if (inputs.length === 0) return
+  if (await isTransportReadOnly()) return
+  await Promise.all(inputs.map((input) => saveTransportRecord(input)))
+}
+
 export async function saveTransportRecord(input: TransportRecordInput) {
   if (await isTransportReadOnly()) return
   const { childId, unitId, date, direction, time, driverMemberId, vehicleId } = input
