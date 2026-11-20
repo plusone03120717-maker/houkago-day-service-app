@@ -8,9 +8,11 @@ import { getTodayJST } from '@/lib/utils'
 import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { formatDuration } from '@/lib/work-time'
 import { TransportTab } from './transport-tab'
+import { EventsTab } from './events-tab'
+import { eventTypeInfo } from '@/lib/schedule-events'
 import {
   Loader2, AlertCircle, ChevronLeft, ChevronRight, Clock, Car, CalendarDays,
-  ArrowRight, User, FileText, RotateCw,
+  ArrowRight, User, FileText, RotateCw, MapPin,
 } from 'lucide-react'
 
 type StaffInfo = { name: string }
@@ -39,6 +41,7 @@ type EventItem = {
   startTime: string | null
   endTime: string | null
   allDay: boolean
+  location: string | null
   note: string | null
   childNames: string[]
   assigned: boolean
@@ -107,13 +110,6 @@ const DIRECTION_LABELS: Record<TransportItem['direction'], { label: string; colo
   dropoff:         { label: '送り',           color: 'text-orange-600' },
   daytime_pickup:  { label: 'お迎え（日中）', color: 'text-purple-600' },
   daytime_dropoff: { label: '送り（日中）',   color: 'text-purple-600' },
-}
-
-const EVENT_LABELS: Record<string, { label: string; color: string }> = {
-  meeting:    { label: '会議',         color: 'bg-violet-100 text-violet-700' },
-  monitoring: { label: 'モニタリング', color: 'bg-emerald-100 text-emerald-700' },
-  external:   { label: '外部',         color: 'bg-amber-100 text-amber-700' },
-  other:      { label: '予定',         color: 'bg-gray-100 text-gray-600' },
 }
 
 function addDays(dateStr: string, diff: number): string {
@@ -187,8 +183,8 @@ export default function StaffSchedulePage() {
   const today = getTodayJST()
   const [date, setDate] = useState(today)
   const [view, setView] = useState<'day' | 'month'>('day')
-  // 自分のスケジュール／全体（その日の送迎管理をまとめて閲覧）
-  const [tab, setTab] = useState<'mine' | 'all'>('mine')
+  // 自分のスケジュール／全体の送迎（その日の送迎管理をまとめて閲覧）／会議・予定（今日から先の予定の一覧）
+  const [tab, setTab] = useState<'mine' | 'all' | 'events'>('mine')
   const [cal, setCal] = useState(() => {
     const [y, m] = today.split('-').map(Number)
     return { year: y, month: m }
@@ -400,10 +396,10 @@ export default function StaffSchedulePage() {
     <div className="max-w-sm mx-auto min-h-screen bg-gray-50 pb-10">
       {/* ヘッダー */}
       <div className="bg-indigo-600 text-white px-5 pt-10 pb-5">
-        <p className="text-xs text-indigo-300 mb-0.5">{tab === 'mine' ? 'マイスケジュール' : '全体の送迎'}</p>
+        <p className="text-xs text-indigo-300 mb-0.5">{tab === 'mine' ? 'マイスケジュール' : tab === 'all' ? '全体の送迎' : '会議・予定（全員分）'}</p>
         <h1 className="text-xl font-bold">{data?.staff.name}さん</h1>
         <div className="flex gap-1 mt-4 bg-indigo-700/60 rounded-full p-1" role="tablist">
-          {([['mine', '自分'], ['all', '全体']] as const).map(([key, label]) => (
+          {([['mine', '自分'], ['all', '全体の送迎'], ['events', '会議・予定']] as const).map(([key, label]) => (
             <button
               key={key}
               role="tab"
@@ -419,7 +415,8 @@ export default function StaffSchedulePage() {
         </div>
       </div>
 
-      {/* 日付・月ナビゲーション */}
+      {/* 日付・月ナビゲーション（会議・予定タブは今日からの一覧なので出さない） */}
+      {tab !== 'events' && (
       <div className="bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm">
         <div className="flex items-center justify-between px-2 py-2.5">
           <button
@@ -493,6 +490,7 @@ export default function StaffSchedulePage() {
           </button>
         </div>
       </div>
+      )}
 
       {/* 月カレンダー（有給・残業・中抜けの申請状況） */}
       {isMonth && (
@@ -765,13 +763,15 @@ export default function StaffSchedulePage() {
           ) : (
             <div className="space-y-2">
               {data!.events.map((ev) => {
-                const type = EVENT_LABELS[ev.eventType] ?? EVENT_LABELS.other
+                const type = eventTypeInfo(ev.eventType)
                 return (
                   <div key={ev.id} className="bg-white rounded-2xl shadow-sm px-4 py-3.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${type.color}`}>{type.label}</span>
-                        <span className="text-sm font-medium text-gray-900">{ev.title}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${type.chip}`}>{type.label}</span>
+                        <span className="text-sm font-medium text-gray-900">
+                          {ev.eventType === 'monitoring' && ev.childNames.length > 0 ? `${ev.childNames.join('・')}さん` : ev.title}
+                        </span>
                         {!ev.assigned && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">全体</span>
                         )}
@@ -782,10 +782,16 @@ export default function StaffSchedulePage() {
                           : `${ev.startTime}${ev.endTime ? `〜${ev.endTime}` : ''}`}
                       </span>
                     </div>
-                    {ev.childNames.length > 0 && (
+                    {ev.childNames.length > 0 && ev.eventType !== 'monitoring' && (
                       <p className="flex items-center gap-1 text-xs text-gray-500 mt-1.5">
                         <User className="h-3 w-3" />
                         {ev.childNames.join('、')}
+                      </p>
+                    )}
+                    {ev.location && (
+                      <p className="flex items-center gap-1 text-xs text-gray-500 mt-1.5">
+                        <MapPin className="h-3 w-3" />
+                        {ev.location}
                       </p>
                     )}
                     {ev.note && (
@@ -909,6 +915,11 @@ export default function StaffSchedulePage() {
       {/* 全体：その日の送迎管理（閲覧のみ） */}
       {tab === 'all' && accessToken && (
         <TransportTab accessToken={accessToken} date={date} reloadKey={reloadKey} />
+      )}
+
+      {/* 会議・予定：今日から先の予定の一覧（全員分・閲覧のみ） */}
+      {tab === 'events' && accessToken && (
+        <EventsTab accessToken={accessToken} today={today} reloadKey={reloadKey} />
       )}
 
       {/* 有給の取り消し確認 */}

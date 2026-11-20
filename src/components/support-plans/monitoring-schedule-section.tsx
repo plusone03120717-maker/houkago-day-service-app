@@ -32,21 +32,48 @@ export function MonitoringScheduleSection({ childId, facilityId, schedules, read
 
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // 日付は空から始める（「今日」が入ったままだと、変え忘れて今日の予定になる）
   const [form, setForm] = useState({
-    event_date: localDateStr(new Date()),
+    event_date: '',
     start_time: '',
     end_time: '',
     note: '',
   })
 
   const today = localDateStr(new Date())
+  const sameDay = !!form.event_date && schedules.some((s) => s.event_date === form.event_date)
+  const otherUpcoming = schedules.filter((s) => s.event_date >= today && s.event_date !== form.event_date)
   const upcoming = schedules.filter((s) => s.event_date >= today).sort((a, b) => a.event_date.localeCompare(b.event_date))
   const past     = schedules.filter((s) => s.event_date < today).sort((a, b) => b.event_date.localeCompare(a.event_date))
 
   async function handleSave() {
     if (!form.event_date) return
+    if (sameDay) {
+      setError('この日のモニタリング予定はもう入っています。二重にならないよう保存できません')
+      return
+    }
+    if (form.start_time && form.end_time && form.end_time <= form.start_time) {
+      setError('終了は開始よりあとの時刻にしてください')
+      return
+    }
     setSaving(true)
-    await supabase.from('schedule_events').insert({
+    setError(null)
+    // 全体スケジュールで入れた分も同じ表にあるので、保存の直前にもう一度確かめる（二重に入れない）
+    const { data: dupRows } = await supabase
+      .from('schedule_events')
+      .select('id')
+      .eq('child_id', childId)
+      .eq('event_type', 'monitoring')
+      .eq('event_date', form.event_date)
+      .limit(1)
+    if ((dupRows ?? []).length > 0) {
+      setSaving(false)
+      setError('この日のモニタリング予定は、全体スケジュールなどでもう入っています。画面を読みこみ直してください')
+      startTransition(() => router.refresh())
+      return
+    }
+    const { error: insertError } = await supabase.from('schedule_events').insert({
       facility_id: facilityId,
       child_id: childId,
       title: 'モニタリング',
@@ -58,14 +85,23 @@ export function MonitoringScheduleSection({ childId, facilityId, schedules, read
       note: form.note || null,
     })
     setSaving(false)
+    if (insertError) {
+      // 失敗したらフォームを閉じずに知らせる
+      setError('保存できませんでした。もう一度押してください')
+      return
+    }
     setShowForm(false)
-    setForm({ event_date: localDateStr(new Date()), start_time: '', end_time: '', note: '' })
+    setForm({ event_date: '', start_time: '', end_time: '', note: '' })
     startTransition(() => router.refresh())
   }
 
   async function handleDelete(id: string) {
     if (!confirm('このモニタリング予定を削除しますか？')) return
-    await supabase.from('schedule_events').delete().eq('id', id)
+    const { error: deleteError } = await supabase.from('schedule_events').delete().eq('id', id)
+    if (deleteError) {
+      alert('削除できませんでした。もう一度試してください')
+      return
+    }
     startTransition(() => router.refresh())
   }
 
@@ -105,6 +141,9 @@ export function MonitoringScheduleSection({ childId, facilityId, schedules, read
                 onChange={(e) => setForm({ ...form, event_date: e.target.value })}
                 className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
               />
+              {form.event_date && (
+                <p className="text-xs text-gray-600 mt-1">{formatDate(form.event_date)}</p>
+              )}
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">開始時刻（任意）</label>
@@ -135,10 +174,24 @@ export function MonitoringScheduleSection({ childId, facilityId, schedules, read
               />
             </div>
           </div>
+          {sameDay && (
+            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              この日のモニタリング予定はもう入っています。二重にならないよう、ここでは保存できません。
+            </p>
+          )}
+          {!sameDay && form.event_date && otherUpcoming.length > 0 && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {otherUpcoming.map((s) => formatDate(s.event_date)).join('・')} のモニタリング予定もあります。まちがいでなければ、このまま保存できます。
+            </p>
+          )}
+          <p className="text-xs text-gray-500">ここで入れた予定は、全体スケジュールとスタッフの LINE（会議・予定）にも出ます。</p>
+          {error && (
+            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
           <div className="flex gap-2">
             <button
               onClick={() => void handleSave()}
-              disabled={saving || !form.event_date}
+              disabled={saving || !form.event_date || sameDay}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
             >
               <Check className="h-3.5 w-3.5" />
