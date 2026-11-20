@@ -8,6 +8,8 @@ import { getTodayJST } from '@/lib/utils'
 import { EVENT_TYPES, EVENT_TYPE_INFO, eventTypeInfo, eventTimeLabel } from '@/lib/schedule-events'
 import type { CalendarEvent, ChildOption, FacilityDay, StaffOption } from './schedule-events-types'
 import { ScheduleEventForm } from './schedule-event-form'
+import { DayUsersList } from './day-users-list'
+import type { DayUser } from '@/lib/day-users'
 import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, MapPin, Users, User, Loader2 } from 'lucide-react'
 
 /**
@@ -35,9 +37,10 @@ type Props = {
   childOptions: ChildOption[]
   staffOptions: StaffOption[]
   canEdit: boolean
+  dayUsers: { users: DayUser[]; absent: DayUser[] } | null
 }
 
-export function ScheduleEventsPanel({ date, events, facilityDays, childOptions, staffOptions, canEdit }: Props) {
+export function ScheduleEventsPanel({ date, events, facilityDays, childOptions, staffOptions, canEdit, dayUsers }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const today = getTodayJST()
@@ -285,6 +288,26 @@ export function ScheduleEventsPanel({ date, events, facilityDays, childOptions, 
                 </div>
               )
             })
+          )}
+        </div>
+      </div>
+
+      {/* 選んだ日の利用者 */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <h2 className="font-bold text-gray-900">
+            {withDow(date)}の利用者
+            {dayUsers && <span className="ml-2 text-sm font-semibold text-indigo-600">{dayUsers.users.length}名</span>}
+          </h2>
+          <Link href={`/attendance?date=${date}`} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
+            出席管理で開く
+          </Link>
+        </div>
+        <div className="p-3">
+          {dayUsers ? (
+            <DayUsersList users={dayUsers.users} absent={dayUsers.absent} variant="pc" />
+          ) : (
+            <p className="text-sm text-red-500 px-1 py-2">利用者を読みこめませんでした。画面を読みこみ直してください</p>
           )}
         </div>
       </div>
