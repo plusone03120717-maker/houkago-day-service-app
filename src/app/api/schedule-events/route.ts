@@ -101,6 +101,25 @@ export async function POST(req: NextRequest) {
     const problem = validateEventInput(v) ?? (await checkRefs(v))
     if (problem) return NextResponse.json({ error: problem }, { status: 400 })
 
+    // 同じ子・同じ日のモニタリングは1つだけ（児童管理 → モニタリングの「モニタリング予定」と同じ表なので、二重に入れない）
+    if (v.event_type === 'monitoring' && v.child_id) {
+      let dup = adminClient
+        .from('schedule_events')
+        .select('id')
+        .eq('event_type', 'monitoring')
+        .eq('child_id', v.child_id)
+        .eq('event_date', v.event_date)
+      if (body.action === 'update') dup = dup.neq('id', body.id)
+      const { data: dupRows, error: dupError } = await dup.limit(1)
+      if (dupError) throw dupError
+      if ((dupRows ?? []).length > 0) {
+        return NextResponse.json(
+          { error: 'この子のモニタリングは、その日にもう入っています（児童管理のモニタリング予定と同じものです）。入っている予定を直してください' },
+          { status: 409 },
+        )
+      }
+    }
+
     const row = {
       event_type: v.event_type,
       title: v.title,

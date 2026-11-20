@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { getTodayJST } from '@/lib/utils'
@@ -258,6 +259,11 @@ export function ScheduleEventsPanel({ date, events, facilityDays, childOptions, 
                         </span>
                       </div>
                       {e.note && <p className="text-xs text-gray-500 whitespace-pre-wrap">{e.note}</p>}
+                      {e.event_type === 'monitoring' && e.child_id && (
+                        <Link href={`/support-plans/${e.child_id}/monitoring`} className="inline-block text-xs text-emerald-700 hover:underline">
+                          この子のモニタリングを開く（児童管理と同じ予定です）
+                        </Link>
+                      )}
                     </div>
                     {canEdit && (
                       <div className="flex gap-1 shrink-0">

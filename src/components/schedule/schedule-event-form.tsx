@@ -33,6 +33,10 @@ function shortDate(dateStr: string): string {
   return `${m}/${d}`
 }
 
+function isMonitoringType(t: EventType | null): boolean {
+  return t === 'monitoring'
+}
+
 function daysBetween(from: string, to: string): number {
   const a = new Date(from + 'T00:00:00').getTime()
   const b = new Date(to + 'T00:00:00').getTime()
@@ -109,6 +113,29 @@ export function ScheduleEventForm({ editing, initialDate, childOptions, staffOpt
   const isMonitoring = type === 'monitoring'
   const effectiveTitle = isMonitoring ? 'モニタリング' : title
 
+  // 選んだ子のモニタリング予定（児童管理 → モニタリングの「モニタリング予定」と同じデータ）。二重に入れないために読む
+  const [childMonitoring, setChildMonitoring] = useState<{ childId: string; list: { id: string; event_date: string }[] } | null>(null)
+  useEffect(() => {
+    if (type !== 'monitoring' || !childId) return
+    let cancelled = false
+    createClient()
+      .from('schedule_events')
+      .select('id, event_date')
+      .eq('child_id', childId)
+      .eq('event_type', 'monitoring')
+      .gte('event_date', today)
+      .order('event_date')
+      .then(({ data }) => {
+        if (!cancelled) setChildMonitoring({ childId, list: (data ?? []) as { id: string; event_date: string }[] })
+      })
+    return () => { cancelled = true }
+  }, [type, childId, today])
+  const otherMonitoring =
+    isMonitoringType(type) && childMonitoring?.childId === childId
+      ? childMonitoring.list.filter((m) => m.id !== editing?.id)
+      : []
+  const sameDayMonitoring = otherMonitoring.find((m) => m.event_date === date) ?? null
+
   // モニタリングは見直し日が近い子から
   const childChoices = useMemo(() => {
     if (!isMonitoring) return childOptions
@@ -130,7 +157,7 @@ export function ScheduleEventForm({ editing, initialDate, childOptions, staffOpt
     if (holiday) warnings.push(`祝日（${holiday}）です`)
     if (dayInfo?.date === date) {
       if (dayInfo.closed) warnings.push(`施設カレンダーで休業日（${dayInfo.closed}）です`)
-      if (childId && dayInfo.childEvents.some((e) => e.child_id === childId && e.id !== editing?.id)) {
+      if (childId && !sameDayMonitoring && dayInfo.childEvents.some((e) => e.child_id === childId && e.id !== editing?.id)) {
         warnings.push(`同じ日に ${childName ?? 'この子'} の予定がもうあります`)
       }
       if (staffMode === 'some') {
@@ -140,6 +167,10 @@ export function ScheduleEventForm({ editing, initialDate, childOptions, staffOpt
     }
   }
   if (isMonitoring && childId) {
+    const others = otherMonitoring.filter((m) => m.event_date !== date)
+    if (others.length > 0) {
+      warnings.push(`${childName ?? 'この子'} には ${others.map((m) => withDow(m.event_date)).join('・')} のモニタリング予定もあります（児童管理のモニタリング予定と同じものです）`)
+    }
     const rd = childOptions.find((c) => c.id === childId)?.reviewDate
     if (rd && date && date > rd) warnings.push(`見直し日（${shortDate(rd)}）より後の日です`)
   }
@@ -156,7 +187,12 @@ export function ScheduleEventForm({ editing, initialDate, childOptions, staffOpt
     child_id: childId || null,
     staff_user_ids: staffMode === 'some' ? Array.from(staffIds) : [],
   }
-  const problem = validateEventInput(input) ?? (staffMode === 'some' && staffIds.size === 0 ? '参加スタッフを選ぶか「全員」にしてください' : null)
+  const problem =
+    validateEventInput(input) ??
+    (sameDayMonitoring
+      ? `${childName ?? 'この子'} のモニタリングは ${withDow(sameDayMonitoring.event_date)} にもう入っています。入っている予定を「直す」で直してください`
+      : null) ??
+    (staffMode === 'some' && staffIds.size === 0 ? '参加スタッフを選ぶか「全員」にしてください' : null)
 
   function chooseType(t: EventType) {
     setType(t)
@@ -357,6 +393,13 @@ export function ScheduleEventForm({ editing, initialDate, childOptions, staffOpt
                     <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="持ち物・連絡など" maxLength={1000} className={inputClass} />
                   </div>
                 </div>
+
+                {sameDayMonitoring && (
+                  <p className="flex items-start gap-1.5 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                    {childName ?? 'この子'} のモニタリングは {withDow(sameDayMonitoring.event_date)} にもう入っています（児童管理のモニタリング予定と同じものです）。二重にならないよう、ここでは保存できません。入っている予定を「直す」で直してください。
+                  </p>
+                )}
 
                 {warnings.length > 0 && (
                   <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 space-y-1">
