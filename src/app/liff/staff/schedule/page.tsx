@@ -9,6 +9,7 @@ import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanes
 import { formatDuration } from '@/lib/work-time'
 import { TransportTab } from './transport-tab'
 import { EventsTab } from './events-tab'
+import { DayUsersSection } from './day-users-section'
 import { eventTypeInfo } from '@/lib/schedule-events'
 import {
   Loader2, AlertCircle, ChevronLeft, ChevronRight, Clock, Car, CalendarDays,
@@ -900,6 +901,9 @@ export default function StaffSchedulePage() {
         {!hasAnything && (
           <p className="text-center text-xs text-gray-400 pt-2">この日の予定は登録されていません</p>
         )}
+
+        {/* その日の利用者（自分の送迎や予定がない日も出す） */}
+        {accessToken && <DayUsersSection accessToken={accessToken} date={date} reloadKey={reloadKey} />}
 
         {/* 申請ページへ（表示中の日付をそのまま開く） */}
         <Link
