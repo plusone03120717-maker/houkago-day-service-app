@@ -8,6 +8,8 @@ import { DateNav } from '@/components/ui/date-nav'
 import { formatDate, getTodayJST } from '@/lib/utils'
 import { ChevronDown, ChevronUp, User, Car, Clock, ArrowRight } from 'lucide-react'
 import type { StaffMember, StaffShift, TransportAttendance } from '@/app/(dashboard)/schedule/page'
+import type { CalendarEvent, ChildOption, FacilityDay, StaffOption } from './schedule-events-types'
+import { ScheduleEventsPanel } from './schedule-events-panel'
 
 const SHIFT_LABELS: Record<string, { label: string; color: string }> = {
   full:      { label: '全日', color: 'bg-indigo-100 text-indigo-700' },
@@ -23,6 +25,12 @@ interface Props {
   shifts: StaffShift[]
   attendance: TransportAttendance[]
   vehicles: { id: string; name: string }[]
+  events: CalendarEvent[]
+  facilityDays: FacilityDay[]
+  childOptions: ChildOption[]
+  staffOptions: StaffOption[]
+  /** 予定を足す・直す・消すことができる（システム管理者） */
+  canEdit: boolean
 }
 
 type TransportItem = {
@@ -99,7 +107,9 @@ function fmtTime(t: string | null): string {
   return t ? t.slice(0, 5) : '—'
 }
 
-export function StaffScheduleBoard({ date, staffMembers, shifts, attendance, vehicles }: Props) {
+export function StaffScheduleBoard({
+  date, staffMembers, shifts, attendance, vehicles, events, facilityDays, childOptions, staffOptions, canEdit,
+}: Props) {
   const router = useRouter()
   const today = getTodayJST()
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -117,9 +127,23 @@ export function StaffScheduleBoard({ date, staffMembers, shifts, attendance, veh
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">スタッフスケジュール</h1>
-        <p className="text-sm text-gray-500 mt-0.5">スタッフごとのシフトと送迎担当を確認</p>
+        <h1 className="text-2xl font-bold text-gray-900">全体スケジュール</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          会議・モニタリング・行事などの予定と、スタッフごとのシフト・送迎担当
+          {!canEdit && '（予定を書きこめるのはシステム管理者です）'}
+        </p>
       </div>
+
+      <ScheduleEventsPanel
+        date={date}
+        events={events}
+        facilityDays={facilityDays}
+        childOptions={childOptions}
+        staffOptions={staffOptions}
+        canEdit={canEdit}
+      />
+
+      <h2 className="font-bold text-gray-900 pt-2">この日のスタッフ（シフト・送迎）</h2>
 
       <div className="flex items-center gap-3">
         <DateNav

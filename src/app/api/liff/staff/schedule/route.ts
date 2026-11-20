@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
       // 予定・行事
       adminClient
         .from('schedule_events')
-        .select('id, title, event_type, start_time, end_time, all_day, note, child_id')
+        .select('id, title, event_type, start_time, end_time, all_day, location, note, child_id')
         .eq('event_date', date)
         .order('start_time', { nullsFirst: true }),
 
@@ -199,6 +199,7 @@ export async function POST(req: NextRequest) {
       start_time: string | null
       end_time: string | null
       all_day: boolean
+      location: string | null
       note: string | null
       child_id: string | null
     }
@@ -272,6 +273,7 @@ export async function POST(req: NextRequest) {
           startTime: e.start_time ? e.start_time.slice(0, 5) : null,
           endTime: e.end_time ? e.end_time.slice(0, 5) : null,
           allDay: e.all_day,
+          location: e.location,
           note: e.note,
           childNames,
           assigned: assignedEventIds.has(e.id),

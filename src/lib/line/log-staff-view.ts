@@ -7,7 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export async function logStaffView(
   adminClient: SupabaseClient,
   staffMemberId: string,
-  page: 'staff-schedule' | 'staff-schedule-month' | 'staff-transport',
+  page: 'staff-schedule' | 'staff-schedule-month' | 'staff-transport' | 'staff-events',
   targetDate: string | null,
 ): Promise<void> {
   try {

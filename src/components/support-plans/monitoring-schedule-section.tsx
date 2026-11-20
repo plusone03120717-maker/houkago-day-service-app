@@ -32,8 +32,10 @@ export function MonitoringScheduleSection({ childId, facilityId, schedules, read
 
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // 日付は空から始める（「今日」が入ったままだと、変え忘れて今日の予定になる）
   const [form, setForm] = useState({
-    event_date: localDateStr(new Date()),
+    event_date: '',
     start_time: '',
     end_time: '',
     note: '',
@@ -45,8 +47,13 @@ export function MonitoringScheduleSection({ childId, facilityId, schedules, read
 
   async function handleSave() {
     if (!form.event_date) return
+    if (form.start_time && form.end_time && form.end_time <= form.start_time) {
+      setError('終了は開始よりあとの時刻にしてください')
+      return
+    }
     setSaving(true)
-    await supabase.from('schedule_events').insert({
+    setError(null)
+    const { error: insertError } = await supabase.from('schedule_events').insert({
       facility_id: facilityId,
       child_id: childId,
       title: 'モニタリング',
@@ -58,14 +65,23 @@ export function MonitoringScheduleSection({ childId, facilityId, schedules, read
       note: form.note || null,
     })
     setSaving(false)
+    if (insertError) {
+      // 失敗したらフォームを閉じずに知らせる
+      setError('保存できませんでした。もう一度押してください')
+      return
+    }
     setShowForm(false)
-    setForm({ event_date: localDateStr(new Date()), start_time: '', end_time: '', note: '' })
+    setForm({ event_date: '', start_time: '', end_time: '', note: '' })
     startTransition(() => router.refresh())
   }
 
   async function handleDelete(id: string) {
     if (!confirm('このモニタリング予定を削除しますか？')) return
-    await supabase.from('schedule_events').delete().eq('id', id)
+    const { error: deleteError } = await supabase.from('schedule_events').delete().eq('id', id)
+    if (deleteError) {
+      alert('削除できませんでした。もう一度試してください')
+      return
+    }
     startTransition(() => router.refresh())
   }
 
@@ -105,6 +121,9 @@ export function MonitoringScheduleSection({ childId, facilityId, schedules, read
                 onChange={(e) => setForm({ ...form, event_date: e.target.value })}
                 className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
               />
+              {form.event_date && (
+                <p className="text-xs text-gray-600 mt-1">{formatDate(form.event_date)}</p>
+              )}
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">開始時刻（任意）</label>
@@ -135,6 +154,9 @@ export function MonitoringScheduleSection({ childId, facilityId, schedules, read
               />
             </div>
           </div>
+          {error && (
+            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
           <div className="flex gap-2">
             <button
               onClick={() => void handleSave()}
