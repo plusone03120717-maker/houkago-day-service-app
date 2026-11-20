@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, MapPin, User, Users, CalendarDays, ChevronLeft, ChevronRight, List } from 'lucide-react'
 import { getJapaneseHolidayName } from '@/lib/japanese-holidays'
 import { EVENT_TYPES, EVENT_TYPE_INFO, eventTypeInfo, eventTimeLabel, type EventType } from '@/lib/schedule-events'
-import type { DayUser } from '@/lib/day-users'
-import { DayUsersList } from '@/components/schedule/day-users-list'
+import { DayUsersSection } from './day-users-section'
 
 /**
  * スタッフ LINE の「会議・予定」タブ（見るだけ）。全員分の予定を出し、自分が参加に入っている予定には「参加」の札を付ける。
@@ -33,10 +32,6 @@ type EventItem = {
 type Result =
   | { key: string; kind: 'ok'; events: EventItem[]; to: string }
   | { key: string; kind: 'error'; message: string }
-
-type DayUsersResult =
-  | { key: string; kind: 'ok'; users: DayUser[]; absent: DayUser[] }
-  | { key: string; kind: 'error' }
 
 type Filter = 'all' | 'mine' | EventType
 type View = 'calendar' | 'list'
@@ -88,10 +83,6 @@ export function EventsTab({ accessToken, today, reloadKey }: { accessToken: stri
   const [days, setDays] = useState(STEP_DAYS)
   const [filter, setFilter] = useState<Filter>('all')
   const [result, setResult] = useState<Result | null>(null)
-  // カレンダーで選んだ日の利用者
-  const [dayUsers, setDayUsers] = useState<DayUsersResult | null>(null)
-  const dayUsersKey = `${selected}#${reloadKey}`
-  const dayUsersLoading = dayUsers?.key !== dayUsersKey
 
   const chooseView = (next: View) => {
     setView(next)
@@ -130,29 +121,6 @@ export function EventsTab({ accessToken, today, reloadKey }: { accessToken: stri
       })
     return () => { cancelled = true }
   }, [accessToken, from, span, requestKey])
-
-  useEffect(() => {
-    if (view !== 'calendar') return
-    let cancelled = false
-    fetch('/api/liff/staff/schedule/day-users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accessToken, date: selected }),
-    })
-      .then(async (r) => {
-        const json = await r.json() as { users?: DayUser[]; absent?: DayUser[] }
-        if (cancelled) return
-        setDayUsers(
-          r.ok
-            ? { key: dayUsersKey, kind: 'ok', users: json.users ?? [], absent: json.absent ?? [] }
-            : { key: dayUsersKey, kind: 'error' },
-        )
-      })
-      .catch(() => {
-        if (!cancelled) setDayUsers({ key: dayUsersKey, kind: 'error' })
-      })
-    return () => { cancelled = true }
-  }, [accessToken, selected, view, dayUsersKey])
 
   const shiftMonth = (diff: number) => {
     const dt = new Date(cal.year, cal.month - 1 + diff, 1)
@@ -307,26 +275,7 @@ export function EventsTab({ accessToken, today, reloadKey }: { accessToken: stri
           </div>
 
           {/* 選んだ日の利用者 */}
-          <div>
-            <p className="text-xs font-bold mb-1.5 px-1 text-gray-500 flex items-center gap-1.5">
-              <User className="h-3.5 w-3.5" />
-              この日の利用者
-              {dayUsers?.kind === 'ok' && !dayUsersLoading && (
-                <span className="text-indigo-600">{dayUsers.users.length}名</span>
-              )}
-            </p>
-            <div className={`bg-white rounded-2xl shadow-sm px-3 py-3 transition-opacity ${dayUsersLoading && dayUsers ? 'opacity-60' : ''}`}>
-              {!dayUsers || (dayUsersLoading && dayUsers.key.split('#')[0] !== selected) ? (
-                <div className="flex items-center justify-center py-4">
-                  <Loader2 className="h-5 w-5 animate-spin text-indigo-400" />
-                </div>
-              ) : dayUsers.kind === 'error' ? (
-                <p className="text-sm text-red-500 text-center py-2">利用者を取得できませんでした</p>
-              ) : (
-                <DayUsersList users={dayUsers.users} absent={dayUsers.absent} variant="liff" />
-              )}
-            </div>
-          </div>
+          <DayUsersSection accessToken={accessToken} date={selected} reloadKey={reloadKey} />
         </>
       ) : !result ? (
         <div className="flex items-center justify-center py-16">
