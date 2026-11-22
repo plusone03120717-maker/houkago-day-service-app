@@ -201,6 +201,89 @@ export function attendanceToAssignment(
   }
 }
 
+/**
+ * いまの割り振り（区分は施設が決めたもの）に、保護者が希望した時刻を当てはめる。
+ *
+ * 予定の変更の連絡で、いまの予定の時刻を初期値にしたままだと、
+ * そのまま承認したとき希望が反映されず元の時刻が残る（2026-10 に実際に起きた）。
+ * 区分は施設が決めたものを引き継ぎ、時刻だけ希望に替える。
+ *
+ * 'both' は、いまの切りかえ時刻がご希望の時間の中にあれば、それを残して
+ * 先のサービスの開始と後のサービスの終了だけを希望に替える
+ * （11/5 森田歩くん：希望 14:30〜17:30 → 15:10〜17:45 のまま承認された）。
+ *
+ * いまの切りかえ時刻がご希望の時間の外にあるときは、その日の切りかえの既定
+ * （daySwitch：学校のある日 16:30・休みの日 16:00）で分け直す。
+ * それでも分けられない（希望がまるごと切りかえの前・後にある）ときは、
+ * 切りかえの前なら放デイだけ、後なら日中一時だけにする。
+ * 以前はここで何もせず元の時刻を残していたため、いつもは平日の形（15:10〜・16:30 切りかえ）の子の
+ * 祝日の 10:00〜16:00 の連絡が、元の時刻のまま承認された（2026-11-22 幡野奏向くん 11/23）。
+ */
+export function fitRequestedTimes(
+  a: ServiceAssignment,
+  requestedStart: string | null,
+  requestedEnd: string | null,
+  daySwitch?: string | null
+): ServiceAssignment {
+  const start = toHhmm(requestedStart)
+  const end = toHhmm(requestedEnd)
+  if (a.serviceType === 'daytime_support') {
+    return { ...a, daytimeStartTime: start ?? a.daytimeStartTime, daytimeEndTime: end ?? a.daytimeEndTime }
+  }
+  if (a.serviceType === 'regular') {
+    return { ...a, serviceStartTime: start ?? a.serviceStartTime, serviceEndTime: end ?? a.serviceEndTime }
+  }
+  if (!a.serviceStartTime || !a.serviceEndTime || !a.daytimeStartTime || !a.daytimeEndTime) return a
+  const basicFirst = a.serviceStartTime <= a.daytimeStartTime
+  const currentSwitch = basicFirst ? a.serviceEndTime : a.daytimeEndTime
+  const newStart = start ?? (basicFirst ? a.serviceStartTime : a.daytimeStartTime)
+  const newEnd = end ?? (basicFirst ? a.daytimeEndTime : a.serviceEndTime)
+  if (!(newStart < newEnd)) return a
+
+  const splitAt = (sw: string): ServiceAssignment =>
+    basicFirst
+      ? { ...a, serviceStartTime: newStart, serviceEndTime: sw, daytimeStartTime: sw, daytimeEndTime: newEnd }
+      : { ...a, daytimeStartTime: newStart, daytimeEndTime: sw, serviceStartTime: sw, serviceEndTime: newEnd }
+  const inside = (sw: string): boolean => newStart < sw && sw < newEnd
+  if (inside(currentSwitch)) return splitAt(currentSwitch)
+  const sw = toHhmm(daySwitch) ?? currentSwitch
+  if (inside(sw)) return splitAt(sw)
+
+  // 希望の時間がまるごと切りかえの前か後ろにある。前にあるのは先のサービスだけ
+  const onFirstSide = newEnd <= sw
+  const basicOnly = onFirstSide === basicFirst
+  return basicOnly
+    ? { ...a, serviceType: 'regular', serviceStartTime: newStart, serviceEndTime: newEnd, daytimeStartTime: null, daytimeEndTime: null }
+    : { ...a, serviceType: 'daytime_support', serviceStartTime: null, serviceEndTime: null, daytimeStartTime: newStart, daytimeEndTime: newEnd }
+}
+
+/**
+ * 承認しようとしている割り振りが、保護者の希望の時間とずれているか。
+ *
+ * お迎えがある日は、記録の利用開始が希望（学校に着く時刻）の10分後になるので、
+ * 希望どおり・10分後のどちらでも「ずれていない」とする。
+ * 希望の時間が無い連絡は比べられないので false。
+ */
+export function differsFromRequest(
+  a: ServiceAssignment,
+  requestedStart: string | null,
+  requestedEnd: string | null,
+  usesPickup: boolean,
+  shiftStart: (t: string) => string
+): boolean {
+  const start = toHhmm(requestedStart)
+  const end = toHhmm(requestedEnd)
+  if (!start && !end) return false
+  const starts = [a.serviceStartTime, a.daytimeStartTime].filter((t): t is string => !!t).sort()
+  const ends = [a.serviceEndTime, a.daytimeEndTime].filter((t): t is string => !!t).sort()
+  if (start) {
+    const ok = starts[0] === start || (usesPickup && starts[0] === shiftStart(start))
+    if (!ok) return true
+  }
+  if (end && ends[ends.length - 1] !== end) return true
+  return false
+}
+
 /** いつもの予定（利用計画・曜日ごとの設定・特定日の変更）から決まる、その日の時間 */
 export type PlannedTimes = {
   serviceStartTime: string | null

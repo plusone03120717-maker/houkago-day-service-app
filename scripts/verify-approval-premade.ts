@@ -4,7 +4,15 @@
  *   npm run verify:approval-premade
  */
 import assert from 'node:assert/strict'
-import { isPremadeFromPlan, type AttendanceAssignmentSource, type PlannedTimes } from '../src/lib/parent-contact-service'
+import {
+  isPremadeFromPlan,
+  fitRequestedTimes,
+  differsFromRequest,
+  type AttendanceAssignmentSource,
+  type PlannedTimes,
+  type ServiceAssignment,
+} from '../src/lib/parent-contact-service'
+import { serviceStartFromPickupArrival } from '../src/lib/transport-timing'
 
 let passed = 0
 function check(name: string, fn: () => void) {
@@ -54,6 +62,70 @@ check('日中一時を使わない日は、日中一時の時間を比べない'
 check('記録かいつもの予定のどちらかが無ければ「前もって作られた」とはみなさない', () => {
   assert.equal(isPremadeFromPlan(null, plan), false)
   assert.equal(isPremadeFromPlan(att(), undefined), false)
+})
+
+// ── ご希望の時刻の当てはめ（fitRequestedTimes）と、承認前の確認（differsFromRequest） ──
+const weekday: ServiceAssignment = {
+  serviceType: 'both',
+  serviceStartTime: '15:10',
+  serviceEndTime: '16:30',
+  daytimeStartTime: '16:30',
+  daytimeEndTime: '17:00',
+}
+
+check('祝日の 10:00〜16:00 は、休みの日の切りかえ 16:00 より前なので放デイだけにする（2026-11-22 幡野さん 11/23）', () => {
+  assert.deepEqual(fitRequestedTimes(weekday, '10:00:00', '16:00:00', '16:00'), {
+    serviceType: 'regular',
+    serviceStartTime: '10:00',
+    serviceEndTime: '16:00',
+    daytimeStartTime: null,
+    daytimeEndTime: null,
+  })
+})
+
+check('いまの切りかえ（16:30）がご希望の中にあれば、それで分ける（11/5 森田さんの形）', () => {
+  assert.deepEqual(fitRequestedTimes(weekday, '14:30:00', '17:30:00', '16:30'), {
+    ...weekday,
+    serviceStartTime: '14:30',
+    daytimeEndTime: '17:30',
+  })
+})
+
+check('いまの切りかえが外にあっても、その日の既定の切りかえが中にあれば、そこで分ける', () => {
+  assert.deepEqual(fitRequestedTimes(weekday, '10:00:00', '16:20:00', '16:00'), {
+    ...weekday,
+    serviceStartTime: '10:00',
+    serviceEndTime: '16:00',
+    daytimeStartTime: '16:00',
+    daytimeEndTime: '16:20',
+  })
+})
+
+check('ご希望がまるごと切りかえの後ろなら、日中一時だけにする', () => {
+  const a = fitRequestedTimes(weekday, '16:40:00', '18:00:00', '16:30')
+  assert.equal(a.serviceType, 'daytime_support')
+  assert.equal(a.daytimeStartTime, '16:40')
+  assert.equal(a.daytimeEndTime, '18:00')
+})
+
+check('放デイだけの日は時刻だけ替える（今までどおり）', () => {
+  const regular: ServiceAssignment = { serviceType: 'regular', serviceStartTime: '15:10', serviceEndTime: '17:00', daytimeStartTime: null, daytimeEndTime: null }
+  assert.deepEqual(fitRequestedTimes(regular, '10:00:00', '16:00:00', '16:00'), { ...regular, serviceStartTime: '10:00', serviceEndTime: '16:00' })
+})
+
+check('ご希望と違う時間（いまの予定のまま）で承認しようとしたら「ずれている」', () => {
+  assert.equal(differsFromRequest(weekday, '10:00:00', '16:00:00', true, serviceStartFromPickupArrival), true)
+})
+
+check('ご希望どおり・お迎えの10分後の開始なら「ずれていない」', () => {
+  const ok: ServiceAssignment = { serviceType: 'regular', serviceStartTime: '10:00', serviceEndTime: '16:00', daytimeStartTime: null, daytimeEndTime: null }
+  assert.equal(differsFromRequest(ok, '10:00:00', '16:00:00', true, serviceStartFromPickupArrival), false)
+  assert.equal(differsFromRequest({ ...ok, serviceStartTime: '10:10' }, '10:00:00', '16:00:00', true, serviceStartFromPickupArrival), false)
+  assert.equal(differsFromRequest({ ...ok, serviceStartTime: '10:10' }, '10:00:00', '16:00:00', false, serviceStartFromPickupArrival), true)
+})
+
+check('ご希望の時間が無い連絡は比べない', () => {
+  assert.equal(differsFromRequest(weekday, null, null, true, serviceStartFromPickupArrival), false)
 })
 
 console.log(`\nすべて通りました（${passed}件）`)

@@ -24,6 +24,8 @@ import {
   defaultAssignment,
   validateAssignment,
   describeAssignment,
+  fitRequestedTimes,
+  differsFromRequest,
   SERVICE_ASSIGNMENT_TYPES,
   SERVICE_ASSIGNMENT_LABELS,
   SERVICE_ASSIGNMENT_BADGE,
@@ -131,35 +133,17 @@ function planChange(c: Contact, current: CurrentPlan | undefined) {
 }
 
 /**
- * いまの予定の割り振りに、保護者が希望した時刻を当てはめる。
- *
- * 予定の変更の連絡で、いまの予定の時刻を初期値にしたままだと、
- * そのまま承認したとき希望が反映されず元の時刻が残る（2026-10 に実際に起きた）。
- * 区分は施設が決めたものを引き継ぎ、時刻だけ希望に替える。
- *
- * 'both' は切り替え時刻を施設が決めるものなので、切り替え時刻はいまのまま残し、
- * 先のサービスの開始と後のサービスの終了だけを希望に替える
- * （11/5 森田歩くん：希望 14:30〜17:30 → 15:10〜17:45 のまま承認された）。
- * 切り替え時刻が希望の時間の外に出てしまう場合は、どう分けるかを決められないので触らない。
+ * いまの予定の割り振りに、保護者が希望した時刻を当てはめる（@/lib/parent-contact-service の fitRequestedTimes）。
+ * daySwitch はその日の切りかえの既定（学校のある日 16:30・休みの日 16:00）。
  */
-function withRequestedTimes(c: Contact, a: ServiceAssignment): ServiceAssignment {
-  const start = fmtTime(c.service_start_time)
-  const end = fmtTime(c.service_end_time)
-  if (a.serviceType === 'daytime_support') {
-    return { ...a, daytimeStartTime: start ?? a.daytimeStartTime, daytimeEndTime: end ?? a.daytimeEndTime }
-  }
-  if (a.serviceType === 'regular') {
-    return { ...a, serviceStartTime: start ?? a.serviceStartTime, serviceEndTime: end ?? a.serviceEndTime }
-  }
-  if (!a.serviceStartTime || !a.serviceEndTime || !a.daytimeStartTime || !a.daytimeEndTime) return a
-  const basicFirst = a.serviceStartTime <= a.daytimeStartTime
-  const switchTime = basicFirst ? a.serviceEndTime : a.daytimeEndTime
-  const newStart = start ?? (basicFirst ? a.serviceStartTime : a.daytimeStartTime)
-  const newEnd = end ?? (basicFirst ? a.daytimeEndTime : a.serviceEndTime)
-  if (!(newStart < switchTime && switchTime < newEnd)) return a
-  return basicFirst
-    ? { ...a, serviceStartTime: newStart, daytimeEndTime: newEnd }
-    : { ...a, daytimeStartTime: newStart, serviceEndTime: newEnd }
+function withRequestedTimes(c: Contact, a: ServiceAssignment, daySwitch?: string | null): ServiceAssignment {
+  return fitRequestedTimes(a, c.service_start_time, c.service_end_time, daySwitch)
+}
+
+/** 承認しようとしている時間が、保護者の希望とずれているか */
+function assignmentDiffersFromRequest(c: Contact, a: ServiceAssignment): boolean {
+  const usesPickup = c.transport_type === 'pickup_only' || c.transport_type === 'both'
+  return differsFromRequest(a, c.service_start_time, c.service_end_time, usesPickup, serviceStartFromPickupArrival)
 }
 
 /** 割り振りの時刻が同じか（区分の時間だけを比べる） */
@@ -690,9 +674,16 @@ function ContactCard({
             {/* 予定の変更は、ご希望の時刻が最初から入っている（withRequestedTimes）。
                 希望を受けずにいまの時間のまま承認したいときは1タップで戻せるようにする */}
             {change?.changed && (() => {
-              const requested = withRequestedTimes(c, assignment)
+              const requested = withRequestedTimes(c, assignment, switchTime)
               const usingRequested = sameTimes(assignment, requested)
-              const keep = planned && planned.serviceType === assignment.serviceType ? planned : undefined
+              // ご希望を当てはめて区分が変わった（両方 → 放デイだけ など）ときも、いまの予定へ戻せるようにする
+              const fromPlanned = planned ? withRequestedTimes(c, planned, switchTime) : undefined
+              const keep =
+                planned &&
+                (planned.serviceType === assignment.serviceType ||
+                  (fromPlanned && fromPlanned.serviceType === assignment.serviceType && sameTimes(fromPlanned, assignment)))
+                  ? planned
+                  : undefined
               // 放デイ＋日中一時で、いまの切り替え時刻がご希望の時間の外にある日は
               // 自動では分けられない。黙っているとそのまま承認されてしまうので知らせる
               if (assignment.serviceType === 'both' && keep && sameTimes(keep, requested)) {
@@ -853,7 +844,9 @@ export function ParentContactsBoard({
   const assignmentOf = (c: Contact): ServiceAssignment => {
     const planned = initialAssignments[c.id]
     const initial =
-      planned && planChange(c, currentPlans[c.id])?.changed ? withRequestedTimes(c, planned) : planned
+      planned && planChange(c, currentPlans[c.id])?.changed
+        ? withRequestedTimes(c, planned, switchTimes[c.id])
+        : planned
     const a = assignments[c.id] ?? initial ?? usualAssignments[c.id] ?? resolveAssignment(c)
     const english = englishChoices[c.child_id]
     if (!english || a.unitId !== undefined) return a
@@ -1035,6 +1028,19 @@ export function ParentContactsBoard({
           ...new Set([...prev, `${name}さん ${formatDateLabel(target.date)}：${invalid}`]),
         ])
         return
+      }
+      // ご希望と違う時間で承認するときは、押す前に1回だけ聞く（2026-11-22 幡野奏向くん 11/23：
+      // ご希望 10:00〜16:00 が、いまの予定の 15:10〜 のまま承認された）。
+      // まとめて承認（forced）は、まとめる前の確認で済ませる
+      if (!forced && assignmentDiffersFromRequest(target, assignment)) {
+        const name = target.children?.name ?? '不明'
+        const wish = `${fmtTime(target.service_start_time) ?? '—'}〜${fmtTime(target.service_end_time) ?? '—'}`
+        const ok = window.confirm(
+          `${name}さん ${formatDateLabel(target.date)}\n\n` +
+          `ご希望は ${wish} ですが、承認する時間は「${describeAssignment(assignment)}」です。\n` +
+          `ご希望の時間は予定に入りません。このまま承認しますか？`
+        )
+        if (!ok) return
       }
     }
 
