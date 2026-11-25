@@ -24,6 +24,7 @@ import { formatDate, getTodayJST } from '@/lib/utils'
 import { ALL_UNITS, unitChildKey } from '@/lib/attendance-board-data'
 import { transportTimeOf, shiftTime } from '@/lib/schedule-defaults'
 import { deleteUsageDay, ABSENT_CLEARED_FIELDS } from '@/lib/usage-day'
+import { absentToAttendedMessage, isAttendedWithoutTime } from '@/lib/attendance-safeguards'
 import { MonthlyAttendanceView } from './monthly-attendance-view'
 import {
   EasyAttendancePanel,
@@ -544,8 +545,13 @@ export function AttendanceBoard({
       )
       if (!ok) return
     }
-    setSaving(unitChildKey(unitId, childId))
     const existing = attendanceMap[unitChildKey(unitId, childId)]
+    // 安全策：欠席の子を出席に変えるときは確かめる（欠席→出席の押しまちがいで、時間が空の出席が残った・11/17）
+    if (updates.status === 'attended') {
+      const msg = absentToAttendedMessage(existing?.status)
+      if (msg && !window.confirm(msg)) return
+    }
+    setSaving(unitChildKey(unitId, childId))
 
     // 出席マーク時に利用スケジュールの時間を自動同期する。
     // ただし「すでに時刻が入っている項目」は上書きしない。
@@ -574,6 +580,12 @@ export function AttendanceBoard({
       ? { ...scheduledTimes, ...updates, absence_reason: null }
       : { ...scheduledTimes, ...updates }
 
+    // 安全策：出席にしても利用時間が入らなかったときは、入力欄を開いて気づけるようにする
+    // （いつもの予定がない子や、欠席で時間が消えた日は、出席を押しても時間が入らない）
+    const openIfNoTime = (row: Attendance) => {
+      if (updates.status === 'attended' && isAttendedWithoutTime(row)) setExpanded(row.id)
+    }
+
     if (existing) {
       const { data, error } = await supabase
         .from('daily_attendance')
@@ -582,7 +594,7 @@ export function AttendanceBoard({
         .select('*')
         .single()
       if (error) { alert(`更新エラー: ${error.message}`); setSaving(null); return }
-      if (data) applyRow(data as unknown as Attendance)
+      if (data) { applyRow(data as unknown as Attendance); openIfNoTime(data as unknown as Attendance) }
     } else {
       const { data, error } = await supabase
         .from('daily_attendance')
@@ -598,7 +610,7 @@ export function AttendanceBoard({
         .select('*')
         .single()
       if (error) { alert(`登録エラー: ${error.message}`); setSaving(null); return }
-      if (data) applyRow(data as unknown as Attendance)
+      if (data) { applyRow(data as unknown as Attendance); openIfNoTime(data as unknown as Attendance) }
     }
 
     // 欠席になった場合、送迎スケジュールからも削除
