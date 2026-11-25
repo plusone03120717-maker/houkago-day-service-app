@@ -50,6 +50,12 @@ export type EasyState = {
   dropoffTime: string
   dropoffDriverId: string
   dropoffVehicleId: string
+  /**
+   * お迎え・帰りがない日に使う、その日の開始・終了（入力を始めたときの記録から読む）。
+   * 切りかえの時刻を打ちかえても動かないように、ここに持っておく（11/25）。空なら記録の欄から求める
+   */
+  dayStart?: string
+  dayEnd?: string
 }
 
 /** 両方の日の切りかえの既定（学校のある日）。休みの日は呼ぶ側が 16:00 を渡す */
@@ -138,14 +144,31 @@ export function easyFromFields(f: TransportFields, defaultSwitch: string = DEFAU
     dropoffTime: dDep,
     dropoffDriverId: dDrv,
     dropoffVehicleId: dVeh,
+    ...dayRangeOfFields(f),
   }
 }
 
-/** その日の利用時間（開始・終了）。お迎え・帰りがない日は今の値・予定の値を使う */
-function rangeOf(s: EasyState, base: TransportFields, fallbackEnd: string): { start: string; end: string } {
-  const currentStart =
-    base.basicService ? base.serviceStartTime : base.daytimeSupportStartTime || base.serviceStartTime
-  const currentEnd = base.daytimeSupport ? base.daytimeSupportEndTime || base.serviceEndTime : base.serviceEndTime
+/**
+ * 記録の欄から、その日の開始・終了を求める。
+ * 使っている区分の開始のうち早いほう・終了のうち遅いほう（日中一時が先の日も放デイが先の日も同じ）。
+ * 使っていない区分の欄に古い時刻が残っていても見ない。
+ */
+export function dayRangeOfFields(f: TransportFields): { dayStart: string; dayEnd: string } {
+  const starts = [f.basicService ? f.serviceStartTime : '', f.daytimeSupport ? f.daytimeSupportStartTime : ''].filter((t) => !!t)
+  const ends = [f.basicService ? f.serviceEndTime : '', f.daytimeSupport ? f.daytimeSupportEndTime : ''].filter((t) => !!t)
+  return {
+    dayStart: starts.length ? starts.reduce((a, b) => (a < b ? a : b)) : f.daytimeSupportStartTime || f.serviceStartTime,
+    dayEnd: ends.length ? ends.reduce((a, b) => (a > b ? a : b)) : f.serviceEndTime,
+  }
+}
+
+/** その日の利用時間（開始・終了）。お迎え・帰りがない日は、入力を始めたときの開始・終了を使う */
+export function rangeOf(s: EasyState, base: TransportFields, fallbackEnd: string): { start: string; end: string } {
+  // 以前は毎回いまの欄から読み直していたため、日中一時が先の日にお迎えがないと、切りかえの時刻を
+  // 打ちかえるたびに開始が切りかえの時刻に引っぱられ、「日中一時 10:00〜10:00」になって保存できなかった（11/25）
+  const fromBase = dayRangeOfFields(base)
+  const currentStart = s.dayStart || fromBase.dayStart
+  const currentEnd = s.dayEnd || fromBase.dayEnd
   const start = !s.noPickup && s.pickupTime ? addMinutes(s.pickupTime, TRANSPORT_TRAVEL_MINUTES) : currentStart
   const end = !s.noDropoff && s.dropoffTime ? s.dropoffTime : currentEnd || fallbackEnd
   return { start, end }

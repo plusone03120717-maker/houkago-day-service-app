@@ -21,7 +21,8 @@
     "verify:schedule-week": "tsx scripts/verify-schedule-week-confirm.ts",
     "verify:unsaved-label": "tsx scripts/verify-unsaved-label.ts",
     "verify:approval-premade": "tsx scripts/verify-approval-premade.ts",
-    "verify:attendance-safeguards": "tsx scripts/verify-attendance-safeguards.ts"
+    "verify:attendance-safeguards": "tsx scripts/verify-attendance-safeguards.ts",
+    "verify:easy-switch": "tsx scripts/verify-easy-switch.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
