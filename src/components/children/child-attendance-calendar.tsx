@@ -13,6 +13,7 @@ import { isJapaneseNationalHoliday, getJapaneseHolidayName } from '@/lib/japanes
 import { resolveAssignment, type ServiceAssignmentType } from '@/lib/parent-contact-service'
 import { placeLabel, toPlaceValue, type TransportPlace, type LocationType } from '@/lib/transport-place'
 import { keepAssignment } from '@/components/transport/transport-daytime-panel'
+import { basicServiceFor } from '@/lib/attendance-safeguards'
 import { EXPLAIN_SOURCE_LABELS, type DayExplain, type ExplainSource } from '@/lib/day-explain'
 
 /** 「この日はなぜこうなっているか」の元の色（いつもの予定は目立たせない） */
@@ -314,6 +315,9 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
       dropoff_arrival_time: dropoffArrival || null,
       service_start_time: serviceStart || null,
       service_end_time: serviceEnd || null,
+      // 日中一時だけの日（放デイの時間が空）は放デイを「使わない」にする。
+      // 既定値の true のままだと、放デイの時間が空の「両方」の日になり、出席にすると利用時間が空と出る（11/23）
+      basic_service: basicServiceFor({ daytimeSupport, serviceStart, serviceEnd }),
       daytime_support: daytimeSupport,
       daytime_support_start_time: daytimeSupport ? (daytimeSupportStart || null) : null,
       daytime_support_end_time: daytimeSupport ? (daytimeSupportEnd || null) : null,
@@ -378,6 +382,9 @@ export function ChildAttendanceCalendar({ year, month, childId, attendances, par
       dropoff_arrival_time: dropoffArrival || null,
       service_start_time: serviceStart || null,
       service_end_time: serviceEnd || null,
+      // 日中一時だけの日（放デイの時間が空）は放デイを「使わない」にする。
+      // 既定値の true のままだと、放デイの時間が空の「両方」の日になり、出席にすると利用時間が空と出る（11/23）
+      basic_service: basicServiceFor({ daytimeSupport, serviceStart, serviceEnd }),
       daytime_support: daytimeSupport,
       daytime_support_start_time: daytimeSupport ? (daytimeSupportStart || null) : null,
       daytime_support_end_time: daytimeSupport ? (daytimeSupportEnd || null) : null,
