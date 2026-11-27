@@ -179,11 +179,14 @@ p(`- 連絡帳（今期）: ${notes.length}件（保護者コメントあり ${n
 
 // --- 8. スタッフ LINE のマイスケジュール閲覧（staff_page_views。記録を始めた日以降） ---
 p('\n## 8. スタッフ LINE のマイスケジュール閲覧')
-const viewsRes = await fetch(`${URL_}/rest/v1/staff_page_views?select=staff_member_id,page,viewed_at&viewed_at=gte.${prevSince}&order=viewed_at`, { headers: H })
-if (!viewsRes.ok) {
-  p(`- 取得できず（${viewsRes.status}）：migration 176 が未適用の可能性`)
-} else {
-  const views = await viewsRes.json()
+// 1000件ずつ区切って全件読む（1回では1000件で切れるため。2026-11-27 これで 11/24 以降が抜けていた）
+let views = null
+try {
+  views = await all('staff_page_views', `select=staff_member_id,page,viewed_at&viewed_at=gte.${prevSince}&order=viewed_at`)
+} catch (e) {
+  p(`- 取得できず（${e.message.slice(0, 80)}）：migration 176 が未適用の可能性`)
+}
+if (views) {
   const vBy = {}
   for (const v of views) {
     const b = (vBy[v.staff_member_id] ??= { cur: 0, prev: 0, days: new Set(), month: 0, last: '' })
